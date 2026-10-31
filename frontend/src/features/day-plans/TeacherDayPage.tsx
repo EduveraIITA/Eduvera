@@ -72,7 +72,6 @@ export default function TeacherDayPage({ rehearsal }: { rehearsal?: TimetableReh
       active="timetable"
       title="My timetable"
       subtitle="Timetable"
-      contentHasHeading
     >
       <div className="day-workspace">
         {rehearsal ? <TimetableRehearsalStrip rehearsal={rehearsal} /> : null}
@@ -90,6 +89,7 @@ export function TeacherDayPanel({
   compact = false,
   attentionTarget,
   rehearsal,
+  schoolContext,
 }: {
   date: string;
   view?: TimetableView;
@@ -99,12 +99,18 @@ export function TeacherDayPanel({
   compact?: boolean;
   attentionTarget?: TeacherTimetableAttentionTarget;
   rehearsal?: TimetableRehearsalIndicator | null;
+  /**
+   * Canonical responsibility workspaces receive their institution from the
+   * server-composed workspace manifest. Legacy teacher routes omit this and
+   * retain their existing membership selector until bookmark convergence.
+   */
+  schoolContext?: { readonly id: string; readonly label?: string | null };
 }) {
   const auth = useAuth(),
     client = useQueryClient();
-  const schools = auth.memberships.filter((m) => m.role === "staff");
+  const schools = schoolContext ? [] : auth.memberships.filter((m) => m.role === "staff");
   const [selected, setSelected] = useState("");
-  const schoolId = selected || schools[0]?.school_id || "";
+  const schoolId = schoolContext?.id || selected || schools[0]?.school_id || "";
   const [responding, setResponding] = useState<DayPeriod | null>(null);
   const attentionRef = useRef<HTMLElement>(null);
   const query = useQuery({
@@ -187,7 +193,7 @@ export function TeacherDayPanel({
           </div>
           {compact ? (
             <Link
-              to={`/teacher/timetable?date=${date}`}
+              to={`/areas/timetable/schedule?date=${date}`}
               className="day-secondary"
             >
               My day <ArrowRight size={15} />
@@ -267,6 +273,7 @@ export function TeacherDayPanel({
                       Coordinated by {p.owner_name}
                     </small>
                   ) : null}
+                  {!p.cancelled && p.teaching_session_href?.startsWith("/areas/timetable/session?") ? <div className="day-actions"><Link className="day-secondary" to={p.teaching_session_href}>Open session <ArrowRight size={15} /></Link></div> : null}
                   {!p.cancelled &&
                   ["pending", "declined", "accepted"].includes(
                     p.coverage_status,
@@ -291,13 +298,14 @@ export function TeacherDayPanel({
                     </div>
                   ) : null}
                   {!p.cancelled &&
+                  !p.teaching_session_href?.startsWith("/areas/timetable/session?") &&
                   p.slot_type !== "break" &&
                   ["not_required", "accepted"].includes(p.coverage_status) &&
                   date <= (query.data?.context.today ?? date) ? (
                     <div className="day-actions">
                       <Link
                         className="day-secondary"
-                        to={`/teacher/attendance?class_section_id=${p.class_section_id}&date=${date}`}
+                        to={`/areas/attendance/registers?class_section_id=${p.class_section_id}&date=${date}`}
                       >
                         Open class register <ArrowRight size={15} />
                       </Link>

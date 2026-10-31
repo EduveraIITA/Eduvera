@@ -194,6 +194,29 @@ describe("Daily plan workflow UI", () => {
     );
     expect(saveDayPlan).not.toHaveBeenCalled();
   });
+  it("retains a canonical room link while changing another period detail", async () => {
+    const save = vi.fn();
+    render(<PeriodEditor period={{ ...period, space_id: "room-204" }} teachers={teachers} subjects={subjects} onSave={save} onClose={vi.fn()} />);
+    fireEvent.change(screen.getByLabelText("Period name"), { target: { value: "Advanced Mathematics" } });
+    await userEvent.click(screen.getByRole("button", { name: "Apply to draft" }));
+    expect(save).toHaveBeenCalledWith(expect.objectContaining({ title: "Advanced Mathematics", room: "Room 204", space_id: "room-204" }));
+  });
+  it("clears the canonical room link after text changes and does not restore it by matching a label", async () => {
+    const save = vi.fn();
+    render(<PeriodEditor period={{ ...period, space_id: "room-204" }} teachers={teachers} subjects={subjects} onSave={save} onClose={vi.fn()} />);
+    fireEvent.change(screen.getByLabelText("Room"), { target: { value: "Science lab" } });
+    fireEvent.change(screen.getByLabelText("Room"), { target: { value: "Room 204" } });
+    await userEvent.click(screen.getByRole("button", { name: "Apply to draft" }));
+    expect(save).toHaveBeenCalledWith(expect.objectContaining({ room: "Room 204", space_id: null }));
+  });
+  it("preserves canonical places when saving an otherwise unchanged period from a cloned draft", async () => {
+    vi.mocked(saveDayPlan).mockResolvedValue({ id: "plan-1", revision: 3 });
+    const plan = fixture(); plan.periods[0]!.space_id = "room-204";
+    render(<PlanEditor plan={plan} teachers={teachers} subjects={subjects} onSaved={vi.fn().mockResolvedValue(undefined)} />);
+    fireEvent.change(screen.getByLabelText("Notice for families"), { target: { value: "Bring a calculator." } });
+    await userEvent.click(screen.getByRole("button", { name: "Save draft" }));
+    expect(saveDayPlan).toHaveBeenCalledWith("plan-1", expect.objectContaining({ periods: [expect.objectContaining({ room: "Room 204", space_id: "room-204" })] }));
+  });
   it("rejects overlapping start/end bounds before applying an edit", async () => {
     const save = vi.fn();
     render(
@@ -487,7 +510,9 @@ describe("Daily plan workflow UI", () => {
       { queryKey: ["school", "day-plans"] },
       { queryKey: ["teacher-class-updates"] },
       { queryKey: ["calendar"] },
-      { queryKey: ["campus-view"] },
+      { queryKey: ["calendar"], environmentScoped: true },
+      { queryKey: ["campus-view"], environmentScoped: true },
+      { queryKey: ["teaching-sessions"], environmentScoped: true },
       { queryKey: ["analytics"] },
       { queryKey: ["requests"] },
       { queryKey: ["attention"] },

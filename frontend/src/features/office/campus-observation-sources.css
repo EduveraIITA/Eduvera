@@ -17,13 +17,13 @@
   border-radius: 999px;
   padding: 0.35rem 0.7rem;
   font: inherit;
-  font-size: 0.72rem;
+  font-size: .875rem;
   font-weight: 700;
 }
 
 .campus-source-actions button {
-  color: var(--thatcampus-blue, #0b4bc1);
-  background: var(--thatcampus-blue-soft, #edf4ff);
+  color: var(--thatcampus-brand);
+  background: var(--thatcampus-brand-soft);
 }
 
 .campus-source-actions button.is-danger {
@@ -32,8 +32,8 @@
 }
 
 .campus-source-status.is-active {
-  color: var(--thatcampus-success, #08765a);
-  background: var(--thatcampus-success-soft, #e8f7f2);
+  color: var(--thatcampus-positive);
+  background: var(--thatcampus-positive-soft);
 }
 
 .campus-source-status.is-suspended {
@@ -42,15 +42,15 @@
 }
 
 .campus-source-status.is-revoked {
-  color: var(--thatcampus-text-muted, #667085);
-  background: var(--thatcampus-surface-muted, #f2f4f7);
+  color: var(--thatcampus-ink-muted);
+  background: var(--thatcampus-surface-soft);
 }
 
 .campus-source-note {
   margin: 0;
   padding: 0.8rem 1rem 1rem;
-  color: var(--thatcampus-text-muted, #667085);
-  font-size: 0.78rem;
+  color: var(--thatcampus-ink-muted);
+  font-size: .875rem;
   line-height: 1.5;
 }
 
@@ -74,4 +74,11 @@
     padding-left: 3.4rem;
     justify-content: flex-start;
   }
+}
+
+.campus-source-actions button { min-height: 44px; font-size: 14px; }
+.campus-source-note { font-size: 14px; line-height: 1.6; }
+.campus-source-actions button:focus-visible { outline: 3px solid var(--thatcampus-brand); outline-offset: 3px; }
+@media (max-width: 420px) {
+  .campus-source-actions { padding-left: 0; }
 }

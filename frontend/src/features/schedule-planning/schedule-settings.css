@@ -5,11 +5,11 @@
 .schedule-settings__row { width:100%; display:flex; align-items:center; justify-content:space-between; gap:1rem; padding:1rem; background:transparent; border:0; border-bottom:1px solid var(--thatcampus-border); text-align:left; color:inherit; min-height:64px; }
 .schedule-settings__row:last-child { border-bottom:0; }
 .schedule-settings__row span { min-width:0; display:grid; gap:.35rem; }
-.schedule-settings small,.schedule-settings__hint,.schedule-settings__form p,.schedule-settings__publish p { color:var(--thatcampus-ink-secondary); font-size:.85rem; line-height:1.5; }
+.schedule-settings small,.schedule-settings__hint,.schedule-settings__form p,.schedule-settings__publish p { color:var(--thatcampus-ink-secondary); font-size: 0.875rem; line-height:1.5; }
 .schedule-settings__row svg { flex-shrink:0; }
 .schedule-settings__hint { padding:1rem; margin:0; }
 .schedule-settings__select { display:flex; flex-wrap:wrap; align-items:center; justify-content:space-between; gap:.5rem; padding:1rem; font-weight:600; }
-.schedule-settings select,.schedule-settings input { min-height:44px; max-width:100%; min-width:0; background:var(--thatcampus-surface); color:inherit; border:1px solid var(--thatcampus-border); border-radius:.5rem; padding:.65rem; font:inherit; }
+.schedule-settings select,.schedule-settings input { min-height:44px; max-width:100%; min-width:0; background:var(--thatcampus-surface); color:inherit; border:1px solid var(--thatcampus-border); border-radius:.5rem; padding:.65rem; font:inherit; font-size:16px; }
 .schedule-settings__select select { max-width:75%; }
 .schedule-settings select { appearance:none; -webkit-appearance:none; padding-right:2rem; background-image:linear-gradient(45deg,transparent 50%,currentColor 50%),linear-gradient(135deg,currentColor 50%,transparent 50%); background-position:calc(100% - 16px) 50%,calc(100% - 11px) 50%; background-size:5px 5px; background-repeat:no-repeat; font-size:16px; }
 .schedule-settings__form { padding:1rem; display:grid; gap:1rem; }
@@ -18,8 +18,8 @@
 .schedule-settings__form fieldset { border:1px solid var(--thatcampus-border); border-radius:.75rem; padding:1rem; min-width:0; display:grid; gap:1rem; }
 .schedule-settings__dates { display:grid; grid-template-columns:repeat(auto-fit,minmax(130px,1fr)); gap:.75rem; }
 .schedule-settings button:not(.schedule-settings__row),.schedule-settings__daily { min-height:44px; }
-.schedule-settings__form>button,.schedule-settings__publish>button:not(.schedule-settings__text-button),.schedule-settings__actions>button,.schedule-settings__copy>button { background:var(--thatcampus-brand); color:white; padding:.75rem 1rem; border:0; border-radius:.75rem; font:inherit; font-weight:600; }
-.schedule-settings button.is-secondary { background:transparent; color:var(--thatcampus-brand); border:1px solid var(--thatcampus-border); }
+.schedule-settings__form>button,.schedule-settings__publish>button:not(.schedule-settings__text-button),.schedule-settings__actions>button,.schedule-settings__copy>button { background:var(--thatcampus-action); color:var(--thatcampus-on-action); padding:.75rem 1rem; border:1px solid transparent; border-radius:var(--thatcampus-radius-control); box-shadow:var(--thatcampus-shadow-control); font:inherit; font-weight:600; }
+.schedule-settings button.is-secondary { background:var(--thatcampus-surface); color:var(--thatcampus-brand); border:1px solid transparent; box-shadow:var(--thatcampus-shadow-control); }
 .schedule-settings button:disabled { opacity:.5; cursor:not-allowed; }
 .schedule-settings button:focus-visible,.schedule-settings input:focus-visible,.schedule-settings select:focus-visible,.schedule-settings summary:focus-visible { outline:2px solid var(--thatcampus-brand); outline-offset:2px; }
 .schedule-settings__actions { display:flex; align-items:center; justify-content:space-between; padding:1rem; gap:.75rem; }
@@ -35,7 +35,7 @@
 .schedule-settings__copy input { min-height:20px; }
 .schedule-settings__allocations { padding:1rem; border-top:1px solid var(--thatcampus-border); }
 .schedule-settings__allocations summary { min-height:44px; cursor:pointer; font-weight:600; }
-.schedule-settings__allocations>div { display:flex; flex-wrap:wrap; justify-content:space-between; gap:.5rem; padding:.5rem 0; font-size:.85rem; }
+.schedule-settings__allocations>div { display:flex; flex-wrap:wrap; justify-content:space-between; gap:.5rem; padding:.5rem 0; font-size: 0.875rem; }
 .schedule-settings__publish { padding:1rem; display:grid; gap:.75rem; }
 .schedule-settings__publish.is-attention-target,.schedule-settings__row.is-attention-target,.schedule-settings__pattern .timetable-builder__periods > li.is-attention-target,.schedule-settings__attention-period.is-attention-target { outline:3px solid color-mix(in srgb,var(--thatcampus-brand) 24%,transparent); outline-offset:2px; scroll-margin-block:96px; }
 .schedule-settings__pattern .timetable-builder__periods > li.is-attention-target:focus,.schedule-settings__attention-period.is-attention-target:focus { outline-color:var(--thatcampus-brand); }

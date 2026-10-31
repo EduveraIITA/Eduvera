@@ -1,9 +1,17 @@
+import { executionNow } from "../campus-model-core/execution-time.runtime.js";
 import { BadRequestException, Injectable } from "@nestjs/common";
 import { z } from "zod";
 import { ChatService } from "../chat/chat.service.js";
+import { messageConversationsHref } from "../chat/chat-links.js";
 import type { AuthUser } from "../common/request.js";
 import { NoticesService } from "../notices/notices.service.js";
 import { RequestsService } from "../requests/requests.service.js";
+import {
+  assessmentResultsHref,
+  assessmentWorkHref,
+  eventWorkHref,
+  relationshipEventHref,
+} from "../workspace/canonical-application-links.js";
 import type { RequestCategory, RequestInboxItem, RequestPortal, RequestPriority } from "../requests/requests.types.js";
 import { NotificationAttentionService } from "./notification-attention.service.js";
 import type {
@@ -200,7 +208,6 @@ function iso(value: Date | string | null | undefined): string | null {
 export function mapChatAttention(portal: RequestPortal, conversation: ChatAttentionConversation): AttentionItem | null {
   const unread = Number(conversation.unread_count ?? 0);
   if (!Number.isFinite(unread) || unread <= 0) return null;
-  const href = `/${portal}/messages?conversation=${encodeURIComponent(conversation.id)}`;
   return {
     id: `chat:${conversation.id}`,
     source_kind: "chat_conversation",
@@ -214,9 +221,12 @@ export function mapChatAttention(portal: RequestPortal, conversation: ChatAttent
     subject_label: conversation.student_name ?? null,
     due_at: null,
     created_at: iso(conversation.last_message_at ?? conversation.created_at),
-    href: portal === "parent" && conversation.context_student_id
-      ? `${href}&student_id=${encodeURIComponent(conversation.context_student_id)}`
-      : href,
+    href: messageConversationsHref({
+      conversationId: conversation.id,
+      ...(portal === "parent" && conversation.context_student_id
+        ? { relationshipScope: "dependent", studentId: conversation.context_student_id }
+        : {}),
+    }),
   };
 }
 
@@ -345,39 +355,109 @@ function parentScoped(path: string, portal: RequestPortal, studentId: string | n
 }
 
 export function moduleHref(portal: RequestPortal, module: AttentionModuleId, studentId?: string | null): string {
+  if (module === "messages") {
+    return messageConversationsHref(portal === "parent" && studentId
+      ? { relationshipScope: "dependent", studentId }
+      : {});
+  }
+  if (module === "notices") {
+    return portal === "parent" && studentId
+      ? `/areas/messages/updates?scope=dependent&student_id=${encodeURIComponent(studentId)}`
+      : "/areas/messages/updates";
+  }
+  if (module === "diary" && portal === "parent") {
+    return studentId
+      ? `/areas/messages/diary?scope=dependent&student_id=${encodeURIComponent(studentId)}`
+      : "/areas/messages/diary";
+  }
+  if (module === "timetable" || module === "weekly") {
+    if (portal === "parent") {
+      return studentId
+        ? `/areas/timetable/schedule?scope=dependent&student_id=${encodeURIComponent(studentId)}`
+        : "/areas/timetable";
+    }
+    if (portal === "principal") {
+      return module === "weekly" ? "/areas/timetable/planning/settings" : "/areas/timetable/planning";
+    }
+    return module === "weekly" ? "/areas/timetable/schedule?view=week" : "/areas/timetable/schedule";
+  }
+  if (module === "calendar") {
+    if (portal === "parent") {
+      return `/areas/calendar?scope=dependent${studentId ? `&student_id=${encodeURIComponent(studentId)}` : ""}`;
+    }
+    return portal === "principal"
+      ? "/areas/calendar?surface=manage"
+      : "/areas/calendar?surface=assigned";
+  }
+  if (module === "events") {
+    if (portal === "parent") {
+      return studentId ? relationshipEventHref("dependent", studentId) : "/areas/events";
+    }
+    return eventWorkHref(portal === "teacher" ? "assigned" : "manage");
+  }
+  if (module === "results") {
+    return portal === "parent" && studentId
+      ? assessmentResultsHref("dependent", studentId)
+      : "/areas/assessments";
+  }
+  if (module === "assessments") {
+    return assessmentWorkHref(portal === "teacher" ? "assigned" : "manage");
+  }
+  if (module === "safeguarding") {
+    return portal === "parent"
+      ? `/more${studentId ? `?student_id=${encodeURIComponent(studentId)}` : ""}`
+      : "/areas/care/concerns";
+  }
+  if (module === "report-cards") return "/areas/reports/remarks";
+  if (module === "departure") {
+    if (portal === "parent") {
+      return `/areas/departure/plan?scope=dependent${studentId ? `&student_id=${encodeURIComponent(studentId)}` : ""}`;
+    }
+    return portal === "principal" ? "/areas/departure/manage" : "/areas/departure";
+  }
   const portalPaths: Record<RequestPortal, Partial<Record<AttentionModuleId, string>>> = {
     parent: {
-      requests: "/parent/requests", attendance: "/parent/attendance", leave: "/parent/leave",
-      diary: "/parent/diary", events: "/parent/events", notices: "/parent/notices",
-      policies: "/parent/policies", fees: "/parent/fees", results: "/parent/results",
-      calendar: "/parent/calendar", timetable: "/parent/timetable",
-      "teacher-feedback": "/parent/teacher-feedback",
-      departure: "/parent/departure", messages: "/parent/messages",
+      requests: "/work",
+      attendance: studentId
+        ? `/areas/attendance/records?scope=dependent&student_id=${encodeURIComponent(studentId)}`
+        : "/areas/attendance",
+      leave: studentId
+        ? `/areas/attendance/leave?scope=dependent&student_id=${encodeURIComponent(studentId)}`
+        : "/areas/attendance",
+      diary: "/areas/messages/diary?scope=dependent",
+      policies: "/more/policies",
+      fees: studentId
+        ? `/areas/fees/account?scope=dependent&student_id=${encodeURIComponent(studentId)}`
+        : "/areas/fees",
+      calendar: "/areas/calendar?scope=dependent", timetable: "/areas/timetable/schedule?scope=dependent",
+      "teacher-feedback": studentId
+        ? `/more/feedback?student_id=${encodeURIComponent(studentId)}`
+        : "/more/feedback",
+      departure: "/areas/departure/plan?scope=dependent",
     },
     teacher: {
-      requests: "/teacher/requests", attendance: "/teacher/attendance", registers: "/teacher/attendance",
-      leave: "/teacher/leave", events: "/teacher/events",
-      notices: "/teacher/notices", policies: "/teacher/policies", fees: "/teacher/fees",
-      assessments: "/teacher/assessments", transport: "/teacher/transport",
-      "report-cards": "/teacher/report-cards",
-      safeguarding: "/teacher/safeguarding", responsibilities: "/teacher/responsibilities",
-      people: "/teacher/students", messages: "/teacher/messages",
-      calendar: "/teacher/calendar", timetable: "/teacher/timetable",
-      weekly: "/teacher/timetable/weekly",
+      requests: "/work", attendance: "/areas/attendance/registers", registers: "/areas/attendance/registers",
+      leave: "/areas/responsibilities/leave",
+      policies: "/more/policies", fees: "/areas/fees/ledger",
+      transport: "/areas/departure/operate",
+      responsibilities: "/areas/responsibilities/mine",
+      people: "/areas/people/records",
+      calendar: "/areas/calendar?surface=assigned", timetable: "/areas/timetable/schedule",
+      weekly: "/areas/timetable/schedule?view=week",
     },
     principal: {
-      requests: "/principal/requests", attendance: "/principal/attendance", events: "/principal/events",
-      notices: "/principal/notices", governance: "/principal/governance", fees: "/principal/fees",
-      assessments: "/principal/assessments", departure: "/principal/departure",
-      leave: "/principal/student-leave", "report-cards": "/principal/report-cards",
-      "teacher-feedback": "/principal/teacher-feedback",
-      safeguarding: "/principal/safeguarding", staff: "/principal/staff",
-      people: "/principal/students", messages: "/principal/messages",
-      calendar: "/principal/calendar", timetable: "/principal/timetable",
-      weekly: "/principal/timetable",
+      requests: "/work", attendance: "/areas/attendance/coordination",
+      governance: "/more/governance", fees: "/areas/fees/ledger",
+      departure: "/areas/departure/manage",
+      leave: "/areas/attendance/leave/review",
+      "teacher-feedback": "/more/feedback",
+      staff: "/more/setup/responsibilities",
+      people: "/areas/people/records",
+      calendar: "/areas/calendar?surface=manage", timetable: "/areas/timetable/planning",
+      weekly: "/areas/timetable/planning/settings",
     },
   };
-  const path = portalPaths[portal][module] ?? `/${portal}/more`;
+  const path = portalPaths[portal][module] ?? "/more";
   return parentScoped(path, portal, studentId);
 }
 
@@ -462,7 +542,7 @@ export class AttentionService {
     const rollups = summarizeAttention(parsed.data.portal, items, requestProjection.scope.student_id);
     return {
       portal: parsed.data.portal,
-      generated_at: new Date().toISOString(),
+      generated_at: executionNow().toISOString(),
       scope: requestProjection.scope,
       ...rollups,
       items,

@@ -91,7 +91,7 @@ export class GuardianAuthorityService {
           authority_change_id:command.id,refresh:["people","parent.home","parent.leave","student.leave","notifications","attention"]},
         notificationUserIds:[current.guardian_user_id],notificationPayload:{kind:"general",title:"Leave-signing access updated",
           body:result.enabled?"Your leave-signing access has been updated.":"Your leave-signing access has been removed.",
-          parent_link:`/parent/leave?student_id=${current.student_id}&tab=apply&authority_change_id=${command.id}&authority_revision=${result.revision}`,
+          parent_link:`/areas/attendance/leave?scope=dependent&student_id=${current.student_id}&tab=apply&authority_change_id=${command.id}&authority_revision=${result.revision}`,
           attention_eligible:true,attention_portal:"parent",attention_module:"leave",attention_source_kind:"guardian_leave_authority",
           attention_source_id:command.id,attention_source_revision:result.revision,
           attention_topic_key:`guardian-authority:${id}`,attention_student_id:current.student_id}});

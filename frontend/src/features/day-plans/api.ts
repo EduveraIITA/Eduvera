@@ -11,12 +11,16 @@ export interface PeriodInput {
   title: string;
   slot_type: "class" | "break" | "activity";
   room: string;
+  /** Canonical place identity; a room label alone cannot establish this link. */
+  space_id?: string | null;
   teacher_user_id: string | null;
   cancelled: boolean;
   materials: string[];
 }
 export interface DayPeriod extends PeriodInput {
   id: string;
+  /** Server-composed only when this dated session is in the viewer's teaching scope. */
+  teaching_session_href?: string;
   teacher_name: string | null;
   coverage_status:
     "not_required" | "unassigned" | "pending" | "accepted" | "declined";
@@ -301,6 +305,7 @@ export const periodInput = (p: PeriodInput): PeriodInput => ({
   title: p.title,
   slot_type: p.slot_type,
   room: p.room,
+  space_id: p.space_id ?? null,
   teacher_user_id: p.teacher_user_id,
   cancelled: p.cancelled,
   materials: p.materials,

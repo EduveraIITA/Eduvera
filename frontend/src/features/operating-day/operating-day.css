@@ -1,0 +1,42 @@
+.operating-day { display:grid; gap:12px; padding:16px; border:1px solid var(--thatcampus-border); border-radius:22px; background:var(--thatcampus-surface); box-shadow:0 8px 24px rgba(15,38,82,.06); }
+.operating-day > header { display:grid; grid-template-columns:auto 1fr auto; align-items:center; gap:9px; }
+.operating-day > header > div { display:flex; min-width:0; align-items:center; gap:7px; color:var(--thatcampus-brand); }
+.operating-day h2 { overflow:hidden; margin:0; color:var(--thatcampus-ink); font-size:17px; letter-spacing:-.02em; white-space:nowrap; text-overflow:ellipsis; }
+.operating-day > header > small { color:var(--thatcampus-ink-muted); font-size: 14px; }
+.operating-day__environment { padding:4px 7px; border-radius:999px; color:var(--thatcampus-brand); background:var(--thatcampus-surface-soft); font-size: 14px; font-weight:800; letter-spacing:.05em; text-transform:uppercase; }
+.operating-day__environment.is-simulation { color:var(--thatcampus-warning); background:var(--thatcampus-warning-soft); }
+.operating-day__sessions { display:grid; overflow:hidden; border:1px solid var(--thatcampus-border); border-radius:16px; }
+.operating-day__session { display:grid; min-height:64px; padding:10px 12px; grid-template-columns:58px minmax(0,1fr) auto; align-items:center; gap:9px; color:inherit; text-decoration:none; }
+.operating-day__session + .operating-day__session { border-top:1px solid var(--thatcampus-border); }
+.operating-day__session time { color:var(--thatcampus-brand); font-size: 14px; font-weight:800; }
+.operating-day__session > span { display:grid; min-width:0; gap:3px; }
+.operating-day__session strong { overflow:hidden; font-size:14px; white-space:nowrap; text-overflow:ellipsis; }
+.operating-day__session small { display:flex; min-width:0; flex-wrap:wrap; align-items:center; gap:4px 6px; color:var(--thatcampus-ink-muted); font-size: 14px; }
+.operating-day__session > svg { color:var(--thatcampus-brand); }
+.operating-day__empty { margin:0; padding:10px 2px; color:var(--thatcampus-ink-muted); font-size: 14px; }
+.operating-day > footer { display:flex; flex-wrap:wrap; gap:8px; }
+.operating-day > footer span { display:grid; min-width:112px; padding:8px 10px; flex:1; border-radius:12px; background:var(--thatcampus-surface); }
+.operating-day > footer strong { display:flex; align-items:center; gap:4px; color:var(--thatcampus-ink); font-size: 14px; }
+.operating-day > footer small { color:var(--thatcampus-ink-muted); font-size: 14px; }
+.operating-day__review { display:flex; padding:9px 11px; border-radius:12px; align-items:center; justify-content:space-between; color:var(--thatcampus-warning); background:var(--thatcampus-warning-soft); font-size: 14px; font-weight:750; text-decoration:none; }
+@media (max-width:420px) { .operating-day { padding:14px; border-radius:20px; } .operating-day > header { grid-template-columns:auto 1fr; } .operating-day > header > small { display:none; } }
+
+.operating-day { min-width: 0; padding: 20px; border-radius: var(--thatcampus-radius-card); box-shadow: none; }
+.operating-day > header { display: flex; flex-wrap: wrap; gap: 12px; }
+.operating-day > header > div { min-width: 0; flex: 1; }
+.operating-day h2 { white-space: normal; overflow-wrap: anywhere; }
+.operating-day > header > small { display: block; }
+.operating-day__environment { font-size: 14px; letter-spacing: 0; text-transform: none; }
+.operating-day__sessions { border: 0; border-radius: 0; }
+.operating-day__session { grid-template-columns: 64px minmax(0, 1fr) auto; padding: 16px 0; }
+.operating-day__session strong { white-space: normal; overflow-wrap: anywhere; font-size: 16px; }
+.operating-day__session time { color: var(--thatcampus-ink-secondary); }
+.operating-day > footer { padding-top: 16px; border-top: 1px solid var(--thatcampus-border); }
+.operating-day > footer span { padding: 0; border-radius: 0; background: transparent; }
+.operating-day__review { min-height: 48px; padding: 12px; line-height: 1.5; }
+.operating-day__review { padding-inline: var(--thatcampus-row-inset); border-radius: var(--thatcampus-radius-row); }
+.operating-day :is(a, button):focus-visible { outline: 3px solid var(--thatcampus-brand); outline-offset: 3px; }
+@media (max-width: 420px) {
+  .operating-day { padding: 16px; }
+  .operating-day > header > small { flex-basis: 100%; }
+}

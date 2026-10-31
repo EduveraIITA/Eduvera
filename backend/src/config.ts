@@ -1,4 +1,4 @@
-import { resolve } from "node:path";
+import { isAbsolute, resolve } from "node:path";
 import { z } from "zod";
 import { assertPostgreSqlConnectionPolicy } from "./database/connection-policy.js";
 
@@ -13,8 +13,30 @@ const schema = z.object({
   PORT: z.coerce.number().int().min(1).max(65535).default(8000),
   HOST: z.string().default("127.0.0.1"),
   DATABASE_URL: z.string().min(1),
+  CAMPUS_SIMULATION_DATABASE_URL: z.string().min(1).optional(),
+  SIMULATION_PG_DUMP_PATH: z.string().refine(value => isAbsolute(value) && value.trim() === value
+    && !/[\r\n\0]/u.test(value), "SIMULATION_PG_DUMP_PATH must be an absolute executable path").optional(),
+  SIMULATION_MAX_WORLDS_PER_INSTITUTION: z.coerce.number().int().min(1).max(1000).default(12),
+  SIMULATION_MAX_RUNNING_RUNS_PER_INSTITUTION: z.coerce.number().int().min(1).max(100).default(4),
+  SIMULATION_MAX_LEASES_PER_INSTITUTION: z.coerce.number().int().min(1).max(100).default(4),
+  SIMULATION_MAX_STORAGE_BYTES_PER_INSTITUTION: z.coerce.number().int()
+    .min(104857600).max(10995116277760).default(2147483648),
+  SIMULATION_RUN_STORAGE_RESERVATION_BYTES: z.coerce.number().int()
+    .min(1048576).max(1073741824).default(104857600),
+  SIMULATION_MAX_PINNED_RUNS_PER_INSTITUTION: z.coerce.number().int().min(0).max(100).default(4),
+  SIMULATION_TERMINAL_RETENTION_DAYS: z.coerce.number().int().min(1).max(3650).default(30),
+  SIMULATION_PREPARATION_TIMEOUT_MS: z.coerce.number().int().min(300000).max(86400000).default(900000),
+  SIMULATION_WORKER_INTERVAL_MS: z.coerce.number().int().min(250).max(30000).default(1000),
+  SIMULATION_WORKER_MAX_RUNS_PER_POLL: z.coerce.number().int().min(1).max(100).default(4),
+  SIMULATION_WORKER_LEASE_SECONDS: z.coerce.number().int().min(15).max(900).default(60),
+  SIMULATION_GC_ENABLED: booleanString("false"),
+  SIMULATION_GC_INTERVAL_MS: z.coerce.number().int().min(1000).max(86400000).default(60000),
+  SIMULATION_GC_BATCH_SIZE: z.coerce.number().int().min(1).max(100).default(4),
+  SIMULATION_GC_LEASE_SECONDS: z.coerce.number().int().min(30).max(3600).default(120),
   EVENT_DATABASE_URL: z.string().min(1).optional(),
   DATABASE_POOL_MAX: z.coerce.number().int().min(1).max(50).default(10),
+  DATABASE_QUERY_TIMEOUT_MS: z.coerce.number().int().min(1000).max(300000).default(60000),
+  DATABASE_IDLE_TRANSACTION_TIMEOUT_MS: z.coerce.number().int().min(1000).max(300000).default(60000),
   EVENT_BROKER_CONNECT_TIMEOUT_MS: z.coerce.number().int().min(500).max(30000).default(5000),
   EVENT_WORKER_INTERVAL_MS: z.coerce.number().int().min(100).max(30000).default(500),
   EVENT_BATCH_SIZE: z.coerce.number().int().min(1).max(500).default(100),
@@ -40,7 +62,6 @@ const schema = z.object({
   CAMPUS_SIMULATOR_SERVICE_TOKEN: z.string().min(32).max(256).optional(),
   CAMPUS_LAB_PROXY_KEY: z.string().min(24).max(256).optional(),
   SPA_DIST_DIR: z.string().default("../frontend/dist"),
-  STAFF_DIST_DIR: z.string().default("../frontend-desktop/dist"),
   PUBLIC_URL: z.string().optional(),
   INVITATION_EMAIL_ENABLED: booleanString("false"),
   INVITATION_EMAIL_PROVIDER: z.enum(["smtp", "resend"]).default("smtp"),
@@ -83,17 +104,9 @@ const schema = z.object({
 export type AppConfig = ReturnType<typeof loadConfig>;
 
 export function loadConfig() {
-  // Temporary Razorpay Stage sandbox credentials, explicitly requested by the account owner.
-  // Remove after rotation; environment variables always take precedence.
-  // Payment sandbox mode never grants demo login access.
-  const stageSandbox = process.env.DEPLOYMENT_ENVIRONMENT === "stage";
-  const value = schema.parse(stageSandbox ? {
-    ...process.env,
-    // Temporary Razorpay test defaults requested for Stage sandbox payments only.
-    RAZORPAY_ENABLED: process.env.RAZORPAY_ENABLED ?? "true",
-    RAZORPAY_KEY_ID: process.env.RAZORPAY_KEY_ID ?? "rzp_test_TlmHlao5mqz2zj",
-    RAZORPAY_KEY_SECRET: process.env.RAZORPAY_KEY_SECRET ?? "SdEBCytWR6MESwdilWCISzBb",
-  } : process.env);
+  // Connectors are explicitly configured by the deployment. Never embed even
+  // sandbox credentials or enable a payment provider merely from its environment.
+  const value = schema.parse(process.env);
   if (value.RAZORPAY_ENABLED && ((value.DEPLOYMENT_ENVIRONMENT ?? value.NODE_ENV) === "production" || !value.RAZORPAY_KEY_ID.startsWith("rzp_test_") || !value.RAZORPAY_KEY_SECRET)) {
     throw new Error("Razorpay sandbox requires a non-production environment, a test key ID and a server-side key secret.");
   }
@@ -115,6 +128,28 @@ export function loadConfig() {
     purpose: "application",
     requireRemoteTls: managedDeployment,
   });
+  if (value.CAMPUS_SIMULATION_DATABASE_URL) {
+    assertPostgreSqlConnectionPolicy(value.CAMPUS_SIMULATION_DATABASE_URL, {
+      name: "CAMPUS_SIMULATION_DATABASE_URL",
+      purpose: "simulation",
+      requireRemoteTls: managedDeployment,
+    });
+    if (value.CAMPUS_SIMULATION_DATABASE_URL === value.DATABASE_URL) {
+      throw new Error("CAMPUS_SIMULATION_DATABASE_URL must not reuse the Live database.");
+    }
+  }
+  if (value.SIMULATION_MAX_RUNNING_RUNS_PER_INSTITUTION > value.SIMULATION_MAX_WORLDS_PER_INSTITUTION) {
+    throw new Error("SIMULATION_MAX_RUNNING_RUNS_PER_INSTITUTION cannot exceed the institution world limit.");
+  }
+  if (value.SIMULATION_MAX_LEASES_PER_INSTITUTION > value.SIMULATION_MAX_RUNNING_RUNS_PER_INSTITUTION) {
+    throw new Error("SIMULATION_MAX_LEASES_PER_INSTITUTION cannot exceed the institution running-run limit.");
+  }
+  if (value.SIMULATION_MAX_PINNED_RUNS_PER_INSTITUTION > value.SIMULATION_MAX_WORLDS_PER_INSTITUTION) {
+    throw new Error("SIMULATION_MAX_PINNED_RUNS_PER_INSTITUTION cannot exceed the institution world limit.");
+  }
+  if (value.SIMULATION_RUN_STORAGE_RESERVATION_BYTES > value.SIMULATION_MAX_STORAGE_BYTES_PER_INSTITUTION) {
+    throw new Error("SIMULATION_RUN_STORAGE_RESERVATION_BYTES cannot exceed the institution storage budget.");
+  }
 
   if (managedDeployment) {
     if (!value.EVENT_DATABASE_URL) throw new Error("EVENT_DATABASE_URL is required for stage and production deployments");
@@ -198,7 +233,6 @@ export function loadConfig() {
     rateLimitStore,
     allowedOrigins,
     spaDistDir: resolve(process.cwd(), value.SPA_DIST_DIR),
-    staffDistDir: resolve(process.cwd(), value.STAFF_DIST_DIR),
     uploadDir: resolve(process.cwd(), value.UPLOAD_DIR),
     restrictedCaseEncryptionKey: value.RESTRICTED_CASE_ENCRYPTION_KEY ?? value.COOKIE_SECRET,
   };

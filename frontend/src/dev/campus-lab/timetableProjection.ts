@@ -20,6 +20,6 @@ export function campusLabTimetableIndicator(status: CampusLabStatus | null | und
     nextChangeAt: status.phase.next_change_at,
     activeSlotIds: status.schedule.active_slot_ids,
     timeZone: "Asia/Kolkata",
-    campusPath: "/principal/campus",
+    campusPath: "/more/virtual-campus",
   };
 }

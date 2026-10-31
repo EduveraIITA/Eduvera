@@ -44,7 +44,7 @@ export function AttendanceTrend({ attendance, monthly, minimum, compact = false 
 }
 
 export function AttendanceData({ attendance }: { attendance: NonNullable<AnalyticsOverview["attendance"]> }) {
-  return <div className="analytics-table-wrap"><table><caption>Attendance trend data</caption><thead><tr><th scope="col">Period</th><th scope="col">Attended / counted</th><th scope="col">Attendance</th></tr></thead><tbody>{attendance.trend.map(point => <tr key={point.date}><th scope="row">{shortDate(point.date)}–{shortDate(point.end)}</th><td>{numberLabel(point.attended)} / {point.denominator}</td><td>{percentageLabel(point.percentage)}</td></tr>)}</tbody></table></div>;
+  return <div className="analytics-table-wrap" role="region" aria-label="Attendance trend data" tabIndex={0}><table><caption>Attendance trend data</caption><thead><tr><th scope="col">Period</th><th scope="col">Attended / counted</th><th scope="col">Attendance</th></tr></thead><tbody>{attendance.trend.map(point => <tr key={point.date}><th scope="row">{shortDate(point.date)}–{shortDate(point.end)}</th><td>{numberLabel(point.attended)} / {point.denominator}</td><td>{percentageLabel(point.percentage)}</td></tr>)}</tbody></table></div>;
 }
 
 type DonutSlice = { id: string; label: string; value: number; tone: string };

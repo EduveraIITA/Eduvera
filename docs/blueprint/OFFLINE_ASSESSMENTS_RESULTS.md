@@ -78,6 +78,10 @@ gates; local storage is development evidence, not production readiness.
   not silently rewrite a live or published register.
 - Examiner and moderator are different active institution members.
 - Marks must be between zero and the assessment maximum.
+- Blank scored input remains unrecorded/invalid, never coerced into zero. The API
+  accepts finite numeric marks, not coercible strings/booleans. Explicit zero is
+  valid. Dirty result drafts retain their source revision and cannot overwrite a
+  refreshed result silently; failed saves preserve the person's entered work.
 - Submission cannot pass with `unrecorded` rows or missing required evidence.
 - Publication requires a moderated revision and snapshots every learner result in one
   transaction with audit and outbox metadata.
@@ -221,3 +225,76 @@ Remaining release gates are explicit. The current model supports one room and on
 frozen cohort per physical assessment; split rooms and multi-sitting papers need a
 later data model. The current accepted/declined duty and realtime refresh path must
 not be represented as reminder, expiry or escalation automation.
+
+### Institution-approved invitations — 20 October 2026 (local product implementation)
+
+This checkpoint supersedes the preceding seed-only configuration path, not the
+historical evidence or owning examination invariants. An authorized institution
+administrator can now explicitly configure invitations from **Operating rules →
+Examination day → Invigilation invitations**. The product asks for eligible linked
+staff, response and expiry durations, an approval reason and an explicit approval.
+It retains immutable configuration/activation evidence through the typed Model Core
+coordination-configuration port. A migration never enables recipients or installs a
+campus-specific approval on the administrator's behalf.
+
+Existing Cambridge data follows this same upgrade: its historical development route
+does not count as an approved product policy. The institution must review and approve
+the normal policy. Current open invitations whose configuration was replaced or
+expired show a recovery explanation; explicitly saving valid arrangements reissues
+the offer and requires a fresh response. Ineligible recipients must be changed.
+Disabling or replacing configuration does not revoke already accepted duties.
+Invigilation response permission does not grant attendance-recording authority.
+
+The selected-world clock, namespace, recipient, current authority, assignment and
+configuration revisions are checked in Live and Simulation. Actual authenticated
+HTTP evidence covers fresh policy approval, stale-offer reissue, explicit acceptance,
+selected-world changes and unchanged Live/sibling records without configuration
+fixtures. Visible UI acceptance also approved a policy only in a disposable scenario
+and verified that Live remained unconfigured. This is not a real-provider, reminder,
+escalation, hardware or whole-platform release-certification claim. Detailed final
+evidence is linked from the unified activity implementation checkpoint.
+
+### Explicit published-result correction — 23 October delivery contract
+
+An assigned examiner or currently permitted coordinator deliberately opens
+**Correct a result**, enters the changed outcome/marks and a real correction
+reason, and saves through the existing revision-checked results API. Opening the
+editor changes nothing. Saving starts marking again; it does not silently replace
+the learner's published result. The existing submit → independent moderation →
+administrator publication path creates a new identifiable release, retaining the
+earlier immutable snapshots until and after republication. An examiner cannot
+self-moderate even when that account is also an administrator. Invigilator or
+moderator status alone does not grant result editing; moderator approval does not
+grant publication.
+
+This bounded results lifecycle uses the current DomainCommandGateway before its
+native writes, with actor/authority/revision/hash/causation and atomic domain
+event/outcome evidence, not an outbox presented as command mediation. Recheck
+identity and assignments in the owning transaction. Dirty fields, pending saves,
+stale revisions, response-loss retry and actor/campus/world switches must not
+lose or misapply a correction. Family views retain the last accepted publication.
+Use the existing theme and concise source/release context; verify meaningful
+correction/moderation/republication in Live and isolated COW with unchanged Live
+and sibling records.
+
+Scheduled exam amendment, student result-query cases, group submissions and
+automatic reminders remain separate gaps. Do not unlock scheduled arrangements
+by removing a UI condition or claim those journeys from the correction action.
+
+### 27 October — historical roster and evidence acceptance
+
+Opening nonphysical marking resolves enrollment on the institution-local
+assessment date using inclusive start/exclusive end intervals. Physical sitting
+readiness/freeze uses the same dated contract, and result materialization retains
+its exact frozen candidate source. Overlapping effective placements refuse before
+partial results; repeated historical class placements never multiply register
+rows. Publications freeze academic class/term and learner-roster provenance.
+
+Private results/evidence require current exact result authority; invigilation
+alone grants neither. Upload acceptance uses the existing results command gateway
+and marking lock, finalizes immutable selected-world bytes, verifies hash/length,
+then commits native metadata/audit/event/outcome. Exact retries and uncertain
+commit recovery must not delete an accepted file. Required-evidence Submit checks
+actual available bytes; available legacy files gain a real hash automatically,
+without an extra re-upload step. Missing, damaged and captured-omitted originals
+cannot satisfy submission. Simulation never fetches a Live original as a fallback.

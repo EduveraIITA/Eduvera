@@ -231,13 +231,31 @@ describe("Campus Model Core coordination architecture", () => {
     expect(service).toContain('status: "unmatched"');
     expect(service).toContain("authority.capability=${selector.required_capability}");
     expect(service).toContain("Every selected recipient must be active and authorized");
-    expect(service).toContain("authority.effective_from<=CURRENT_TIMESTAMP");
+    for (const section of [
+      service.slice(service.indexOf('async authorizeCandidateRecipients('), service.indexOf('async publishAcceptedEvent(')),
+      service.slice(service.indexOf('async publishAcceptedEvent('), service.indexOf('async recordRecipientResponse(')),
+      service.slice(service.indexOf('async recordRecipientResponse('), service.indexOf('async recordMessageOutcome(')),
+    ]) {
+      // Domain requests supply the selected execution instant. The complete
+      // interval and revocation checks remain mandatory; a host-clock query
+      // would wrongly reject a grant approved after virtual time advanced.
+      expect(section).toContain('authority.effective_from<=${input.occurred_at}::timestamptz');
+      expect(section).toContain('authority.effective_until>${input.occurred_at}::timestamptz');
+      expect(section).toContain('authority.revoked_at IS NULL');
+      expect(section).not.toContain('authority.effective_from<=CURRENT_TIMESTAMP');
+    }
+    expect(service).toContain('${input.occurred_at}::timestamptz<=message.response_due_at AS before_response_due');
+    expect(service).toContain('${input.occurred_at}::timestamptz<message.expires_at AS before_expiry');
     expect(service).toContain("The assigned recipient no longer has the capability required by this request.");
     expect(service).toContain("FOR SHARE OF authority");
     expect(service).toContain("message.id=${input.message_id}::uuid");
     expect(service).toContain("event.source_record_id=${input.expected_source_record_id}");
     expect(service).toContain("reaction.selector_snapshot");
-    expect(service).toContain("JOIN school_memberships membership");
+    expect(service).toContain("campus_model_current_account_endpoints(");
+    const identity = readFileSync(resolve(process.cwd(), "migrations/202_current_human_identity.sql"), "utf8");
+    expect(identity).toContain("FROM school_memberships membership");
+    expect(identity).toContain("membership.is_active");
+    expect(identity).toContain("person.retired_at IS NULL");
     expect(service).toContain("reference.user_id");
     expect(service).toContain("reference.external_ref");
     expect(service).not.toMatch(/defaultBehaviour|defaultRecipient|fallbackRecipient/);
@@ -245,7 +263,7 @@ describe("Campus Model Core coordination architecture", () => {
 
   it("retains idempotent source, reaction, dispatch and response evidence", () => {
     expect(service).toContain("source_outbox_event_id");
-    expect(service).toContain("ON CONFLICT(school_id,idempotency_key) DO NOTHING");
+    expect(service).toContain("ON CONFLICT(realm_id,environment_namespace_id,idempotency_key) DO NOTHING");
     expect(service).toContain("campus.coordination.message_queued");
     expect(service).toContain("audience_user_ids=${dispatchAudience}::uuid[]");
     expect(service).toContain("notification_payload IS NULL");

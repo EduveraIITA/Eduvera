@@ -1,4 +1,5 @@
 import { randomUUID } from "node:crypto";
+import { ensureFixtureGuardianProfile } from "./fixture-guardian-profile.test-support.js";
 import { Pool } from "pg";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import type { AuthUser } from "../src/common/request.js";
@@ -20,9 +21,12 @@ describe.skipIf(!isolated)("transport lifecycle and privacy",()=>{
   async function fixture(direction:"from_institution"|"to_institution"="from_institution",learnerCount=2,stopCount=1,timezone="Asia/Kolkata") {
     const admin=await actor("admin");const collector=await actor("staff");const parent=await actor("parent");const student=await actor("student");const sibling=await actor("student");const outsider=await actor("parent");
     const school=(await pool.query("INSERT INTO schools(name,code,timezone) VALUES('Transport Test',$1,$2) RETURNING id",[randomUUID().slice(0,24),timezone])).rows[0].id as string;
+    student.active_school_id=school;
+    sibling.active_school_id=school;
     for(const [user,role] of [[admin,"admin"],[collector,"staff"],[parent,"guardian"],[student,"student"],[sibling,"student"],[outsider,"guardian"]] as const) await pool.query("INSERT INTO school_memberships(school_id,user_id,role) VALUES($1,$2,$3)",[school,user.id,role]);
     const learnerIds:string[]=[];
     const guardian=(await pool.query("INSERT INTO parents(user_id) VALUES($1) RETURNING id",[parent.id])).rows[0].id;
+    await ensureFixtureGuardianProfile(pool,{schoolId:school,guardianId:guardian,firstName:parent.first_name,lastName:parent.last_name});
     const learners=[student,sibling];
     while(learners.length<learnerCount){const learner=await actor("student");learners.push(learner);await pool.query("INSERT INTO school_memberships(school_id,user_id,role) VALUES($1,$2,'student')",[school,learner.id]);}
     for(const learner of learners) {
@@ -91,6 +95,17 @@ describe.skipIf(!isolated)("transport lifecycle and privacy",()=>{
     const focused=await service.workspace(f.admin,f.school,plan.id,f.trip.id);
     expect(focused.plans).toContainEqual(expect.objectContaining({id:plan.id,state:"exception"}));
     expect(focused.trips).toContainEqual(expect.objectContaining({id:f.trip.id}));
+  });
+
+  it("does not expose an own departure through app membership at another selected institution",async()=>{
+    const f=await fixture();
+    const otherSchool=(await pool.query("INSERT INTO schools(name,code,timezone) VALUES('Other transport test',$1,'Asia/Kolkata') RETURNING id",[randomUUID().slice(0,24)])).rows[0].id as string;
+    await pool.query("INSERT INTO school_memberships(school_id,user_id,role) VALUES($1,$2,'member')",[otherSchool,f.student.id]);
+    await expect(service.family({...f.student,active_school_id:otherSchool},undefined,f.day,true)).rejects.toThrow(/not linked/);
+    const own=await service.family(f.student,undefined,f.day,true);
+    expect(own.student.id).toBe(f.learnerIds[0]);
+    expect(own.can_request).toBe(false);
+    await expect(service.workspace(f.student,otherSchool)).rejects.toThrow(/management permission/);
   });
 
   it.each(["to_institution","from_institution"] as const)("operates a 40-rider %s bus across eight geotagged stops",async direction=>{

@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { cleanup, render, screen, within, fireEvent } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import { afterEach, expect, it } from 'vitest';
+import { afterEach, expect, it, vi } from 'vitest';
 import { DateNavigation } from './DateNavigation';
 import { shiftDatePeriod, visibleDates } from './dateMath';
 
@@ -50,4 +50,29 @@ it('clamps month/year transitions, handles leap years, and uses Monday-first wee
   expect(shiftDatePeriod('2026-12-31','day',1)).toBe('2027-01-01');
   expect(visibleDates('2026-10-08','day')).toEqual(['2026-10-05','2026-10-06','2026-10-07','2026-10-08','2026-10-09','2026-10-10','2026-10-11']);
   expect(visibleDates('2024-02-15','month')).toHaveLength(29);
+});
+it('can navigate a month-bounded list without rendering a date grid or changing the navigation period',async()=>{
+  const onDateChange=vi.fn();
+  render(<DateNavigation date="2026-12-31" today="2026-10-28" view="month" showDates={false} onDateChange={onDateChange}/>);
+  expect(screen.getByText('December 2026')).toBeVisible();
+  expect(screen.queryByRole('group',{name:'Choose date'})).not.toBeInTheDocument();
+  expect(screen.queryByRole('button',{name:/Expand|Collapse calendar/})).not.toBeInTheDocument();
+  expect(screen.queryByRole('button',{name:'Next day'})).not.toBeInTheDocument();
+  await userEvent.click(screen.getByRole('button',{name:'Next month'}));
+  expect(onDateChange).toHaveBeenCalledExactlyOnceWith('2027-01-31');
+  fireEvent.change(screen.getByLabelText('Choose date',{selector:'input'}),{target:{value:'2027-02-14'}});
+  expect(onDateChange).toHaveBeenLastCalledWith('2027-02-14');
+});
+it('separates optional presentation tools from date navigation without a non-working expansion control',async()=>{
+  const onDateChange=vi.fn();
+  const {container}=render(<DateNavigation date="2026-10-28" today="2026-10-29" view="day" onDateChange={onDateChange}
+    toolbarTools={<div aria-label="Display tools">Agenda</div>}/>);
+  expect(container.querySelector('.date-navigation__toolbar')).not.toHaveTextContent('Agenda');
+  expect(screen.getByLabelText('Display tools')).toBeVisible();
+  expect(screen.queryByRole('button',{name:'Expand calendar'})).not.toBeInTheDocument();
+  expect(within(screen.getByRole('group',{name:'Choose date'})).getAllByRole('button')).toHaveLength(7);
+  expect(screen.getByRole('button',{name:'Wednesday, 28 October'})).toHaveAttribute('aria-pressed','true');
+  expect(screen.getByRole('button',{name:'Thursday, 29 October, today'})).toHaveAttribute('aria-current','date');
+  await userEvent.click(screen.getByRole('button',{name:'Sunday, 1 November'}));
+  expect(onDateChange).toHaveBeenCalledExactlyOnceWith('2026-11-01');
 });

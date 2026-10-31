@@ -1,18 +1,28 @@
-import { CanActivate, ExecutionContext, ForbiddenException, Inject, Injectable, UnauthorizedException } from "@nestjs/common";
+import { CanActivate, ExecutionContext, ForbiddenException, GoneException, Inject, Injectable, UnauthorizedException } from "@nestjs/common";
 import { timingSafeEqual } from "node:crypto";
 import { Reflector } from "@nestjs/core";
 import type { FastifyRequest } from "fastify";
 import { config } from "../config.js";
-import { PUBLIC_ROUTE, SKIP_CSRF } from "../common/decorators.js";
+import { LIVE_ACCOUNT_CONTROL, PUBLIC_ROUTE, SKIP_CSRF } from "../common/decorators.js";
 import type { RequestWithContext } from "../common/request.js";
 import { AuthService } from "./auth.service.js";
 import { InternalAgentDelegationService } from "./internal-agent-delegation.js";
+import { liveSessionExecutionEnvironment } from "./session-execution-environment.js";
+import { nativeSessionToken } from "./session-transport.js";
 
 export function signedCookie(request: FastifyRequest, name: string): string | undefined {
-  const encoded = request.cookies[name];
+  const encoded = request.cookies?.[name];
   if (!encoded) return undefined;
   const result = request.unsignCookie(encoded);
   return result.valid ? result.value : undefined;
+}
+
+function sessionCredential(request: FastifyRequest) {
+  const bearer = nativeSessionToken(request);
+  if (bearer && request.cookies?.[config().SESSION_COOKIE_NAME])
+    throw new UnauthorizedException("Present one session credential at a time.");
+  return bearer ? { token: bearer, transport: "bearer" as const }
+    : { token: signedCookie(request, config().SESSION_COOKIE_NAME), transport: "cookie" as const };
 }
 
 @Injectable()
@@ -20,7 +30,29 @@ export class SessionGuard implements CanActivate {
   constructor(@Inject(Reflector) private readonly reflector: Reflector, private readonly auth: AuthService,
     private readonly delegations: InternalAgentDelegationService) {}
   async canActivate(context: ExecutionContext): Promise<boolean> {
-    if (this.reflector.getAllAndOverride<boolean>(PUBLIC_ROUTE, [context.getHandler(), context.getClass()])) return true;
+    if (this.reflector.getAllAndOverride<boolean>(PUBLIC_ROUTE, [context.getHandler(), context.getClass()])) {
+      if (!this.reflector.getAllAndOverride<boolean>(LIVE_ACCOUNT_CONTROL, [context.getHandler(), context.getClass()])) return true;
+      const request = context.switchToHttp().getRequest<RequestWithContext>();
+      const credential = sessionCredential(request);
+      const rawToken = credential.token;
+      if (!rawToken) return true;
+      const identity = await this.auth.resolveSession(rawToken);
+      if (!identity) return true;
+      // A caller header is not evidence of Live. Even an unavailable selected
+      // Simulation must not reach an anonymous-looking credential/mail writer.
+      if (identity.executionEnvironmentView.mode === "simulation")
+        throw new ForbiddenException("App accounts and invitations are managed in Live. Return to Live before continuing.");
+      if (identity.publicDemo)
+        throw new ForbiddenException("This public demo is read-only. Sign in with your own account to continue.");
+      request.csrfToken = identity.csrfToken;
+      request.sessionTransport = credential.transport;
+      request.executionEnvironmentView = identity.executionEnvironmentView;
+      // Match the server-confirmed Live transport namespace without entering its
+      // campus domain scope: this account may be joining a different campus.
+      // Authentication/authority still comes from the invitation ceremony.
+      request.executionEnvironment = null;
+      return true;
+    }
     const request = context.switchToHttp().getRequest<RequestWithContext>();
     const simulatorToken = request.headers["x-thatcampus-simulator-token"];
     const simulatorUsername = request.headers["x-thatcampus-simulator-user"];
@@ -38,6 +70,9 @@ export class SessionGuard implements CanActivate {
       request.csrfToken = "hosted-campus-lab";
       request.internalAgentDelegation = true;
       request.hostedCampusSimulator = true;
+      const environment = liveSessionExecutionEnvironment(user.active_school_id);
+      request.executionEnvironment = environment.environment;
+      request.executionEnvironmentView = environment.view;
       return true;
     }
     const internalToken = request.headers["x-omnischool-agent-delegation"];
@@ -48,14 +83,34 @@ export class SessionGuard implements CanActivate {
       request.sessionHash = `agent:${delegation.requestId}`;
       request.csrfToken = "internal-agent-delegation";
       request.internalAgentDelegation = true;
+      const environment = liveSessionExecutionEnvironment(delegation.user.active_school_id);
+      request.executionEnvironment = environment.environment;
+      request.executionEnvironmentView = environment.view;
       return true;
     }
-    const identity = await this.auth.resolveSession(signedCookie(request, config().SESSION_COOKIE_NAME));
+    const credential = sessionCredential(request);
+    const identity = await this.auth.resolveSession(credential.token);
     if (!identity) throw new UnauthorizedException("Authentication credentials were not provided or have expired.");
     request.authUser = identity.user;
     request.sessionHash = identity.tokenHash;
     request.csrfToken = identity.csrfToken;
+    request.sessionTransport = credential.transport;
+    request.sessionExpiresAt = identity.expiresAt;
     request.publicDemo = identity.publicDemo;
+    request.executionEnvironment = identity.executionEnvironment;
+    request.executionEnvironmentView = identity.executionEnvironmentView;
+    const requestPath = request.url?.split("?", 1)[0] ?? "";
+    if (identity.executionEnvironmentView.mode === "simulation"
+      && identity.executionEnvironmentView.unavailable === true
+      && !requestPath.startsWith("/api/v1/auth/")
+      && !/^\/api\/v1\/schools\/[^/]+\/simulation(?:\/|$)/u.test(requestPath)) {
+      throw new GoneException({
+        message: "This Simulation is unavailable. Return to Live to continue.",
+        code: "simulation_environment_unavailable",
+        reason: identity.executionEnvironmentView.unavailable_reason,
+        run_id: identity.executionEnvironmentView.run_id,
+      });
+    }
     return true;
   }
 }
@@ -66,7 +121,8 @@ export class PublicDemoGuard implements CanActivate {
     const request = context.switchToHttp().getRequest<RequestWithContext>();
     if (!request.publicDemo || ["GET", "HEAD", "OPTIONS"].includes(request.method)) return true;
     const path = request.url.split("?", 1)[0];
-    if (path === "/api/v1/auth/demo-profile-switch/" || path === "/api/v1/auth/logout/") return true;
+    if (path === "/api/v1/auth/demo-profile-switch/" || path === "/api/v1/auth/native/demo-profile-switch/"
+      || path === "/api/v1/auth/logout/" || path === "/api/v1/auth/native/logout/") return true;
     throw new ForbiddenException("This public demo is read-only. Switch profiles to explore another workspace.");
   }
 }
@@ -78,6 +134,9 @@ export class CsrfGuard implements CanActivate {
     const request = context.switchToHttp().getRequest<RequestWithContext>();
     if (["GET", "HEAD", "OPTIONS"].includes(request.method)) return true;
     if (request.internalAgentDelegation) return true;
+    // Set only after SessionGuard resolves an explicitly presented native token.
+    // A caller-supplied header alone never disables cookie-session CSRF checks.
+    if (request.sessionTransport === "bearer") return true;
     if (this.reflector.getAllAndOverride<boolean>(SKIP_CSRF, [context.getHandler(), context.getClass()])) return true;
     const cookie = request.cookies.csrftoken;
     const header = request.headers["x-csrftoken"];

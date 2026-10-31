@@ -16,4 +16,5 @@ export class PeopleController {
   @Get("enrollment-options") options(@Req() req:AuthenticatedRequest,@Query("school_id") schoolId:string){return this.people.options(req.authUser,schoolId);}
   @Post("enrollment-reviews") @HttpCode(200) preview(@Req() req:AuthenticatedRequest){return this.people.preview(req,req.body);}
   @Post("enrollment-reviews/:id/commit") @HttpCode(200) commit(@Req() req:AuthenticatedRequest,@Param("id") id:string){return this.people.commit(req,id);}
+  @Post("guardian-links") @HttpCode(200) linkGuardian(@Req() req:AuthenticatedRequest){return this.people.linkGuardian(req,req.body);}
 }

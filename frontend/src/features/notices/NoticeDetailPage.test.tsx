@@ -10,7 +10,7 @@ vi.mock("./api", async (original) => {
   const actual = await original<typeof import("./api")>();
   return { ...actual, getNotice: vi.fn(), openNotice: vi.fn().mockResolvedValue({}) };
 });
-vi.mock("./NoticeShell", () => ({ NoticeShell: ({ children }: { children: ReactNode }) => <>{children}</> }));
+vi.mock("./NoticeShell", () => ({ NoticeShell: ({ children, backTo }: { children: ReactNode; backTo: string }) => <><a href={backTo}>Back to updates</a>{children}</> }));
 vi.mock("./NoticeResponsePanel", () => ({ NoticeResponsePanel: () => null }));
 vi.mock("./NoticeRecipientRow", () => ({ NoticeRecipientRow: () => null }));
 
@@ -107,6 +107,11 @@ describe("revision-aware notice opening", () => {
 });
 
 describe("notice exception attention navigation", () => {
+  it("preserves list paging through both Back and the draft editor", async () => {
+    showPrincipal({ ...detail(3), status: "draft", can_manage: true, recipient: undefined }, "/principal/notices/notice-1?view=draft&updates_page=3");
+    expect(await screen.findByRole("link", { name: "Edit" })).toHaveAttribute("href", "/principal/notices/notice-1/edit?view=draft&updates_page=3");
+    expect(screen.getByRole("link", { name: "Back to updates" })).toHaveAttribute("href", "/principal/notices?view=draft&updates_page=3");
+  });
   it("filters, highlights and focuses the recipient exceptions section", async () => {
     showPrincipal({
       ...detail(3),

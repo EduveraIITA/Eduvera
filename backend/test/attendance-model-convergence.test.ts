@@ -19,6 +19,8 @@ import { SchoolEventService } from "../src/school/school-event.service.js";
 const attendanceModelSource = readFileSync(new URL("../src/attendance-model/attendance-model.service.ts", import.meta.url), "utf8");
 const attendanceModelModuleSource = readFileSync(new URL("../src/attendance-model/attendance-model.module.ts", import.meta.url), "utf8");
 const campusModelCoreSource = readFileSync(new URL("../src/campus-model-core/campus-model-core.service.ts", import.meta.url), "utf8");
+const academicBridgeSource = readFileSync(new URL("../src/attendance/academic-participation-bridge.service.ts", import.meta.url), "utf8");
+const participationSource = readFileSync(new URL("../src/attendance/activity-attendance.service.ts", import.meta.url), "utf8");
 
 const ids = {
   school: "00000000-0000-4000-8000-000000000001",
@@ -137,6 +139,12 @@ describe("attendance Campus Model convergence", () => {
         domain_event_id: ids.domainEvent,
         subject: expect.objectContaining({ domain: "people", domain_id: ids.student, source_revision: 4 }),
         context: expect.objectContaining({ domain: "academic_structure", domain_id: ids.classSection, source_revision: 3 }),
+        contract_refs: {
+          subject_type: { namespace: "thatcampus.people", type_key: "student", version: 1 },
+          context_type: { namespace: "thatcampus.academic_structure", type_key: "class", version: 1 },
+          observation_schema: { namespace: "thatcampus.attendance", schema_key: "attendance.status_observed", version: 1 },
+          capability_manifest: { namespace: "thatcampus.attendance", capability_key: "attendance", version: 1 },
+        },
         payload: {
           attendance_status: "present",
           attendance_date: "2026-10-16",
@@ -270,21 +278,26 @@ describe("attendance Campus Model convergence", () => {
     expect(campusModelCoreSource).toContain("observation.state IN ('accepted','pending')");
   });
 
-  it("keeps scheduled attendance behind the narrow port and serializes QR writes with register lifecycle", () => {
-    expect(attendanceModelModuleSource).toContain("SchoolModule");
-    expect(attendanceModelModuleSource).toContain("CampusModelCoreModule");
-    expect(attendanceModelSource).toContain("OBSERVATION_INGRESS_PORT");
-    expect(attendanceModelSource).toContain("CAMPUS_MODEL_CORE_PORT");
-    expect(attendanceModelSource).toContain('commandType: "attendance.register.submit"');
-    expect(attendanceModelSource).toContain('commandType: "attendance.self_check_in.accept_automatically"');
-    expect(attendanceModelSource).toContain('commandType: `attendance.evidence.${input.decision}`');
+  it("prepares QR sources after the schedule and canonical participation locks", () => {
+    expect(attendanceModelSource).toContain('command_type: "attendance.qr.issue"');
     expect(attendanceModelSource).toContain("operating_rule_version_ref");
-    expect(attendanceModelSource).toContain("decision_idempotency_key");
     expect(attendanceModelModuleSource).toContain('sessions/:sessionId/evidence/:evidenceId/decision');
-    expect(attendanceModelSource).toContain("attendance-session:${row.session_id}");
-    expect(attendanceModelSource).toContain("this.sessionRow(db, row.session_id, true)");
-    expect(attendanceModelSource).toContain('lockedSession.state === "locked"');
-    expect(attendanceModelSource).toContain("attendance_session_evidence.state='accepted'");
-    expect(attendanceModelSource).not.toMatch(/(?:selectFrom|insertInto|updateTable)\(["']campus_model_/);
+    const qr = attendanceModelSource.slice(attendanceModelSource.indexOf("  async issueQr("), attendanceModelSource.indexOf("  async selfCheckIn("));
+    const prepared = qr.indexOf("this.academic.prepareSessionInTransaction");
+    const canonicalLock = qr.indexOf("FROM activity_attendance_registers");
+    const lifecycleRecheck = qr.indexOf("session=await this.sessionRow(db,sessionId)");
+    expect(prepared).toBeGreaterThan(0);
+    expect(canonicalLock).toBeGreaterThan(prepared);
+    expect(lifecycleRecheck).toBeGreaterThan(canonicalLock);
+    expect(qr.indexOf('command_type: "attendance.qr.issue"')).toBeGreaterThan(lifecycleRecheck);
+    expect(qr.slice(0, prepared)).not.toContain("pg_advisory_xact_lock");
+    const prepareSession = academicBridgeSource.slice(academicBridgeSource.indexOf("  async prepareSessionInTransaction("),
+      academicBridgeSource.indexOf("  async prepareSessionForParticipantInTransaction("));
+    expect(prepareSession.indexOf("await lockSchedule")).toBeLessThan(prepareSession.indexOf("pg_advisory_xact_lock"));
+    const mutate = participationSource.slice(participationSource.indexOf("  private async mutate("), participationSource.indexOf("      const access = await this.access"));
+    expect(mutate.indexOf("this.lockAcademicMutationSchedule")).toBeLessThan(mutate.indexOf("pg_advisory_xact_lock"));
+    expect(mutate.indexOf("pg_advisory_xact_lock")).toBeLessThan(mutate.indexOf("this.register(tx, schoolId, id, true)"));
+    // Canonical delegation is owned by attendance-runtime-ownership.test.ts;
+    // direct Core persistence is checked once by the global boundary test.
   });
 });

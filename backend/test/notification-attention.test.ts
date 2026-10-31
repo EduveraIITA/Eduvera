@@ -44,7 +44,7 @@ const departureSource = readFileSync(
 
 const base = {
   id: "10000000-0000-4000-a000-000000000001",
-  link: "/parent/results?student_id=30000000-0000-4000-a000-000000000003&assessment_id=50000000-0000-4000-a000-000000000005&publication_id=20000000-0000-4000-a000-000000000002",
+  link: "/areas/assessments/results?scope=dependent&student_id=30000000-0000-4000-a000-000000000003&assessment_id=50000000-0000-4000-a000-000000000005&publication_id=20000000-0000-4000-a000-000000000002",
   title: "Published update",
   body: "Open the record to review it.",
   read_at: null,
@@ -99,7 +99,7 @@ describe("typed notification attention", () => {
       module: "results",
       state: "new",
       source_id: base.attention_source_id,
-      href: `/parent/results?student_id=${base.attention_student_id}&assessment_id=${base.aggregate_id}&publication_id=${base.attention_source_id}&attention_notification_id=${base.id}`,
+      href: `/areas/assessments/results?scope=dependent&student_id=${base.attention_student_id}&assessment_id=${base.aggregate_id}&publication_id=${base.attention_source_id}&attention_notification_id=${base.id}`,
     });
   });
 
@@ -114,7 +114,7 @@ describe("typed notification attention", () => {
       studentId: base.attention_student_id,
     }, {
       ...base,
-      link: `/parent/departure?student_id=${base.attention_student_id}&date=2026-10-09&trip_id=${base.attention_source_id}`,
+      link: `/areas/departure/plan?scope=dependent&student_id=${base.attention_student_id}&date=2026-10-09&trip_id=${base.attention_source_id}`,
       attention_module: "departure",
       attention_source_kind: sourceKind,
       source_date: "2026-10-09",
@@ -140,7 +140,7 @@ describe("typed notification attention", () => {
     }, {
       ...base,
       read_at: "2026-10-13T10:05:00.000Z",
-      link: `/parent/departure?student_id=${base.attention_student_id}&date=2026-10-09&trip_id=${base.attention_source_id}`,
+      link: `/areas/departure/plan?scope=dependent&student_id=${base.attention_student_id}&date=2026-10-09&trip_id=${base.attention_source_id}`,
       attention_module: "departure",
       attention_source_kind: "transport_rider_exception",
       source_date: "2026-10-09",
@@ -181,7 +181,7 @@ describe("typed notification attention", () => {
       studentId: base.attention_student_id,
     }, {
       ...base,
-      link: `/parent/calendar?date=2026-10-14&calendar_change_id=${base.attention_source_id}`,
+      link: `/areas/timetable/calendar?scope=dependent&student_id=${base.attention_student_id}&date=2026-10-14&calendar_change_id=${base.attention_source_id}`,
       attention_module: "calendar",
       attention_source_kind: "calendar_change",
       source_date: "2026-10-14",
@@ -189,24 +189,24 @@ describe("typed notification attention", () => {
     });
 
     expect(item.href).toBe(
-      `/parent/calendar?date=2026-10-14&calendar_change_id=${base.attention_source_id}&attention_notification_id=${base.id}`,
+      `/areas/timetable/calendar?scope=dependent&student_id=${base.attention_student_id}&date=2026-10-14&calendar_change_id=${base.attention_source_id}&attention_notification_id=${base.id}`,
     );
   });
 
   it.each([
     ["attendance", "attendance_outcome", "2026-10-09", null, `/parent/attendance?student_id=${base.attention_student_id}&date=2026-10-09&attendance_record_id=${base.attention_source_id}&attendance_revision=2&attention_notification_id=${base.id}`],
-    ["events", "event_cancellation", null, null, `/parent/events/${base.attention_source_id}?student_id=${base.attention_student_id}&focus=status&event_revision=2&attention_notification_id=${base.id}`],
-    ["events", "event_withdrawal", null, base.aggregate_id, `/parent/events/${base.aggregate_id}?student_id=${base.attention_student_id}&focus=payment&withdrawal_id=${base.attention_source_id}&attention_notification_id=${base.id}`],
-    ["events", "event_refund", null, base.aggregate_id, `/parent/events/${base.aggregate_id}?student_id=${base.attention_student_id}&focus=payment&refund_id=${base.attention_source_id}&attention_notification_id=${base.id}`],
+    ["events", "event_cancellation", null, null, `/areas/events/calendar/${base.attention_source_id}?scope=dependent&student_id=${base.attention_student_id}&focus=status&event_revision=2&attention_notification_id=${base.id}`],
+    ["events", "event_withdrawal", null, base.aggregate_id, `/areas/events/calendar/${base.aggregate_id}?scope=dependent&student_id=${base.attention_student_id}&focus=payment&withdrawal_id=${base.attention_source_id}&attention_notification_id=${base.id}`],
+    ["events", "event_refund", null, base.aggregate_id, `/areas/events/calendar/${base.aggregate_id}?scope=dependent&student_id=${base.attention_student_id}&focus=payment&refund_id=${base.attention_source_id}&attention_notification_id=${base.id}`],
     ["fees", "fee_review_decision", null, base.aggregate_id, `/parent/fees?student_id=${base.attention_student_id}&view=reviews&review=${base.aggregate_id}&decision=${base.attention_source_id}&attention_notification_id=${base.id}`],
     ["leave", "guardian_leave_authority", null, null, `/parent/leave?student_id=${base.attention_student_id}&tab=apply&authority_change_id=${base.attention_source_id}&authority_revision=2&attention_notification_id=${base.id}`],
-    ["safeguarding", "restricted_care_update", null, null, `/teacher/safeguarding?section=cases&case=${base.attention_source_id}&case_revision=2&attention_notification_id=${base.id}`],
+    ["safeguarding", "restricted_care_update", null, null, `/areas/care/concerns?section=cases&case=${base.attention_source_id}&case_revision=2&attention_notification_id=${base.id}`],
     ["policies", "policy_publication", null, null, `/parent/policies?policy=${base.attention_source_id}&policy_revision=2&attention_notification_id=${base.id}`],
-    ["departure", "departure_request_decision", "2026-10-09", null, `/parent/departure?student_id=${base.attention_student_id}&date=2026-10-09&request_id=${base.attention_source_id}&request_revision=2&attention_notification_id=${base.id}`],
-    ["departure", "transport_trip_cancellation", "2026-10-09", null, `/parent/departure?student_id=${base.attention_student_id}&date=2026-10-09&trip_id=${base.attention_source_id}&trip_revision=2&attention_notification_id=${base.id}`],
-    ["departure", "transport_rider_exception", "2026-10-09", null, `/parent/departure?student_id=${base.attention_student_id}&date=2026-10-09&trip_id=${base.attention_source_id}&rider_revision=2&attention_notification_id=${base.id}`],
-    ["departure", "departure_handover_exception", "2026-10-09", null, `/parent/departure?student_id=${base.attention_student_id}&date=2026-10-09&plan_id=${base.attention_source_id}&plan_revision=2&attention_notification_id=${base.id}`],
-    ["departure", "departure_plan_exception", "2026-10-09", null, `/parent/departure?student_id=${base.attention_student_id}&date=2026-10-09&plan_id=${base.attention_source_id}&plan_revision=2&attention_notification_id=${base.id}`],
+    ["departure", "departure_request_decision", "2026-10-09", null, `/areas/departure/plan?scope=dependent&student_id=${base.attention_student_id}&date=2026-10-09&request_id=${base.attention_source_id}&request_revision=2&attention_notification_id=${base.id}`],
+    ["departure", "transport_trip_cancellation", "2026-10-09", null, `/areas/departure/plan?scope=dependent&student_id=${base.attention_student_id}&date=2026-10-09&trip_id=${base.attention_source_id}&trip_revision=2&attention_notification_id=${base.id}`],
+    ["departure", "transport_rider_exception", "2026-10-09", null, `/areas/departure/plan?scope=dependent&student_id=${base.attention_student_id}&date=2026-10-09&trip_id=${base.attention_source_id}&rider_revision=2&attention_notification_id=${base.id}`],
+    ["departure", "departure_handover_exception", "2026-10-09", null, `/areas/departure/plan?scope=dependent&student_id=${base.attention_student_id}&date=2026-10-09&plan_id=${base.attention_source_id}&plan_revision=2&attention_notification_id=${base.id}`],
+    ["departure", "departure_plan_exception", "2026-10-09", null, `/areas/departure/plan?scope=dependent&student_id=${base.attention_student_id}&date=2026-10-09&plan_id=${base.attention_source_id}&plan_revision=2&attention_notification_id=${base.id}`],
   ] as const)("maps the exact %s/%s destination", (module, kind, sourceDate, aggregateId, expectedHref) => {
     const item = mapNotificationAttention({
       portal: kind === "restricted_care_update" ? "teacher" : "parent",
@@ -258,7 +258,7 @@ describe("typed notification attention", () => {
       ["event_cancellation", "campus_events"],
       ["event_withdrawal", "campus_event_participant_withdrawals"],
       ["event_refund", "fee_refunds"],
-      ["fee_review_decision", "fee_review_decisions"],
+      ["fee_review_decision", "fee_native_review_decisions"],
       ["guardian_leave_authority", "guardian_leave_authority_commands"],
       ["restricted_care_update", "restricted_care_cases"],
       ["policy_publication", "institution_policy_versions"],

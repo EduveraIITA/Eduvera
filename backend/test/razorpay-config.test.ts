@@ -12,12 +12,12 @@ beforeEach(() => {
   for (const name of ["RAZORPAY_ENABLED", "RAZORPAY_KEY_ID", "RAZORPAY_KEY_SECRET"]) vi.stubEnv(name, undefined);
 });
 afterEach(() => vi.unstubAllEnvs());
-it("enables the requested Stage sandbox defaults without enabling demo logins", () => {
+it("never supplies embedded sandbox credentials or implicit connector activation", () => {
   const value = loadConfig();
-  expect(value.RAZORPAY_ENABLED).toBe(true);
+  expect(value.RAZORPAY_ENABLED).toBe(false);
   expect(value.DEMO_MODE).toBe(false);
-  expect(value.RAZORPAY_KEY_ID.startsWith("rzp_test_")).toBe(true);
-  expect(value.RAZORPAY_KEY_SECRET.length).toBeGreaterThan(10);
+  expect(value.RAZORPAY_KEY_ID).toBe("");
+  expect(value.RAZORPAY_KEY_SECRET).toBe("");
 });
 it("allows environment overrides and explicit disabling", () => {
   vi.stubEnv("RAZORPAY_ENABLED", "false");
@@ -33,6 +33,7 @@ it("does not install credentials outside Stage", () => {
   expect(loadConfig().RAZORPAY_KEY_SECRET).toBe(""); expect(loadConfig().RAZORPAY_ENABLED).toBe(false);
 });
 it("rejects live keys", () => {
+  vi.stubEnv("RAZORPAY_ENABLED", "true");
   vi.stubEnv("RAZORPAY_KEY_ID", "rzp_live_forbidden");
   expect(() => loadConfig()).toThrow(/Razorpay sandbox requires/);
 });

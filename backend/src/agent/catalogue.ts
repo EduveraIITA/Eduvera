@@ -26,6 +26,14 @@ import { principalReportInput, principalReviewInput } from '../analytics/agent-r
 import { chartChoice } from './charts.js';
 import { capabilityManifest, humanOnly, modelToolDescription, monitored, observed, reviewed, type CapabilityContract } from './capability-contract.js';
 import {feeModelProjection} from './fee-projection.js';
+import { messageConversationsHref } from '../chat/chat-links.js';
+import {
+  assessmentResultsHref,
+  assessmentWorkHref,
+  eventWorkHref,
+  relationshipEventHref,
+  type RelationshipScope,
+} from '../workspace/canonical-application-links.js';
 
 export type Portal = 'principal' | 'teacher' | 'parent' | 'student';
 export interface AgentScope {
@@ -67,6 +75,77 @@ export function screenPath(scope: AgentScope, page: string, query: Record<string
     if (value !== undefined && value !== null && value !== '') params.set(key, String(value));
   }
   return `/${scope.portal}${page ? `/${page}` : ''}${params.size ? `?${params.toString()}` : ''}`;
+}
+/**
+ * Analytics still uses a legacy audience discriminator at its API boundary. The
+ * destination is always the neutral Insights workspace; its manifest rechecks
+ * the contributed relationship or responsibility before rendering any data.
+ */
+export function insightsScreenPath(scope: AgentScope, topic = '', query: Record<string, unknown> = {}) {
+  const params = new URLSearchParams();
+  const relationship = relationshipScope(scope);
+  params.set('scope', relationship ?? (scope.portal === 'principal' ? 'institution' : 'assigned'));
+  if (relationship && scope.studentId) params.set('student_id', scope.studentId);
+  for (const [key, value] of Object.entries(query)) {
+    if (typeof value === 'string' && value !== '') params.set(key, value);
+    else if (typeof value === 'number' || typeof value === 'boolean') params.set(key, String(value));
+  }
+  return `/areas/insights${topic ? `/${topic}` : ''}?${params.toString()}`;
+}
+function messageScreenPath(scope: AgentScope, conversationId?: string | null) {
+  const relationshipScope = scope.studentId && (scope.portal === 'parent' || scope.portal === 'student')
+    ? (scope.portal === 'parent' ? 'dependent' : 'self')
+    : null;
+  return messageConversationsHref({
+    ...(conversationId ? { conversationId } : {}),
+    relationshipScope,
+    studentId: relationshipScope ? scope.studentId : null,
+  });
+}
+function relationshipScope(scope: AgentScope): RelationshipScope | null {
+  if (!scope.studentId) return null;
+  if (scope.portal === 'parent') return 'dependent';
+  if (scope.portal === 'student') return 'self';
+  return null;
+}
+function assessmentScreenPath(scope: AgentScope, assessmentId?: string | null) {
+  const relationship = relationshipScope(scope);
+  if (relationship && scope.studentId) {
+    return assessmentResultsHref(relationship, scope.studentId, [['assessment_id', assessmentId]]);
+  }
+  const surface = scope.accountRole === 'admin' || scope.permissions.includes('assessments.moderate')
+    ? 'manage'
+    : 'assigned';
+  return assessmentWorkHref(surface, assessmentId);
+}
+function eventScreenPath(scope: AgentScope, eventId?: string | null) {
+  const relationship = relationshipScope(scope);
+  if (relationship && scope.studentId) return relationshipEventHref(relationship, scope.studentId, eventId);
+  const surface = scope.accountRole === 'admin' || scope.permissions.includes('events.manage')
+    ? 'manage'
+    : 'assigned';
+  return eventWorkHref(surface, eventId);
+}
+function departureScreenPath(scope: AgentScope, tripId?: string | null, query: Record<string, unknown> = {}) {
+  const params = new URLSearchParams();
+  const relationship = relationshipScope(scope);
+  if (relationship) params.set('scope', relationship);
+  if (relationship && scope.studentId) params.set('student_id', scope.studentId);
+  for (const [key, value] of Object.entries(query)) {
+    if (typeof value === 'string' && value !== '') params.set(key, value);
+    else if (typeof value === 'number' || typeof value === 'boolean') params.set(key, String(value));
+  }
+  const base = relationship
+    ? '/areas/departure/plan'
+    : scope.accountRole === 'admin' || scope.permissions.includes('departure.manage')
+      ? '/areas/departure/manage'
+      : '/areas/departure/operate';
+  const path = tripId && base.endsWith('/manage')
+    ? `${base}/journeys/${encodeURIComponent(tripId)}`
+    : tripId && base.endsWith('/operate')
+      ? `${base}/${encodeURIComponent(tripId)}`
+      : base;
+  return `${path}${params.size ? `?${params.toString()}` : ''}`;
 }
 const catalogue: Capability[] = [];
 function read(name: string, title: string, domain: string, portals: Portal[], schema: z.ZodObject, path: string | ((i: any, s: AgentScope) => string), page: string | ((i: any, s: AgentScope) => string), query: (i: any, s: AgentScope) => Record<string, unknown> = i => i, permission?: string) {
@@ -116,8 +195,8 @@ for (const portal of all) {
 }
 read('my_attendance', 'Recorded attendance, minimum, and subject attendance', 'attendance', family, empty, (_, s) => `/screens/${s.portal}/attendance`, 'attendance', (_, s) => familyQuery(s));
 read('subject_attendance', 'Attendance by subject', 'attendance', family, empty, '/students/attendance/subjects', 'attendance', (_, s) => familyQuery(s));
-read('class_registers', 'Classes, class IDs and attendance submission status for a date', 'attendance', staff, dateInput, '/screens/teacher/home', (_,s)=>screenPath(s,s.portal==='principal'?'attendance':'classes'), i=>i, 'attendance.view');
-read('attendance_register', 'Class attendance register, roster and current revision; find the class in class_registers first', 'attendance', staff, z.object({ date: date.optional(), class_section_id: uuid }).strict(), '/screens/teacher/attendance', 'attendance', i => i, 'attendance.view');
+read('class_registers', 'Classes, class IDs and attendance submission status for a date', 'attendance', staff, dateInput, '/areas/people/classes', i => `/areas/people/classes${i.date ? `?date=${encodeURIComponent(i.date)}` : ''}`, i=>i, 'attendance.view');
+read('attendance_register', 'Class attendance register, roster and current revision; find the class in class_registers first', 'attendance', staff, z.object({ date: date.optional(), class_section_id: uuid }).strict(), '/screens/teacher/attendance', i => `/areas/attendance/registers?class_section_id=${encodeURIComponent(i.class_section_id)}${i.date ? `&date=${encodeURIComponent(i.date)}` : ''}`, i => i, 'attendance.view');
 read('student_attendance', 'Find one student by name or admission number and check their attendance for a date. Omit date for today. Returns choices if ambiguous.', 'attendance', staff, studentAttendanceSearch, '/teacher/attendance/student', 'attendance', i=>i, 'attendance.view');
 catalogue.find(cap=>cap.name==='student_attendance')!.title='Student attendance';
 write('record_student_attendance', 'Record one student’s attendance', 'attendance', staff, studentAttendanceInput, '/teacher/attendance/student', 'attendance', { permission:'attendance.record' });
@@ -145,7 +224,7 @@ singleAttendance.prepare = {
       ...(args.reason?{reason:args.reason}:{}), ...(args.remarks!==undefined?{remarks:args.remarks}:{}) } };
   },
 };
-read('class_updates', 'Recent notes, comments and changes for assigned classes', 'attendance', staff, dateInput, '/screens/teacher/class-updates', 'classes', i => i, 'attendance.view');
+read('class_updates', 'Recent notes, comments and changes for assigned classes', 'attendance', staff, dateInput, '/areas/people/classes/updates', i => `/areas/people/classes${i.date ? `?date=${encodeURIComponent(i.date)}` : ''}`, i => i, 'attendance.view');
 read('register_history', 'Attendance register change history', 'attendance', staff, z.object({ id: uuid, date }).strict(), i => `/attendance-registers/${i.id}/history`, 'attendance', i => ({ date: i.date }), 'attendance.view');
 write('record_attendance', 'Submit class attendance', 'attendance', staff, z.object({ class_section_id: uuid, date, expected_revision: z.number().int().min(0), reason: z.string().min(3).max(500).optional(), records: z.array(z.object({ student_id: uuid, status: z.enum(['present','absent','late','excused','half_day']), remarks: z.string().max(500).optional() }).strict()).min(1).max(100) }), '/teacher/attendance/bulk', 'attendance', { permission: 'attendance.record' });
 catalogue.find(cap=>cap.name==='record_attendance')!.description='Prepare a whole-class attendance register only when the current user message explicitly supplies the class-wide observation and every status. Never reuse prior rejected requests or invent missing statuses. Creates a preview, not a completed action.';
@@ -178,35 +257,35 @@ read('followup_details','Read an attendance follow-up and its revision','followu
 write('create_followup','Ask a guardian about a recorded attendance concern','attendance',staff,followupInput,'/coordination/follow-ups',(_,s)=>screenPath(s,s.portal==='principal'?'followups':'attendance'),{permission:'followups.manage'});
 write('reply_to_followup','Send a guardian reply to an attendance follow-up','followups',['parent'],z.object({context:z.literal('guardian').default('guardian'),kind:z.literal('guardian_reply').default('guardian_reply'),body:z.string().min(3).max(1000),channel:z.literal('app').default('app'),expected_revision:z.number().int().positive(),idempotency_key:uuid}),i=>`/coordination/follow-ups/${i.id}/entries`,'attendance',{id:true});
 
-read('conversations', 'School messages and conversation IDs', 'messages', all, empty, '/chat/conversations', 'messages', () => ({}), 'messages.view');
-read('message_recipients', 'Permitted recipients for a new school conversation', 'messages', all, empty, '/chat/recipients', 'messages', (_,s) => familyQuery(s), 'messages.view');
-read('conversation_messages', 'Read messages in a permitted conversation', 'messages', all, idInput, i => `/chat/conversations/${i.id}/messages`, (i,s) => screenPath(s, 'messages', { conversation: i.id }), () => ({}), 'messages.view');
-write('create_conversation', 'Start a school conversation with the selected recipient', 'messages', all, z.object({ school_id: uuid, recipient_id: uuid, student_id: uuid.optional(), title: z.string().max(180) }), '/chat/conversations', 'messages', { student: true, permission: 'messages.send' });
-write('send_message', 'Send this exact message to the selected conversation', 'messages', all, z.object({ body: z.string().trim().min(1).max(4000), reply_to_id: uuid.optional() }), i => `/chat/conversations/${i.id}/messages`, (i,s) => screenPath(s, 'messages', { conversation: i.id }), { id: true, permission: 'messages.send' });
-write('edit_message','Edit my own message in a conversation','messages',all,z.object({conversation_id:uuid,body:z.string().trim().min(1).max(4000)}),i=>`/chat/conversations/${i.body.conversation_id}/messages/${i.id}`,(i,s)=>screenPath(s,'messages',{conversation:i.body.conversation_id}),{id:true,method:'PATCH',permission:'messages.send'});
-write('mark_conversation_read','Mark this conversation read','messages',all,empty,i=>`/chat/conversations/${i.id}/read`,(i,s)=>screenPath(s,'messages',{conversation:i.id}),{id:true,permission:'messages.view'});
-write('create_message_group','Create a school message group with the specified members','messages',staff,z.object({title:z.string().trim().min(3).max(180),group_type:z.enum(['student_group','parent_group','activity','staff','child_support','announcement']),member_ids:z.array(uuid).min(1).max(200),school_id:uuid,student_id:uuid.optional()}),'/chat/groups','messages',{permission:'groups.create'});
+read('conversations', 'School messages and conversation IDs', 'messages', all, empty, '/chat/conversations', (_,s) => messageScreenPath(s), () => ({}), 'messages.view');
+read('message_recipients', 'Permitted recipients for a new school conversation', 'messages', all, empty, '/chat/recipients', (_,s) => messageScreenPath(s), (_,s) => familyQuery(s), 'messages.view');
+read('conversation_messages', 'Read messages in a permitted conversation', 'messages', all, idInput, i => `/chat/conversations/${i.id}/messages`, (i,s) => messageScreenPath(s, i.id), () => ({}), 'messages.view');
+write('create_conversation', 'Start a school conversation with the selected recipient', 'messages', all, z.object({ school_id: uuid, recipient_id: uuid, student_id: uuid.optional(), title: z.string().max(180) }), '/chat/conversations', (_,s) => messageScreenPath(s), { student: true, permission: 'messages.send' });
+write('send_message', 'Send this exact message to the selected conversation', 'messages', all, z.object({ body: z.string().trim().min(1).max(4000), reply_to_id: uuid.optional() }), i => `/chat/conversations/${i.id}/messages`, (i,s) => messageScreenPath(s, i.id), { id: true, permission: 'messages.send' });
+write('edit_message','Edit my own message in a conversation','messages',all,z.object({conversation_id:uuid,body:z.string().trim().min(1).max(4000)}),i=>`/chat/conversations/${i.body.conversation_id}/messages/${i.id}`,(i,s)=>messageScreenPath(s,i.body.conversation_id),{id:true,method:'PATCH',permission:'messages.send'});
+write('mark_conversation_read','Mark this conversation read','messages',all,empty,i=>`/chat/conversations/${i.id}/read`,(i,s)=>messageScreenPath(s,i.id),{id:true,permission:'messages.view'});
+write('create_message_group','Create a school message group with the specified members','messages',staff,z.object({title:z.string().trim().min(3).max(180),group_type:z.enum(['student_group','parent_group','activity','staff','child_support','announcement']),member_ids:z.array(uuid).min(1).max(200),school_id:uuid,student_id:uuid.optional()}),'/chat/groups',(_,s)=>messageScreenPath(s),{permission:'groups.create'});
 read('notifications', 'My recent notifications; use next_cursor to read older items', 'notifications', all, z.object({limit:z.number().int().min(1).max(40).default(15),cursor:z.string().max(512).optional()}).strict(), '/notifications', 'notifications', i => i);
 write('read_notification', 'Mark notification read', 'notifications', all, empty, i => `/notifications/${i.id}/read`, 'notifications', { id: true });
 
-read('events', 'School events, activities and class tests', 'events', all, z.object({ status: z.enum(['draft','published','cancelled','completed']).optional() }).strict(), '/campus-events', 'events', (i,s) => ({ ...i, school_id: s.schoolId, ...familyQuery(s) }), 'events.view');
-read('event_catalogue', 'Options for planning a school event', 'events', staff, empty, '/campus-events/catalog', 'events', (_,s) => ({ school_id: s.schoolId }), 'events.view');
-read('event_details', 'Event details, sessions, participation and revision', 'events', all, idInput, i => `/campus-events/${i.id}`, (i,s) => screenPath(s, `events/${i.id}`), (_,s) => ({ school_id: s.schoolId, ...familyQuery(s) }), 'events.view');
-write('create_event', 'Prepare a school event draft', 'events', staff, event.createEventSchema, '/campus-events', 'events', { permission: 'events.manage' });
-write('save_event', 'Save event draft', 'events', staff, event.saveEventSchema, i => `/campus-events/${i.id}/save`, (i,s) => screenPath(s, `events/${i.id}`), { id: true, permission: 'events.manage' });
-for (const action of ['publish','complete','discard'] as const) write(`${action}_event`, `${action} school event`, 'events', staff, event.eventActionSchema, i => `/campus-events/${i.id}/${action}`, (i,s) => screenPath(s, `events/${i.id}`), { id: true, permission: 'events.manage' });
-write('cancel_event', 'Cancel school event with a reason', 'events', staff, event.cancelEventSchema, i => `/campus-events/${i.id}/cancel`, (i,s) => screenPath(s, `events/${i.id}`), { id: true, permission: 'events.manage' });
-write('event_rsvp', 'Respond to event invitation', 'events', family, event.rsvpSchema, i => `/campus-events/${i.id}/rsvp`, (i,s) => screenPath(s, `events/${i.id}`), { id: true, student: true });
+read('events', 'School events, activities and class tests', 'events', all, z.object({ status: z.enum(['draft','published','cancelled','completed']).optional() }).strict(), '/campus-events', (_,s) => eventScreenPath(s), (i,s) => ({ ...i, school_id: s.schoolId, ...familyQuery(s) }), 'events.view');
+read('event_catalogue', 'Options for planning a school event', 'events', staff, empty, '/campus-events/catalog', (_,s) => eventScreenPath(s), (_,s) => ({ school_id: s.schoolId }), 'events.view');
+read('event_details', 'Event details, sessions, participation and revision', 'events', all, idInput, i => `/campus-events/${i.id}`, (i,s) => eventScreenPath(s, i.id), (_,s) => ({ school_id: s.schoolId, ...familyQuery(s) }), 'events.view');
+write('create_event', 'Prepare a school event draft', 'events', staff, event.createEventSchema, '/campus-events', (_,s) => eventScreenPath(s), { permission: 'events.manage' });
+write('save_event', 'Save event draft', 'events', staff, event.saveEventSchema, i => `/campus-events/${i.id}/save`, (i,s) => eventScreenPath(s, i.id), { id: true, permission: 'events.manage' });
+for (const action of ['publish','complete','discard'] as const) write(`${action}_event`, `${action} school event`, 'events', staff, event.eventActionSchema, i => `/campus-events/${i.id}/${action}`, (i,s) => eventScreenPath(s, i.id), { id: true, permission: 'events.manage' });
+write('cancel_event', 'Cancel school event with a reason', 'events', staff, event.cancelEventSchema, i => `/campus-events/${i.id}/cancel`, (i,s) => eventScreenPath(s, i.id), { id: true, permission: 'events.manage' });
+write('event_rsvp', 'Respond to event invitation', 'events', family, event.rsvpSchema, i => `/campus-events/${i.id}/rsvp`, (i,s) => eventScreenPath(s, i.id), { id: true, student: true });
 
-read('assessments', 'Assessment cycles, assessments and permitted references', 'assessments', staff, empty, (_,s) => schoolPath(s,'assessments/workspace'), 'assessments', () => ({}), 'assessments.view');
-read('assessment_details', 'Assessment details, result register and revision', 'assessments', staff, idInput, (i,s) => schoolPath(s,`assessments/${i.id}`), (i,s) => screenPath(s,'assessments',{ assessment: i.id }), () => ({}), 'assessments.view');
-read('my_results', 'Published subject marks and assessment results', 'assessments', family, empty, (_,s) => schoolPath(s,'assessments/family'), 'results', (_,s) => familyQuery(s));
-write('create_assessment_cycle', 'Create assessment cycle', 'assessments', ['principal'], cycleInput, (_,s) => schoolPath(s,'assessments/cycles'), 'assessments');
-write('create_assessment', 'Create assessment with examiner and moderator', 'assessments', ['principal'], assessmentInput, (_,s) => schoolPath(s,'assessments'), 'assessments');
-write('save_marks', 'Save explicitly supplied marks and feedback', 'assessments', staff, resultsInput, (i,s) => schoolPath(s,`assessments/${i.id}/results`), (i,s) => screenPath(s,'assessments',{ assessment: i.id }), { id: true, permission: 'assessments.mark' });
-for (const action of ['schedule','open-marking','submit','approve','return','publish','cancel'] as const) write(`${action.replace('-','_')}_assessment`, `${action} assessment register`, 'assessments', staff, actionInput, (i,s) => schoolPath(s,`assessments/${i.id}/actions/${action}`), (i,s) => screenPath(s,'assessments',{ assessment: i.id }), { id: true, permission: 'assessments.view' });
+read('assessments', 'Assessment cycles, assessments and permitted references', 'assessments', staff, empty, (_,s) => schoolPath(s,'assessments/workspace'), (_,s) => assessmentScreenPath(s), () => ({}), 'assessments.view');
+read('assessment_details', 'Assessment details, result register and revision', 'assessments', staff, idInput, (i,s) => schoolPath(s,`assessments/${i.id}`), (i,s) => assessmentScreenPath(s, i.id), () => ({}), 'assessments.view');
+read('my_results', 'Published subject marks and assessment results', 'assessments', family, empty, (_,s) => schoolPath(s,'assessments/family'), (_,s) => assessmentScreenPath(s), (_,s) => familyQuery(s));
+write('create_assessment_cycle', 'Create assessment cycle', 'assessments', ['principal'], cycleInput, (_,s) => schoolPath(s,'assessments/cycles'), (_,s) => assessmentScreenPath(s));
+write('create_assessment', 'Create assessment with examiner and moderator', 'assessments', ['principal'], assessmentInput, (_,s) => schoolPath(s,'assessments'), (_,s) => assessmentScreenPath(s));
+write('save_marks', 'Save explicitly supplied marks and feedback', 'assessments', staff, resultsInput, (i,s) => schoolPath(s,`assessments/${i.id}/results`), (i,s) => assessmentScreenPath(s, i.id), { id: true, permission: 'assessments.mark' });
+for (const action of ['schedule','open-marking','submit','approve','return','publish','cancel'] as const) write(`${action.replace('-','_')}_assessment`, `${action} assessment register`, 'assessments', staff, actionInput, (i,s) => schoolPath(s,`assessments/${i.id}/actions/${action}`), (i,s) => assessmentScreenPath(s, i.id), { id: true, permission: 'assessments.view' });
 read('report_cards', 'Report-card schemes and releases', 'reports', staff, empty, (_,s) => schoolPath(s,'academic-reports/workspace'), 'report-cards', () => ({}), 'assessments.view');
-read('my_report_cards', 'Published report cards', 'reports', family, empty, (_,s) => schoolPath(s,'academic-reports/family'), 'results', (_,s) => familyQuery(s));
+read('my_report_cards', 'Published report cards', 'reports', family, empty, (_,s) => schoolPath(s,'academic-reports/family'), (_,s) => assessmentScreenPath(s), (_,s) => familyQuery(s));
 read('report_scheme', 'Report-card scheme and subject components', 'reports', staff, idInput, (i,s) => schoolPath(s,`academic-reports/schemes/${i.id}`), 'report-cards', () => ({}), 'assessments.view');
 read('report_release', 'Report-card release details and revision', 'reports', staff, idInput, (i,s) => schoolPath(s,`academic-reports/batches/${i.id}`), (i,s) => screenPath(s,'report-cards',{ batch: i.id }), () => ({}), 'assessments.view');
 write('create_report_scheme', 'Create report-card scheme', 'reports', ['principal'], schemeInput, (_,s) => schoolPath(s,'academic-reports/schemes'), 'report-cards');
@@ -217,10 +296,10 @@ write('generate_report_cards', 'Generate a report-card release', 'reports', ['pr
 write('report_comment', 'Save a report-card remark', 'reports', staff, z.object({ ...commentInput.shape, student_id: uuid }), (i,s) => schoolPath(s,`academic-reports/batches/${i.id}/students/${i.body.student_id}/comments`), 'report-cards', { id: true, method: 'PUT', permission: 'reports.comment' });
 for(const action of ['submit','approve','return','publish'] as const) write(`${action}_report_cards`,`${action} report-card release`,'reports',['principal'],revisionInput,(i,s)=>schoolPath(s,`academic-reports/batches/${i.id}/actions/${action}`),(i,s)=>screenPath(s,'report-cards',{batch:i.id}),{id:true});
 
-read('insights', 'Attendance, results and school analytics with denominators', 'insights', all, z.object({ period:z.enum(['term','30','90']).optional(),class_id:uuid.optional() }).strict(), (_,s) => schoolPath(s,`analytics/${s.portal}`), (i,s)=>screenPath(s,'insights',i), (i,s) => ({ ...i, ...familyQuery(s) }), 'attendance.view');
-read('principal_analytics','Attendance and results analysis','insights',['principal'],principalReportInput,(_,s)=>schoolPath(s,'analytics/principal/report'),'insights');
+read('insights', 'Attendance, results and school analytics with denominators', 'insights', all, z.object({ period:z.enum(['term','30','90']).optional(),class_id:uuid.optional() }).strict(), (_,s) => schoolPath(s,`analytics/${s.portal}`), (i,s)=>insightsScreenPath(s,'',i), (i,s) => ({ ...i, ...familyQuery(s) }), 'attendance.view');
+read('principal_analytics','Attendance and results analysis','insights',['principal'],principalReportInput,(_,s)=>schoolPath(s,'analytics/principal/report'),(i,s)=>insightsScreenPath(s,'',i));
 catalogue.find(cap=>cap.name==='principal_analytics')!.description='Analyze a student by name/admission number, class or whole institution: recorded attendance, subject percentages and published marks. Use the same period in separate calls to compare learner, class and school; never substitute school data for a learner. Ambiguous names return choices. Pagination never changes aggregate totals.';
-read('principal_review','Principal operational review','insights',['principal'],principalReviewInput,(_,s)=>schoolPath(s,'principal-insights/review'),(i,s)=>screenPath(s,`insights/${({attendance:'review',learning:'learning-review',followups:'followups',coverage:'operations',fees:'finance'} as Record<string,string>)[i.topic]}`,{date:i.date,insight_days:i.days,class:i.class_section_id,insight_threshold:i.threshold}));
+read('principal_review','Principal operational review','insights',['principal'],principalReviewInput,(_,s)=>schoolPath(s,'principal-insights/review'),(i,s)=>insightsScreenPath(s,({attendance:'review',learning:'learning-review',followups:'followups',coverage:'operations',fees:'finance'} as Record<string,string>)[i.topic],{date:i.date,insight_days:i.days,class:i.class_section_id,insight_threshold:i.threshold}));
 catalogue.find(cap=>cap.name==='principal_review')!.description='Principal decision review: attendance declines and recording gaps, published learning results, open follow-ups, next-week cover/deadline conflicts or aggregate fee ageing. Read-only evidence, not automatic decisions or communication.';
 for(const name of ['insights','principal_analytics']) {
   const capability=catalogue.find(cap=>cap.name===name)!;
@@ -228,7 +307,7 @@ for(const name of ['insights','principal_analytics']) {
   const request=capability.request!;
   capability.request=(input,scope)=>{const query={...input};delete query.chart;return request(query,scope);};
 }
-read('school_insights', 'Principal attention and decision-support indicators', 'insights', ['principal'], empty, (_,s) => schoolPath(s,'principal-insights'), 'insights', () => ({}));
+read('school_insights', 'Principal attention and decision-support indicators', 'insights', ['principal'], empty, (_,s) => schoolPath(s,'principal-insights'), (_,s) => insightsScreenPath(s), () => ({}));
 read('staff_workspace', 'Staff directory, responsibilities, leave and cover', 'staff', staff, empty, (_,s) => schoolPath(s,'staff/workspace'), (_,s) => screenPath(s,s.portal === 'teacher' ? 'responsibilities' : 'staff'), () => ({}));
 write('create_staff_profile','Create a staff profile','staff',['principal'],profileInput,(_,s)=>schoolPath(s,'staff/profiles'),'staff');
 write('create_staff_leave_policy','Create a staff leave policy','staff',['principal'],policyInput,(_,s)=>schoolPath(s,'staff/leave-policies'),'staff');
@@ -264,15 +343,15 @@ write('report_fee_payment','Report a payment already made for school verificatio
 write('query_fee_charge','Ask the school about an invoice charge','fees',['parent'],feeRequestSchema.options[1],(i,s)=>schoolPath(s,`fees/invoices/${i.id}/reviews`),'fees',{id:true});
 write('review_fee_submission','Respond to a fee query or verify an explicitly checked payment','fees',staff,feeDecisionSchema,(i,s)=>schoolPath(s,`fees/reviews/${i.id}/decision`),'fees',{id:true,permission:'fees.manage'});
 read('published_policies', 'Published school policies', 'policies', all, empty, (_,s) => schoolPath(s,'governance/policies'), (_,s) => screenPath(s,s.portal === 'principal' ? 'governance' : 'policies'), () => ({}));
-read('my_transport', 'My child journey, approved arrangement and ride state', 'transport', family, empty, (_,s) => `/departure/${s.portal === 'student' ? 'student' : 'family'}`, 'departure', (_,s) => familyQuery(s));
-read('assigned_journeys', 'My assigned transport rides and duty status', 'transport', staff, empty, '/departure/collector', (_,s) => screenPath(s,s.portal === 'teacher' ? 'transport' : 'departure'), () => ({}), 'departure.collect');
-read('transport_workspace', 'School routes, trips and departure requests', 'transport', ['principal'], empty, (_,s) => `/departure/schools/${s.schoolId}/workspace`, 'departure', () => ({}), 'departure.manage');
-read('transport_trip','Planned journey, roster and duty revision','transport',['principal'],idInput,(i,s)=>`/departure/schools/${s.schoolId}/trips/${i.id}`,(i,s)=>screenPath(s,`departure/journeys/${i.id}`),()=>({}),'departure.manage');
-write('plan_transport_trip','Plan a dated ride on an existing route; does not start the bus','transport',['principal'],z.object({route_id:uuid,service_date:date,direction:z.enum(['to_institution','from_institution']),scheduled_departure_time:z.string().regex(/^([01]\d|2[0-3]):[0-5]\d$/),assigned_collector_user_id:uuid,backup_collector_user_id:uuid.nullable().optional()}),(_,s)=>`/departure/schools/${s.schoolId}/trips`,'departure',{permission:'departure.manage'});
-write('plan_transport_service','Schedule recurring rides on an existing route','transport',['principal'],z.object({route_id:uuid,label:z.string().min(2).max(120),direction:z.enum(['to_institution','from_institution']),weekdays:z.array(z.number().int().min(1).max(7)).min(1).max(7),departure_time:z.string().regex(/^([01]\d|2[0-3]):[0-5]\d$/),primary_collector_user_id:uuid,backup_collector_user_id:uuid.nullable().optional(),valid_from:date,valid_until:date.nullable().optional()}),(_,s)=>`/departure/schools/${s.schoolId}/service-patterns`,'departure',{permission:'departure.manage'});
-write('generate_transport_trips','Prepare dated rides from an existing service schedule, up to six weeks','transport',['principal'],z.object({from_date:date,to_date:date,pattern_id:uuid}),(_,s)=>`/departure/schools/${s.schoolId}/trips/generate`,'departure',{permission:'departure.manage'});
-write('request_transport_cover','Request a colleague to cover or exchange my planned ride','transport',['teacher'],z.object({requester_trip_id:uuid,request_type:z.enum(['cover','exchange']),target_user_id:uuid,target_trip_id:uuid.nullable().optional(),reason:z.string().min(3).max(500)}),'/departure/collector/duty-swaps','transport',{permission:'departure.collect'});
-write('respond_transport_cover','Accept or decline a transport duty-change request','transport',['teacher'],z.object({decision:z.enum(['accepted','rejected']),expected_revision:z.number().int().positive(),note:z.string().max(500).default('')}),i=>`/departure/collector/duty-swaps/${i.id}/respond`,'transport',{id:true,permission:'departure.collect'});
+read('my_transport', 'My child journey, approved arrangement and ride state', 'transport', family, empty, (_,s) => `/departure/${s.portal === 'student' ? 'student' : 'family'}`, (_,s) => departureScreenPath(s), (_,s) => familyQuery(s));
+read('assigned_journeys', 'My assigned transport rides and duty status', 'transport', staff, empty, '/departure/collector', (_,s) => departureScreenPath(s), () => ({}), 'departure.collect');
+read('transport_workspace', 'School routes, trips and departure requests', 'transport', ['principal'], empty, (_,s) => `/departure/schools/${s.schoolId}/workspace`, (_,s) => departureScreenPath(s), () => ({}), 'departure.manage');
+read('transport_trip','Planned journey, roster and duty revision','transport',['principal'],idInput,(i,s)=>`/departure/schools/${s.schoolId}/trips/${i.id}`,(i,s)=>departureScreenPath(s,i.id),()=>({}),'departure.manage');
+write('plan_transport_trip','Plan a dated ride on an existing route; does not start the bus','transport',['principal'],z.object({route_id:uuid,service_date:date,direction:z.enum(['to_institution','from_institution']),scheduled_departure_time:z.string().regex(/^([01]\d|2[0-3]):[0-5]\d$/),assigned_collector_user_id:uuid,backup_collector_user_id:uuid.nullable().optional()}),(_,s)=>`/departure/schools/${s.schoolId}/trips`,(_,s)=>departureScreenPath(s),{permission:'departure.manage'});
+write('plan_transport_service','Schedule recurring rides on an existing route','transport',['principal'],z.object({route_id:uuid,label:z.string().min(2).max(120),direction:z.enum(['to_institution','from_institution']),weekdays:z.array(z.number().int().min(1).max(7)).min(1).max(7),departure_time:z.string().regex(/^([01]\d|2[0-3]):[0-5]\d$/),primary_collector_user_id:uuid,backup_collector_user_id:uuid.nullable().optional(),valid_from:date,valid_until:date.nullable().optional()}),(_,s)=>`/departure/schools/${s.schoolId}/service-patterns`,(_,s)=>departureScreenPath(s),{permission:'departure.manage'});
+write('generate_transport_trips','Prepare dated rides from an existing service schedule, up to six weeks','transport',['principal'],z.object({from_date:date,to_date:date,pattern_id:uuid}),(_,s)=>`/departure/schools/${s.schoolId}/trips/generate`,(_,s)=>departureScreenPath(s),{permission:'departure.manage'});
+write('request_transport_cover','Request a colleague to cover or exchange my planned ride','transport',['teacher'],z.object({requester_trip_id:uuid,request_type:z.enum(['cover','exchange']),target_user_id:uuid,target_trip_id:uuid.nullable().optional(),reason:z.string().min(3).max(500)}),'/departure/collector/duty-swaps',(_,s)=>departureScreenPath(s),{permission:'departure.collect'});
+write('respond_transport_cover','Accept or decline a transport duty-change request','transport',['teacher'],z.object({decision:z.enum(['accepted','rejected']),expected_revision:z.number().int().positive(),note:z.string().max(500).default('')}),i=>`/departure/collector/duty-swaps/${i.id}/respond`,(_,s)=>departureScreenPath(s),{id:true,permission:'departure.collect'});
 
 // Intentional human-only boundaries: no model tool ever posts these commands.
 for (const [name,title,domain,page,portals] of [
@@ -287,7 +366,13 @@ for (const [name,title,domain,page,portals] of [
   ['policy_changes','Policy drafting, publication and authority rules use the reviewed Governance workflow.','policies','governance',['principal']],
   ['attachments_and_print','Upload documents or print records from the corresponding app screen; chat cannot attach or print files.','files','more',all],
 ] as const) {
-  catalogue.push({ name, title, description: title, domain, portals: [...portals], schema: empty, kind:'handoff', contract:humanOnly(title), screen: (_,s) => name === 'account_security' ? '/account/security' : screenPath(s,name === 'transport_controls' && s.portal === 'teacher' ? 'transport' : name === 'staff_changes' && s.portal === 'teacher' ? 'responsibilities' : page) });
+  catalogue.push({ name, title, description: title, domain, portals: [...portals], schema: empty, kind:'handoff', contract:humanOnly(title), screen: (_,s) => name === 'account_security'
+    ? '/account/security'
+    : name === 'event_consent'
+      ? eventScreenPath(s)
+      : name === 'transport_controls'
+        ? departureScreenPath(s)
+        : screenPath(s,name === 'staff_changes' && s.portal === 'teacher' ? 'responsibilities' : page) });
 }
 
 export const CAPABILITIES: readonly Capability[] = catalogue;
@@ -295,7 +380,7 @@ export const CAPABILITIES: readonly Capability[] = catalogue;
 catalogue.find(cap=>cap.name==='class_registers')!.modelProjection=value=>({date:value.date,classes:value.classes});
 /** Screen destinations are application-owned; the model never supplies a URL. */
 export function verificationScreen(cap:Capability,input:any,scope:AgentScope,data?:any,basis?:any) {
-  if(cap.name==='principal_analytics'||cap.name==='insights')return screenPath(scope,`insights/${input.topic==='results'||String(input.chart??'').startsWith('results_')?'results':'attendance'}`,{period:input.period??'term',...(input.group_by==='class'?{compare:'class'}:{}),...(data?.student?.id&&cap.name==='principal_analytics'?{student_id:data.student.id}:{}),...(data?.class_id||input.class_id?{class:data?.class_id??input.class_id}:{})});
+  if(cap.name==='principal_analytics'||cap.name==='insights')return insightsScreenPath(scope,input.topic==='results'||String(input.chart??'').startsWith('results_')?'results':'attendance',{period:input.period??'term',...(input.group_by==='class'?{compare:'class'}:{}),...(data?.student?.id&&cap.name==='principal_analytics'?{student_id:data.student.id}:{}),...(data?.class_id||input.class_id?{class:data?.class_id??input.class_id}:{})});
   const record=data?.plan??basis?.plan??data??basis;
   if (cap.domain==='notifications') return screenPath(scope,scope.portal==='parent'?'home':'',{ notifications:'open' });
   if (cap.name==='find_students'&&data?.results?.length===1) return screenPath(scope,'students',{student:data.results[0].id});
@@ -310,12 +395,12 @@ export function verificationScreen(cap:Capability,input:any,scope:AgentScope,dat
   }
   if (cap.name==='schedule_settings'||cap.name.includes('repeating_timetable')||cap.name==='prepare_academic_year') return screenPath(scope,'timetable',{ settings:'home',term:input.body?.term_id??input.term_id });
   if (cap.name.includes('day_plan')&&scope.portal==='principal') return screenPath(scope,'timetable',{ date:input.body?.date??input.date??record?.date,class:input.body?.class_section_id??record?.class_section_id });
-  if (cap.name==='create_conversation') return screenPath(scope,'messages',{ conversation:data?.id??data?.conversation?.id });
-  if (cap.name==='create_assessment') return screenPath(scope,'assessments',{ assessment:data?.id??data?.assessment?.id });
-  if (cap.name==='create_event') return screenPath(scope,data?.id?`events/${String(data.id)}`:'events');
-  if (cap.name==='create_message_group') return screenPath(scope,'messages',{conversation:data?.id??data?.conversation?.id});
-  if (cap.name==='plan_transport_trip'&&data?.id) return screenPath(scope,`departure/journeys/${String(data.id)}`);
-  if (cap.name==='plan_transport_service'||cap.name==='generate_transport_trips') return screenPath(scope,'departure',{section:'roster'});
+  if (cap.name==='create_conversation') return messageScreenPath(scope,data?.id??data?.conversation?.id);
+  if (cap.name==='create_assessment') return assessmentScreenPath(scope, data?.id??data?.assessment?.id);
+  if (cap.name==='create_event') return eventScreenPath(scope, data?.id ? String(data.id) : undefined);
+  if (cap.name==='create_message_group') return messageScreenPath(scope,data?.id??data?.conversation?.id);
+  if (cap.name==='plan_transport_trip'&&data?.id) return departureScreenPath(scope,String(data.id));
+  if (cap.name==='plan_transport_service'||cap.name==='generate_transport_trips') return departureScreenPath(scope,null,{section:'roster'});
   if (cap.name==='create_staff_profile'&&data?.id) return screenPath(scope,`staff/${String(data.id)}`);
   if (cap.domain==='staff'&&scope.portal==='principal'&&/leave|cover/.test(cap.name)) return screenPath(scope,'staff',{section:'leave'});
   if (cap.name==='create_student'||cap.name==='update_student') return screenPath(scope,'students',{student:input.id??data?.id,student_key:input.body?.admission_number});

@@ -350,13 +350,13 @@ describe("attention composition", () => {
     expect(projection.summary).toMatchObject({ total: 3, new: 1, action_required: 2, exceptions: 0, high: 2, normal: 1 });
     expect(projection.modules.notices).toMatchObject({
       total: 2, new: 1, action_required: 1,
-      href: "/parent/notices?student_id=student-1",
+      href: "/areas/messages/updates?scope=dependent&student_id=student-1",
       first_item_href: noticeAction.href,
     });
     expect(projection.modules.events).toMatchObject({ total: 1, action_required: 1 });
     expect(projection.modules.requests).toMatchObject({
       total: 2, new: 0, action_required: 2,
-      href: "/parent/requests?student_id=student-1",
+      href: "/work",
     });
   });
 
@@ -367,7 +367,7 @@ describe("attention composition", () => {
     });
     expect(chat).toMatchObject({
       id: "chat:conversation-1", module: "messages", state: "new",
-      href: "/teacher/messages?conversation=conversation-1",
+      href: "/areas/messages/conversations?conversation=conversation-1",
       status_label: "2 unread messages",
     });
     const projection = summarizeAttention("teacher", [chat!]);
@@ -386,20 +386,30 @@ describe("attention composition", () => {
     });
 
     expect(chat?.href).toBe(
-      "/parent/messages?conversation=conversation%2F1&student_id=student%2F1",
+      "/areas/messages/conversations?scope=dependent&student_id=student%2F1&conversation=conversation%2F1",
     );
   });
 
   it("uses canonical module paths independently from the first exact item destination", () => {
-    expect(moduleHref("principal", "safeguarding")).toBe("/principal/safeguarding");
-    expect(moduleHref("principal", "leave")).toBe("/principal/student-leave");
-    expect(moduleHref("teacher", "report-cards")).toBe("/teacher/report-cards");
-    expect(moduleHref("principal", "weekly")).toBe("/principal/timetable");
-    expect(moduleHref("teacher", "weekly")).toBe("/teacher/timetable/weekly");
-    expect(moduleHref("parent", "teacher-feedback", "child-1")).toBe("/parent/teacher-feedback?student_id=child-1");
-    expect(moduleHref("parent", "events", "child-1")).toBe("/parent/events?student_id=child-1");
-    expect(moduleHref("parent", "safeguarding", "child-1")).toBe("/parent/more?student_id=child-1");
-    expect(moduleHref("teacher", "diary")).toBe("/teacher/more");
+    expect(moduleHref("principal", "safeguarding")).toBe("/areas/care/concerns");
+    expect(moduleHref("principal", "leave")).toBe("/areas/attendance/leave/review");
+    expect(moduleHref("teacher", "report-cards")).toBe("/areas/reports/remarks");
+    expect(moduleHref("principal", "weekly")).toBe("/areas/timetable/planning/settings");
+    expect(moduleHref("teacher", "weekly")).toBe("/areas/timetable/schedule?view=week");
+    expect(moduleHref("parent", "timetable", "child/1")).toBe("/areas/timetable/schedule?scope=dependent&student_id=child%2F1");
+    expect(moduleHref("parent", "teacher-feedback", "child-1")).toBe("/more/feedback?student_id=child-1");
+    expect(moduleHref("parent", "events", "child-1")).toBe("/areas/events/calendar?scope=dependent&student_id=child-1");
+    expect(moduleHref("teacher", "events")).toBe("/areas/events/assigned");
+    expect(moduleHref("principal", "events")).toBe("/areas/events/manage");
+    expect(moduleHref("parent", "results", "child-1")).toBe("/areas/assessments/results?scope=dependent&student_id=child-1");
+    expect(moduleHref("teacher", "assessments")).toBe("/areas/assessments/assigned");
+    expect(moduleHref("principal", "assessments")).toBe("/areas/assessments/manage");
+    expect(moduleHref("parent", "safeguarding", "child-1")).toBe("/more?student_id=child-1");
+    expect(moduleHref("teacher", "diary")).toBe("/more");
+    expect(moduleHref("principal", "messages")).toBe("/areas/messages/conversations");
+    expect(moduleHref("parent", "messages", "child/1")).toBe(
+      "/areas/messages/conversations?scope=dependent&student_id=child%2F1",
+    );
   });
 });
 

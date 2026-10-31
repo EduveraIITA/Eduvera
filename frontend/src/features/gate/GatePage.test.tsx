@@ -1,76 +1,184 @@
-import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
-import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { MemoryRouter } from 'react-router-dom';
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import GatePage from './GatePage';
-const state=vi.hoisted(()=>({auth:{status:'authenticated',user:{id:'guard'},memberships:[{school_id:'school',school_name:'Test school',role:'staff',permissions:['gate.manage']}],logout:vi.fn()},command:vi.fn(),workspace:vi.fn(),find:vi.fn(),student:vi.fn()}));
-vi.mock('../auth/AuthContext',()=>({useAuth:()=>state.auth,authDestination:()=>'/teacher'}));
-vi.mock('./api',()=>({gateCommand:state.command,getGateWorkspace:state.workspace,findGateStudents:state.find,getGateStudent:state.student}));
-vi.mock('../../pages/operations/OperationsShell',()=>({OperationsShell:({children}:{children:React.ReactNode})=><div data-testid="staff-shell">{children}</div>}));
-vi.mock('./QRScanner',()=>({default:({onScan}:{onScan:(s:string)=>void})=><button onClick={()=>onScan('qr')}>Scan test pass</button>}));
-function mount(){render(<MemoryRouter><QueryClientProvider client={new QueryClient({defaultOptions:{queries:{retry:false}}})}><GatePage/></QueryClientProvider></MemoryRouter>);}
-describe('simple permission-scoped gate workspace',()=>{
- afterEach(cleanup);
- beforeEach(()=>{vi.clearAllMocks();localStorage.clear();state.workspace.mockResolvedValue({visitors:[],hosts:[],pending:0});state.command.mockReset();state.auth.memberships[0].permissions=['gate.manage'];state.find.mockResolvedValue([]);});
- it('shows three large actions and switches only the gate workspace to Hindi',async()=>{mount();expect(await screen.findByRole('button',{name:'Scan QR'})).toBeInTheDocument();expect(screen.getByRole('button',{name:'Find Student'})).toBeInTheDocument();expect(screen.getByRole('button',{name:'Visitor Entry'})).toBeInTheDocument();fireEvent.click(screen.getByRole('button',{name:'Switch Hindi / English'}));expect(screen.getByRole('button',{name:'QR स्कैन करें'})).toBeInTheDocument();expect(localStorage.getItem('eduera:gate-language:guard:school')).toBe('hi');});
- it('requires identity verification before recording an entry',async()=>{state.command.mockResolvedValueOnce({kind:'student',student:{id:'student',name:'Aarav',admission_number:'100',class_label:'7 A',direction:'out',avatar_url:''}}).mockResolvedValueOnce({saved:true});mount();fireEvent.click(screen.getByRole('button',{name:'Scan QR'}));fireEvent.click(screen.getByText('Scan test pass'));const confirm=await screen.findByRole('button',{name:'Confirm Entry'});expect(confirm).toBeDisabled();fireEvent.click(screen.getByRole('checkbox'));fireEvent.click(confirm);await waitFor(()=>expect(state.command).toHaveBeenCalledWith('school','movements',expect.objectContaining({direction:'in',identity_verified:true,qr:'qr'})));expect(await screen.findByText('Recorded successfully')).toBeInTheDocument();});
- it('shows a Hindi error when a pickup QR is no longer valid',async()=>{state.command.mockRejectedValue(new Error('expired'));mount();fireEvent.click(screen.getByRole('button',{name:'Switch Hindi / English'}));fireEvent.click(screen.getByRole('button',{name:'QR स्कैन करें'}));fireEvent.click(screen.getByText('Scan test pass'));expect(await screen.findByRole('alert')).toHaveTextContent('QR अमान्य');expect(screen.queryByRole('button',{name:'निकास दर्ज करें'})).not.toBeInTheDocument();});
- it('hides the entire gate workspace when access is missing',()=>{state.auth.memberships[0].permissions=[];mount();expect(screen.queryByRole('button',{name:'Scan QR'})).not.toBeInTheDocument();expect(state.workspace).not.toHaveBeenCalledWith('');});
- it('uses the school branded home for gate-only users and the staff shell for mixed access',()=>{mount();expect(screen.getByLabelText('Test school')).toBeInTheDocument();expect(screen.queryByTestId('staff-shell')).not.toBeInTheDocument();cleanup();state.auth.memberships[0].permissions=['gate.manage','attendance.view'];mount();expect(screen.getByTestId('staff-shell')).toBeInTheDocument();});
- it('searches while typing and reloads the selected student before identity confirmation',async()=>{
-  state.find.mockResolvedValue([{id:'student',name:'Aarav',admission_number:'100',class_label:'7 A',avatar_url:'',plan_state:null}]);
-  state.student.mockResolvedValue({id:'student',name:'Aarav',admission_number:'100',class_label:'7 A',direction:'out',avatar_url:''});
-  mount();fireEvent.click(screen.getByRole('button',{name:'Find Student'}));
-  const input=screen.getByRole('searchbox');fireEvent.change(input,{target:{value:'A'}});
-  expect(state.find).not.toHaveBeenCalled();fireEvent.change(input,{target:{value:'Aarav'}});
-  fireEvent.click(await screen.findByRole('button',{name:'View Aarav'}));
-  expect(state.find).toHaveBeenCalledWith('school','Aarav',expect.any(AbortSignal));
-  expect(state.student).toHaveBeenCalledWith('school','student');
-  expect(await screen.findByRole('button',{name:'Confirm Entry'})).toBeDisabled();
- });
- it('shows no matches and a retry action when student search fails',async()=>{
-  mount();fireEvent.click(screen.getByRole('button',{name:'Find Student'}));fireEvent.change(screen.getByRole('searchbox'),{target:{value:'Absent'}});
-  expect(await screen.findByText(/No students found/)).toBeInTheDocument();
-  state.find.mockRejectedValueOnce(new Error('unavailable'));fireEvent.change(screen.getByRole('searchbox'),{target:{value:'Retry'}});
-  expect(await screen.findByRole('alert')).toHaveTextContent('Search could not be completed');
-  fireEvent.click(screen.getByRole('button',{name:'Try again'}));expect(await screen.findByText(/No students found/)).toBeInTheDocument();
- });
- it('cancels the old search and never displays its late results',async()=>{
-  let finishOld!:(value:unknown[])=>void;
-  state.find.mockImplementationOnce(()=>new Promise(resolve=>{finishOld=resolve;})).mockResolvedValueOnce([{id:'new',name:'New Student',class_label:'7 A',admission_number:'102',avatar_url:''}]);
-  mount();fireEvent.click(screen.getByRole('button',{name:'Find Student'}));
-  fireEvent.change(screen.getByRole('searchbox'),{target:{value:'Old'}});
-  await waitFor(()=>expect(state.find).toHaveBeenCalledTimes(1));
-  const signal=state.find.mock.calls[0][2] as AbortSignal;
-  fireEvent.change(screen.getByRole('searchbox'),{target:{value:'New'}});
-  expect(await screen.findByRole('button',{name:'View New Student'})).toBeInTheDocument();
-  expect(signal.aborted).toBe(true);
-  finishOld([{id:'old',name:'Old Student',class_label:'7 A',admission_number:'101',avatar_url:''}]);
-  await waitFor(()=>expect(screen.queryByRole('button',{name:'View Old Student'})).not.toBeInTheDocument());
- });
- it('records entry in one click from search results without a separate detail request',async()=>{
-  state.find.mockResolvedValueOnce([{id:'student',name:'Aarav',admission_number:'100',class_label:'7 A',avatar_url:'',direction:'out'}]).mockResolvedValue([{id:'student',name:'Aarav',admission_number:'100',class_label:'7 A',avatar_url:'',direction:'in'}]);
-  state.command.mockResolvedValue({saved:true});mount();fireEvent.click(screen.getByRole('button',{name:'Find Student'}));fireEvent.change(screen.getByRole('searchbox'),{target:{value:'Aarav'}});
-  fireEvent.click(await screen.findByRole('button',{name:'Mark entry for Aarav'}));
-  expect(await screen.findByText('Entry recorded for Aarav.')).toBeInTheDocument();
-  expect(state.command).toHaveBeenCalledWith('school','movements',expect.objectContaining({student_id:'student',direction:'in',identity_verified:true}));
-  expect((state.command.mock.calls[0]?.[2] as {command_id:string}).command_id).toMatch(/^[0-9a-f-]{36}$/);
-  expect(state.student).not.toHaveBeenCalled();expect(await screen.findByRole('button',{name:'Mark entry for Aarav'})).toBeDisabled();
- });
- it('reuses the same command after an uncertain entry response',async()=>{
-  state.find.mockResolvedValue([{id:'student',name:'Aarav',class_label:'7 A',admission_number:'100',avatar_url:'',direction:'out'}]);
-  state.command.mockRejectedValueOnce(new Error('network interrupted')).mockResolvedValueOnce({saved:true});
-  mount();fireEvent.click(screen.getByRole('button',{name:'Find Student'}));fireEvent.change(screen.getByRole('searchbox'),{target:{value:'Aarav'}});
-  fireEvent.click(await screen.findByRole('button',{name:'Mark entry for Aarav'}));expect(await screen.findByRole('alert')).toHaveTextContent('Could not confirm entry');
-  await waitFor(()=>expect(screen.getByRole('button',{name:'Mark entry for Aarav'})).toBeEnabled());fireEvent.click(screen.getByRole('button',{name:'Mark entry for Aarav'}));
-  await screen.findByText('Entry recorded for Aarav.');expect(state.command.mock.calls[1]).toEqual(state.command.mock.calls[0]);
- });
- it('shows visitor state changes in the list without leaving a stale confirmation button',async()=>{
-  const approved={id:'visitor',school_id:'school',name:'Khelu',purpose:'Lunch',host_name:'Meera',revision:2,state:'approved'};
-  state.workspace.mockResolvedValueOnce({visitors:[approved],hosts:[],pending:0}).mockResolvedValue({visitors:[{...approved,state:'inside',revision:3}],hosts:[],pending:0});
-  state.command.mockResolvedValue({saved:true,visitor:{...approved,state:'inside',revision:3}});mount();fireEvent.click(screen.getByRole('button',{name:/Pending approvals/}));
-  fireEvent.click(await screen.findByRole('button',{name:'Confirm Entry'}));
-  expect(await screen.findByText('Visitor entry recorded.')).toBeInTheDocument();expect(await screen.findByRole('button',{name:'Confirm Exit'})).toBeInTheDocument();
-  expect(screen.queryByRole('button',{name:'Confirm Entry'})).not.toBeInTheDocument();expect(state.command).toHaveBeenCalledWith('school','visitors/visitor/in',{expected_revision:2});
- });
+import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import { MemoryRouter } from "react-router-dom";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import GatePage from "./GatePage";
+import type { VisitorFilter } from "./api";
+
+const state = vi.hoisted(() => ({
+  auth: {
+    status: "authenticated",
+    user: { id: "guard", active_school_id: "school" },
+    memberships: [{ school_id: "school", school_name: "Test school", role: "staff", permissions: ["gate.manage"] }],
+  },
+  command: vi.fn(),
+  createVisitor: vi.fn(),
+  workspace: vi.fn(),
+  approvals: vi.fn(),
+  findStudents: vi.fn(),
+  findStaff: vi.fn(),
+  student: vi.fn(),
+  staff: vi.fn(),
+}));
+
+vi.mock("../auth/AuthContext", () => ({ useAuth: () => state.auth, authDestination: () => "/today" }));
+vi.mock("./api", () => ({
+  gateCommand: state.command,
+  createGateVisitor: state.createVisitor,
+  getGateWorkspace: state.workspace,
+  getVisitorApprovals: state.approvals,
+  gateApprovalsQueryKey: () => ["gate-approvals", "guard", "school"],
+  findGateStudents: state.findStudents,
+  findGateStaff: state.findStaff,
+  getGateStudent: state.student,
+  getGateStaff: state.staff,
+}));
+vi.mock("../../pages/operations/OperationsShell", () => ({ OperationsShell: ({ children, active, title, backTo, pageTitleTrailing }: { children: React.ReactNode; active: string; title: string; backTo: string; pageTitleTrailing?: React.ReactNode }) => <div data-testid="operations-shell" data-active={active} data-title={title} data-back={backTo}>{pageTitleTrailing}{children}</div> }));
+vi.mock("./QRScanner", () => ({ default: ({ onScan }: { onScan: (value: string) => void }) => <button onClick={() => onScan("qr")}>Scan test pass</button> }));
+
+function mount(path = "/areas/in-out/operate") {
+  render(<MemoryRouter initialEntries={[path]}><QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}><GatePage /></QueryClientProvider></MemoryRouter>);
+}
+
+describe("responsibility-composed In & Out workspace", () => {
+  afterEach(cleanup);
+  beforeEach(() => {
+    vi.clearAllMocks();
+    localStorage.clear();
+    state.auth.memberships[0] = { school_id: "school", school_name: "Test school", role: "staff", permissions: ["gate.manage"] };
+    state.workspace.mockResolvedValue({ visitors: [], hosts: [], pending: 0, activity: [] });
+    state.approvals.mockResolvedValue([]);
+    state.findStudents.mockResolvedValue([]);
+    state.findStaff.mockResolvedValue([]);
+  });
+
+  it("uses total counts and finite server pages to reach an older inside visitor without skipping confirmation", async () => {
+    const counts = { all: 126, active: 26, pending: 25, approved: 0, inside: 1, closed: 100 };
+    state.workspace.mockImplementation((_school: string, options: { visitorPage: number; visitorFilter: VisitorFilter }) => Promise.resolve({
+      visitors: options.visitorPage === 2
+        ? [{ id: "older", school_id: "school", name: "Older inside visitor", purpose: "Meeting", state: "inside", revision: 42 }]
+        : [{ id: "new", school_id: "school", name: "Newer pending visitor", purpose: "Meeting", state: "pending", revision: 1 }],
+      hosts: [], pending: 25, activity: [], visitor_counts: counts,
+      visitor_pagination: { page: options.visitorPage, page_size: 25, total: options.visitorFilter === "active" ? 26 : 126, total_pages: options.visitorFilter === "active" ? 2 : 6, has_previous: options.visitorPage > 1, has_next: options.visitorPage === 1, filter: options.visitorFilter },
+    }));
+    mount();
+    fireEvent.click(await screen.findByRole("button", { name: "Visitors at the gate 1 inside · 25 awaiting approval" }));
+    expect(await screen.findByRole("option", { name: "Inside · 1" })).toBeInTheDocument();
+    await waitFor(() => expect(screen.getByRole("combobox", { name: "Filter visitors" })).toHaveValue("active"));
+    expect(screen.getByText("Page 1 of 2 · 26 visitors")).toBeVisible();
+    expect(screen.getByRole("button", { name: "Previous" })).toBeDisabled();
+    fireEvent.click(screen.getByRole("button", { name: "Next" }));
+    expect(await screen.findByRole("heading", { name: "Older inside visitor" })).toBeVisible();
+    expect(screen.getByRole("heading", { name: "Visitor requests" })).toHaveFocus();
+    expect(screen.getByRole("button", { name: "Next" })).toBeDisabled();
+    expect(state.workspace).toHaveBeenCalledWith("school", expect.objectContaining({ visitorPage: 2, visitorFilter: "active" }));
+    expect(state.command).not.toHaveBeenCalled();
+    fireEvent.change(screen.getByRole("combobox", { name: "Filter visitors" }), { target: { value: "inside" } });
+    await waitFor(() => expect(state.workspace).toHaveBeenCalledWith("school", expect.objectContaining({ visitorPage: 1, visitorFilter: "inside" })));
+  });
+
+  it("resolves a linked visitor independently of the selected page and retains exact revision confirmation", async () => {
+    const visitor = { id: "older", school_id: "school", name: "Linked older visitor", purpose: "Meeting", state: "inside", revision: 42 };
+    state.workspace.mockResolvedValue({ visitors: [], focused_visitor: visitor, hosts: [], pending: 0, activity: [] });
+    state.command.mockResolvedValue({ saved: true, visitor: { ...visitor, state: "out", revision: 43 } });
+    mount("/areas/in-out/operate?section=visitors&visitor=older");
+    expect(await screen.findByRole("heading", { name: "Linked older visitor" })).toBeVisible();
+    expect(state.workspace).toHaveBeenCalledWith("school", expect.objectContaining({ visitorId: "older" }));
+    expect(state.command).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByRole("button", { name: "Confirm Exit" }));
+    await waitFor(() => expect(state.command).toHaveBeenCalledWith("school", "visitors/older/out", { expected_revision: 42 }));
+  });
+
+  it("explains an unavailable exact visitor instead of showing unrelated page rows", async () => {
+    state.workspace.mockResolvedValue({ visitors: [{ id: "other", school_id: "school", name: "Unrelated visitor", purpose: "Meeting", state: "inside", revision: 1 }], focused_visitor: null, hosts: [], pending: 0, activity: [] });
+    mount("/areas/in-out/operate?section=visitors&visitor=missing");
+    expect(await screen.findByRole("heading", { name: "Visitor unavailable" })).toBeVisible();
+    expect(screen.queryByRole("heading", { name: "Unrelated visitor" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Confirm Exit" })).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Open visitor queue" })).toBeVisible();
+  });
+
+  it("uses the shared shell and composes operate, approvals and records without a persona portal", async () => {
+    mount();
+    expect(await screen.findByRole("button", { name: /^Scan QR/ })).toBeVisible();
+    expect(screen.getByTestId("operations-shell")).toHaveAttribute("data-active", "areas");
+    expect(screen.getByTestId("operations-shell")).toHaveAttribute("data-back", "/areas/in-out");
+    expect(screen.getByRole("button", { name: "Operate" })).toHaveAttribute("aria-current", "page");
+    expect(screen.getByRole("button", { name: "Approvals" })).toBeVisible();
+    expect(screen.getByRole("button", { name: "Records" })).toBeVisible();
+    fireEvent.click(screen.getByRole("button", { name: "Switch Hindi / English" }));
+    expect(screen.getByRole("button", { name: /^QR स्कैन करें/ })).toBeVisible();
+    expect(localStorage.getItem("thatcampus:in-out-language:guard:school")).toBe("hi");
+  });
+
+  it("opens a records deep link directly and renders accepted evidence", async () => {
+    state.workspace.mockResolvedValue({ visitors: [], hosts: [], pending: 0, activity: [{ id: "event", kind: "staff", person_id: "staff", name: "Meera Das", avatar_url: null, detail: "Security", direction: "in", occurred_at: "2026-10-18T06:00:00.000Z", state: null }] });
+    mount("/areas/in-out/operate?section=records");
+    expect(await screen.findByRole("heading", { name: "Recent records" })).toBeVisible();
+    expect(await screen.findByText("Meera Das")).toBeVisible();
+    expect(screen.getByText("Security")).toBeVisible();
+  });
+
+  it("opens the current visitor queue in one click while entry and exit still require their own confirmation", async () => {
+    state.workspace.mockResolvedValue({ visitors: [
+      { id: "inside", school_id: "school", name: "Inside Visitor", purpose: "Meeting", state: "inside", revision: 3 },
+      { id: "approved", school_id: "school", name: "Approved Visitor", purpose: "Meeting", state: "approved", revision: 2 },
+      { id: "pending", school_id: "school", name: "Pending Visitor", purpose: "Meeting", state: "pending", revision: 1 },
+    ], hosts: [], pending: 1, activity: [] });
+    mount();
+    fireEvent.click(await screen.findByRole("button", { name: "Visitors at the gate 1 inside · 1 approved · 1 awaiting approval" }));
+    expect(await screen.findByRole("heading", { name: "Visitor requests" })).toBeVisible();
+    expect(await screen.findByRole("button", { name: "Confirm Exit" })).toBeVisible();
+    expect(screen.getByRole("button", { name: "Confirm Entry" })).toBeVisible();
+    expect(screen.getByText("Waiting for the host’s decision.")).toBeVisible();
+    expect(state.command).not.toHaveBeenCalled();
+  });
+
+  it("does not add the contextual shortcut to records or show it for completed visits", async () => {
+    state.workspace.mockResolvedValue({ visitors: [{ id: "past", school_id: "school", name: "Past Visitor", purpose: "Delivery", state: "out", revision: 4 }], hosts: [], pending: 0, activity: [] });
+    mount();await waitFor(() => expect(state.workspace).toHaveBeenCalled());
+    expect(screen.queryByRole("button", { name: /^Visitors at the gate/ })).not.toBeInTheDocument();
+    cleanup();
+    state.workspace.mockResolvedValue({ visitors: [{ id: "inside", school_id: "school", name: "Inside Visitor", purpose: "Delivery", state: "inside", revision: 2 }], hosts: [], pending: 0, activity: [] });
+    mount("/areas/in-out/operate?section=records");
+    expect(await screen.findByText("Inside Visitor")).toBeVisible();
+    expect(screen.queryByRole("button", { name: /^Visitors at the gate/ })).not.toBeInTheDocument();
+  });
+
+  it("records a staff boundary movement through the same authorized workspace", async () => {
+    const match = { id: "staff-1", name: "Meera Das", avatar_url: "", staff_code: "EMP-1", designation: "Lab assistant", department: "Science", direction: "out", last_movement_at: null, revision: 4 };
+    state.findStaff.mockResolvedValue([match]);
+    state.staff.mockResolvedValue(match);
+    state.command.mockResolvedValue({ saved: true });
+    mount();
+    fireEvent.click(await screen.findByRole("button", { name: /^Record manually/ }));
+    fireEvent.click(screen.getByRole("button", { name: /Find student or staff/ }));
+    fireEvent.click(screen.getByRole("tab", { name: "Staff" }));
+    fireEvent.change(screen.getByRole("searchbox"), { target: { value: "Meera" } });
+    fireEvent.click(await screen.findByRole("button", { name: "View Meera Das" }));
+    expect(await screen.findByRole("heading", { name: "Meera Das" })).toBeVisible();
+    fireEvent.click(screen.getByRole("button", { name: "Record entry" }));
+    await waitFor(() => expect(state.command).toHaveBeenCalledWith("school", "staff-movements", expect.objectContaining({ staff_profile_id: "staff-1", direction: "in", identity_verified: true, command_id: expect.stringMatching(/^[0-9a-f-]{36}$/) as unknown })));
+    expect(await screen.findByText("Movement recorded")).toBeVisible();
+  });
+
+  it("does not claim a scanned visitor entered until the movement is accepted", async () => {
+    const visitor = { id: "visitor", school_id: "school", name: "Asha", purpose: "Meeting", revision: 2, state: "approved" };
+    state.command.mockResolvedValueOnce({ kind: "visitor", visitor }).mockResolvedValueOnce({ saved: true, visitor: { ...visitor, revision: 3, state: "inside" } });
+    mount();
+    fireEvent.click(await screen.findByRole("button", { name: /^Scan QR/ }));
+    fireEvent.click(screen.getByText("Scan test pass"));
+    expect(await screen.findByText("Asha")).toBeVisible();
+    expect(screen.queryByText("Visitor entry recorded")).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Confirm Entry" }));
+    await waitFor(() => expect(state.command).toHaveBeenLastCalledWith("school", "visitors/visitor/in", { expected_revision: 2 }));
+    expect(await screen.findByText("Movement recorded")).toBeVisible();
+  });
+
+  it("fails closed when the person has no current gate responsibility", () => {
+    state.auth.memberships[0] = { ...state.auth.memberships[0], role: "staff", permissions: [] };
+    mount();
+    expect(screen.queryByTestId("operations-shell")).not.toBeInTheDocument();
+    expect(state.workspace).not.toHaveBeenCalled();
+  });
 });

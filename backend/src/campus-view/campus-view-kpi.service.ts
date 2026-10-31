@@ -1,3 +1,5 @@
+import { campusTimezone } from "../common/campus-timezone.js";
+import { executionEnvironmentStorage, executionNow } from "../campus-model-core/execution-time.runtime.js";
 import { BadRequestException, ForbiddenException, Injectable, NotFoundException } from "@nestjs/common";
 import type { AuthUser } from "../common/request.js";
 import {
@@ -170,11 +172,11 @@ function rollup(key: string, rows: CampusKpiAggregateRow[]) {
 }
 
 function targetPath(key: string): string | null {
-  if (key.startsWith("attendance.")) return "/principal/attendance";
-  if (key.startsWith("teaching.") || key.startsWith("people.teacher")) return "/principal/timetable";
-  if (key.startsWith("spaces.")) return "/principal/administration?section=campus";
-  if (key.startsWith("access.")) return "/principal/gate";
-  if (key.startsWith("coordination.")) return "/principal/requests";
+  if (key.startsWith("attendance.")) return "/areas/attendance/coordination";
+  if (key.startsWith("teaching.") || key.startsWith("people.teacher")) return "/areas/timetable/planning";
+  if (key.startsWith("spaces.")) return "/more/setup/institution/campus";
+  if (key.startsWith("access.")) return "/areas/in-out/manage";
+  if (key.startsWith("coordination.")) return "/work";
   return null;
 }
 
@@ -349,6 +351,10 @@ export class CampusViewKpiService {
     const parsed = campusKpiQuerySchema.safeParse({ school_id: schoolId, ...rawQuery });
     if (!parsed.success) throw new BadRequestException("Choose a valid campus, KPI page, range and ISO date/time.");
     const query = parsed.data;
+    const environment = executionEnvironmentStorage.getStore();
+    if (!user.is_active || user.active_school_id !== query.school_id || (environment && environment.institution_id !== query.school_id)) {
+      throw new ForbiddenException("Choose this institution and its current world before opening campus KPIs.");
+    }
     if (!(await this.campusViewRepository.hasActiveAdminMembership(user.id, query.school_id))) {
       throw new ForbiddenException("An active institution administrator membership is required.");
     }
@@ -362,9 +368,9 @@ export class CampusViewKpiService {
       : campuses.find((item) => item.is_primary) ?? campuses[0];
     if (query.campus_id && !campus) throw new NotFoundException("Campus not found in this institution.");
 
-    const generatedAt = new Date().toISOString();
+    const generatedAt = executionNow().toISOString();
     const asOf = query.at ?? generatedAt;
-    const timezone = campus?.timezone || school.timezone || "Asia/Kolkata";
+    const timezone = campusTimezone(campus?.timezone, school.timezone);
     const window = resolveCampusKpiWindow(query.range, asOf, timezone);
     const definitions = query.page === "overview"
       ? CAMPUS_KPI_CATALOGUE

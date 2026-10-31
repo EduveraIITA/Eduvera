@@ -25,6 +25,25 @@ function handler(name: keyof ChatController): (...arguments_: never[]) => unknow
 }
 
 describe("exact chat conversation API", () => {
+  it("keeps directory pagination protected and forwards search and child scope", async () => {
+    const conversations = vi.fn().mockResolvedValue({results:[],has_more:false,next_cursor:null});
+    const controller = new ChatController({conversations} as unknown as ChatService);
+    expect(Reflect.getMetadata(PERMISSION_METADATA,handler("conversations"))).toBe("messages.view");
+    await controller.conversations({authUser:user} as AuthenticatedRequest,"cursor","Aarav","opaque","33333333-3333-4333-8333-333333333333");
+    expect(conversations).toHaveBeenCalledWith(user,{pagination:"cursor",q:"Aarav",cursor:"opaque",student_id:"33333333-3333-4333-8333-333333333333"});
+  });
+  it("keeps message reads permission-protected and forwards both supported pagination contracts", async () => {
+    const messages = vi.fn().mockResolvedValue({ results: [], has_more: false, next_cursor: null });
+    const controller = new ChatController({ messages } as unknown as ChatService);
+    const request = { authUser: user } as AuthenticatedRequest;
+    expect(Reflect.getMetadata(PERMISSION_METADATA, handler("messages"))).toBe("messages.view");
+    await controller.messages(request, "33333333-3333-4333-8333-333333333333", undefined, "opaque-cursor");
+    expect(messages).toHaveBeenCalledWith(user, "33333333-3333-4333-8333-333333333333", undefined, "opaque-cursor", undefined);
+    await controller.messages(request, "33333333-3333-4333-8333-333333333333", "2026-10-20T10:00:00.000Z");
+    expect(messages).toHaveBeenLastCalledWith(user, "33333333-3333-4333-8333-333333333333", "2026-10-20T10:00:00.000Z", undefined, undefined);
+    await controller.messages(request, "33333333-3333-4333-8333-333333333333", undefined, "upper", "lower");
+    expect(messages).toHaveBeenLastCalledWith(user, "33333333-3333-4333-8333-333333333333", undefined, "upper", "lower");
+  });
   it("publishes an authorized detail route", () => {
     const detail = handler("conversation");
     expect(Reflect.getMetadata(PATH_METADATA, detail)).toBe("conversations/:conversationId/");

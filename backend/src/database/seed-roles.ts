@@ -77,15 +77,29 @@ export async function seedRolesDemo(pool: Pool, demoMode: boolean) {
         JOIN staff_responsibility_types type ON type.school_id=role.school_id AND type.code=ANY($3::text[])
         WHERE role.school_id=$1 AND lower(role.name)=lower($2) ON CONFLICT DO NOTHING`,[school.id,profile.name,profile.duties]);
     }
-    await client.query(`INSERT INTO staff_profiles(
-        school_id,user_id,staff_code,first_name,last_name,email,staff_kind,designation,department,employment_type,joined_on,status,created_by,updated_by
-      ) SELECT membership.school_id,account.id,'DEMO-'||upper(substr(replace(account.id::text,'-',''),1,8)),account.first_name,account.last_name,lower(account.email),
-        CASE WHEN account.username='sunita.attendance' THEN 'non_teaching' ELSE 'teaching' END,
-        CASE WHEN account.username='sunita.attendance' THEN 'School office coordinator' ELSE 'Teacher' END,
-        CASE WHEN account.username='sunita.attendance' THEN 'School office' ELSE 'Academic' END,
-        'full_time',membership.created_at::date,'active',$2,$2
+    await client.query(`WITH source AS (
+      SELECT membership.school_id,account.id AS user_id,account.username,account.first_name,account.last_name,account.email,membership.created_at,
+        COALESCE((SELECT DISTINCT linked.person_id FROM (
+          SELECT id AS person_id FROM school_people WHERE school_id=membership.school_id AND account_user_id=account.id
+          UNION SELECT person_id FROM students WHERE school_id=membership.school_id AND user_id=account.id
+          UNION SELECT profile.person_id FROM guardian_school_profiles profile JOIN parents guardian ON guardian.id=profile.guardian_id
+            WHERE profile.school_id=membership.school_id AND guardian.user_id=account.id
+          UNION SELECT person_id FROM institution_governance_appointments WHERE school_id=membership.school_id AND linked_user_id=account.id
+        ) linked),gen_random_uuid()) AS person_id
       FROM school_memberships membership JOIN users account ON account.id=membership.user_id
       WHERE membership.school_id=$1 AND membership.role='staff'
+        AND NOT EXISTS(SELECT 1 FROM staff_profiles profile WHERE profile.school_id=membership.school_id AND profile.user_id=account.id)
+    ), canonical_people AS (
+      INSERT INTO school_people(id,school_id,first_name,last_name,contact_email)
+      SELECT person_id,school_id,first_name,last_name,lower(email) FROM source
+      WHERE NOT EXISTS(SELECT 1 FROM school_people person WHERE person.id=source.person_id) RETURNING id
+    ) INSERT INTO staff_profiles(
+        school_id,user_id,person_id,staff_code,staff_kind,designation,department,employment_type,joined_on,status,created_by,updated_by
+      ) SELECT source.school_id,source.user_id,source.person_id,'DEMO-'||upper(substr(replace(source.user_id::text,'-',''),1,8)),
+        CASE WHEN source.username='sunita.attendance' THEN 'non_teaching' ELSE 'teaching' END,
+        CASE WHEN source.username='sunita.attendance' THEN 'School office coordinator' ELSE 'Teacher' END,
+        CASE WHEN source.username='sunita.attendance' THEN 'School office' ELSE 'Academic' END,
+        'full_time',source.created_at::date,'active',$2,$2 FROM source
       ON CONFLICT(school_id,user_id) DO NOTHING`,[school.id,admin.id]);
     await client.query(`INSERT INTO staff_onboarding_items(school_id,staff_profile_id,item_key,label,required,completed_at,completed_by)
       SELECT profile.school_id,profile.id,item.item_key,item.label,true,now(),profile.user_id

@@ -28,7 +28,18 @@ export type OperatingRules = z.infer<typeof rulesSchema> & { revision: number };
 export type RulesDb = Kysely<Database> | Transaction<Database>;
 export async function operatingRules(db: RulesDb, schoolId: string): Promise<OperatingRules> {
   const result = await sql<OperatingRules>`SELECT
-    COALESCE(r.attendance_academic_mode,'scheduled_session') attendance_academic_mode,
+    COALESCE(r.attendance_academic_mode,CASE WHEN EXISTS (
+      -- Older progressive class-register setup retained its explicit accepted
+      -- outcome but omitted the initial rule row. Resolve that known grain from
+      -- exact owning-domain evidence, including inside an already frozen world.
+      -- This never overrides a configured mode or infers agent behaviour.
+      SELECT 1 FROM audit_events accepted
+      JOIN class_sections section ON section.id=accepted.target_id AND section.school_id=accepted.school_id
+      WHERE accepted.school_id=s.id AND accepted.action='progressive.attendance.configured'
+        AND accepted.target_type='class_section'
+        AND accepted.metadata ? 'responsible_user_id'
+        AND jsonb_typeof(accepted.metadata->'slot_ids')='array'
+    ) THEN 'daily_class' ELSE 'scheduled_session' END) attendance_academic_mode,
     COALESCE(r.attendance_campus_mode,'none') attendance_campus_mode,
     COALESCE(r.attendance_academic_channels,ARRAY['staff_roll_call']::text[]) attendance_academic_channels,
     COALESCE(r.attendance_campus_channels,ARRAY['staff_entry']::text[]) attendance_campus_channels,

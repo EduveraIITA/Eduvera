@@ -1,8 +1,10 @@
 import { ThatCampusLoadingIcon as LoaderCircle } from "../../components/ThatCampusLoader";
 import { useState } from "react";
+import { useQuery } from "@tanstack/react-query";
 import { ArrowRight, GraduationCap, School, ShieldCheck, UserRound, UsersRound } from "lucide-react";
-import { Link, Navigate, useNavigate } from "react-router-dom";
-import { authDestination, useAuth } from "./AuthContext";
+import { Link, useNavigate } from "react-router-dom";
+import { useAuth } from "./AuthContext";
+import { apiFetch } from "../../lib/api";
 import "./public-demo.css";
 
 const profiles = [
@@ -13,10 +15,10 @@ const profiles = [
 ];
 
 const profileDestinations = {
-  admin: "/principal",
-  staff: "/teacher",
-  parent: "/parent/home",
-  student: "/student",
+  admin: "/today",
+  staff: "/today",
+  parent: "/today",
+  student: "/today",
 } as const;
 
 export default function PublicDemoPage() {
@@ -24,7 +26,33 @@ export default function PublicDemoPage() {
   const navigate = useNavigate();
   const [pending, setPending] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
-  if (auth.status === "authenticated") return <Navigate to={authDestination(auth)} replace />;
+  const [leavingAccount, setLeavingAccount] = useState(false);
+  const availability = useQuery({
+    queryKey: ["auth", "public-demo-config"],
+    queryFn: () => apiFetch<{ enabled: boolean }>("/api/v1/auth/public-demo-config/"),
+    staleTime: 0,
+    retry: false,
+  });
+
+  if (auth.status === "loading" || availability.isPending) return <main className="public-demo-page"><p role="status">Checking the sample campus…</p></main>;
+  if (availability.isError || availability.data?.enabled !== true) return <main className="public-demo-page">
+    <header className="public-demo-header"><Link to="/login">ThatCampus</Link></header>
+    <section className="public-demo-warning">
+      <span>Sample campus</span><h1>{availability.isError ? "We couldn’t check the sample campus." : "The sample campus isn’t available here."}</h1>
+      <p>{availability.isError ? "Check the connection and try again, or continue with your own account." : "You can create your own campus account or sign in to an existing workspace."}</p>
+      {availability.isError ? <button type="button" onClick={() => void availability.refetch()}>Try again</button> : null}
+      <div>{auth.status === "authenticated" ? <Link to="/today">Return to my workspace</Link> : <><Link to="/signup">Create an account</Link><Link to="/login">Sign in</Link></>}</div>
+    </section>
+  </main>;
+  if (auth.status === "authenticated" && !auth.publicDemo) return <main className="public-demo-page">
+    <header className="public-demo-header"><Link to="/">ThatCampus</Link><span><ShieldCheck size={16}/> Your workspace is safe</span></header>
+    <section className="public-demo-warning">
+      <span>Sample campus</span><h1>Explore without changing your workspace.</h1>
+      <p>Your work is saved. To keep the sample campus isolated, we’ll sign you out before opening its synthetic profiles.</p>
+      {error ? <p className="public-demo-error" role="alert">{error}</p> : null}
+      <div><Link to="/">Stay in my workspace</Link><button type="button" disabled={leavingAccount} onClick={async()=>{setLeavingAccount(true);setError(null);try{await auth.logout();}catch(reason){setError(reason instanceof Error?reason.message:"The sample campus could not be opened.");setLeavingAccount(false);}}}>{leavingAccount?"Signing out…":"Sign out and explore"}</button></div>
+    </section>
+  </main>;
 
   async function open(role: (typeof profiles)[number]["role"]) {
     setPending(role); setError(null);

@@ -1,0 +1,19 @@
+/* Flat Phosphor Duotone. Palette lives in the shared theme, not each page. */
+svg.product-icon {
+  display: block;
+  flex: 0 0 auto;
+  color: var(--product-icon-ink, currentColor);
+  fill: currentColor;
+  stroke: none;
+  filter: none;
+}
+svg.product-icon[data-tone="green"] { --product-icon-ink: var(--thatcampus-logo-green); --product-icon-fill: var(--thatcampus-icon-mint); }
+svg.product-icon[data-tone="gold"] { --product-icon-ink: var(--thatcampus-logo-yellow-ink); --product-icon-fill: var(--thatcampus-icon-gold); }
+svg.product-icon[data-tone="blue"] { --product-icon-ink: var(--thatcampus-icon-blue); --product-icon-fill: var(--thatcampus-icon-sky); }
+svg.product-icon[data-tone="violet"] { --product-icon-ink: var(--thatcampus-accent); --product-icon-fill: var(--thatcampus-icon-lilac); }
+svg.product-icon[data-tone="neutral"] { --product-icon-ink: var(--thatcampus-ink-secondary); --product-icon-fill: var(--thatcampus-surface-strong); }
+svg.product-icon > [opacity] { fill: var(--product-icon-fill); opacity: 1; }
+@media (forced-colors: active) {
+  svg.product-icon { color: CanvasText; }
+  svg.product-icon > [opacity] { fill: CanvasText; opacity: .2; }
+}

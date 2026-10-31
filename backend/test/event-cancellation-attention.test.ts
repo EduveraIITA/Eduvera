@@ -22,7 +22,7 @@ const attentionProjection = readFileSync(
 
 const row = {
   id: "10000000-0000-4000-a000-000000000001",
-  link: "/teacher/events/20000000-0000-4000-a000-000000000002?focus=status&event_revision=4",
+  link: "/areas/events/assigned/20000000-0000-4000-a000-000000000002?focus=status&event_revision=4",
   title: "Discovery picnic cancelled",
   body: "Transport is unavailable.",
   read_at: null,
@@ -42,8 +42,8 @@ describe("cross-portal event cancellation attention", () => {
   it("keeps routine event changes out and types only the cancellation transition", () => {
     expect(campusEvents).toContain('...(operation === "cancel" ? {');
     expect(campusEvents).toContain('attention_source_kind: "event_cancellation"');
-    expect(campusEvents).toContain("staff_link: `/teacher/events/${event.id}?focus=status&event_revision=${updated.revision}`");
-    expect(campusEvents).toContain("admin_link: `/principal/events/${event.id}?focus=status&event_revision=${updated.revision}`");
+    expect(campusEvents).toContain('staff_link: eventWorkHref("assigned", event.id, [["focus", "status"], ["event_revision", updated.revision]])');
+    expect(campusEvents).toContain('admin_link: eventWorkHref("manage", event.id, [["focus", "status"], ["event_revision", updated.revision]])');
     expect(campusEvents).toContain('attention_topic_key: `event-cancellation:${event.id}`');
   });
 
@@ -81,7 +81,7 @@ describe("cross-portal event cancellation attention", () => {
 
   it.each([
     ["teacher", row.link],
-    ["principal", row.link.replace("/teacher/", "/principal/")],
+    ["principal", row.link.replace("/assigned/", "/manage/")],
   ] as const)("preserves the producer-owned exact %s destination", (portal, link) => {
     const item = mapNotificationAttention({
       portal,

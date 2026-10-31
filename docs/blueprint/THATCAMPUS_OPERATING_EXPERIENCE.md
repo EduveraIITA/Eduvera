@@ -1,6 +1,7 @@
 # ThatCampus operating experience
 
-Status: accepted product and interaction direction, 16 October 2026
+Status: accepted product and interaction direction, 16 October 2026; responsibility-
+composed application revision accepted 18 October 2026
 
 Normative parent: [ThatCampus product blueprint v2](PRODUCT_BLUEPRINT_V2.md)
 
@@ -15,8 +16,17 @@ backend, automation and acceptance work.
 ThatCampus must feel like a calm operating layer for a living campus. It must not feel
 like an ERP catalogue, a generic workflow builder, an AI-agent console or a collection
 of disconnected dashboards. The model may be highly connected and event-reactive;
-the interface remains role-specific, direct and expressed in ordinary campus
-language.
+the interface remains responsibility-appropriate, direct and expressed in ordinary
+campus language. A person never chooses a job-title portal in order to work.
+
+Product work starts with a concrete person doing concrete campus work, not with a
+table, event type, agent primitive or navigation category. For each workflow, first
+describe the person's responsibility and context, the shortest successful path, what
+can interrupt it, what remains visible afterward and how the person corrects a
+mistake or hands work on. Validate that operating experience in ordinary campus
+language and on the smallest supported mobile viewport. Only then derive the owning
+domain contract, projections, authority checks, evidence and Model Core coordination
+needed to make it truthful. This is experience-first, not visual-polish-first.
 
 At any operational screen a user should be able to answer:
 
@@ -39,7 +49,7 @@ parallel attendance, timetable and examination copies of the same class or roste
 
 ### 2.2 Today is a projection, not another source of truth
 
-Overview, Today, Needs attention and search surfaces summarize or route to domain
+Today, Work, Areas and search surfaces summarize or route to domain
 records. They do not implement a second editor or a second workflow. The authoritative
 Attendance, Timetable, Leave, Transport, Examination or Finance screen performs the
 action.
@@ -93,7 +103,7 @@ completion or failure.
 | subscription/reaction | Operating-rule trigger/action | ordinary users see the result; administrators see the readable rule |
 | agent message | request, task, offer or update | render by purpose, not as technical chat |
 | command/outcome | action and result | keep pending, accepted, conflicted and failed distinct |
-| authority | role and access | explain missing access without exposing policy internals |
+| authority | responsibility and access | explain missing access without exposing policy internals |
 | observation | recorded by/source/time | never present an observation as broader physical truth |
 | projection | Today, schedule, summary or current status | include freshness/source where it changes interpretation |
 | correlation/causation | history and why this happened | retain full trace; progressively disclose it |
@@ -102,35 +112,77 @@ completion or failure.
 
 ### 4.1 Working context
 
-The shell always knows the current institution, campus where relevant, operating role
-and person/child context where relevant.
+The shell always knows the current institution, campus/scope where relevant,
+person/child relationship where relevant and execution context (authoritative `live`
+or one explicit transient simulation run). It composes the signed-in person's current
+experience from effective responsibilities, current authority, capability readiness,
+owned work and time; it does not select a persona portal.
 
 - Do not silently combine Administrator and Principal authority.
-- If a user has multiple roles or campuses, show a clear context switcher.
+- Multiple responsibilities contribute to one experience. Do not show a role or
+  portal switcher. Show a campus/scope selector only when it materially changes the
+  records in view.
 - Retain the selected context until the user changes it or it becomes invalid.
 - A deep link may request a context, but the server rechecks current access before the
   shell switches.
 - Context switching returns to the equivalent safe home, not a stale unauthorized
   screen.
+- Ordinary entry points open Live. Entering Simulation is an explicit authorized
+  action that changes the server-authoritative execution session, not the route map
+  or module hierarchy.
+- Every active institution administrator receives the same canonical **Simulation**
+  contribution in Campus oversight. Do not gate it by institution code, demo profile
+  or development mode. A newly onboarded or attendance-first institution can create
+  a snapshot-only baseline before campus/timetable setup; setup/readiness guidance
+  then states which interventions and domain behavior are not yet modelled.
+- The same shell, navigation and screens remain in place. Live keeps the established
+  blue palette; Simulation applies the reviewed warm amber palette across the whole
+  application. Do not place a floating environment pill over profile/account controls.
+  Virtual time and **Return to Live** belong in the owning Simulation workspace. Do not
+  create a parallel simulation dashboard, mini-app or second set of domain tabs.
+- Environment is inherited by every child route, data hook, action and realtime
+  subscription. An environment switch clears or partitions cached data before the
+  same screen renders from the selected state.
+- During development, a screen with no scenario-native adapter shows **Not modelled
+  in this run** and never fills from Live APIs. Release acceptance requires adapters
+  for every enabled module, so an administrator sees the complete app rather than a
+  mixture of operational and placeholder screens.
 
-### 4.2 Stable role-specific navigation
+### 4.2 Stable responsibility-composed navigation
 
-Navigation is produced from enabled capabilities and current permissions, but remains
-stable within a working context.
+Every authenticated person uses four stable primary destinations:
 
-- Maximum five primary mobile destinations.
-- The first destination is the established **Overview** or **Today** surface.
-- Two or three high-frequency domain destinations may follow.
-- **More** contains lower-frequency tools, setup and administration.
-- ThatCampus AI appears only when enabled and authorized; it does not displace an
-  essential operational destination.
-- Events may add attention indicators but never reorder navigation.
-- Capability activation changes navigation through an explicit activation result, not
-  during an unrelated task.
+1. **Today** — Now, genuine attention and near-term plan;
+2. **Work** — Requests, Tasks and Offers owned by the person or their team;
+3. **Areas** — enabled domain workspaces available through a current responsibility or
+   explicit relationship;
+4. **More** — lower-frequency personal, setup and governance tools where authorized.
 
-The exact labels may remain role-specific. A teacher may have Attendance and
-Timetable; a Principal may have Attendance and Insights; a guardian may have Home and
-Schedule. Consistency means predictable purpose, not identical tabs for every role.
+These labels and positions remain stable. Responsibilities determine content, records
+and domain entries inside them—not a different tab bar. Events may update content or
+attention indicators but never reorder destinations. Capability activation changes
+Areas through an explicit accepted result. ThatCampus AI may appear within Areas or
+More when enabled and authorized; it does not displace a primary destination. It also
+remains a persistent cross-application action in the shared shell so a navigation
+migration cannot accidentally remove conversational access.
+
+Owner clarification, 29 October 2026: selecting a different primary destination
+retains each tab's current screen, date, filters, scroll and safe local drafts.
+Selecting the **already active** Today, Work, Areas or More tab is a deliberate
+return to that tab's base page, with its local view state reset. It does not reset
+the other tabs. This repeated selection follows the loss and busy guards in
+section 4.4; platform layout changes or programmatic tab focus are not user reset
+requests.
+
+Changing the application organization is capability-preserving. Every existing
+domain journey must have a tested responsibility- or relationship-scoped canonical
+home before its former navigation entry or bookmark becomes a redirect. Rendering the
+same component is insufficient when scope, actions, attention, return state or normal
+discoverability are lost. The complete parity gate is defined in
+[Responsibility-composed application](RESPONSIBILITY_COMPOSED_APPLICATION.md).
+
+The normative composition, neutral-route and migration contract is
+[Responsibility-composed application](RESPONSIBILITY_COMPOSED_APPLICATION.md).
 
 ### 4.3 Header and page hierarchy
 
@@ -138,36 +190,130 @@ The shared header identifies institution/context and provides notifications and
 account access. A page has one title, an optional concise scope/date subtitle and one
 predictable back destination.
 
+When Back is available, the shared top control visibly shows a back arrow followed
+by the destination's readable name; its accessibility name is
+**Back to {destination}**. The destination remains visible rather than collapsing to an
+unlabelled arrow. Hide the institution crest/name and page title in that top header
+while Back is shown. The owning content keeps its single page heading; do not
+repeat it in the header or add a second body back control. Without Back, the top
+header may identify the institution as usual.
+
 Avoid stacked title bars, repeated institution names, competing card headings or
 multiple primary calls to action. Search, filter and view controls belong immediately
 above the content they change.
 
+Owner visual direction, 20 October 2026: use a clean, restrained composition with
+small green/yellow illustration accents from the supplied ThatCampus logo. Warmth
+must coexist with clear operational meaning; decorative blue side stripes are not
+the emphasis mechanism. Live actions stay blue and Simulation remains amber.
+Today gives a current activity one clear owning action, then presents upcoming
+activities as compact rows. Do not repeat Now/Next inside every item or display
+routine provenance as competing body copy. Source details remain discoverable,
+and dates, planned-versus-recorded distinctions and critical warnings stay truthful.
+The owner reviews the rendered experience; passing tests do not establish visual
+approval or completion of every screen's polish.
+
+The normative implementation direction is [ThatCampus theme](THATCAMPUS_THEME.md):
+flat colourful feature icons, the unchanged branded Assistant mark, rounder
+inset surfaces and purposeful depth. Tappable filled entries must remain distinct
+from the canvas in both appearances. Dense queues use contextual categories,
+search over the complete authorized result set and short finite pages, preserving
+filters and the return location rather than showing forty entries at once.
+
 ### 4.4 Predictable back and dismissal
 
+Owner priority, 29 October 2026: a person must be able to predict where Back will
+take them. Use one shared top back control; do not repeat page-body “Back to…”
+buttons as a substitute for correct navigation. The control's destination label
+and accessibility name describe the actual return context. Native system
+navigation, gestures and Android Back follow that same in-app decision; the
+browser retains its normal Back/Forward history and external-app exits retain
+the operating system's conventions.
+
 - Back returns to the previous context, date, filters, expansion and scroll position.
+- An item opened from Work or a notification returns to that originating context,
+  rather than an unrelated retained tab or a generic domain landing page. Keep
+  each return tied to an actual navigation entry and the confirmed account,
+  campus and Live/Simulation scope. Do not infer it from a job title or accept an
+  arbitrary return URL as trusted history.
+- Opening another item or an editor adds a navigation level. Search, dates,
+  filters, sorting and finite pages update the current view without adding a
+  sequence of Back stops. A return pops or dismisses an existing level; it never
+  pushes a duplicate parent that makes Back reopen the detail just left.
 - Closing a sheet returns to the unchanged underlying screen.
-- A deep-linked page without history returns to its role-appropriate domain home.
-- A role/campus switch never returns into the prior role's protected history.
+- A deep-linked page without history returns to Today, Work or the owning Area as
+  appropriate, using a declared semantic parent rather than truncating a URL into
+  a route that may not exist. Show that destination before the person acts.
+- A change of account, campus, Live/Simulation world or effective access never
+  returns into the prior scope's protected history. Temporary same-scope session
+  verification retains safe drafts and their loss guards while navigation is paused.
 - Warn before leaving only when a real unsaved draft would be lost.
+- A switch to another retained tab does not lose its editor and must not prompt to
+  discard it. An active-tab reset evaluates **every screen it will remove**,
+  including an unfocused editor underneath the current detail. Any unsafe busy
+  operation blocks that reset; genuine unsaved edits receive one loss confirmation.
+  Cancelling leaves every tab unchanged. Accepting resets only the chosen tab to
+  its base, without pushing a duplicate root above the old detail.
+- Browser reload or window closure can remove all retained tabs, so protect their
+  unsaved or unsafe busy state even when another tab is focused or session
+  verification is showing. Persisted recoverable state does not require a discard
+  warning merely because the person changes screens.
+- A cancelled leave keeps the editor, focus and draft unchanged. Durable saved
+  recovery remains discoverable after leaving; Back never submits, abandons or
+  automatically replays a command. Guard unsafe in-flight exits without trapping
+  the person indefinitely in a recoverable read-only outcome.
 - Browser, hardware and in-app back produce the same meaningful result.
+- After an owning command acknowledges a successful create or save, its completion
+  transition replaces the finished editor rather than leaving a Back path that
+  reopens it. An unknown or unacknowledged command is not a completed edit.
 - Do not use Back to cancel a committed operation; expose a domain correction action.
+
+The universal migration uses the platform router as the history authority, with
+scope-qualified entry metadata only where native retained tabs need an exact
+origin. It must not introduce a competing application history stack. Acceptance
+covers ordinary and cross-tab entry, direct links, view-state restoration,
+different-tab retention, active-tab reset from both a detail and a filtered base,
+retained underlying drafts, busy refusal, cancelled/confirmed unsaved exits,
+repeated Back, real browser Back/Forward and reload, and scope changes on web,
+iPhone/iPad and Android. Verify the visible arrow/destination and accessible name
+at the rendered smallest supported viewport. Passing source tests, TypeScript,
+exports or native builds alone does not establish these rendered/device behaviors
+or close the migration's runtime and retirement gates.
 
 ### 4.5 Canonical surfaces and ownership
 
 | Surface | Owns | May show | Must never become |
 | --- | --- | --- | --- |
-| Overview/Today | current role projection and routing | Now, top owned work, Next, material automatic results | a duplicate editor or generic KPI dashboard |
-| Requests/My work | complete unresolved owned work projection | requests, tasks, offers, filters and exact domain links | the authoritative domain state machine |
+| Today | current responsibility projection and routing | Now, top owned work, Next, material automatic results | a duplicate editor or generic KPI dashboard |
+| Work | complete unresolved owned work projection | requests, tasks, offers, filters and exact domain links | the authoritative domain state machine |
 | Notifications | delivered informational updates and read state | update text, source and safe deep link | workload, approval state or proof of acknowledgement |
-| Domain workspace | the role-appropriate interface to authoritative domain APIs | current records, direct actions, corrections and domain history | a generic cross-domain object editor |
+| Areas | discoverable authorized domain workspaces | current areas, readiness and truthful empty states | a persona portal or generic module catalogue |
+| Domain workspace | the responsibility-appropriate interface to authoritative domain APIs | current records, direct actions, corrections and domain history | a generic cross-domain object editor |
 | More | searchable capability catalogue, lower-frequency tools and administration | real descendant attention markers | a second home dashboard or container of fake counters |
 | Administration/Setup | campus configuration, access, connections and Operating rules | readiness for enabled capabilities and audited changes | mandatory full-campus onboarding |
 | History/Why | source-backed explanation and prior revisions | actor, source, rule/config version and correction lineage | raw infrastructure logs |
 | ThatCampus AI | conversational access to currently authorized domain tools | retrieve, explain, recommend, prepare and bounded execute | system authority, workflow database or required runtime |
 
-## 5. Overview and Today
+### 4.6 Appearance is a device preference
 
-Overview is the user's current operational projection, not a KPI dashboard. Its
+- Every person uses the same Light, Dark or System preference. System is the default;
+  an explicit Light or Dark choice takes precedence over the device setting.
+- Expose Appearance in the account profile and before authentication on login and
+  onboarding. Persist it on this device, apply it before first paint, and reflect
+  changes immediately across mounted screens and same-origin tabs. Storage denial
+  must not prevent using the application or choosing an in-memory appearance.
+- Use shared semantic surface, text, border, action and status tokens. Filled actions
+  have their own background/foreground pair; a lightened dark-theme link colour is
+  not a suitable filled-action background with white text.
+- Preserve institution branding, navigation, information hierarchy and status
+  meaning in both themes. Use the supplied ThatCampus artwork with readable lettering
+  on dark surfaces. Do not invert photos, documents, QR codes or evidence/map colours.
+- Appearance is not a campus rule, role permission, operating state or simulation
+  setting. It must never modify domain data or the selected execution environment.
+
+## 5. Today
+
+Today is the user's current operational projection, not a KPI dashboard. Its
 default order is:
 
 1. **Now** — the current or immediately upcoming campus context.
@@ -200,7 +346,7 @@ work contract in section 6.
 
 Show the most time-sensitive useful items first. Do not let an urgent visual style
 make every routine item look like an emergency. The complete queue remains available
-through Requests/My work or its existing role-specific destination.
+through **Work** and opens the one authoritative domain action path.
 
 ### 5.3 Next
 
@@ -254,8 +400,9 @@ the authoritative leave request, attendance register, coverage task or other rec
 ### 6.2 Ownership
 
 A team may own work, but a concrete person or bounded software agent signs the
-response. Reassignment is explicit and auditable. Removing role membership or
-authority immediately removes the ability to act; it does not delete history.
+response. Reassignment is explicit and auditable. Removing the effective
+responsibility, team membership or authority immediately removes the ability to act;
+it does not delete history.
 
 ### 6.3 Priority and ordering
 
@@ -270,6 +417,33 @@ Recommended ordering:
 The UI must not continuously reorder the list while the user is touching or reading
 it. New state may appear as a restrained **Updated** affordance until the interaction
 ends.
+
+### 6.4 Needs me and source-backed waiting
+
+Work separates currently actionable **Needs me** from **Waiting** on another
+person. Waiting does not inflate Today attention or a reviewer decision badge.
+Each contribution comes from its owning source, with an exact current request
+revision, retained next owner and raw due time only when that source has one.
+Do not label another person's required response as complete or invent an SLA.
+Use finite pages and retained view/search/date context over the complete permitted
+result set. A source head limit cannot masquerade as the total; test obligations
+beyond the former hundred-message boundary or disclose the incomplete coverage.
+
+The first outgoing contribution is the requester's submitted Staff Leave, derived
+from native leave and retained submission-route evidence. It closes on accepted
+approve/reject/withdraw. If the current governance route no longer matches the
+retained reviewer, say **Review route changed — needs reassignment**. Do not imply
+that a new officeholder has received the old request. The requester explicitly
+sends it to the current reviewer, or that exact authorised reviewer explicitly
+takes over, through the native revision-checked Staff action and retained old/new
+message lineage. See `STAFF_LEAVE_REVIEW_CONTINUITY.md`. Technical admin status
+cannot manufacture that institutional decision authority.
+
+Deduplicate one source/action by environment + owning domain + source identity +
+decision action, retaining its Core trace. Different titles or query parameter
+spellings must not duplicate a leave decision; unrelated actions must not collapse
+by title. Pending assignment dialogs cannot dismiss a write in flight, and an
+accepted write followed by failed refresh is distinguished from an unknown write.
 
 ## 7. Notifications, badges and attention
 
@@ -368,6 +542,26 @@ Every workspace defines:
 
 Errors name what happened, whether data was saved, and the next safe action. Avoid
 generic messages such as **Check the submitted fields and try again**.
+
+### 8.5 Finite workflows, pagination and purposeful scrolling
+
+Owner clarification, 19 October 2026: do not turn operational work into an endlessly
+scrolling stack of setup, controls, lists and results. Separate different tasks into
+focused views or short, explicit steps with clear Back/Next navigation and one primary
+action. Keep related fields together; optional detail should not become a mandatory
+step. Preserve safe form state, filters and selections as the person navigates.
+
+Use bounded pagination for history, record collections and comparisons where location,
+selection and return matter. State the current page/range, respect page boundaries,
+and retain selections across pages. Do not automatically append an unbounded list.
+Scrolling is still appropriate within a coherent form, timeline or results view;
+wide comparison tables may scroll inside their own labelled region. Choose the
+interaction by the task rather than paginating every few fields or eliminating scroll.
+
+Presentation URLs may preserve the current view, step and page without changing
+authority or selecting a Simulation world. After an explicit step/page change, move
+keyboard focus to the new heading and keep touch controls comfortably usable. Apply
+the restraint and clarity in section 15 using ThatCampus's existing visual language.
 
 ## 9. Direct manipulation and time
 
@@ -477,7 +671,7 @@ handover as complete merely because the request was sent.
 - Logging out or losing scope removes accessible offline data according to the domain
   contract.
 
-## 12. Role-specific operating experience
+## 12. Responsibility-specific operating experience
 
 ### 12.1 Institution administrator
 
@@ -485,9 +679,10 @@ The administrator configures the digital campus, accounts, roles, devices,
 integrations, capability activation and Operating rules. Administrator access does
 not automatically create Principal responsibility.
 
-The administrator home prioritizes blocking setup, account/device failures, rule
-activation problems and configuration changes. Routine Principal decisions appear
-only when that person also selects an effective Principal assignment.
+The administrator's Today projection prioritizes blocking setup, account/device
+failures, rule activation problems and configuration changes. Routine Principal
+decisions appear only when that person also holds an effective Principal
+responsibility.
 
 ### 12.2 Principal or operations lead
 
@@ -504,10 +699,11 @@ only when owned. Administrative configuration remains out of the daily path.
 
 ### 12.4 Office, gate, transport and care operators
 
-Each role receives a narrow live queue for its current purpose. A gate operator does
-not see classroom attendance controls; an office operator may record assisted input
-with source attribution; restricted-care data remains visible only to explicitly
-authorized handlers.
+Each responsibility contributes a narrow live queue for its current purpose. A gate
+responsibility does not grant classroom-attendance controls; the same person sees
+those controls only if another assignment grants them. An office responsibility may
+record assisted input with source attribution; restricted-care data remains visible
+only to explicitly authorized handlers.
 
 ### 12.5 Learner and guardian
 
@@ -616,7 +812,8 @@ accepted evidence.
    to activation at the same step.
 4. Existing people/classes are reused; likely duplicates require explicit merge
    review rather than automatic name/phone matching.
-5. The new capability contributes stable navigation after activation.
+5. The new capability contributes its authorized Area after activation without
+   changing the four shell destinations.
 
 ### 13.5 Event attendance
 
@@ -656,6 +853,16 @@ accepted evidence.
 3. The UI shows which offers, escalations and conflicts would occur.
 4. No production message, command, authority or evidence is changed.
 5. Activation records the reviewed result, approver and effective date.
+6. When the administrator selects the run, the existing application changes from the
+   Live blue palette to the Simulation amber palette. The same Today, timetable,
+   attendance, Messages, Requests, Campus View, notification, KPI and domain screens
+   now follow that run and virtual clock; the Simulation workspace owns virtual time
+   and **Return to Live**.
+7. During development, unsupported screens disclose a missing adapter and fail
+   closed. No screen mixes a simulated date/header with Live domain rows, attention
+   counts or badges; all enabled modules must achieve parity before release.
+8. **Return to Live** restores the unchanged Live application and its separately
+   namespaced caches and subscriptions.
 
 ### 13.9 Notice requiring a guardian response
 
@@ -705,11 +912,11 @@ accepted evidence.
 The following are conceptual versioned API contracts. Exact code ownership may differ,
 but equivalent evidence is required.
 
-### 14.1 One campus state, role-appropriate projections
+### 14.1 One campus state, responsibility-appropriate projections
 
 A user-visible operational state may be rendered only through an authorized
-role/domain projection. Authoritative fields come from the owning domain's committed
-records; Model Core fields are typed, provenance-bearing context (`expected`,
+responsibility/domain projection. Authoritative fields come from the owning domain's
+committed records; Model Core fields are typed, provenance-bearing context (`expected`,
 `observed`, `accepted`, `derived` or `unknown`), never a second writable truth.
 
 Every material mutation retains one correlated chain in the same owning-domain
@@ -721,16 +928,33 @@ actor command or observation
  -> domain state, correction lineage and audit
  -> durable outbox event
  -> Model Core evidence/message where applicable
- -> targeted role-projection invalidation and refetch
+ -> targeted responsibility-projection invalidation and refetch
 ```
 
 The browser never reads Model Core persistence tables or a generic `/dt/state` and
 never writes a domain cache from a simulator/model response. Application composition
 APIs combine domain truth with only the minimum authorized model context needed by the
-role. If model projection processing is delayed, the UI labels that context
+responsibility. If model projection processing is delayed, the UI labels that context
 **Delayed** or **Unknown** with its `asOf` time; it does not hide, downgrade or replace
 the already accepted domain result. Rehearsal/simulation state remains isolated and
 labelled and cannot enter a normal query cache or claim accepted/live campus state.
+
+Live and Simulation use the same product routes, visual components and domain API
+contracts. A server-authoritative execution session selects the backing environment
+and cannot be overridden by a caller-controlled environment header. Underneath those
+shared contracts they use separate store namespaces, cache keys, realtime topics and
+revision sequences. A Simulation projection key includes institution, scenario, run,
+projection kind and projection revision. All summary and detail data on one rendered
+screen must come from the same environment and compatible revision. Expiry,
+unsupported capability during development or a missing scenario stream is an explicit
+state; none permits fallback to Live state.
+
+Shared data hooks and actions must always resolve through the current environment
+binding. In Simulation they emit only scenario events/messages/artifacts and execute
+the same domain invariants against copy-on-write scenario state. Simulation context
+cannot resolve a production recipient, credential or connector. Switching environment
+tears down the prior realtime subscriptions and clears or partitions query caches
+before any shared screen is allowed to render.
 
 ### 14.2 Conceptual projection contracts
 
@@ -788,7 +1012,13 @@ type AutomationExplanation = {
 ```ts
 type TodayProjection = {
   generatedAt: string;
-  context: { schoolId: string; campusId?: string; role: string; timezone: string };
+  context: {
+    institutionId: string;
+    campusId?: string;
+    responsibilityScopeIds: string[];
+    environment: "live" | "simulation";
+    timezone: string;
+  };
   now: unknown[];
   attention: OperationalWorkItem[];
   next: unknown[];
@@ -838,51 +1068,55 @@ text resilience and keyboard alternatives to drag/gesture interaction.
 ### Shared shell and navigation
 
 1. Navigation does not reorder when new work arrives.
-2. Switching role changes authority and home context explicitly.
-3. Back from a deep-linked work item returns to the correct role/domain home.
+2. A person with teaching, lab and timed gate responsibilities sees one composed
+   experience and no role/portal chooser.
+3. Back from a deep-linked work item returns to Today, Work or the owning Area.
 4. Returning from a sheet preserves filters, date, expansion and scroll.
 5. A phone viewport has no horizontal overflow or covered primary action.
+6. Administrator membership alone exposes no Principal, teaching or gate action.
+7. Revoking one responsibility removes only its current actions and retains history.
+8. Live and Simulation render the same shell and routes from isolated state.
 
 ### Attention and notifications
 
-6. An unread Update increases notification count but not unresolved-work count.
-7. A new owned Request creates attention at the destination and exact row.
-8. Resolving the final child removes the parent indicator.
-9. Future planned work does not create an overdue/red indicator.
-10. Historical data does not produce a badge.
-11. Revoked authority removes the action and stale attention safely.
-12. Red is not used for routine pending work.
+9. An unread Update increases notification count but not unresolved-work count.
+10. A new owned Request creates attention at the destination and exact row.
+11. Resolving the final child removes the parent indicator.
+12. Future planned work does not create an overdue/red indicator.
+13. Historical data does not produce a badge.
+14. Revoked authority removes the action and stale attention safely.
+15. Red is not used for routine pending work.
 
 ### Domain state
 
-13. A parent aggregate cannot say complete while an actionable child remains.
-14. A future attendance register says Scheduled.
-15. A sent command remains pending until the domain outcome is accepted.
-16. A sensor observation displays source/time and does not imply broader presence.
-17. A correction preserves and explains revision history.
-18. Loading, empty, missing-setup, unauthorized, offline, conflict and failure states
+16. A parent aggregate cannot say complete while an actionable child remains.
+17. A future attendance register says Scheduled.
+18. A sent command remains pending until the domain outcome is accepted.
+19. A sensor observation displays source/time and does not imply broader presence.
+20. A correction preserves and explains revision history.
+21. Loading, empty, missing-setup, unauthorized, offline, conflict and failure states
     each provide a safe next step.
 
 ### Automation
 
-19. Every automatic write names behaviour/rule versions and a correction route.
-20. Disabling/removing behaviour configuration causes fail-closed/manual fallback.
-21. No agent can activate its own proposed configuration.
-22. Rule rehearsal produces no live messages or writes.
-23. Authority revocation is rechecked even for an in-flight reaction.
-24. Duplicate delivery produces one material effect.
-25. Retry, expiry and escalation are visible in the owning work history.
-26. A command outcome is not presented as physical execution without observation.
+22. Every automatic write names behaviour/rule versions and a correction route.
+23. Disabling/removing behaviour configuration causes fail-closed/manual fallback.
+24. No agent can activate its own proposed configuration.
+25. Rule rehearsal produces no live messages or writes.
+26. Authority revocation is rechecked even for an in-flight reaction.
+27. Duplicate delivery produces one material effect.
+28. Retry, expiry and escalation are visible in the owning work history.
+29. A command outcome is not presented as physical execution without observation.
 
 ### Representative workflows
 
-27. Teacher leave approval creates coverage work and accepted substitution without
+30. Teacher leave approval creates coverage work and accepted substitution without
     duplicate timetable editing.
-28. An unresolved coverage offer escalates according to the active rule.
-29. Attendance becomes attention only after the configured deadline.
-30. Event attendance reuses the shared interaction without class-specific copy.
-31. A gate/timetable contradiction creates review work without marking absence.
-32. Activating one capability asks only for its actual missing prerequisites.
+31. An unresolved coverage offer escalates according to the active rule.
+32. Attendance becomes attention only after the configured deadline.
+33. Event attendance reuses the shared interaction without class-specific copy.
+34. A gate/timetable contradiction creates review work without marking absence.
+35. Activating one capability asks only for its actual missing prerequisites.
 
 ## 18. Delivery slices
 
@@ -894,7 +1128,8 @@ real work. Do not build an infrastructure spear or redesign unrelated screens.
 - accept and link this operating-experience blueprint;
 - add architecture/contract tests preventing UI dependence on model persistence;
 - identify existing projections that map to Request, Task, Offer and Update;
-- retain current visual theme and navigation.
+- retain the current visual theme while replacing persona navigation with the accepted
+  stable shell; do not run parallel old/new navigation behind a feature toggle.
 
 ### OE-1 — Staff leave as the first configured agent workflow
 
@@ -922,12 +1157,16 @@ real work. Do not build an infrastructure spear or redesign unrelated screens.
 - remove remaining historical/dummy/decorative indicators;
 - add exact-destination and stale-authority tests.
 
-### OE-4 — Role-specific Today projection
+### OE-4 — Responsibility-composed application
 
-- compose Now, Needs attention and Next from existing domain APIs;
-- start with teacher and Principal contexts;
-- preserve stable navigation and deep links;
-- add calm real-time reconciliation without duplicate editors.
+- implement the stable Today / Work / Areas / More shell and neutral routes;
+- compose Now, Needs attention, Next and Areas from effective responsibilities and
+  existing domain APIs;
+- prove Kavita's concurrent teaching, lab and timed gate responsibilities from one
+  account;
+- retain independent authority checks and calm realtime reconciliation;
+- remove persona navigation and duplicate route/editor paths after parity; do not
+  preserve them as a user-facing option.
 
 ### OE-5 — Operating-rule explanation and rehearsal
 
@@ -946,8 +1185,10 @@ real work. Do not build an infrastructure spear or redesign unrelated screens.
 ## 19. Explicit non-goals
 
 - exposing a digital-twin or agent graph to ordinary users;
-- one universal dashboard for all roles;
-- one identical navigation set for every role;
+- one universal dashboard that ignores responsibility and scope;
+- one identical set of records or actions for every person;
+- a job-title portal, role picker or persona-prefixed route tree;
+- parallel legacy and responsibility-composed experiences behind a feature switch;
 - storing workflow truth in notification badges or AI chat;
 - making every event visible as activity noise;
 - raw low-code automation or arbitrary executable administrator scripts;

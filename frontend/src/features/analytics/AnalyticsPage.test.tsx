@@ -3,7 +3,8 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { Link, MemoryRouter, Route, Routes, useLocation } from "react-router-dom";
 import type { ReactNode } from "react";
 import { TestQueryProvider } from "../../test/TestQueryProvider";
-import type { Portal } from "../auth/AuthContext";
+import { ExecutionEnvironmentProvider } from "../simulation/ExecutionEnvironmentContext";
+import type { AnalyticsAudience } from "./api";
 import AnalyticsPage, { AnalyticsContent } from "./AnalyticsPage";
 import { AssessmentProgress, AttendanceBreakdown, AttendanceTrend, ComparisonBars } from "./AnalyticsCharts";
 import { getAnalytics, type AnalyticsOverview } from "./api";
@@ -32,11 +33,15 @@ const data: AnalyticsOverview = {
 beforeEach(() => { vi.mocked(getAnalytics).mockResolvedValue(data); });
 afterEach(() => { cleanup(); vi.clearAllMocks(); });
 function Location() { const location = useLocation(); return <output data-testid="location">{location.pathname}{location.search}</output>; }
-function show(portal: Portal, search = "") {
-  return render(<TestQueryProvider><MemoryRouter initialEntries={[`/${portal}/insights${search}`]}><Routes>
+function show(portal: AnalyticsAudience, search = "") {
+  return render(<ExecutionEnvironmentProvider environment={{ mode: "live", namespaceId: "live:school" }}><TestQueryProvider><MemoryRouter initialEntries={[`/${portal}/insights${search}`]}><Routes>
     <Route path={`/${portal}/insights`} element={<AnalyticsPage portal={portal} />} />
-    {(["attendance", "results", "progress", "institution", "registers"] as const).map(topic => <Route key={topic} path={`/${portal}/insights/${topic}`} element={<AnalyticsPage portal={portal} topic={topic} />} />)}
-  </Routes><Location /></MemoryRouter></TestQueryProvider>);
+    <Route path="/areas/insights" element={<AnalyticsPage portal={portal} />} />
+    {(["attendance", "results", "progress", "institution", "registers"] as const).flatMap(topic => [
+      <Route key={`legacy-${topic}`} path={`/${portal}/insights/${topic}`} element={<AnalyticsPage portal={portal} topic={topic} />} />,
+      <Route key={`canonical-${topic}`} path={`/areas/insights/${topic}`} element={<AnalyticsPage portal={portal} topic={topic} />} />,
+    ])}
+  </Routes><Location /></MemoryRouter></TestQueryProvider></ExecutionEnvironmentProvider>);
 }
 
 describe("role-specific Analytics", () => {
@@ -51,9 +56,9 @@ describe("role-specific Analytics", () => {
     expect(screen.getByRole("list", { name: "Enrolment by class" })).toHaveTextContent("No active enrolments");
     expect(screen.getByRole("figure", { name: /Active staff mix/ })).toHaveAccessibleName(/Teaching: 5; Non-teaching: 2/);
     expect(screen.getByText("10.2")).toBeVisible();
-    expect(screen.getByRole("link", { name: "View staff" })).toHaveAttribute("href", "/principal/staff");
+    expect(screen.getByRole("link", { name: "View staff" })).toHaveAttribute("href", "/areas/people/records");
     fireEvent.click(screen.getByRole("link", { name: "Back to Insights" }));
-    expect(screen.getByTestId("location")).toHaveTextContent("/principal/insights?period=90");
+    expect(screen.getByTestId("location")).toHaveTextContent("/areas/insights?period=90&scope=institution");
   });
   it.each(["teacher", "parent", "student"] as const)("does not display institution data in %s even if supplied", async portal => {
     show(portal);
@@ -66,15 +71,15 @@ describe("role-specific Analytics", () => {
     show("principal", "?class=class-a");
     await screen.findByRole("link", { name: "Explore results" });
     expect(screen.queryByRole("link", { name: "Explore institution snapshot" })).not.toBeInTheDocument();
-    expect(screen.getByRole("link", { name: "Explore register submission" })).toHaveAttribute("href", "/principal/insights/registers?class=class-a");
+    expect(screen.getByRole("link", { name: "Explore register submission" })).toHaveAttribute("href", "/areas/insights/registers?class=class-a&scope=institution");
   });
   it("drills from register submission into a dated class register, retaining the period", async () => {
     show("principal", "?period=30");
     fireEvent.click(await screen.findByRole("link", { name: "Explore register submission" }));
     expect(await screen.findByRole("heading", { name: "Scheduled registers" })).toBeVisible();
     expect(screen.getByRole("figure", { name: /Scheduled register states/ })).toHaveAccessibleName(/Submitted: 20; Locked: 10; Not submitted: 10/);
-    expect(screen.getByRole("link", { name: "Review 7 Oct · 10 not submitted" })).toHaveAttribute("href", "/principal/attendance?date=2026-10-07&class_section_id=class-a");
-    expect(screen.getByRole("link", { name: "Back to Insights" })).toHaveAttribute("href", "/principal/insights?period=30");
+    expect(screen.getByRole("link", { name: "Review 7 Oct · 10 not submitted" })).toHaveAttribute("href", "/areas/attendance/registers?date=2026-10-07&class_section_id=class-a");
+    expect(screen.getByRole("link", { name: "Back to Insights" })).toHaveAttribute("href", "/areas/insights?period=30&scope=institution");
     expect(screen.getByText(/does not mean overdue/)).toBeVisible();
     expect(screen.queryByRole("heading", { name: "Published results" })).not.toBeInTheDocument();
   });
@@ -90,7 +95,8 @@ describe("role-specific Analytics", () => {
   it.each(["principal", "teacher", "parent", "student"] as const)("opens %s analytics without an extra page heading", async portal => {
     show(portal);
     expect(await screen.findByRole("link", { name: "Explore results" })).toBeVisible();
-    expect(screen.getByRole("link", { name: "Explore attendance" })).toHaveAttribute("href", `/${portal}/insights/attendance`);
+    const scope = { principal: "institution", teacher: "assigned", parent: "dependent", student: "self" }[portal];
+    expect(screen.getByRole("link", { name: "Explore attendance" })).toHaveAttribute("href", `/areas/insights/attendance?scope=${scope}`);
     expect(screen.getAllByRole("heading", { level: 1 })).toHaveLength(1);
     expect(getAnalytics).toHaveBeenCalledWith("school", portal, "term", undefined, undefined);
     if (portal === "parent" || portal === "student") {
@@ -116,7 +122,7 @@ describe("role-specific Analytics", () => {
     fireEvent.click(screen.getByRole("button", { name: "Switch child" }));
     await waitFor(() => expect(getAnalytics).toHaveBeenLastCalledWith("school", "parent", "30", "child-b", undefined));
     expect(screen.getByTestId("location")).toHaveTextContent("student_id=child-b&period=30");
-    expect(screen.getByRole("link", { name: "Back to Insights" })).toHaveAttribute("href", "/parent/insights?student_id=child-b&period=30");
+    expect(screen.getByRole("link", { name: "Back to Insights" })).toHaveAttribute("href", "/areas/insights?student_id=child-b&period=30&scope=dependent");
   });
   it('opens a principal source at the selected learner rather than institution totals',async()=>{
     vi.mocked(getAnalytics).mockResolvedValue({...data,selected_student:{id:'learner',name:'Aarav Sharma'},scope_label:'Aarav Sharma',selected_class_id:'class-a',institution:null,registers:null});
@@ -126,7 +132,7 @@ describe("role-specific Analytics", () => {
     expect(screen.getByText('Aarav Sharma')).toBeVisible();
     expect(screen.queryByRole('combobox',{name:'Class',exact:true})).not.toBeInTheDocument();
     expect(screen.queryByText('Institution average')).not.toBeInTheDocument();
-    expect(screen.getByRole('link',{name:'Back to Insights'})).toHaveAttribute('href','/principal/insights?student_id=learner&class=class-a&period=30');
+    expect(screen.getByRole('link',{name:'Back to Insights'})).toHaveAttribute('href','/areas/insights?student_id=learner&class=class-a&period=30&scope=institution');
   });
   it("hides a denied domain instead of manufacturing totals", async () => {
     vi.mocked(getAnalytics).mockResolvedValue({ ...data, attendance: null });
@@ -135,11 +141,11 @@ describe("role-specific Analytics", () => {
     expect(screen.queryByRole("link", { name: "Explore attendance" })).not.toBeInTheDocument();
   });
   it("links a filtered class to its register and pending reviews to the right queue", () => {
-    const view = render(<MemoryRouter><AnalyticsContent portal="principal" data={{ ...data, selected_class_id: "class-a" }} /></MemoryRouter>);
-    expect(screen.getByRole("link", { name: "View attendance" })).toHaveAttribute("href", "/principal/attendance?date=2026-10-08&class_section_id=class-a");
+    const view = render(<MemoryRouter><AnalyticsContent audience="principal" data={{ ...data, selected_class_id: "class-a" }} /></MemoryRouter>);
+    expect(screen.getByRole("link", { name: "View attendance" })).toHaveAttribute("href", "/areas/attendance/registers?date=2026-10-08&class_section_id=class-a");
     expect(screen.queryByRole("link", { name: "1 assessment awaiting review" })).not.toBeInTheDocument();
-    view.rerender(<MemoryRouter><AnalyticsContent portal="principal" topic="progress" data={data} /></MemoryRouter>);
-    expect(screen.getByRole("link", { name: "1 assessment awaiting review" })).toHaveAttribute("href", "/principal/assessments?status=submitted");
+    view.rerender(<MemoryRouter><AnalyticsContent audience="principal" topic="progress" data={data} /></MemoryRouter>);
+    expect(screen.getByRole("link", { name: "1 assessment awaiting review" })).toHaveAttribute("href", "/areas/assessments/manage?status=submitted");
     expect(screen.queryByRole("link", { name: "View attendance" })).not.toBeInTheDocument();
   });
   it("shows error and retry without stale charts or demo fallback", async () => {
@@ -152,13 +158,13 @@ describe("role-specific Analytics", () => {
   });
   it("preserves learner context on attendance/results links and explains averages", () => {
     const student = { id: "child-a" } as NonNullable<AnalyticsOverview["student"]>;
-    const view = render(<MemoryRouter><AnalyticsContent portal="parent" data={{ ...data, student }} /></MemoryRouter>);
-    expect(screen.getByRole("link", { name: "View attendance" })).toHaveAttribute("href", "/parent/attendance?student_id=child-a");
+    const view = render(<MemoryRouter><AnalyticsContent audience="parent" data={{ ...data, student }} /></MemoryRouter>);
+    expect(screen.getByRole("link", { name: "View attendance" })).toHaveAttribute("href", "/areas/attendance/records?scope=dependent&student_id=child-a");
     expect(screen.getByText("Below minimum")).toBeVisible();
     fireEvent.click(screen.getByText("View chart data"));
     expect(screen.getByRole("table", { name: "Attendance trend data" })).toBeVisible();
-    view.rerender(<MemoryRouter><AnalyticsContent portal="parent" topic="results" data={{ ...data, student }} /></MemoryRouter>);
-    expect(screen.getByRole("link", { name: "View results & feedback" })).toHaveAttribute("href", "/parent/results?student_id=child-a");
+    view.rerender(<MemoryRouter><AnalyticsContent audience="parent" topic="results" data={{ ...data, student }} /></MemoryRouter>);
+    expect(screen.getByRole("link", { name: "View results & feedback" })).toHaveAttribute("href", "/areas/assessments/results?scope=dependent&student_id=child-a");
     expect(screen.getByText(/not an official term grade/)).toBeVisible();
   });
   it("uses null gaps in line charts, keeps a real zero and provides readable bar values", () => {
@@ -173,20 +179,20 @@ describe("role-specific Analytics", () => {
     show("principal", "?period=90&class=class-a");
     const label = topic === "progress" ? "assessment progress" : topic;
     fireEvent.click(await screen.findByRole("link", { name: `Explore ${label}` }));
-    expect(screen.getByTestId("location")).toHaveTextContent(`/principal/insights/${topic}?period=90&class=class-a`);
+    expect(screen.getByTestId("location")).toHaveTextContent(`/areas/insights/${topic}?period=90&class=class-a&scope=institution`);
     expect(screen.queryByRole("link", { name: "Explore results" })).not.toBeInTheDocument();
     expect(screen.queryByRole("heading", { name: "Published results" })).toBe(topic === "results" ? screen.getByRole("heading", { name: "Published results" }) : null);
     expect(screen.queryByRole("heading", { name: "Recorded attendance" })).toBe(topic === "attendance" ? screen.getByRole("heading", { name: "Recorded attendance" }) : null);
     fireEvent.click(screen.getByRole("link", { name: "Back to Insights" }));
     expect(await screen.findByRole("link", { name: "Explore results" })).toBeVisible();
-    expect(screen.getByTestId("location")).toHaveTextContent("/principal/insights?period=90&class=class-a");
+    expect(screen.getByTestId("location")).toHaveTextContent("/areas/insights?period=90&class=class-a&scope=institution");
   });
   it("does not fall back to another topic when a bookmarked topic is denied", async () => {
     vi.mocked(getAnalytics).mockResolvedValue({ ...data, attendance: null });
     show("teacher", "/attendance?period=30");
     expect(await screen.findByText("This topic is not available with your current access.")).toBeVisible();
     expect(screen.queryByRole("figure")).not.toBeInTheDocument();
-    expect(screen.getByRole("link", { name: "Back to Insights" })).toHaveAttribute("href", "/teacher/insights?period=30");
+    expect(screen.getByRole("link", { name: "Back to Insights" })).toHaveAttribute("href", "/areas/insights?period=30&scope=assigned");
   });
   it("keeps doughnut counts distinct from weighted attendance and shows no pie for missing data", () => {
     const view = render(<AttendanceBreakdown attendance={counts} family />);
@@ -214,7 +220,7 @@ describe("role-specific Analytics", () => {
     expect(screen.getByRole("list", { name: "Class attendance comparison" })).toHaveTextContent("75%");
     expect(screen.queryByRole("list", { name: "Subject attendance comparison" })).not.toBeInTheDocument();
   });
-  it("offers institution/class result comparisons to staff, not the family portal", async () => {
+  it("offers institution/class result comparisons to staff, not relationship-scoped family access", async () => {
     const view = show("principal", "/results");
     expect(await screen.findByText("Institution average")).toBeVisible();
     fireEvent.click(screen.getByRole("button", { name: "By class" }));

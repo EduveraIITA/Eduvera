@@ -1,8 +1,15 @@
 import nodemailer from 'nodemailer';
 import { config } from '../config.js';
+import { assertLiveExternalEffect } from './simulation-effects.js';
+import { captureSimulationProviderEffect, simulationLogicalDigest } from './simulation-resources.js';
 
 /** No retries here: a timeout may occur after provider acceptance. Never log raw errors. */
 export async function sendTransactionalEmail(input: {to: string; subject: string; text: string; html?: string; senderName: string; inlineImages?: Array<{filename:string;contentType:string;cid:string;content:string}>; attachments?: Array<{filename:string;contentType:string;content:string}>}) {
+  if (await captureSimulationProviderEffect({ kind: 'external_notification', provider: 'email', operation: 'send',
+    logicalKey: input.to, payload: { content_digest: simulationLogicalDigest(JSON.stringify({ subject: input.subject,
+      text: input.text, html: input.html })), attachment_count: (input.inlineImages?.length ?? 0) + (input.attachments?.length ?? 0),
+      evidence_mode: 'simulation', delivered_externally: false } })) return;
+  assertLiveExternalEffect("Email delivery");
   const settings = config();
   if (settings.INVITATION_EMAIL_PROVIDER === 'resend') {
     const response = await fetch('https://api.resend.com/emails', {

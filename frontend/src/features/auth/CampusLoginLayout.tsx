@@ -1,37 +1,26 @@
 import { useLoginTheme } from "./useLoginTheme";
-import LoginTopography from "./LoginTopography";
 import type { ReactNode } from "react";
-import { ShieldCheck } from "lucide-react";
 import "./campus-login.css";
+import { AppearanceMenu } from "../appearance/AppearanceMenu";
+import { BrandLogo } from "../../components/BrandLogo";
+import { InfoSummary } from "../../components/InfoSummary";
 
-export function CampusLoginLayout({ children }: { children: ReactNode }) {
+export function CampusLoginLayout({ children, title = "Welcome back", description = "Sign in to your campus workspace.", eyebrow, helpContext }: { children: ReactNode; title?: string; description?: string; eyebrow?: string; helpContext?: "invitation" }) {
   const dark = useLoginTheme();
   return <div className="campus-login" data-login-theme={dark ? "dark" : "light"}>
-    <LoginTopography dark={dark} />
-    {/* Preserve the original blue artwork; recolour only the navy lettering. */}
-    <svg width="0" height="0" aria-hidden="true" style={{ position: "absolute" }}>
-      <defs>
-        <filter id="campus-login-dark-logo" colorInterpolationFilters="sRGB">
-          <feColorMatrix in="SourceGraphic" type="matrix" values="0 0 0 0 0  0 0 0 0 0  0 0 0 0 0  0 0 -1 0 1" />
-          <feComponentTransfer><feFuncA type="discrete" tableValues="0 0 1 1" /></feComponentTransfer>
-          <feComposite in2="SourceAlpha" operator="in" result="letterMask" />
-          <feFlood floodColor="#f0f3ff" />
-          <feComposite in2="letterMask" operator="in" result="whiteLetters" />
-          <feComposite in="SourceGraphic" in2="letterMask" operator="out" />
-          <feMerge><feMergeNode /><feMergeNode in="whiteLetters" /></feMerge>
-        </filter>
-      </defs>
-    </svg>
     <div className="campus-login__frame">
       <header className="campus-login__topbar">
         <a className="campus-login__brand" href="/" aria-label="ThatCampus portal">
-          <img className="campus-login__brand-logo" src="/assets/thatcampus-logo.png" alt="ThatCampus" width="104" height="62" />
+          <BrandLogo className="campus-login__brand-logo" width={104} height={62}/>
         </a>
         <div className="campus-login__top-actions">
-          <span className="campus-login__access"><ShieldCheck size={13} aria-hidden="true" />School portal</span>
+          <AppearanceMenu/>
           <details className="campus-login__help">
-            <summary>Help Center</summary>
-            <div><strong>Need help signing in?</strong><p>Use the email or username linked to your school account. Contact your school office for an invitation or access.</p><a href="/forgot-password">Reset your password</a></div>
+            <InfoSummary>Help</InfoSummary>
+            <div><strong>Need a hand?</strong><p>Use the account connected to your campus. If you were invited, your campus administrator can help with access.</p>
+              {helpContext === "invitation" ? <a href="/forgot-password" target="_blank" rel="noopener noreferrer">Reset password in a new tab</a> : <a href="/forgot-password">Reset your password</a>}
+              {helpContext !== "invitation" ? <a href="/join">Use an invitation</a> : null}
+            </div>
           </details>
         </div>
       </header>
@@ -39,15 +28,15 @@ export function CampusLoginLayout({ children }: { children: ReactNode }) {
         <div className="campus-login__center">
           <section className="campus-login__card" aria-labelledby="campus-login-title">
             <header className="campus-login__heading">
-              <h1 id="campus-login-title">Welcome back</h1>
-              <p>Access your attendance, timetable, and campus portal</p>
+              {eyebrow ? <span>{eyebrow}</span> : null}
+              <h1 id="campus-login-title">{title}</h1>
+              <p>{description}</p>
             </header>
             {children}
           </section>
-          <p className="campus-login__assurance"><ShieldCheck size={14} aria-hidden="true" />Your school. Your secure workspace.</p>
         </div>
       </main>
-      <footer className="campus-login__footer"><span>© {new Date().getFullYear()} ThatCampus. All rights reserved.</span><nav aria-label="Portal support"><a href="/join">Join institution</a><a href="/forgot-password">Account help</a></nav></footer>
+      <footer className="campus-login__footer"><span>© {new Date().getFullYear()} ThatCampus</span></footer>
     </div>
   </div>;
 }

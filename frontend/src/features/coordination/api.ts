@@ -10,6 +10,7 @@ export interface Followup {
 }
 export interface FollowupDetail extends Followup {
   can_resolve: boolean;
+  coordination?: { status: "historical_unlinked" | "routed" | "manual_followup" | "closed"; message: string; exception_code?: string };
   entries: Array<{ id: string; kind: string; channel: string; body: string; actor_name: string;
     guardian_name: string | null; observed_at: string; recorded_at: string }>;
   guardians: Array<{ id: string; name: string }>;

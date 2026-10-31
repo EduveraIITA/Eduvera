@@ -5,9 +5,17 @@ import { join } from "node:path";
 import { Public } from "./common/decorators.js";
 import { config } from "./config.js";
 import { invitationLogo } from './common/invitation-logo.js';
+import { readThatCampusWordmark } from './common/brand-assets.js';
 
 @Controller()
 export class SpaController {
+  @Public()
+  @Get('email-assets/thatcampus-wordmark-light-v3.png')
+  async emailWordmark(@Res() reply: FastifyReply) {
+    return reply.header('Cache-Control', 'public, max-age=31536000, immutable')
+      .header('Content-Disposition', 'inline').type('image/png').send(await readThatCampusWordmark());
+  }
+
   @Public()
   @Get(['email-assets/thatcampus-logo-v2.png', 'email-assets/eduera-logo-v1.png'])
   emailLogo(@Res() reply: FastifyReply) {
@@ -53,6 +61,12 @@ export class SpaController {
   }
 
   @Public()
+  @Get("favicon-dark.png")
+  async faviconDarkPng(@Res() reply: FastifyReply) {
+    return this.serveAsset(reply, "favicon-dark.png", "image/png");
+  }
+
+  @Public()
   @Get("edura-leaf-favicon.png")
   async eduraLeafFavicon(@Res() reply: FastifyReply) {
     return this.serveAsset(reply, "edura-leaf-favicon.png", "image/png");
@@ -85,16 +99,50 @@ export class SpaController {
   }
 
   @Public()
-  @Get(["/", "login", "signup", "demo", "company", "company/*", "join", "launcher", "workspace", "parent", "parent/*", "student", "student/*", "teacher", "teacher/*", "principal", "principal/*", "onboarding/*"])
+  @Get([
+    "/",
+    "login",
+    "signup",
+    "forgot-password",
+    "reset-password",
+    "demo",
+    "company",
+    "company/*",
+    "join",
+    "visit-join",
+    "launcher",
+    "workspace",
+    "account/*",
+    "onboarding/*",
+    "today",
+    "today/*",
+    "work",
+    "work/*",
+    "areas",
+    "areas/*",
+    "more",
+    "more/*",
+    "gate",
+    "gate/*",
+    "parent",
+    "parent/*",
+    "student",
+    "student/*",
+    "teacher",
+    "teacher/*",
+    "principal",
+    "principal/*",
+  ])
   async index(@Res() reply: FastifyReply) {
     return this.serve(reply, config().spaDistDir, "Build the React application before serving the SPA.");
   }
 
-  // Desktop staff console, built with base "/staff/". Same origin, same session.
+  // Preserve old bookmarks after retiring the separate desktop bundle. The main
+  // application is responsive and owns every current staff workflow.
   @Public()
   @Get(["staff", "staff/*"])
-  async staff(@Res() reply: FastifyReply) {
-    return this.serve(reply, config().staffDistDir, "Build the desktop dashboard before serving /staff.");
+  staff(@Res() reply: FastifyReply) {
+    return reply.redirect("/", 308);
   }
 
   private async serve(reply: FastifyReply, dir: string, detail: string) {

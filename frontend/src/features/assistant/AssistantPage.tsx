@@ -13,10 +13,11 @@ import { AssistantHeaderActions } from './AssistantHeaderActions';
 import { useAssistantNavigation } from './useAssistantNavigation';
 import { requestAssistantReopen } from './useDemoChat';
 import type { AssistantContext, AssistantPortal } from './context';
+import { workspaceAssistantPortal } from './workspaceAssistantContext';
 import { browserHistoryIndex, previousPortalLocation } from '../navigation/portalHistory';
 import { samePortalHref } from '../navigation/portalReturnState';
 import { ThatCampusLoader } from '../../components/ThatCampusLoader';
-import { AssistantElectricBorder } from './AssistantElectricBorder';
+import { AssistantLatestReply } from './AssistantLatestReply';
 import { AssistantIcon } from './AssistantIcon';
 import './assistant.css';
 
@@ -28,7 +29,28 @@ export default function AssistantPage({portal}:{portal:AssistantPortal}) {
   return <AssistantPageContent portal={portal}/>;
 }
 
-function AssistantPageContent({portal}:{portal:AssistantPortal}) {
+/** Canonical assistant surface. Its perspective is resolved from the signed-in workspace. */
+export function WorkspaceAssistantPage() {
+  const auth = useOptionalAuth();
+  const portal = workspaceAssistantPortal(auth);
+  const proFeatures = useProFeatures();
+  if (proFeatures.isPending) return <ThatCampusLoader label="Opening ThatCampus AI…"/>;
+  if (!proFeatures.enabled || !portal) return <Navigate to="/areas" replace/>;
+  return <AssistantPageContent portal={portal} canonical/>;
+}
+
+function canonicalReturnTarget(value: unknown) {
+  if (typeof value !== 'string' || !value.startsWith('/') || value.startsWith('//')) return null;
+  try {
+    const parsed = new URL(value, window.location.origin);
+    if (parsed.origin !== window.location.origin) return null;
+    if (!['/today', '/work', '/areas', '/more'].some(root => parsed.pathname === root || parsed.pathname.startsWith(`${root}/`))) return null;
+    if (parsed.pathname === '/areas/assistant/conversation') return null;
+    return `${parsed.pathname}${parsed.search}${parsed.hash}`;
+  } catch { return null; }
+}
+
+function AssistantPageContent({portal, canonical = false}:{portal:AssistantPortal;canonical?:boolean}) {
   const location=useLocation();
   const auth=useOptionalAuth();
   const navigate=useAssistantNavigation();
@@ -65,10 +87,17 @@ function AssistantPageContent({portal}:{portal:AssistantPortal}) {
     return()=>{observer?.disconnect();viewport?.removeEventListener('resize',fit);viewport?.removeEventListener('scroll',fit);};
   },[]);
   const state=location.state as {assistantReturnTo?:unknown;assistantScrollY?:unknown}|null;
-  const fallback=portal==='parent'?'/parent/home':'/'+portal;
-  const returnTo=typeof state?.assistantReturnTo==='string'&&(state.assistantReturnTo===fallback||state.assistantReturnTo.startsWith('/'+portal+'/'))&&!state.assistantReturnTo.startsWith('/'+portal+'/assistant')?state.assistantReturnTo:fallback;
+  const fallback=canonical ? '/today' : portal==='parent'?'/parent/home':'/'+portal;
+  const returnTo=canonical
+    ? canonicalReturnTarget(state?.assistantReturnTo) ?? fallback
+    : typeof state?.assistantReturnTo==='string'&&(state.assistantReturnTo===fallback||state.assistantReturnTo.startsWith('/'+portal+'/'))&&!state.assistantReturnTo.startsWith('/'+portal+'/assistant')?state.assistantReturnTo:fallback;
   const restoreScroll=()=>window.scrollTo({top:typeof state?.assistantScrollY==='number'?state.assistantScrollY:0,behavior:'instant'});
   const onBack=()=>{
+    if (canonical) {
+      requestAssistantReopen(returnTo);
+      navigate.go(returnTo,{replace:true,state:{assistantReopen:true}},restoreScroll);
+      return;
+    }
     if(samePortalHref(previousPortalLocation(browserHistoryIndex()),returnTo)){
       requestAssistantReopen(returnTo);
       navigate.back(restoreScroll);
@@ -80,9 +109,10 @@ function AssistantPageContent({portal}:{portal:AssistantPortal}) {
     disabled={conversation.busy||conversation.pending||conversation.awaiting||conversation.accessDenied}
     onNewChat={()=>void conversation.newChat()} onSelect={conversation.select}/>;
   const content=<div className="assistant-page" ref={page}>
+    {canonical?<div className="assistant-page__toolbar"><span>Conversation</span>{headerActions}</div>:null}
     {conversation.error?<div role="alert" className="agent-error">{conversation.error}<button type="button" onClick={conversation.retry}>Retry connection</button></div>:null}
     {conversation.accessDenied?<p className="agent-caption">Ask your school administrator to enable “Use AI assistance” for your role.</p>:null}
-    {conversation.status&&!conversation.status.ready?<p role="status" className="agent-error">{conversation.status.local?'The local model is unavailable. Ask the server administrator to check Ollama and the configured model.':'The configured model is unavailable. Check the server’s model and provider settings.'}</p>:null}
+    {conversation.status&&!conversation.status.ready?<p role="status" className="assistant-page__notice">AI is temporarily unavailable. You can still use campus tools directly.</p>:null}
     {conversation.loading?<p role="status">Loading your conversation…</p>:conversation.runs.length?<ol className="assistant-conversation" aria-label="Conversation">
       {conversation.runs.map(run=>{
         const reply=<div className="assistant-full-reply assistant-response__content"><span className="sr-only">Assistant response: </span>
@@ -90,7 +120,7 @@ function AssistantPageContent({portal}:{portal:AssistantPortal}) {
         </div>;
         return <li key={run.id} data-agent-run={run.id}>
           <div className="assistant-question"><span className="sr-only">You: </span>{run.question}</div>
-          {run.id===latest?.id?<AssistantElectricBorder>{reply}</AssistantElectricBorder>:reply}
+          {run.id===latest?.id?<AssistantLatestReply>{reply}</AssistantLatestReply>:reply}
         </li>;
       })}
     </ol>:<div className="assistant-page__empty"><AssistantIcon size={48}/><p>What would you like to know?</p><p className="agent-caption">{conversation.status?.pro_features_enabled?'Check school records, plan your day or prepare a change. You’ll review changes before they are saved.':'Ask about your day or recorded attendance.'}</p></div>}
@@ -100,6 +130,7 @@ function AssistantPageContent({portal}:{portal:AssistantPortal}) {
       <AssistantComposer key={portal+':'+(studentId??'self')+':'+conversation.threadId} onSend={conversation.send} disabled={conversation.busy||conversation.awaiting||conversation.loading||conversation.accessDenied||conversation.status?.ready===false} pending={conversation.pending} onCancel={()=>void conversation.cancel()}/>
     </div>
   </div>;
+  if(canonical)return <OperationsShell active="areas" title="ThatCampus AI" onBack={onBack}>{content}</OperationsShell>;
   if(portal==='teacher'||portal==='principal')return <OperationsShell portal={portal} active="chat" title="Assistant" pageTitleTrailing={headerActions} onBack={onBack}>{content}</OperationsShell>;
   if(portal==='parent')return <ParentShell active="chat" pageLabel="Assistant" pageTitleTrailing={headerActions} selectedChildId={studentId} childSwitchDisabled={conversation.busy} onBack={onBack}>{content}</ParentShell>;
   return <StudentShell activeNav="chat" pageTitle="Assistant" pageTitleTrailing={headerActions} onBack={onBack}>{content}</StudentShell>;

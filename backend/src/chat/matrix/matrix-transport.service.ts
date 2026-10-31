@@ -4,10 +4,12 @@ import { sql, type Transaction } from 'kysely';
 import type { AuthUser } from '../../common/request.js';
 import type { Database } from '../../database/types.js';
 import { DatabaseService } from '../../database/database.service.js';
+import { selectedSimulationResources } from '../../common/simulation-resources.js';
 import { MatrixApiError, MatrixClient, matrixSettings, matrixTransactionId } from './matrix-client.js';
+import { conversationWritePolicy } from '../chat-policy.js';
 
 type Executor = DatabaseService | Transaction<Database>;
-interface Conversation { id: string; school_id: string }
+interface Conversation { id: string; school_id: string; kind: string; posting_mode: string }
 interface OutboxRow {
   id: string; school_id: string; conversation_id: string; message_id: string;
   action: 'send' | 'edit' | 'redact'; attempts: number;
@@ -17,12 +19,21 @@ interface Member { user_id: string; name: string }
 
 @Injectable()
 export class MatrixTransportService {
-  readonly client = new MatrixClient(matrixSettings());
+  private readonly simulationClient = new MatrixClient({ enabled: false, baseUrl: "", serverName: "simulation.invalid",
+    asToken: "", botLocalpart: "eduvera_bot", requestTimeoutMs: 10_000 });
+  private liveClient?: MatrixClient;
   constructor(private readonly database: DatabaseService) {}
+
+  /** Simulation resolves a credential-free adapter before Live settings are read. */
+  get client(): MatrixClient {
+    if (selectedSimulationResources()) return this.simulationClient;
+    this.liveClient ??= new MatrixClient(matrixSettings());
+    return this.liveClient;
+  }
 
   private async scope(user: AuthUser, conversationId: string, action = 'messages.view'): Promise<Conversation> {
     if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(conversationId)) throw new NotFoundException('Conversation not found.');
-    const row = (await sql<Conversation>`SELECT c.id,c.school_id FROM chat_conversations c
+    const row = (await sql<Conversation>`SELECT c.id,c.school_id,c.kind,c.posting_mode FROM chat_conversations c
       WHERE c.id=${conversationId}::uuid
       AND chat_actor_is_current_participant(c.school_id,${user.id}::uuid,${action},c.id)`
       .execute(this.database)).rows[0];
@@ -37,13 +48,13 @@ export class MatrixTransportService {
         count(*) FILTER(WHERE state='blocked')::int AS blocked
       FROM chat_matrix_outbox WHERE conversation_id=${conversationId}::uuid`.execute(this.database)).rows[0]
       : { pending: 0, blocked: 0 };
-    return { engine: 'eduvera', bridge: enabled ? 'matrix' : 'disabled', bridge_enabled: enabled, configured: this.client.settings.enabled,
+    return { engine: 'eduvera', bridge: enabled ? 'matrix' : 'disabled', bridge_enabled: enabled, configured: this.client.available,
       pending: totals?.pending ?? 0, blocked: totals?.blocked ?? 0,
       // The RTC stack is provisioned separately; do not advertise unverified calls as available.
       calls_enabled: false, end_to_end_encrypted: false };
   }
   private async isEnabled(schoolId: string, db: Executor = this.database): Promise<boolean> {
-    if (!this.client.settings.enabled) return false;
+    if (!this.client.available) return false;
     return (await sql<{ enabled: boolean }>`SELECT enabled FROM chat_matrix_schools WHERE school_id=${schoolId}::uuid`.execute(db)).rows[0]?.enabled === true;
   }
   async configureSchool(user: AuthUser, schoolId: string, enabled: boolean) {
@@ -54,7 +65,7 @@ export class MatrixTransportService {
       .execute(this.database)).rows[0]?.allowed;
     if (!admin) throw new ForbiddenException('Only an active administrator of this school can change its chat engine.');
     if (enabled) {
-      if (!this.client.settings.enabled) throw new ServiceUnavailableException('The self-hosted Matrix service has not been configured.');
+      if (!this.client.available) throw new ServiceUnavailableException('The self-hosted Matrix service has not been configured.');
       try { await this.client.request('GET', '/_matrix/client/v3/account/whoami'); }
       catch { throw new ServiceUnavailableException('Matrix authentication/health check failed. Existing chat remains available.'); }
     }
@@ -79,10 +90,11 @@ export class MatrixTransportService {
     return { scheduled: Number(result.numAffectedRows ?? 0), delivered: false };
   }
   async deliveryForMessages(ids: string[]): Promise<Map<string, string>> {
-    if (!this.client.settings.enabled || !ids.length) return new Map();
+    if (!this.client.available || !ids.length) return new Map();
     const rows = (await sql<{ message_id: string; state: string }>`SELECT DISTINCT ON(message_id) message_id,state
       FROM chat_matrix_outbox WHERE message_id=ANY(${ids}::uuid[]) ORDER BY message_id,id DESC`.execute(this.database)).rows;
-    return new Map(rows.map(row => [row.message_id,row.state]));
+    return new Map(rows.map(row => [row.message_id,
+      this.client.simulationActive && row.state === 'delivered' ? 'captured_in_simulation' : row.state]));
   }
   private async syncMembers(db: Executor, conversation: Conversation, roomId: string): Promise<Set<string>> {
     const rows = (await sql<Member>`SELECT cp.user_id,concat_ws(' ',u.first_name,u.last_name) AS name
@@ -114,7 +126,7 @@ export class MatrixTransportService {
     return roomId;
   }
   async drainPending(limit = 20): Promise<number> {
-    if (!this.client.settings.enabled) return 0;
+    if (!this.client.available) return 0;
     const conversations = (await sql<{ conversation_id: string }>`SELECT o.conversation_id
       FROM chat_matrix_outbox o JOIN chat_matrix_schools s ON s.school_id=o.school_id AND s.enabled
       WHERE o.state='pending' AND o.available_at<=now()
@@ -124,33 +136,57 @@ export class MatrixTransportService {
     return delivered;
   }
   async flushConversation(conversationId: string, limit = 3) {
-    if (!this.client.settings.enabled) return { delivered: 0, pending: false };
+    if (!this.client.available) return { delivered: 0, pending: false };
     let delivered = 0;
     // One transaction/advisory lock per conversation preserves event ordering across Cloud Run replicas.
     // A crash after Matrix accepts an event is safe: its deterministic transaction ID deduplicates retry.
     await this.database.transaction().execute(async tx => {
       const locked = (await sql<{ locked: boolean }>`SELECT pg_try_advisory_xact_lock(hashtextextended(${`matrix:${conversationId}`},0)) AS locked`.execute(tx)).rows[0]?.locked;
       if (!locked) return;
-      const conversation = (await sql<Conversation>`SELECT id,school_id FROM chat_conversations WHERE id=${conversationId}::uuid`.execute(tx)).rows[0];
+      const conversation = (await sql<Conversation>`SELECT id,school_id,kind,posting_mode FROM chat_conversations WHERE id=${conversationId}::uuid`.execute(tx)).rows[0];
       if (!conversation || !await this.isEnabled(conversation.school_id,tx)) return;
       const rows = (await sql<OutboxRow>`SELECT * FROM chat_matrix_outbox WHERE conversation_id=${conversationId}::uuid
         AND state='pending' ORDER BY id LIMIT ${Math.min(Math.max(limit,1),20)} FOR UPDATE`.execute(tx)).rows;
       let roomId: string | undefined;
-      let members: Set<string> | undefined;
       for (const row of rows) {
         const due = (await sql<{ due: boolean }>`SELECT available_at<=now() AS due FROM chat_matrix_outbox WHERE id=${row.id}::bigint`.execute(tx)).rows[0]?.due;
         if (!due) break;
         try {
-          roomId ??= await this.room(tx,conversation);
-          members ??= await this.syncMembers(tx,conversation,roomId);
-          const sender = this.client.userId(row.school_id,row.payload.sender_id);
           const allowed = (await sql<{ allowed: boolean; deleted: boolean }>`SELECT
             chat_actor_is_current_participant(${row.school_id}::uuid,${row.payload.sender_id}::uuid,'messages.send',${conversationId}::uuid)
               AND NOT EXISTS(SELECT 1 FROM chat_messaging_restrictions r WHERE r.school_id=${row.school_id}::uuid
                 AND r.user_id=${row.payload.sender_id}::uuid AND r.revoked_at IS NULL AND r.expires_at>now()) AS allowed,
             m.is_deleted AS deleted FROM chat_messages m WHERE m.id=${row.message_id}::uuid`.execute(tx)).rows[0];
-          if (row.action !== 'redact' && (!members.has(sender) || !allowed?.allowed || allowed.deleted)) {
+          if (row.action !== 'redact' && (!allowed?.allowed || allowed.deleted)) {
             await sql`UPDATE chat_matrix_outbox SET state='blocked',last_error_code=${allowed?.deleted ? 'REMOVED_BEFORE_DELIVERY' : 'ACCESS_REVOKED'} WHERE id=${row.id}::bigint`.execute(tx);
+            continue;
+          }
+          if (row.action !== 'redact') {
+            const hasAttachment = (await sql<{ present: boolean }>`SELECT EXISTS(
+              SELECT 1 FROM chat_attachments WHERE message_id=${row.message_id}::uuid
+            ) AS present`.execute(tx)).rows[0]?.present === true;
+            const decision = await conversationWritePolicy(tx, conversation, row.payload.sender_id, hasAttachment, true);
+            if (!decision.allowed) {
+              if (decision.code === 'COMMUNICATION_HOURS') {
+                // Keep the immutable intent queued and ordered. A temporary
+                // closed window is not a failed send and must not be discarded.
+                await sql`UPDATE chat_matrix_outbox SET last_error_code='COMMUNICATION_HOURS',
+                  available_at=now()+interval '1 minute' WHERE id=${row.id}::bigint`.execute(tx);
+                break;
+              }
+              await sql`UPDATE chat_matrix_outbox SET state='blocked',last_error_code=${decision.code ?? 'ACCESS_REVOKED'}
+                WHERE id=${row.id}::bigint`.execute(tx);
+              continue;
+            }
+          }
+          roomId ??= await this.room(tx,conversation);
+          // Every queued row re-reads the owning native authority. A recipient
+          // revoked after an earlier delivery must be removed before the next
+          // provider send/edit; a cached flush-wide roster cannot establish that.
+          const members = await this.syncMembers(tx,conversation,roomId);
+          const sender = this.client.userId(row.school_id,row.payload.sender_id);
+          if (row.action !== 'redact' && !members.has(sender)) {
+            await sql`UPDATE chat_matrix_outbox SET state='blocked',last_error_code='ACCESS_REVOKED' WHERE id=${row.id}::bigint`.execute(tx);
             continue;
           }
           const first = (await sql<{ matrix_event_id: string | null }>`SELECT matrix_event_id FROM chat_matrix_outbox

@@ -1,10 +1,13 @@
-import { BadRequestException, ConflictException, ForbiddenException, Injectable, NotFoundException } from "@nestjs/common";
+import { executionNow } from "../campus-model-core/execution-time.runtime.js";
+import { BadRequestException, ConflictException, ForbiddenException, Inject, Injectable, NotFoundException, Optional } from "@nestjs/common";
 import { sql, type Kysely, type Transaction } from "kysely";
 import { z } from "zod";
 import type { AuthUser } from "../common/request.js";
 import { DatabaseService } from "../database/database.service.js";
 import type { Database } from "../database/types.js";
 import { SchoolEventService } from "../school/school-event.service.js";
+import { HUMAN_AGENT_IDENTITY_PORT, type HumanAgentIdentityPort } from "../campus-model-core/human-agent-identity.port.js";
+import { requireAdoptedFeeAuthority } from "./fee-authority-basis.js";
 import type {
   GovernanceAuthoritySourceReceipt,
   GovernanceDecisionAuthorityPort,
@@ -93,9 +96,16 @@ function unavailableDecisionAuthority(message: string): never {
   throw new ConflictException(message);
 }
 
+const decisionMatterLabels: Record<GovernanceDecisionMatter, { label: string; title: string; request: string }> = {
+  staff_leave_decision: { label: "staff leave", title: "Staff leave", request: "this staff-leave request" },
+  transport_duty_change_decision: { label: "transport duty change", title: "Transport duty change", request: "this transport duty change" },
+  fee_instalment_decision: { label: "fee instalment", title: "Fee instalment", request: "this fee-instalment request" },
+};
+
 @Injectable()
 export class GovernanceService implements GovernanceDecisionAuthorityPort {
-  constructor(private readonly db: DatabaseService, private readonly events: SchoolEventService) {}
+  constructor(private readonly db: DatabaseService, private readonly events: SchoolEventService,
+    @Optional() @Inject(HUMAN_AGENT_IDENTITY_PORT) private readonly identities?: HumanAgentIdentityPort) {}
 
   private async memberships(user: AuthUser, schoolId: string, db: Db = this.db) {
     uuid.parse(schoolId);
@@ -127,9 +137,8 @@ export class GovernanceService implements GovernanceDecisionAuthorityPort {
       .executeTakeFirst();
     if (!school) throw new NotFoundException("Institution was not found.");
     const effectiveDate = dateInTimeZone(evaluatedAt, school.timezone);
-    const decisionLabel = matterCode === "staff_leave_decision"
-      ? "staff leave"
-      : "transport duty change";
+    const decisionMatter = decisionMatterLabels[matterCode];
+    const decisionLabel = decisionMatter.label;
 
     const rules = await transaction.selectFrom("institution_decision_matter_rules")
       .selectAll()
@@ -150,7 +159,7 @@ export class GovernanceService implements GovernanceDecisionAuthorityPort {
     if (!["individual", "delegated"].includes(rule.decision_mode)
       || !rule.decision_office_id
       || rule.decision_body_id) {
-      return unavailableDecisionAuthority(`${decisionLabel === "staff leave" ? "Staff leave" : "Transport duty change"} requires one configured individual or delegated decision owner.`);
+      return unavailableDecisionAuthority(`${decisionMatter.title} requires one configured individual or delegated decision owner.`);
     }
 
     const office = await transaction.selectFrom("institution_governance_offices")
@@ -263,6 +272,8 @@ export class GovernanceService implements GovernanceDecisionAuthorityPort {
       }))
       .sort((left, right) => left.id.localeCompare(right.id));
 
+    const feeBasis = matterCode === "fee_instalment_decision" ? await requireAdoptedFeeAuthority(transaction, schoolId, rule,
+      office.id, appointment.id, appointment.linked_user_id, this.identities, evaluatedAt) : undefined;
     return {
       school_id: schoolId,
       matter_code: matterCode,
@@ -303,6 +314,7 @@ export class GovernanceService implements GovernanceDecisionAuthorityPort {
         authority_source_ids: [...rule.authority_source_ids].sort(),
       },
       sources: sourceReceipts,
+      ...(feeBasis ? { fee_instalment_basis: feeBasis } : {}),
     };
   }
 
@@ -316,9 +328,7 @@ export class GovernanceService implements GovernanceDecisionAuthorityPort {
     uuid.parse(userId);
     const authority = await this.resolveDecisionOwner(transaction, schoolId, matterCode, at);
     if (authority.user_id !== userId) {
-      throw new ForbiddenException(matterCode === "staff_leave_decision"
-        ? "The current officeholder must decide this staff-leave request."
-        : "The current officeholder must decide this transport duty change.");
+      throw new ForbiddenException(`The current officeholder must decide ${decisionMatterLabels[matterCode].request}.`);
     }
     return authority;
   }
@@ -364,7 +374,7 @@ export class GovernanceService implements GovernanceDecisionAuthorityPort {
         applicable: applicable.length,
         published: applicable.filter((item) => item.current_status === "published").length,
         in_review: applicable.filter((item) => item.work_status === "in_review").length,
-        review_due: applicable.filter((item) => typeof item.current_review_due_on === "string" && item.current_review_due_on <= new Date(Date.now() + 30 * 86400_000).toISOString().slice(0, 10)).length,
+        review_due: applicable.filter((item) => typeof item.current_review_due_on === "string" && item.current_review_due_on <= new Date(executionNow().getTime() + 30 * 86400_000).toISOString().slice(0, 10)).length,
       },
     };
   }
@@ -457,7 +467,7 @@ export class GovernanceService implements GovernanceDecisionAuthorityPort {
         issuer: input.legal_operator_name, jurisdiction: [profile.district, profile.state_code, profile.country_code].filter(Boolean).join(", "),
         reference: input.authority_reference, provision: "", evidence_reference: input.authority_reference,
         verification_state: school.onboarding_model === "self_service_coaching" ? "self_attested" : "recorded",
-        effective_from: new Date().toISOString().slice(0, 10), effective_until: null,
+        effective_from: executionNow().toISOString().slice(0, 10), effective_until: null,
         verified_by: null, verified_at: null, created_by: user.id,
       }).returningAll().executeTakeFirstOrThrow();
 
@@ -466,7 +476,7 @@ export class GovernanceService implements GovernanceDecisionAuthorityPort {
         school_id: schoolId, first_name: nameParts.shift()!, last_name: nameParts.join(" "),
         contact_phone: "", contact_email: "",
       }).returning("id").executeTakeFirstOrThrow();
-      const today = new Date().toISOString().slice(0, 10);
+      const today = executionNow().toISOString().slice(0, 10);
       const proposed = source.verification_state === "recorded" ? "proposed" as const : "active" as const;
       const lead = profile.institution_kind === "coaching" ? { code: "director", title: "Director" }
         : profile.institution_kind === "college" ? { code: "principal", title: "Principal" }
@@ -624,7 +634,7 @@ export class GovernanceService implements GovernanceDecisionAuthorityPort {
       if (current.status !== "draft") throw new ConflictException("Only a draft can be submitted for review.");
       if (current.revision !== input.expected_revision) throw new ConflictException("The policy draft changed. Reload and review it again.");
       if (current.body_markdown.trim().length < 40 || current.summary.trim().length < 12) throw new BadRequestException("Add a meaningful summary and policy content before review.");
-      const updated = await trx.updateTable("institution_policy_versions").set({ status: "in_review", submitted_by: user.id, submitted_at: new Date(), review_note: "", review_override_reason: "", reviewed_by: null, reviewed_at: null, review_separation_met: null })
+      const updated = await trx.updateTable("institution_policy_versions").set({ status: "in_review", submitted_by: user.id, submitted_at: executionNow(), review_note: "", review_override_reason: "", reviewed_by: null, reviewed_at: null, review_separation_met: null })
         .where("id", "=", versionId).where("revision", "=", input.expected_revision).returningAll().executeTakeFirst();
       if (!updated) throw new ConflictException("The policy draft changed. Reload and try again.");
       await this.audit(trx, user, schoolId, "governance.policy.submitted", "policy_version", versionId, { version: updated.version, revision: updated.revision });
@@ -632,7 +642,7 @@ export class GovernanceService implements GovernanceDecisionAuthorityPort {
       await this.enqueue(trx, schoolId, "governance.policy.submitted", versionId, updated.revision, admins.map((item) => item.user_id), {
         title: "Policy ready for review",
         body: updated.title,
-        admin_link: `/principal/governance?section=register&policy=${current.family_id}`,
+        admin_link: `/more/governance?section=register&policy=${current.family_id}`,
       });
       return updated;
     });
@@ -653,7 +663,7 @@ export class GovernanceService implements GovernanceDecisionAuthorityPort {
       if (input.decision === "publish" && current.risk_level === "high" && !separated && Number(adminCount.count) > 1) throw new ForbiddenException("A different active administrator must review this high-risk policy.");
       if (input.decision === "publish" && !separated && input.override_reason.length < 20) throw new BadRequestException("Record why independent review is unavailable (at least 20 characters).");
       if (input.decision === "reject") {
-        const rejected = await trx.updateTable("institution_policy_versions").set({ status: "draft", reviewed_by: user.id, reviewed_at: new Date(), review_note: input.note, review_separation_met: separated, review_override_reason: separated ? "" : input.override_reason, submitted_by: null, submitted_at: null })
+        const rejected = await trx.updateTable("institution_policy_versions").set({ status: "draft", reviewed_by: user.id, reviewed_at: executionNow(), review_note: input.note, review_separation_met: separated, review_override_reason: separated ? "" : input.override_reason, submitted_by: null, submitted_at: null })
           .where("id", "=", versionId).where("revision", "=", input.expected_revision).returningAll().executeTakeFirst();
         if (!rejected) throw new ConflictException("The review changed. Reload and try again.");
         await this.audit(trx, user, schoolId, "governance.policy.rejected", "policy_version", versionId, { version: rejected.version, revision: rejected.revision, review_separation_met: separated });
@@ -669,16 +679,16 @@ export class GovernanceService implements GovernanceDecisionAuthorityPort {
         });
         return rejected;
       }
-      await trx.updateTable("institution_policy_versions").set({ status: "retired", retired_at: new Date() }).where("family_id", "=", current.family_id).where("status", "=", "published").execute();
-      const published = await trx.updateTable("institution_policy_versions").set({ status: "published", reviewed_by: user.id, reviewed_at: new Date(), review_note: input.note, review_separation_met: separated, review_override_reason: separated ? "" : input.override_reason, published_at: new Date(), effective_on: current.effective_on ?? new Date().toISOString().slice(0, 10) })
+      await trx.updateTable("institution_policy_versions").set({ status: "retired", retired_at: executionNow() }).where("family_id", "=", current.family_id).where("status", "=", "published").execute();
+      const published = await trx.updateTable("institution_policy_versions").set({ status: "published", reviewed_by: user.id, reviewed_at: executionNow(), review_note: input.note, review_separation_met: separated, review_override_reason: separated ? "" : input.override_reason, published_at: executionNow(), effective_on: current.effective_on ?? executionNow().toISOString().slice(0, 10) })
         .where("id", "=", versionId).where("revision", "=", input.expected_revision).returningAll().executeTakeFirst();
       if (!published) throw new ConflictException("The review changed. Reload and try again.");
       const audience = await trx.selectFrom("school_memberships").select("user_id").where("school_id", "=", schoolId).where("is_active", "=", true).where("role", "in", published.audience_roles as MemberRole[]).execute();
       await this.audit(trx, user, schoolId, "governance.policy.published", "policy_version", versionId, { family_code: current.code, version: published.version, revision: published.revision, review_separation_met: separated });
       await this.enqueue(trx, schoolId, "governance.policy.published", versionId, published.revision, audience.map((item) => item.user_id), {
         kind: "general", title: "New institution policy", body: published.title,
-        parent_link: `/parent/policies?policy=${versionId}&policy_revision=${published.revision}`,
-        staff_link: `/teacher/policies?policy=${versionId}&policy_revision=${published.revision}`,
+        parent_link: `/more/policies?policy=${versionId}&policy_revision=${published.revision}`,
+        staff_link: `/more/policies?policy=${versionId}&policy_revision=${published.revision}`,
         attention_eligible: true, attention_module: "policies", attention_source_kind: "policy_publication",
         attention_source_id: versionId, attention_source_revision: published.revision,
         attention_topic_key: `policy-family:${published.family_id}`,
@@ -704,7 +714,9 @@ export class GovernanceService implements GovernanceDecisionAuthorityPort {
       const input = acknowledgementInput.parse(body); uuid.parse(versionId);
       const version = await trx.selectFrom("institution_policy_versions").selectAll().where("school_id", "=", schoolId).where("id", "=", versionId).where("status", "=", "published").executeTakeFirst();
       if (!version) throw new NotFoundException("Published policy version was not found.");
-      const membershipRole = memberRoles.find((role) => version.audience_roles.includes(role));
+      // App membership is not an alias for an existing policy audience. Keep
+      // acknowledgement within the explicitly published, supported audiences.
+      const membershipRole = memberRoles.find((role): role is MemberRole => role !== "member" && version.audience_roles.includes(role));
       if (!membershipRole) throw new ForbiddenException("This policy is not published to your membership audience.");
       const inserted = await trx.insertInto("institution_policy_acknowledgements").values({ school_id: schoolId, policy_version_id: versionId, user_id: user.id, membership_role: membershipRole, acknowledgement_text: input.acknowledgement_text })
         .onConflict((conflict) => conflict.columns(["policy_version_id", "user_id"]).doNothing()).returningAll().executeTakeFirst();

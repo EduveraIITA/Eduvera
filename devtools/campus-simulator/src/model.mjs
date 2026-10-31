@@ -17,11 +17,11 @@ export function validateBehaviorFixture(input) {
   }
   if (input.clock?.mode !== "compressed_school_day"
     || !Number.isInteger(input.clock?.duration_seconds)
-    || input.clock.duration_seconds < 120
+    || input.clock.duration_seconds < 60
     || input.clock.duration_seconds > 3_600
     || typeof input.clock?.label !== "string"
     || input.clock.label.trim().length < 3) {
-    throw new Error("The Cambridge fixture must configure a labelled 2-60 minute compressed school day.");
+    throw new Error("The Cambridge fixture must configure a labelled 1-60 minute compressed school day.");
   }
   const ratios = input.attendance_ratios ?? {};
   const ratioTotal = ["present", "late", "absent", "excused"].reduce((sum, key) => sum + Number(ratios[key] ?? 0), 0);
@@ -39,8 +39,12 @@ export function validateBehaviorFixture(input) {
     if (!["lesson", "break", "activity"].includes(action.phase_mode)) {
       throw new Error(`Unsupported action phase mode for ${action.id}.`);
     }
-    if (!Number.isInteger(action.period_number) || action.period_number < 1) {
-      throw new Error(`${action.id} must select a positive published period number.`);
+    const selectsEachLesson = action.period_selector === "each_lesson";
+    if (selectsEachLesson && (action.type !== "teacher_submit_attendance" || action.phase_mode !== "lesson")) {
+      throw new Error(`${action.id} may use each_lesson only for lesson attendance.`);
+    }
+    if (!selectsEachLesson && (!Number.isInteger(action.period_number) || action.period_number < 1)) {
+      throw new Error(`${action.id} must select a positive published period number or each_lesson.`);
     }
   }
   if (!Array.isArray(input.reactions)) throw new Error("Behavior reactions must be an array.");
@@ -241,7 +245,10 @@ export function createRoutineSchedule({ startedAt: startedAtValue, now: nowValue
   const now = new Date(nowValue ?? startedAtValue ?? new Date());
   const context = timetable?.context ?? {};
   const timeZone = context.timezone || behavior.timezone;
-  const referenceDate = context.today || timetable?.school_date || dateInZone(now, timeZone);
+  // `context.today` is the service's real wall-clock date. Accelerated runs ask
+  // the same domain API for another effective date, which is retained as
+  // `school_date`; that requested date must drive the rehearsal projection.
+  const referenceDate = timetable?.school_date || context.today || dateInZone(now, timeZone);
   const referenceInstant = instantInZone(referenceDate, 12 * 3_600, timeZone);
   const referenceWeekday = dayNumber(referenceInstant, timeZone);
   const classes = new Map((timetable?.classes ?? []).map((item) => [String(item.id), item]));
@@ -511,7 +518,7 @@ function phaseReceipts(now, routine, behavior) {
       kind: phase.mode === "transition" ? "movement" : "system",
       title: phaseReceiptTitle(phase),
       detail: `${phase.description} This timeline receipt is derived from ${behavior.source_label}; it is not a gate check-in, sensor observation or physical room-presence claim.`,
-      target_path: "/principal/timetable",
+      target_path: "/areas/timetable/planning",
     }));
 }
 
@@ -637,7 +644,7 @@ export function buildStatusSnapshot({
       kind: "movement",
       title: `${slot.class_name || className(targetClass)} started ${slot.display_title || slot.subject_name || "scheduled activity"} · simulated`,
       detail: `${slot.teacher_name ? `${slot.teacher_name} is expected with this class` : "The class is expected here"} in ${zone?.label || "its configured home space"}. Timetable projection only; no physical presence is asserted.`,
-      target_path: "/principal/timetable",
+      target_path: "/areas/timetable/planning",
     });
   })] : [];
 
@@ -670,6 +677,7 @@ export function buildStatusSnapshot({
     schedule: {
       reference_weekday: routine.reference_weekday,
       reference_date: routine.reference_date,
+      timezone: routine.timezone,
       simulated_at: simulatedAt(generatedAt, routine),
       source: routine.source,
       active_slot_ids: phase.active_slot_ids,

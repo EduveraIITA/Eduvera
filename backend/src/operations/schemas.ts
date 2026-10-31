@@ -13,12 +13,9 @@ export const studentSchema = personSchema.extend({
   admission_number: text(64), date_of_birth: date.nullable().default(null),
   class_section_id: uuid, term_id: uuid, roll_number: z.number().int().min(1).max(32767),
 });
-export const studentUpdateSchema = personSchema.pick({ first_name: true, last_name: true }).extend({
+export const studentUpdateSchema = z.object({
+  first_name: text(150).optional(), last_name: z.string().trim().max(150).optional(),
   admission_number: text(64), date_of_birth: date.nullable(),
-});
-export const guardianSchema = personSchema.extend({
-  student_id: uuid, phone: text(32), relationship: z.enum(["mother", "father", "guardian"]),
-  is_primary: z.boolean().default(false), can_authorize_leave: z.boolean().default(true),
 });
 export const termSchema = z.object({
   academic_year: z.string().regex(/^\d{4}-\d{2}(?:\d{2})?$/), name: text(100), starts_on: date, ends_on: date,

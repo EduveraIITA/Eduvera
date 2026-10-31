@@ -14,7 +14,7 @@ const rehearsal: TimetableRehearsalIndicator = {
   nextChangeAt: null,
   activeSlotIds: ["slot-1"],
   timeZone: "Asia/Kolkata",
-  campusPath: "/principal/campus",
+  campusPath: "/more/virtual-campus",
 };
 
 describe("TimetableRehearsalStrip", () => {
@@ -23,11 +23,11 @@ describe("TimetableRehearsalStrip", () => {
     expect(screen.getByLabelText(/simulated school day, read-only/i)).toBeInTheDocument();
     expect(screen.getByText("Read-only")).toBeInTheDocument();
     expect(screen.getByText(/9:10\s*am.*period 1/i)).toBeInTheDocument();
-    expect(screen.queryByRole("link", { name: /campus view/i })).not.toBeInTheDocument();
+    expect(screen.queryByRole("link", { name: /virtual campus/i })).not.toBeInTheDocument();
   });
 
-  it("exposes Campus View only when the owning route opts in", () => {
+  it("exposes Virtual campus only when the owning route opts in", () => {
     render(<MemoryRouter><TimetableRehearsalStrip rehearsal={rehearsal} showCampusLink /></MemoryRouter>);
-    expect(screen.getByRole("link", { name: /campus view/i })).toHaveAttribute("href", "/principal/campus");
+    expect(screen.getByRole("link", { name: "Open Virtual campus" })).toHaveAttribute("href", "/more/virtual-campus");
   });
 });

@@ -1,3 +1,4 @@
+import { applicationNow } from "../../features/simulation/applicationTime";
 import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import {
   BellRing,
@@ -79,6 +80,8 @@ export interface StudentTimetablePageProps {
   attentionStatus?: ReactNode;
   focusPublishedSource?: boolean;
   rehearsal?: TimetableRehearsalIndicator | null;
+  /** Shared-shell presentation used by the canonical relationship workspace. */
+  presentation?: "legacy" | "workspace";
 }
 
 function TimetableShell({
@@ -87,6 +90,7 @@ function TimetableShell({
   onSelectChild,
   routes,
   className,
+  presentation,
   children,
 }: {
   audience: "student" | "parent";
@@ -94,8 +98,10 @@ function TimetableShell({
   onSelectChild?: (childId: string) => ParentPageAction;
   routes?: Partial<StudentRouteMap>;
   className?: string;
+  presentation: "legacy" | "workspace";
   children: ReactNode;
 }) {
+  if (presentation === "workspace") return <>{children}</>;
   if (audience === "parent") {
     return <ParentShell active="timetable" pageLabel="Timetable" child={child} onSelectChild={onSelectChild}>{children}</ParentShell>;
   }
@@ -124,10 +130,11 @@ export function StudentTimetablePage({
   attentionStatus,
   focusPublishedSource = false,
   rehearsal,
+  presentation = "legacy",
 }: StudentTimetablePageProps) {
   const [bellAlerts, setBellAlerts] = useState(() => storedBellPreference(false));
   const [toast, setToast] = useState("");
-  const [now, setNow] = useState(() => new Date());
+  const [now, setNow] = useState(() => applicationNow());
   const [selectedPeriod, setSelectedPeriod] = useState<{ day: TimetableDay; period: TimetablePeriod } | null>(null);
   const publishedSourceRef = useRef<HTMLElement>(null);
   const currentSchoolClock = schoolClock(timetableRehearsalInstant(rehearsal, now));
@@ -182,7 +189,7 @@ export function StudentTimetablePage({
   }, [toast]);
 
   useEffect(() => {
-    const interval = window.setInterval(() => setNow(new Date()), 30_000);
+    const interval = window.setInterval(() => setNow(applicationNow()), 30_000);
     return () => window.clearInterval(interval);
   }, []);
 
@@ -208,7 +215,7 @@ export function StudentTimetablePage({
   }
 
   if (view === "year" || scheduleLoading) {
-    return <TimetableShell audience={audience} child={child} onSelectChild={onSelectChild} routes={routes} className={className}>
+    return <TimetableShell presentation={presentation} audience={audience} child={child} onSelectChild={onSelectChild} routes={routes} className={className}>
       <div className="student-page-stack timetable-page">
         {rehearsal ? <TimetableRehearsalStrip rehearsal={rehearsal} /> : null}
         {navigator}
@@ -220,7 +227,7 @@ export function StudentTimetablePage({
 
   if (!days.length) {
     return (
-      <TimetableShell audience={audience} child={child} onSelectChild={onSelectChild} routes={routes} className={className}>
+      <TimetableShell presentation={presentation} audience={audience} child={child} onSelectChild={onSelectChild} routes={routes} className={className}>
         <div className="student-page-stack timetable-page">
           {rehearsal ? <TimetableRehearsalStrip rehearsal={rehearsal} /> : null}
           {navigator}
@@ -236,7 +243,7 @@ export function StudentTimetablePage({
   }
 
   return (
-    <TimetableShell audience={audience} child={child} onSelectChild={onSelectChild} routes={routes} className={className}>
+    <TimetableShell presentation={presentation} audience={audience} child={child} onSelectChild={onSelectChild} routes={routes} className={className}>
       <div className="student-page-stack timetable-page">
         {rehearsal ? <TimetableRehearsalStrip rehearsal={rehearsal} /> : null}
         {navigator}

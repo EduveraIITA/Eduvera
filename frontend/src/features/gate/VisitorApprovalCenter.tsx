@@ -10,8 +10,8 @@ import './visitor-approvals.css';
 export function VisitorApprovalCenter() {
   const auth=useOptionalAuth();
   if(auth?.status!=='authenticated'||!auth.user||auth.user.email_verified===false||auth.publicDemo||!auth.memberships.some(m=>m.role==='staff'||m.role==='admin'))return null;
-  const home=authDestination(auth);
-  if(!['/teacher','/principal','/workspace','/gate','/parent/home','/student','/company'].includes(home))return null;
+  const home=authDestination(auth,{resumeUnfinishedSetup:false});
+  if(home!=='/today'&&home!=='/company')return null;
   return <ApprovalInbox key={`${auth.user.id}:${auth.user.active_school_id??''}`} home={home} />;
 }
 

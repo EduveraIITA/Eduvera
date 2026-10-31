@@ -1,3 +1,4 @@
+import { CampusModelCoreService } from "../src/campus-model-core/campus-model-core.service.js";
 import { randomUUID } from 'node:crypto';
 import { Pool } from 'pg';
 import { beforeAll,afterAll,describe,it,expect } from 'vitest';
@@ -5,22 +6,26 @@ import { DatabaseService } from '../src/database/database.service.js';
 import { SchoolService } from '../src/school/school.service.js';
 import { SchoolEventService } from '../src/school/school-event.service.js';
 import { SchedulePlanningService } from '../src/schedule-planning/schedule-planning.service.js';
+import { ActivityPlanningService } from '../src/schedule-planning/activity-planning.service.js';
+import { ResponsibilityProjectionService } from '../src/campus-model-core/responsibility-projection.service.js';
 import { AssessmentsService } from '../src/assessments/assessments.service.js';
 import { effectiveSchedule } from '../src/day-plans/schedule.js';
 import type { AuthenticatedRequest,AuthUser } from '../src/common/request.js';
 import type { Period } from '../src/schedule-planning/contracts.js';
 import { requireIsolatedTestDatabaseUrl } from './test-database.js';
 import { createStaffCoverageReconciliationTestDouble, type StaffCoverageReconciliationTestDouble } from './staff-coverage-reconciliation.test-support.js';
+import { linkFixtureStaffIdentity } from './fixture-human-identity.test-support.js';
 const pool=new Pool({connectionString:requireIsolatedTestDatabaseUrl(process.env.DATABASE_URL)});
 let db:DatabaseService,service:SchedulePlanningService,coverage:StaffCoverageReconciliationTestDouble,req:AuthenticatedRequest,school:string,term:string,classId:string,otherClass:string,from:string,to:string,today:string;
+const temporaryTeacherIds:string[]=[];
 const cmd=()=>({school_id:school,idempotency_key:randomUUID()});
 const add=(d:string,n:number)=>new Date(Date.parse(d+'T12:00:00Z')+n*86400000).toISOString().slice(0,10);
 const rows=(title='Changed'):Period[]=>[{id:randomUUID(),weekday:1,period_number:1,starts_at:'18:00',ends_at:'18:30',subject_id:null,teacher_user_id:null,title,slot_type:'activity',room:''}];
 const begin=()=>service.start(req,{...cmd(),term_id:term,class_section_id:classId,starts_on:from,ends_on:to});
 beforeAll(async()=>{
-  db=new DatabaseService();const events=new SchoolEventService(db);coverage=createStaffCoverageReconciliationTestDouble();const schoolService=new SchoolService(db,events,coverage);service=new SchedulePlanningService(db,events,schoolService,coverage);
-  const user=(await pool.query<AuthUser>("SELECT u.* FROM users u JOIN school_memberships m ON m.user_id=u.id WHERE m.role='admin' AND m.is_active LIMIT 1")).rows[0]!;
-  school=(await pool.query("SELECT school_id FROM school_memberships WHERE user_id=$1 AND role='admin' AND is_active LIMIT 1",[user.id])).rows[0].school_id;
+  db=new DatabaseService();const core=new CampusModelCoreService(db);const events=new SchoolEventService(db,core);coverage=createStaffCoverageReconciliationTestDouble();const schoolService=new SchoolService(db,events,coverage);const activities=new ActivityPlanningService(db,events,core,core,core,new ResponsibilityProjectionService(core));service=new SchedulePlanningService(db,events,schoolService,coverage,core,core,activities);
+  const user=(await pool.query<AuthUser>("SELECT u.* FROM users u JOIN school_memberships m ON m.user_id=u.id JOIN schools s ON s.id=m.school_id WHERE u.username='meera.principal' AND s.code='cis' AND m.role='admin' AND m.is_active LIMIT 1")).rows[0]!;
+  school=(await pool.query("SELECT m.school_id FROM school_memberships m JOIN schools s ON s.id=m.school_id WHERE m.user_id=$1 AND s.code='cis' AND m.role='admin' AND m.is_active LIMIT 1",[user.id])).rows[0].school_id;
   req={authUser:{...user,active_school_id:school},requestId:randomUUID(),ip:'127.0.0.1'} as AuthenticatedRequest;
   today=(await pool.query("SELECT (now() AT TIME ZONE timezone)::date::text AS d FROM schools WHERE id=$1",[school])).rows[0].d;
   const d=new Date(today+'T12:00:00Z');from=add(today,((8-d.getUTCDay())%7||7)+7);to=add(from,6);
@@ -29,14 +34,17 @@ beforeAll(async()=>{
   for(const section of ['A','B']) {const id=(await pool.query("INSERT INTO class_sections(school_id,academic_year,grade,section) VALUES($1,$2,'SP',$3) RETURNING id",[school,academic,section])).rows[0].id;if(section==='A')classId=id;else otherClass=id;}
   await pool.query("INSERT INTO timetable_slots(class_section_id,term_id,weekday,period_number,starts_at,ends_at,slot_type,title) VALUES($1,$2,1,1,'18:00','18:30','activity','Original')",[classId,term]);
 });
-afterAll(async()=>{await db?.destroy();await pool.end();});
+afterAll(async()=>{
+  if(temporaryTeacherIds.length)await pool.query("UPDATE school_memberships SET is_active=false WHERE school_id=$1 AND user_id=ANY($2::uuid[])",[school,temporaryTeacherIds]);
+  await db?.destroy();await pool.end();
+});
 describe('annual scheduling',()=>{
   it('keeps drafts invisible, rejects stale edits, and retries idempotently',async()=>{
     const input={...cmd(),term_id:term,class_section_id:classId,starts_on:from,ends_on:to};
     const v=await service.start(req,input);expect(await service.start(req,input)).toEqual(v);
     await expect(service.start(req,{...input,ends_on:add(to,1)})).rejects.toThrow('retry');
     await service.save(req,v.id,{...cmd(),expected_revision:1,starts_on:from,ends_on:to,periods:rows()});
-    await expect(service.save(req,v.id,{...cmd(),expected_revision:1,starts_on:from,ends_on:to,periods:rows()})).rejects.toThrow('Reload');
+    await expect(service.save(req,v.id,{...cmd(),expected_revision:1,starts_on:from,ends_on:to,periods:rows()})).rejects.toThrow('The command target changed. Refresh before continuing.');
     expect((await effectiveSchedule(db,school,from)).find(r=>r.class_section_id===classId)?.title).toBe('Original');
     await service.discard(req,v.id,{...cmd(),expected_revision:2});
   });
@@ -57,7 +65,7 @@ describe('annual scheduling',()=>{
   });
   it('preserves an already published daily plan over a repeating version',async()=>{
     const plan=(await pool.query('INSERT INTO day_plans(school_id,class_section_id,term_id,date,owner_id) VALUES($1,$2,$3,$4,$5) RETURNING id',[school,classId,term,from,req.authUser.id])).rows[0].id;
-    await pool.query("INSERT INTO day_plan_versions(school_id,plan_id,version,state,created_by) VALUES($1,$2,1,'published',$3)",[school,plan,req.authUser.id]);
+    await pool.query("INSERT INTO day_plan_versions(school_id,plan_id,version,state,created_by,published_revision) VALUES($1,$2,1,'published',$3,1)",[school,plan,req.authUser.id]);
     await pool.query("INSERT INTO day_plan_periods(school_id,plan_id,version,period_number,starts_at,ends_at,title,slot_type) VALUES($1,$2,1,1,'18:00','18:30','Dated change','activity')",[school,plan]);
     await pool.query('UPDATE day_plans SET published_version=1 WHERE id=$1',[plan]);
     expect((await effectiveSchedule(db,school,from)).find(r=>r.class_section_id===classId)?.title).toBe('Dated change');
@@ -85,7 +93,9 @@ describe('annual scheduling',()=>{
   it('ties teaching access to validity dates and protects published data',async()=>{
     const username=`schedule-${randomUUID()}`;
     const teacher=(await pool.query("INSERT INTO users(username,email,password_hash,first_name,last_name,role) VALUES($1,$2,'x','Schedule','Teacher','staff') RETURNING id",[username,`${username}@example.test`])).rows[0].id;
+    temporaryTeacherIds.push(teacher);
     await pool.query("INSERT INTO school_memberships(school_id,user_id,role,is_active) VALUES($1,$2,'staff',true)",[school,teacher]);
+    await linkFixtureStaffIdentity(db,{school_id:school,user_id:teacher,owner_user_id:req.authUser.id,teaching:true});
     const date=add(from,28);
     const v=await service.start(req,{...cmd(),term_id:term,class_section_id:classId,starts_on:date,ends_on:add(date,6)});
     const periods=rows().map(p=>({...p,teacher_user_id:teacher}));

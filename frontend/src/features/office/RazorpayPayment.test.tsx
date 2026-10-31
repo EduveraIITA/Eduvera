@@ -3,15 +3,17 @@ import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { apiFetch } from "../../lib/api";
 import { RazorpayPayment } from "./RazorpayPayment";
+import { loadRazorpay } from "./razorpay";
 vi.mock("../../lib/api", () => ({ apiFetch: vi.fn() }));
 vi.mock("./razorpay", () => ({ loadRazorpay: vi.fn().mockResolvedValue(undefined) }));
 afterEach(() => { cleanup(); delete window.Razorpay; });
 let options: ConstructorParameters<NonNullable<Window["Razorpay"]>>[0];
 const opened = vi.fn();
+const checkoutConstructed = vi.fn();
 beforeEach(() => {
   vi.resetAllMocks();
   vi.mocked(apiFetch).mockResolvedValue([]);
-  window.Razorpay = class { constructor(value: typeof options) { options = value; } open() { opened(); } close() {} on() {} };
+  window.Razorpay = class { constructor(value: typeof options) { checkoutConstructed(value); options = value; } open() { opened(); } close() {} on() {} };
 });
 it("opens checkout with the server order and waits for verified capture before showing a receipt", async () => {
   const saved = vi.fn().mockResolvedValue(undefined);
@@ -35,6 +37,30 @@ it("never calls checkout after an order failure", async () => {
   render(<RazorpayPayment schoolId="school" invoiceId="invoice" amount={2500} onSaved={vi.fn()} />);
   await userEvent.click(screen.getByRole("button", { name: /Pay with Razorpay/ }));
   expect(opened).not.toHaveBeenCalled(); expect(screen.getByRole("alert")).toHaveTextContent("outstanding balance");
+});
+it("captures a Simulation order without loading or constructing the Razorpay SDK", async () => {
+  const saved = vi.fn();
+  vi.mocked(apiFetch)
+    .mockResolvedValueOnce([])
+    .mockResolvedValueOnce({
+      key_id: "",
+      order_id: "simulation-order",
+      amount: 2500,
+      currency: "INR",
+      evidence_mode: "simulation",
+      external_checkout: false,
+    });
+
+  render(<RazorpayPayment schoolId="school" invoiceId="invoice" amount={2500} onSaved={saved} />);
+  await userEvent.click(screen.getByRole("button", { name: /Pay with Razorpay/ }));
+
+  expect(await screen.findByRole("status")).toHaveTextContent(
+    "No checkout was opened, no money moved, and no payment or receipt was invented.",
+  );
+  expect(loadRazorpay).not.toHaveBeenCalled();
+  expect(checkoutConstructed).not.toHaveBeenCalled();
+  expect(opened).not.toHaveBeenCalled();
+  expect(saved).not.toHaveBeenCalled();
 });
 it('restores payment and email status after reopening the invoice and exposes a private PDF link',async()=>{
  vi.mocked(apiFetch).mockResolvedValue([{id:'order',state:'captured',payment_id:'receipt',provider_payment_id:'pay_one',amount_paise:2500,email_status:'accepted'}]);

@@ -1,4 +1,5 @@
 const portalNames = new Set(["parent", "student", "teacher", "principal"]);
+const canonicalWorkspaceRoots = new Set(["areas", "work", "today", "more"]);
 
 export const portalReturnStateKey = "portalReturnTo";
 
@@ -8,7 +9,7 @@ function internalPortalHref(value: unknown) {
     const parsed = new URL(value, window.location.origin);
     if (parsed.origin !== window.location.origin) return null;
     const portal = parsed.pathname.split("/").filter(Boolean)[0] ?? "";
-    if (!portalNames.has(portal)) return null;
+    if (!portalNames.has(portal) && !canonicalWorkspaceRoots.has(portal)) return null;
     return {
       href: `${parsed.pathname}${parsed.search}${parsed.hash}`,
       portal,
@@ -16,6 +17,12 @@ function internalPortalHref(value: unknown) {
   } catch {
     return null;
   }
+}
+
+function compatibleApplicationContext(left: { portal: string }, right: { portal: string }) {
+  return left.portal === right.portal
+    || canonicalWorkspaceRoots.has(left.portal)
+    || canonicalWorkspaceRoots.has(right.portal);
 }
 
 function stateRecord(state: unknown) {
@@ -32,7 +39,7 @@ function stateRecord(state: unknown) {
 export function portalReturnState(originHref: string, destinationHref: string, state?: unknown) {
   const origin = internalPortalHref(originHref);
   const destination = internalPortalHref(destinationHref);
-  if (!origin || !destination || origin.portal !== destination.portal) return undefined;
+  if (!origin || !destination || !compatibleApplicationContext(origin, destination)) return undefined;
   return { ...stateRecord(state), [portalReturnStateKey]: origin.href };
 }
 
@@ -40,13 +47,13 @@ export function portalReturnState(originHref: string, destinationHref: string, s
 export function portalReturnTarget(state: unknown, currentHref: string) {
   const current = internalPortalHref(currentHref);
   const candidate = internalPortalHref(stateRecord(state)[portalReturnStateKey]);
-  return current && candidate && current.portal === candidate.portal ? candidate.href : null;
+  return current && candidate && compatibleApplicationContext(current, candidate) ? candidate.href : null;
 }
 
 export function samePortalHref(left: string | null, right: string | null) {
   const leftValue = internalPortalHref(left);
   const rightValue = internalPortalHref(right);
-  if (!leftValue || !rightValue || leftValue.portal !== rightValue.portal) return false;
+  if (!leftValue || !rightValue || !compatibleApplicationContext(leftValue, rightValue)) return false;
   const normalized = (href: string) => {
     const parsed = new URL(href, window.location.origin);
     const search = new URLSearchParams([...parsed.searchParams.entries()].sort(([leftKey, leftItem], [rightKey, rightItem]) => leftKey.localeCompare(rightKey) || leftItem.localeCompare(rightItem)));

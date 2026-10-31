@@ -8,6 +8,7 @@ import type { AuthenticatedRequest, AuthUser } from "../src/common/request.js";
 import { DatabaseService } from "../src/database/database.service.js";
 import { SchoolEventService } from "../src/school/school-event.service.js";
 import { requireIsolatedTestDatabaseUrl } from "./test-database.js";
+import { ownedParticipationTestServices } from './owned-participation.test-support.js';
 
 const isolated = process.env.TEST_DATABASE_ISOLATED === "true";
 const databaseUrl = isolated ? requireIsolatedTestDatabaseUrl(process.env.DATABASE_URL) : "postgresql://invalid.invalid/unused";
@@ -39,7 +40,8 @@ describe.skipIf(!isolated)("campus-event withdrawal and manual refund service", 
   beforeAll(async () => {
     database = new DatabaseService();
     const schoolEvents = new SchoolEventService(database);
-    events = new CampusEventsService(database, schoolEvents);
+    const participation=ownedParticipationTestServices(database);
+    events = new CampusEventsService(database, schoolEvents,participation.bridge,participation.authorities,participation.core,participation.footprints,participation.planning);
     finance = new CampusEventFinanceService(database, schoolEvents);
 
     schoolId = (await pool.query<{ id: string }>("SELECT id FROM schools WHERE code='cis'")).rows[0]!.id;

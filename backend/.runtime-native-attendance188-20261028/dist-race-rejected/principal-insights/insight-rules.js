@@ -1,0 +1,36 @@
+export const percentage = (points, denominator) => denominator > 0 ? Math.round(points * 1000 / denominator) / 10 : null;
+export function engagementSignals(students) {
+    return students.flatMap((student) => {
+        const current = percentage(student.points, student.scored);
+        const previous = percentage(student.previous_points, student.previous_scored);
+        // Incomplete registers can create apparent changes. Require both windows to
+        // be sufficiently observed, and preserve missing/excused states separately.
+        if (current === null || previous === null || student.scored < 5 || student.previous_scored < 5
+            || !student.expected || !student.previous_expected
+            || student.recorded / student.expected < 0.8 || student.previous_recorded / student.previous_expected < 0.8
+            || previous - current < 10)
+            return [];
+        return [{ ...student, current, previous, change: Math.round((current - previous) * 10) / 10,
+                combined: student.missing_homework >= 2 }];
+    }).sort((a, b) => Number(b.combined) - Number(a.combined) || a.change - b.change || a.name.localeCompare(b.name));
+}
+export function engagementProjection(signals, focusedStudentId, limit = 50) {
+    const distinct = [...new Map(signals.map((signal) => [signal.id, signal])).values()];
+    const withoutFollowup = distinct.filter((signal) => signal.open_followups === 0);
+    return {
+        total: distinct.length,
+        combined: distinct.filter((signal) => signal.combined).length,
+        without_followup: withoutFollowup.length,
+        students: distinct.slice(0, limit),
+        without_followup_students: withoutFollowup.slice(0, limit),
+        focused_student: focusedStudentId
+            ? distinct.find((signal) => signal.id === focusedStudentId) ?? null
+            : null,
+    };
+}
+export function shiftDate(date, days) {
+    const value = new Date(`${date}T12:00:00Z`);
+    value.setUTCDate(value.getUTCDate() + days);
+    return value.toISOString().slice(0, 10);
+}
+//# sourceMappingURL=insight-rules.js.map

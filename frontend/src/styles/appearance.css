@@ -1,0 +1,196 @@
+/* One resolved appearance for every portal. Keep semantic status colours distinct. */
+:root {
+  color-scheme: light;
+  /* Compatibility aliases resolve in every world, not only Dark. Old feature
+     styles must not silently restore blue/white fallbacks in light Simulation. */
+  --appearance-surface: var(--thatcampus-surface);
+  --appearance-surface-soft: var(--thatcampus-surface-soft);
+  --appearance-canvas: var(--thatcampus-canvas);
+  --appearance-border: var(--thatcampus-border);
+  --appearance-ink: var(--thatcampus-ink);
+  --appearance-muted: var(--thatcampus-ink-muted);
+  --appearance-brand: var(--thatcampus-brand);
+  --appearance-brand-soft: var(--thatcampus-brand-soft);
+  --appearance-positive: var(--thatcampus-positive);
+  --appearance-positive-soft: var(--thatcampus-positive-soft);
+  --appearance-warning: var(--thatcampus-warning);
+  --appearance-warning-soft: var(--thatcampus-warning-soft);
+  --appearance-danger: var(--thatcampus-danger);
+  --appearance-danger-soft: var(--thatcampus-danger-soft);
+  --appearance-accent: var(--thatcampus-accent);
+  --appearance-accent-soft: var(--thatcampus-accent-soft);
+}
+:root[data-theme="dark"] {
+  color-scheme: dark;
+  --surface: #131517;
+  --surface-lowest: #1c1f22;
+  --surface-low: #24272b;
+  --surface-container: #2c3035;
+  --surface-high: #34393f;
+  --surface-highest: #41474f;
+  --on-surface: #f5f5f5;
+  --on-surface-variant: #c2c5ca;
+  --outline: #9aaac1;
+  --outline-variant: #44494f;
+  --primary: #97bcff;
+  --primary-bright: #8db4ff;
+  --primary-fixed: #263d62;
+  --primary-fixed-dim: #36537e;
+  --secondary: #b8c5db;
+  --secondary-container: #293952;
+  --tertiary: #75dec7;
+  --tertiary-container: #164d44;
+  --tertiary-fixed: #a2f4e3;
+  --error: #ffaaaa;
+  --error-container: #492a31;
+  --shadow-card: 0 1px 3px rgb(0 0 0 / 16%);
+  --shadow-floating: 0 12px 32px rgb(0 0 0 / 35%);
+  --edura-canvas: var(--surface);
+  --edura-surface: var(--surface-lowest);
+  --edura-surface-soft: var(--surface-low);
+  --edura-surface-strong: var(--surface-container);
+  --thatcampus-surface-row: var(--edura-surface);
+  --edura-ink: var(--on-surface);
+  --edura-ink-secondary: var(--on-surface-variant);
+  --edura-ink-muted: #b2b7bd;
+  --edura-border: #3a3f45;
+  --edura-brand: var(--primary);
+  --edura-brand-bright: var(--primary-bright);
+  --edura-brand-soft: #233b61;
+  --edura-feature-gradient: linear-gradient(132deg, #153a80, #2055aa);
+  --edura-positive: #75dec7;
+  --edura-positive-soft: #183d36;
+  --edura-warning: #f5ce86;
+  --edura-warning-soft: #44371f;
+  --edura-danger: #ffaaaa;
+  --edura-danger-soft: #492a31;
+  --edura-shadow-card: 0 1px 3px rgb(0 0 0 / 16%);
+  --edura-shadow-raised: 0 14px 40px rgb(0 0 0 / 38%);
+  --thatcampus-shadow-control: 0 1px 3px rgb(0 0 0 / 30%), 0 4px 12px rgb(0 0 0 / 22%);
+  --thatcampus-shadow-control-pressed: inset 0 1px 4px rgb(0 0 0 / 40%);
+  --thatcampus-shadow-inset: inset 0 1px 4px rgb(0 0 0 / 24%);
+  --thatcampus-action: #225bc6;
+  --thatcampus-on-action: #ffffff;
+  --thatcampus-accent: #c7b6ff;
+  --thatcampus-accent-soft: #362b50;
+  --thatcampus-logo-green: #83d8ae;
+  --thatcampus-logo-green-soft: #20392d;
+  --thatcampus-logo-yellow-ink: #efd17a;
+  --thatcampus-logo-yellow-soft: #3e351f;
+  --thatcampus-icon-mint: #315e46;
+  --thatcampus-icon-gold: #6a541e;
+  --thatcampus-icon-blue: #a7cbff;
+  --thatcampus-icon-sky: #2e4e77;
+  --thatcampus-icon-lilac: #51426e;
+  --thatcampus-icon-rose: #f2a8c3;
+  --thatcampus-icon-rose-soft: #4d2c3b;
+
+  /* Legacy surfaces retain their exact light fallback while joining the same dark palette. */
+  --appearance-surface: var(--thatcampus-surface);
+  --appearance-surface-soft: var(--thatcampus-surface-soft);
+  --appearance-canvas: var(--thatcampus-canvas);
+  --appearance-border: var(--thatcampus-border);
+  --appearance-ink: var(--thatcampus-ink);
+  --appearance-muted: var(--thatcampus-ink-muted);
+  --appearance-brand: var(--thatcampus-brand);
+  --appearance-brand-soft: var(--thatcampus-brand-soft);
+  --appearance-positive: var(--thatcampus-positive);
+  --appearance-positive-soft: var(--thatcampus-positive-soft);
+  --appearance-warning: var(--thatcampus-warning);
+  --appearance-warning-soft: var(--thatcampus-warning-soft);
+  --appearance-danger: var(--thatcampus-danger);
+  --appearance-danger-soft: var(--thatcampus-danger-soft);
+  --appearance-accent: var(--thatcampus-accent);
+  --appearance-accent-soft: var(--thatcampus-accent-soft);
+}
+
+html { background: var(--thatcampus-canvas); }
+body { color: var(--thatcampus-ink); }
+input, textarea, select { accent-color: var(--thatcampus-action); }
+input::placeholder, textarea::placeholder { color: var(--thatcampus-ink-muted); opacity: 1; }
+:root[data-theme="dark"] :focus-visible { outline-color: #9abcff; }
+:root[data-theme="dark"] input:-webkit-autofill {
+  -webkit-text-fill-color: var(--thatcampus-ink);
+  box-shadow: 0 0 0 1000px var(--thatcampus-surface) inset;
+  caret-color: var(--thatcampus-ink);
+}
+
+/* Simulation is communicated by the whole application surface instead of a
+   floating badge. Live intentionally keeps the established blue palette. */
+:root[data-execution-environment="simulation"] {
+  --surface: #fffaf2;
+  --surface-lowest: #fffdf8;
+  --surface-low: #fff3df;
+  --surface-container: #ffe9c2;
+  --surface-high: #ffdda0;
+  --surface-highest: #f7cc82;
+  --on-surface: #2d1c0d;
+  --on-surface-variant: #67513c;
+  --outline: #8c7257;
+  --outline-variant: #dfc8aa;
+  --primary: #8f4700;
+  --primary-bright: #ad5800;
+  --primary-fixed: #ffddb0;
+  --primary-fixed-dim: #f4bd73;
+  --secondary: #765a38;
+  --secondary-container: #f4dfbd;
+  --tertiary: #6c5711;
+  --tertiary-container: #f4db78;
+  --tertiary-fixed: #fce68e;
+  --shadow-card: 0 1px 2px rgb(63 39 14 / 5%), 0 8px 24px rgb(143 71 0 / 6%);
+  --shadow-floating: 0 14px 36px rgb(54 34 14 / 16%);
+  --edura-canvas: var(--surface);
+  --edura-surface: var(--surface-lowest);
+  --edura-surface-soft: var(--surface-low);
+  --edura-surface-strong: var(--surface-container);
+  --thatcampus-surface-row: var(--edura-surface-soft);
+  --edura-ink: var(--on-surface);
+  --edura-ink-secondary: var(--on-surface-variant);
+  --edura-ink-muted: #78634e;
+  --edura-border: #ead8bd;
+  --edura-brand: var(--primary);
+  --edura-brand-bright: var(--primary-bright);
+  --edura-brand-soft: #ffead0;
+  --edura-feature-gradient: linear-gradient(132deg, #8f4700, #bc680c);
+  --edura-shadow-card: var(--shadow-card);
+  --edura-shadow-raised: var(--shadow-floating);
+  --thatcampus-action: #8f4700;
+  --thatcampus-on-action: #ffffff;
+  --thatcampus-accent: #755300;
+  --thatcampus-accent-soft: #fff0c7;
+}
+
+:root[data-theme="dark"][data-execution-environment="simulation"] {
+  --thatcampus-surface-row: var(--edura-surface);
+  --surface: #1d1710;
+  --surface-lowest: #271f16;
+  --surface-low: #332719;
+  --surface-container: #41311d;
+  --surface-high: #503c24;
+  --surface-highest: #61492c;
+  --on-surface: #fff4df;
+  --on-surface-variant: #dfc9aa;
+  --outline: #bda17d;
+  --outline-variant: #59462f;
+  --primary: #ffc06a;
+  --primary-bright: #ffca7d;
+  --primary-fixed: #5a3a17;
+  --primary-fixed-dim: #755022;
+  --secondary: #dcc29e;
+  --secondary-container: #4b3924;
+  --tertiary: #e8cf70;
+  --tertiary-container: #5b4b13;
+  --tertiary-fixed: #f6df81;
+  --edura-ink-muted: #c7b395;
+  --edura-border: #584630;
+  --edura-brand-soft: #513516;
+  --edura-feature-gradient: linear-gradient(132deg, #6e3908, #995211);
+  --thatcampus-action: #9a5008;
+  --thatcampus-on-action: #ffffff;
+  --thatcampus-accent: #f0cf77;
+  --thatcampus-accent-soft: #443711;
+}
+
+:root[data-execution-environment="simulation"] :focus-visible {
+  outline-color: var(--thatcampus-brand);
+}

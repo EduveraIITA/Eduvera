@@ -23,10 +23,10 @@ function setup(withReturnState = false) {
   render(
     <QueryClientProvider client={client}>
       <MemoryRouter initialEntries={[withReturnState ? {
-        pathname: "/parent/results",
-        search: "?student_id=child-1&attention_notification_id=20000000-0000-4000-a000-000000000002",
-        state: { portalReturnTo: "/parent/results?student_id=child-1&period=term" },
-      } : "/parent/results?student_id=child-1&attention_notification_id=20000000-0000-4000-a000-000000000002"]}>
+        pathname: "/areas/assessments/results",
+        search: "?scope=dependent&student_id=child-1&attention_notification_id=20000000-0000-4000-a000-000000000002",
+        state: { portalReturnTo: "/areas/assessments/results?scope=dependent&student_id=child-1&period=term" },
+      } : "/areas/assessments/results?scope=dependent&student_id=child-1&attention_notification_id=20000000-0000-4000-a000-000000000002"]}>
         <AttentionOpenAcknowledgement />
         <LocationProbe />
       </MemoryRouter>
@@ -50,11 +50,11 @@ describe("AttentionOpenAcknowledgement", () => {
       {
         method: "POST",
         body: JSON.stringify({
-          opened_target: "/parent/results?student_id=child-1&attention_notification_id=20000000-0000-4000-a000-000000000002",
+          opened_target: "/areas/assessments/results?scope=dependent&student_id=child-1&attention_notification_id=20000000-0000-4000-a000-000000000002",
         }),
       },
     ));
-    await waitFor(() => expect(screen.getByTestId("location")).toHaveTextContent("/parent/results?student_id=child-1"));
+    await waitFor(() => expect(screen.getByTestId("location")).toHaveTextContent("/areas/assessments/results?scope=dependent&student_id=child-1"));
     expect(invalidate).toHaveBeenCalledWith({ queryKey: ["attention"] });
     expect(invalidate).toHaveBeenCalledWith({ queryKey: ["notifications", "10000000-0000-4000-a000-000000000001"] });
   });
@@ -63,8 +63,8 @@ describe("AttentionOpenAcknowledgement", () => {
     apiFetchMock.mockResolvedValue({ id: "20000000-0000-4000-a000-000000000002", read_at: "2026-10-13T10:00:00.000Z" });
     setup(true);
 
-    await waitFor(() => expect(screen.getByTestId("location")).toHaveTextContent("/parent/results?student_id=child-1"));
-    expect(screen.getByTestId("return-to")).toHaveTextContent("/parent/results?student_id=child-1&period=term");
+    await waitFor(() => expect(screen.getByTestId("location")).toHaveTextContent("/areas/assessments/results?scope=dependent&student_id=child-1"));
+    expect(screen.getByTestId("return-to")).toHaveTextContent("/areas/assessments/results?scope=dependent&student_id=child-1&period=term");
   });
 
   it("keeps the attention id and cached signal when acknowledgement fails", async () => {

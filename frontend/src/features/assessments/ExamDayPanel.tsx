@@ -1,11 +1,14 @@
-import { AlertTriangle, CheckCircle2, ClipboardCheck, Clock3, MapPin, Search, ShieldCheck, UserRoundCheck, UsersRound, X } from "lucide-react";
+import { applicationNow } from "../simulation/applicationTime";
+import { AlertTriangle, CheckCircle2, ClipboardCheck, Clock3, MapPin, ShieldCheck, UserRoundCheck, UsersRound, X } from "lucide-react";
 import { useMemo, useRef, useState, type FormEvent } from "react";
+import { Link } from "react-router-dom";
+import { useOptionalExecutionEnvironment } from "../simulation/ExecutionEnvironmentContext";
 import { TemporalInput } from "../../components/forms/TemporalInput";
-import { AttendanceStudentRow, type AttendanceStudentRowStatusOption } from "../../pages/operations/AttendanceStudentRow";
-import "../../pages/operations/attendance-register.css";
+import { AttendanceParticipantRow, type AttendanceParticipantStatusOption } from "../attendance/AttendanceParticipantRow";
+import { AttendanceRegisterTools, AttendanceRegisterRoster } from "../attendance/AttendanceRegisterView";
 import { createExamIncident, examOperationAction, resolveExamIncident, respondToInvigilation, saveExamAttendance, type AssessmentDetail, type ExamCandidateStatus, type ExamOperation } from "./api";
 
-const statusOptions: readonly AttendanceStudentRowStatusOption<Exclude<ExamCandidateStatus, "unrecorded">>[] = [
+const statusOptions: readonly AttendanceParticipantStatusOption<Exclude<ExamCandidateStatus, "unrecorded">>[] = [
   { value: "present", label: "Present", tone: "positive" },
   { value: "absent", label: "Absent", tone: "negative" },
   { value: "late", label: "Late" },
@@ -13,13 +16,15 @@ const statusOptions: readonly AttendanceStudentRowStatusOption<Exclude<ExamCandi
 ];
 const quickStatuses = statusOptions.slice(0, 2);
 const nice = (value: string) => value.replaceAll("_", " ").replace(/\b\w/g, (letter) => letter.toUpperCase());
-const localDateTime = (date = new Date()) => new Date(date.getTime() - date.getTimezoneOffset() * 60_000).toISOString().slice(0, 16);
+const localDateTime = (date = applicationNow()) => new Date(date.getTime() - date.getTimezoneOffset() * 60_000).toISOString().slice(0, 16);
 const time = (value: string) => new Intl.DateTimeFormat("en-IN", { hour: "numeric", minute: "2-digit" }).format(new Date(value));
 const formValue = (form: FormData, key: string) => { const value = form.get(key); return typeof value === "string" ? value.trim() : ""; };
 
 type CandidateDraft = { status: ExamCandidateStatus; note: string };
 
-export function ExamDayPanel({ schoolId, assessmentId, operation, viewerRole, refresh }: { schoolId: string; assessmentId: string; operation: ExamOperation; viewerRole: AssessmentDetail["viewer_role"]; refresh: () => Promise<void> }) {
+export function ExamDayPanel({ schoolId, assessmentId, operation, viewerRole, refresh, onEditArrangements }: { schoolId: string; assessmentId: string; operation: ExamOperation; viewerRole: AssessmentDetail["viewer_role"]; refresh: () => Promise<void>; onEditArrangements?: () => void }) {
+  const environment = useOptionalExecutionEnvironment();
+  const readOnly = environment?.mode === "simulation" && (environment.unavailable === true || environment.runStatus === "completed" || environment.runStatus === "stopped");
   const { sitting, space, candidates, incidents, policy } = operation;
   const [drafts, setDrafts] = useState<Record<string, CandidateDraft>>(() => Object.fromEntries(candidates.map((candidate) => [candidate.student_id, { status: candidate.attendance_status, note: candidate.attendance_note ?? "" }])));
   const [filter, setFilter] = useState<"all" | "unrecorded" | "exceptions">("all");
@@ -31,8 +36,9 @@ export function ExamDayPanel({ schoolId, assessmentId, operation, viewerRole, re
   const [error, setError] = useState("");
   const pendingOfferCommand = useRef<{key:string;commandId:string}|null>(null);
   const acceptedInvigilators = operation.invigilators.filter((person) => person.status === "accepted");
-  const canOperate = viewerRole === "admin" || operation.viewer_assignment?.status === "accepted";
+  const canOperate = !readOnly && (viewerRole === "admin" || operation.viewer_assignment?.status === "accepted");
   const canRecordAttendance = canOperate && sitting.state === "in_progress";
+  const unavailableInvitations = operation.invigilators.filter(person => person.status === "offered" && person.invitation_status?.can_respond === false);
   const readinessBlockers = sitting.state === "planning" ? (operation.readiness?.blockers.map((blocker) => blocker.message) ?? [
     ...(space.capacity === null ? ["Room capacity is not recorded."] : []),
     ...(acceptedInvigilators.length < policy.minimum_invigilators ? [`${policy.minimum_invigilators - acceptedInvigilators.length} more invigilator acceptance${policy.minimum_invigilators - acceptedInvigilators.length === 1 ? " is" : "s are"} needed.`] : []),
@@ -57,6 +63,7 @@ export function ExamDayPanel({ schoolId, assessmentId, operation, viewerRole, re
   });
 
   async function run(key: string, work: () => Promise<unknown>) {
+    if (readOnly) return false;
     setBusy(key);
     setError("");
     try {
@@ -72,7 +79,7 @@ export function ExamDayPanel({ schoolId, assessmentId, operation, viewerRole, re
   }
 
   async function saveAttendance() {
-    const now = new Date().toISOString();
+    const now = applicationNow().toISOString();
     const records = changed.flatMap((candidate) => {
       const draft = drafts[candidate.student_id]!;
       return draft.status === "unrecorded" ? [] : [{ student_id: candidate.student_id, status: draft.status, note: draft.note, observed_at: now, expected_revision: candidate.attendance_revision }];
@@ -97,7 +104,7 @@ export function ExamDayPanel({ schoolId, assessmentId, operation, viewerRole, re
 
   async function respondToOffer(decision: "accepted" | "declined", note: string) {
     const assignment = operation.viewer_assignment;
-    if (!assignment || assignment.status !== "offered") return;
+    if (!assignment || assignment.status !== "offered" || assignment.invitation_status?.can_respond === false) return;
     const key = `${assignment.id}:${assignment.revision}:${decision}:${note}`;
     if (pendingOfferCommand.current?.key !== key) pendingOfferCommand.current = { key, commandId: crypto.randomUUID() };
     const commandId = pendingOfferCommand.current.commandId;
@@ -113,10 +120,16 @@ export function ExamDayPanel({ schoolId, assessmentId, operation, viewerRole, re
       <div><span>PHYSICAL EXAMINATION</span><h3 id="exam-day-heading">Exam day</h3><p>{time(sitting.starts_at)}–{time(sitting.ends_at)} · {space.name}</p></div>
       <i className={`exam-day-state is-${sitting.state}`}>{nice(sitting.state)}</i>
     </header>
-    {operation.viewer_assignment?.status === "offered" ? <section className="exam-invigilation-offer" aria-labelledby="invigilation-offer-heading">
+    {readOnly ? <p className="assessment-note">This simulation has ended. The examination record is read-only.</p> : null}
+    {!readOnly && operation.viewer_assignment?.status === "offered" && operation.viewer_assignment.invitation_status?.can_respond !== false ? <section className="exam-invigilation-offer" aria-labelledby="invigilation-offer-heading">
       <div><UserRoundCheck size={19}/><span><strong id="invigilation-offer-heading">Invigilation duty</strong><small>Confirm whether you can supervise this sitting.</small></span></div>
       {!showDecline ? <div><button type="button" disabled={Boolean(busy)} onClick={() => void respondToOffer("accepted", "")}>{busy === "offer-accepted" ? "Accepting…" : "Accept duty"}</button><button type="button" className="is-secondary" disabled={Boolean(busy)} onClick={() => setShowDecline(true)}>Decline</button></div> : <form aria-label="Decline invigilation duty" onSubmit={(event) => { event.preventDefault(); const form = new FormData(event.currentTarget); void respondToOffer("declined", formValue(form, "reason")); }}><label>Reason for declining<textarea name="reason" required minLength={3} maxLength={500} rows={2} placeholder="Help the exam coordinator arrange cover."/></label><div><button disabled={busy === "offer-declined"}>{busy === "offer-declined" ? "Sending…" : "Send decline"}</button><button type="button" className="is-secondary" onClick={() => setShowDecline(false)}>Cancel</button></div></form>}
     </section> : null}
+    {unavailableInvitations.length ? <div className="exam-day-readiness is-blocked" role="status"><AlertTriangle size={18}/><div><strong>Invitations need attention</strong><ul>{unavailableInvitations.map(person => <li key={person.id}>{person.name} · {person.invitation_status!.message}</li>)}</ul>{viewerRole === "admin" && !readOnly ? <>
+      {unavailableInvitations.some(person => person.invitation_status?.recovery === "configure_invitations") ? <Link to={unavailableInvitations.find(person => person.invitation_status?.recovery === "configure_invitations")!.invitation_status!.setup_href}>Review invitation rules</Link> : null}
+      {onEditArrangements && unavailableInvitations.some(person => person.invitation_status?.recovery === "save_arrangements" || person.invitation_status?.recovery === "choose_eligible_recipient") ? <button type="button" className="is-secondary" onClick={onEditArrangements}>Review and reissue invitations</button> : null}
+      <p>Saving arrangements reissues eligible expired or replaced invitations. Each new invitation still needs the assigned person’s response.</p>
+    </> : <p>Ask the exam coordinator to review and reissue the invitation before responding.</p>}</div></div> : null}
     {readinessBlockers.length ? <div className="exam-day-readiness is-blocked" role="status"><AlertTriangle size={18}/><div><strong>Not ready to schedule</strong><ul>{readinessBlockers.map((blocker) => <li key={blocker}>{blocker}</li>)}</ul></div></div> : <div className="exam-day-readiness"><CheckCircle2 size={18}/><span><strong>{sitting.state === "planning" ? "Ready to schedule" : nice(sitting.state)}</strong> · {sitting.state === "planning" ? "Class, room and staff timetable checks are clear." : "The scheduled readiness checks were completed."}</span></div>}
     <div className="exam-day-facts">
       <span><MapPin size={17}/><small>ROOM</small><strong>{space.name}</strong><em>{space.capacity ? `${space.capacity} seats` : "Capacity not recorded"}</em></span>
@@ -142,9 +155,11 @@ export function ExamDayPanel({ schoolId, assessmentId, operation, viewerRole, re
     </form> : null}
     {candidates.length ? <div className="exam-day-attendance roll-call-page">
       <div className="exam-day-attendance__head"><div><span>CANDIDATE ATTENDANCE</span><h4>{canRecordAttendance ? "Who is in the room?" : "Candidate record"}</h4></div>{canRecordAttendance ? <button type="button" disabled={!counts.unrecorded || Boolean(busy)} onClick={() => setDrafts((current) => Object.fromEntries(Object.entries(current).map(([id, draft]) => [id, draft.status === "unrecorded" ? { ...draft, status: "present" } : draft])))}><CheckCircle2 size={16}/>Mark remaining present</button> : null}</div>
-      <label className="roll-call-search"><Search size={18}/><span className="sr-only">Search candidates</span><input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Search name, admission or roll number"/></label>
-      <div className="roll-call-filters" role="group" aria-label="Filter candidates">{([['all','All',candidates.length],['unrecorded','Not recorded',counts.unrecorded],['exceptions','Exceptions',counts.exceptions]] as const).map(([value, label, count]) => <button key={value} type="button" aria-pressed={filter === value} onClick={() => setFilter(value)}>{label}<span>{count}</span></button>)}</div>
-      <div className="roll-call-roster">{visible.map((candidate) => { const draft = drafts[candidate.student_id]!; return <AttendanceStudentRow key={candidate.student_id} student={{ id: candidate.student_id, name: candidate.name, admission_number: candidate.admission_number, roll_number: candidate.roll_number_snapshot, avatar_url: candidate.avatar_url }} status={draft.status === "unrecorded" ? null : draft.status} remarks={draft.note} disabled={!canRecordAttendance || Boolean(busy)} conflict={false} statusOptions={statusOptions} quickStatuses={quickStatuses} allowEmpty={candidate.attendance_status === "unrecorded"} emptyLabel="Not recorded" noteLabel="Exam attendance note" onChange={(patch) => setDrafts((current) => ({ ...current, [candidate.student_id]: { ...current[candidate.student_id]!, ...(patch.status !== undefined ? { status: patch.status ?? "unrecorded" } : {}), ...(patch.remarks !== undefined ? { note: patch.remarks } : {}) } }))}/>; })}</div>
+      <AttendanceRegisterTools>
+        <label><span className="sr-only">Search candidates</span><input type="search" value={query} onChange={event => setQuery(event.target.value)} placeholder="Search name, admission or roll number" /></label>
+        <select aria-label="Filter candidates" value={filter} onChange={event => setFilter(event.target.value as typeof filter)}>{([['all','All',candidates.length],['unrecorded','Not recorded',counts.unrecorded],['exceptions','Exceptions',counts.exceptions]] as const).map(([value, label, count]) => <option key={value} value={value}>{label} · {count}</option>)}</select>
+      </AttendanceRegisterTools>
+      <AttendanceRegisterRoster>{visible.map((candidate) => { const draft = drafts[candidate.student_id]!; return <AttendanceParticipantRow key={candidate.student_id} participant={{ id: candidate.student_id, name: candidate.name, identifier: candidate.admission_number, roll_number: candidate.roll_number_snapshot, avatar_url: candidate.avatar_url }} status={draft.status === "unrecorded" ? null : draft.status} remarks={draft.note} disabled={!canRecordAttendance || Boolean(busy)} conflict={false} statusOptions={statusOptions} quickStatuses={quickStatuses} allowEmpty={candidate.attendance_status === "unrecorded"} emptyLabel="Not recorded" noteLabel="Exam attendance note" onChange={(patch) => setDrafts((current) => ({ ...current, [candidate.student_id]: { ...current[candidate.student_id]!, ...(patch.status !== undefined ? { status: patch.status ?? "unrecorded" } : {}), ...(patch.remarks !== undefined ? { note: patch.remarks } : {}) } }))}/>; })}</AttendanceRegisterRoster>
       {!visible.length ? <p className="assessment-empty">No candidates match this view.</p> : null}
       {canRecordAttendance ? <footer><span>{changed.length ? `${changed.length} unsaved change${changed.length === 1 ? "" : "s"}` : "Attendance is up to date"}</span><button type="button" disabled={!changed.some((candidate) => drafts[candidate.student_id]?.status !== "unrecorded") || Boolean(busy)} onClick={() => void saveAttendance()}>{busy === "attendance" ? "Saving…" : "Save attendance"}</button></footer> : null}
     </div> : null}

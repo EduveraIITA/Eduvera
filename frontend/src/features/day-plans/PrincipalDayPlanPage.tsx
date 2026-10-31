@@ -32,7 +32,15 @@ import { useUnsavedChangesGuard } from "../navigation/useUnsavedChangesGuard";
 import { TimetableRehearsalStrip } from "../planner/TimetableRehearsalStrip";
 import { resolveTimetableDisplayDate, type TimetableRehearsalIndicator } from "../planner/rehearsal";
 import "./day-plans.css";
-export default function PrincipalDayPlanPage({ rehearsal }: { rehearsal?: TimetableRehearsalIndicator | null } = {}) {
+
+interface DayPlanWorkspaceContext {
+  readonly institutionId: string;
+  readonly institutionLabel?: string | null;
+  readonly planningPath: string;
+  readonly dayPlanPath: string;
+}
+
+export default function PrincipalDayPlanPage({ rehearsal, workspace }: { rehearsal?: TimetableRehearsalIndicator | null; workspace?: DayPlanWorkspaceContext } = {}) {
   const auth = useAuth(),
     [params, setParams] = useSearchParams();
   const [dirty, setDirty] = useState(false);
@@ -40,14 +48,20 @@ export default function PrincipalDayPlanPage({ rehearsal }: { rehearsal?: Timeta
     dirty,
     "Leave this draft without saving your latest edits?",
   );
-  const schools = auth.memberships.filter((m) => m.role === "admin");
+  const schools = workspace ? [] : auth.memberships.filter((m) => m.role === "admin");
   const requestedSchoolId = params.get("school");
-  const requestedSchool = schools.find((membership) => membership.school_id === requestedSchoolId);
-  const school = requestedSchool
-    ?? schools.find((membership) => membership.school_id === auth.user?.active_school_id)
-    ?? schools[0];
+  const requestedSchool = workspace
+    ? requestedSchoolId === workspace.institutionId
+      ? { school_id: workspace.institutionId, school_name: workspace.institutionLabel ?? "Current institution" }
+      : undefined
+    : schools.find((membership) => membership.school_id === requestedSchoolId);
+  const school = workspace
+    ? { school_id: workspace.institutionId, school_name: workspace.institutionLabel ?? "Current institution" }
+    : requestedSchool
+      ?? schools.find((membership) => membership.school_id === auth.user?.active_school_id)
+      ?? schools[0];
   const schoolId = school?.school_id ?? "";
-  const inaccessibleSchoolTarget = Boolean(requestedSchoolId && !requestedSchool);
+  const inaccessibleSchoolTarget = Boolean(requestedSchoolId && (!requestedSchool || requestedSchoolId !== schoolId));
   const date = resolveTimetableDisplayDate(params.get("date"), rehearsal, schoolDateToday());
   const view = readTimetableView(params.get("view"));
   const requestedClassId = params.get("class");
@@ -121,20 +135,19 @@ export default function PrincipalDayPlanPage({ rehearsal }: { rehearsal?: Timeta
   };
   return (
     <OperationsShell
-      portal="principal"
+      portal={workspace ? undefined : "principal"}
       active="timetable"
-      title="Timetable"
-      backTo={params.get("from") === "overview" ? `/principal?date=${date}` : "/principal"}
+      title={workspace ? "Day schedule" : "Timetable"}
+      backTo={workspace?.planningPath ?? (params.get("from") === "overview" ? `/principal?date=${date}` : "/principal")}
       beforeBack={confirmDraftNavigation}
       subtitle="Timetable"
       schoolName={school?.school_name}
-      contentHasHeading
     >
       <div className="day-workspace">
         {rehearsal ? <TimetableRehearsalStrip rehearsal={rehearsal} showCampusLink /> : null}
         {attentionTargetLoaded ? <AttentionOpenAcknowledgement /> : null}
         {inaccessibleSchoolTarget ? (
-          <DayPlanTargetUnavailable message="This day-plan link belongs to a school you cannot currently access." />
+          <DayPlanTargetUnavailable dayPlanPath={workspace?.dayPlanPath} message="This day-plan link belongs to a school you cannot currently access." />
         ) : <>
           <TimetableNavigator
           date={date}
@@ -197,9 +210,9 @@ export default function PrincipalDayPlanPage({ rehearsal }: { rehearsal?: Timeta
             retry={() => void query.refetch()}
           />
         ) : draftTargetUnavailable ? (
-          <DayPlanTargetUnavailable message="This day-plan draft is no longer available for the linked class and date." />
+          <DayPlanTargetUnavailable dayPlanPath={workspace?.dayPlanPath} message="This day-plan draft is no longer available for the linked class and date." />
         ) : notificationTargetUnavailable ? (
-          <DayPlanTargetUnavailable title="Timetable update unavailable" message="This published timetable update no longer matches the linked source, revision, class and date." />
+          <DayPlanTargetUnavailable dayPlanPath={workspace?.dayPlanPath} title="Timetable update unavailable" message="This published timetable update no longer matches the linked source, revision, class and date." />
         ) : query.data ? (
           <>
             {query.data.classes.some((c) => c.unresolved > 0) ? (
@@ -227,6 +240,8 @@ export default function PrincipalDayPlanPage({ rehearsal }: { rehearsal?: Timeta
                 section={section}
                 options={query.data}
                 onDirty={setDirty}
+                planningPath={workspace?.planningPath ?? "/principal/timetable"}
+                dayPlanPath={workspace?.dayPlanPath ?? "/principal/timetable/day"}
                 focusPlanId={requestedPlanId ?? undefined}
                 focusPeriodId={requestedPeriodId ?? undefined}
                 focusPublishedSourceId={exactDayPlanNotification?notifiedDayPlanId??undefined:exactScheduleNotification?notifiedScheduleId??undefined:undefined}
@@ -251,6 +266,8 @@ function PlanWorkspace({
   section,
   options,
   onDirty,
+  planningPath,
+  dayPlanPath,
   focusPlanId,
   focusPeriodId,
   focusPublishedSourceId,
@@ -260,6 +277,8 @@ function PlanWorkspace({
   section: PlanOptions["classes"][number];
   options: PlanOptions;
   onDirty: (dirty: boolean) => void;
+  planningPath: string;
+  dayPlanPath: string;
   focusPlanId?: string;
   focusPeriodId?: string;
   focusPublishedSourceId?: string;
@@ -371,7 +390,7 @@ function PlanWorkspace({
           <h2 id="closed-day-heading">{options.context.label || "School closed"}</h2>
           <p>No regular classes are scheduled.</p>
         </div>
-        <Link className="day-closed-state__link" to={`/principal/calendar?date=${date}`}>
+        <Link className="day-closed-state__link" to={`${planningPath}?${new URLSearchParams({ date, view: "month" })}`}>
           School calendar <ArrowRight size={15} />
         </Link>
       </section>
@@ -412,10 +431,11 @@ function PlanWorkspace({
         <DayLoading />
       ) : detail.isError ? (
         focusPlanId
-          ? <DayPlanTargetUnavailable message="This day-plan draft could not be opened. It may have been removed or you may no longer have access." />
+          ? <DayPlanTargetUnavailable dayPlanPath={dayPlanPath} message="This day-plan draft could not be opened. It may have been removed or you may no longer have access." />
           : <DayFailure message={detail.error.message} retry={() => void detail.refetch()} />
       ) : focusUnavailable ? (
         <DayPlanTargetUnavailable
+          dayPlanPath={dayPlanPath}
           title={focusPeriodId ? "Timetable period unavailable" : undefined}
           message={focusPeriodId
             ? "This dated timetable no longer matches the linked class and date."
@@ -423,6 +443,7 @@ function PlanWorkspace({
         />
       ) : periodUnavailable ? (
         <DayPlanTargetUnavailable
+          dayPlanPath={dayPlanPath}
           title="Timetable period unavailable"
           message="This period is no longer part of the linked day plan. The current schedule is shown below."
         />
@@ -542,14 +563,14 @@ function PlanWorkspace({
     </>
   );
 }
-function DayPlanTargetUnavailable({ message, title = "Day-plan request unavailable" }: { message: string; title?: string }) {
+function DayPlanTargetUnavailable({ message, title = "Day-plan request unavailable", dayPlanPath = "/principal/timetable/day" }: { message: string; title?: string; dayPlanPath?: string }) {
   return (
     <section className="day-panel day-target-unavailable" role="alert">
       <CalendarDays size={21} aria-hidden="true" />
       <div>
         <h2>{title}</h2>
         <p>{message}</p>
-        <Link to="/principal/timetable/day">Open current day plans</Link>
+        <Link to={dayPlanPath}>Open current day plans</Link>
       </div>
     </section>
   );

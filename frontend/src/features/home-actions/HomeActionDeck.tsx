@@ -9,6 +9,7 @@ import {
   TicketCheck,
 } from "lucide-react";
 import { Link } from "react-router-dom";
+import { ProductIcon, type ProductIconName } from "../../components/ProductIcon";
 import type { HomeAction, HomeActionKind } from "./types";
 import "./home-actions.css";
 
@@ -24,6 +25,8 @@ const icons: Record<HomeActionKind, typeof CalendarDays> = {
   attendance_followup: MessageSquareText,
   event_duty: CalendarDays,
 };
+
+const productIconNames: Record<HomeActionKind, ProductIconName> = { event_rsvp: "calendar", event_consent: "security", event_payment: "finance", event_checklist: "records", event_upcoming: "calendar", leave_signature: "security", diary_acknowledgement: "updates", attendance_register: "attendance", attendance_followup: "messages", event_duty: "responsibilities" };
 
 function dateLabel(action: HomeAction) {
   const value = action.due_at ?? action.occurs_at;
@@ -46,7 +49,7 @@ function ActionLink({ action, primary = false, compact = false }: { action: Home
   const className = `home-action-card is-${action.priority}${primary ? " is-primary" : ""}`;
   const formattedDate = dateLabel(action);
   const content = <>
-    <span className="home-action-card__icon" aria-hidden="true"><Icon size={primary ? 21 : 18} /></span>
+    <span className="home-action-card__icon" aria-hidden="true">{action.priority === "urgent" ? <Icon size={primary ? 21 : 18} /> : <ProductIcon name={productIconNames[action.kind]} size={28} />}</span>
     <span className="home-action-card__content">
       <span className="home-action-card__meta"><b>{action.status_label}</b>{formattedDate ? <time dateTime={action.due_at ?? action.occurs_at ?? undefined}>{formattedDate}</time> : null}</span>
       <strong>{action.title}</strong>
@@ -65,7 +68,7 @@ export function HomeActionSpotlight({ action, tone = "surface" }: { action: Home
   const formattedDate = dateLabel(action);
   const className = `home-action-spotlight home-action-spotlight--${tone} is-${action.priority}`;
   const content = <>
-    <span className="home-action-spotlight__icon" aria-hidden="true"><Icon size={20} /></span>
+    <span className="home-action-spotlight__icon" aria-hidden="true">{action.priority === "urgent" ? <Icon size={20} /> : <ProductIcon name={productIconNames[action.kind]} size={28} />}</span>
     <span className="home-action-spotlight__content">
       <span className="home-action-spotlight__meta"><b>{action.status_label}</b>{formattedDate ? <time dateTime={action.due_at ?? action.occurs_at ?? undefined}>{formattedDate}</time> : null}</span>
       <strong>{action.title}</strong>

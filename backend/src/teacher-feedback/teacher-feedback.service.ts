@@ -1,3 +1,4 @@
+import { executionNow } from "../campus-model-core/execution-time.runtime.js";
 import { BadRequestException, ConflictException, ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
 import { sql, type Transaction } from 'kysely';
 import { z } from 'zod';
@@ -104,7 +105,7 @@ export class TeacherFeedbackService {
   async create(user:AuthUser,school:string,body:unknown) {
     const parsed=campaignInput.safeParse(body); if(!parsed.success) throw new BadRequestException('Choose a teacher, class, audience, deadline and 1–10 distinct parameters.');
     const data=parsed.data,deadline=new Date(data.closes_at).getTime();
-    if(deadline<=Date.now() || deadline>Date.now()+90*86400000) throw new BadRequestException('Choose a future deadline within 90 days.');
+    if(deadline<=executionNow().getTime() || deadline>executionNow().getTime()+90*86400000) throw new BadRequestException('Choose a future deadline within 90 days.');
     return this.db.transaction().execute(async db=>{
       await this.member(db,user,school,true);
       const teacher=await db.selectFrom('school_memberships as m').innerJoin('users as u','u.id','m.user_id').select('u.id')

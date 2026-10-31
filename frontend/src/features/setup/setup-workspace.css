@@ -1,0 +1,251 @@
+.setup-workspace {
+  display: grid;
+  width: min(100%, 760px);
+  gap: 24px;
+  padding: 4px 0 32px;
+}
+
+.operations-main .campus-start--workspace {
+  width: min(100%, 720px);
+  min-height: 0;
+  margin: 0 auto;
+  padding: 0 0 32px;
+  background: transparent;
+  --start-ink: var(--thatcampus-ink);
+  --start-muted: var(--thatcampus-ink-muted);
+  --start-blue: var(--thatcampus-brand);
+  --start-line: var(--thatcampus-border);
+  --start-surface: var(--thatcampus-surface);
+  --start-soft: var(--thatcampus-surface-soft);
+}
+
+.operations-main .campus-start--workspace .campus-start__body {
+  margin-top: 4px;
+}
+
+.setup-workspace__intro {
+  display: grid;
+  gap: 8px;
+}
+
+.setup-workspace__intro > span {
+  display: inline-flex;
+  width: fit-content;
+  align-items: center;
+  gap: 7px;
+  color: var(--thatcampus-brand);
+  font-size: 14px;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+}
+
+.setup-workspace__intro h2,
+.setup-workspace__section h3,
+.setup-workspace__start h3,
+.setup-workspace__empty h3 {
+  margin: 0;
+  color: var(--thatcampus-ink);
+  letter-spacing: -0.035em;
+}
+
+.setup-workspace__intro h2 {
+  max-width: 18ch;
+  font-size: clamp(27px, 6vw, 38px);
+  line-height: 1.08;
+}
+
+.setup-workspace__intro p,
+.setup-workspace__section p,
+.setup-workspace__start p,
+.setup-workspace__empty p,
+.setup-workspace__note {
+  margin: 0;
+  color: var(--thatcampus-ink-muted);
+  font-size: 14px;
+  line-height: 1.55;
+}
+
+.setup-workspace__intro p {
+  max-width: 62ch;
+  font-size: 15px;
+}
+
+.setup-workspace__start,
+.setup-workspace__section,
+.setup-workspace__empty {
+  border: 1px solid var(--thatcampus-border);
+  border-radius: 22px;
+  background: var(--thatcampus-surface);
+}
+
+.setup-workspace__start {
+  display: grid;
+  gap: 18px;
+  padding: 20px;
+}
+
+.setup-workspace__start > div,
+.setup-workspace__section > header {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+}
+
+.setup-workspace__start > div > div,
+.setup-workspace__section > header > div {
+  display: grid;
+  gap: 4px;
+}
+
+.setup-workspace__start > a {
+  display: inline-flex;
+  min-height: 46px;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  border-radius: 14px;
+  background: var(--thatcampus-brand);
+  color: white;
+  font-weight: 800;
+  text-decoration: none;
+}
+
+.setup-workspace__start > a:focus-visible,
+.setup-workspace-row:focus-visible {
+  outline: 3px solid color-mix(in srgb, var(--thatcampus-brand) 28%, transparent);
+  outline-offset: 3px;
+}
+
+.setup-workspace__step {
+  display: inline-grid;
+  width: 30px;
+  height: 30px;
+  flex: 0 0 auto;
+  place-items: center;
+  border-radius: 10px;
+  background: var(--thatcampus-brand-soft);
+  color: var(--thatcampus-brand);
+  font-size: 14px;
+  font-weight: 850;
+}
+
+.setup-workspace__section {
+  overflow: hidden;
+}
+
+.setup-workspace__section > header {
+  padding: 20px;
+  border-bottom: 1px solid var(--thatcampus-border);
+}
+
+.setup-workspace__rows {
+  display: grid;
+}
+
+.setup-workspace-row {
+  display: grid;
+  min-height: 78px;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 13px;
+  padding: 15px 18px;
+  color: var(--thatcampus-ink);
+  text-decoration: none;
+}
+
+.setup-workspace-row + .setup-workspace-row {
+  border-top: 1px solid var(--thatcampus-border);
+}
+
+.setup-workspace-row__icon {
+  display: grid;
+  width: 40px;
+  height: 40px;
+  place-items: center;
+  border-radius: 12px;
+  background: var(--thatcampus-brand-soft);
+  color: var(--thatcampus-brand);
+}
+
+.setup-workspace-row__copy {
+  display: grid;
+  min-width: 0;
+  gap: 3px;
+}
+
+.setup-workspace-row__copy strong {
+  font-size: 15px;
+}
+
+.setup-workspace-row__copy small {
+  color: var(--thatcampus-ink-muted);
+  font-size: 14px;
+  line-height: 1.4;
+}
+
+.setup-workspace__empty {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  padding: 20px;
+}
+
+.setup-workspace__empty > svg {
+  color: var(--thatcampus-success, #187a68);
+}
+
+.setup-workspace__note {
+  padding: 0 2px;
+  font-size: 14px;
+}
+
+@media (hover: hover) {
+  .setup-workspace-row:hover {
+    background: var(--thatcampus-surface-soft);
+  }
+}
+
+@media (min-width: 760px) {
+  .setup-workspace {
+    padding-top: 12px;
+  }
+
+  .setup-workspace__start {
+    grid-template-columns: minmax(0, 1fr) auto;
+    align-items: center;
+  }
+
+  .setup-workspace__start > a {
+    min-width: 190px;
+    padding: 0 18px;
+  }
+}
+
+@media (max-width: 420px) {
+  .setup-workspace__start,
+  .setup-workspace__section > header {
+    padding: 17px;
+  }
+
+  .setup-workspace-row {
+    padding-inline: 15px;
+  }
+}
+
+.setup-workspace { min-width: 0; }
+.setup-workspace__intro > span { font-size: 14px; color: var(--thatcampus-ink-secondary); letter-spacing: 0; }
+.setup-workspace__intro h2 { max-width: none; font-size: 24px; line-height: 1.3; }
+.setup-workspace__start, .setup-workspace__section, .setup-workspace__empty { border-radius: var(--thatcampus-radius-card); box-shadow: none; }
+.setup-workspace__start > a { padding-inline: 16px; background: var(--thatcampus-action); color: var(--thatcampus-on-action); border-radius: var(--thatcampus-radius-control); }
+.setup-workspace-row__icon, .setup-workspace__step { color: var(--thatcampus-logo-green); background: var(--thatcampus-logo-green-soft); }
+.setup-workspace-row:nth-child(2n) .setup-workspace-row__icon { color: var(--thatcampus-logo-yellow-ink); background: var(--thatcampus-logo-yellow-soft); }
+.setup-workspace-row__copy :is(strong, small) { overflow-wrap: anywhere; }
+.setup-workspace__note { font-size: 14px; line-height: 1.6; }
+.setup-workspace__empty > svg { color: var(--thatcampus-positive); flex-shrink: 0; }
+.setup-workspace-row { padding-inline: var(--thatcampus-row-inset); }
+.setup-workspace__start > a { border-color: transparent; box-shadow: var(--thatcampus-shadow-control); }
+.setup-workspace__start > a:active { box-shadow: var(--thatcampus-shadow-control-pressed); }
+@media (max-width: 420px) {
+  .setup-workspace__start, .setup-workspace__section > header { padding: 20px 16px; }
+  .setup-workspace-row { padding: 20px var(--thatcampus-row-inset); gap: 12px; }
+}

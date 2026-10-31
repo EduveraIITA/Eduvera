@@ -2,16 +2,68 @@ import { apiFetch } from "../../lib/api";
 import type { AccessRole, RoleAssignment, RoleOptions } from "./access-api";
 
 export interface StaffProfile {
-  id: string; user_id: string | null; staff_code: string; first_name: string; last_name: string;
+  id: string; user_id: string | null; person_id?: string | null; staff_code: string; first_name: string; last_name: string;
   email: string; phone: string; staff_kind: "teaching" | "non_teaching"; designation: string;
-  department: string; employment_type: "full_time" | "part_time" | "contract"; joined_on: string;
+  department: string; employment_type: "unspecified" | "full_time" | "part_time" | "contract"; joined_on: string | null;
   status: "onboarding" | "active" | "inactive"; revision: number; avatar_url?: string;
   onboarding_total?: number; onboarding_complete?: number; pending_requests?: number;
 }
 export interface OnboardingItem { id: string; staff_profile_id: string; item_key: string; label: string; required: boolean; completed_at: string | null; note: string }
 export interface LeavePolicy { id: string; academic_year: string; code: string; name: string; annual_allowance: string; carry_forward_limit: string; requires_document_after_days: string | null; is_paid: boolean; is_statutory: boolean; is_active: boolean; revision: number }
 export interface LeaveBalance { staff_profile_id?: string; policy_id: string; code: string; name: string; annual_allowance: string; adjustments: string; used: string; pending: string; carry_forward_limit?: string; requires_document_after_days?: string | null; is_paid?: boolean; is_statutory?: boolean; academic_year?: string }
-export interface StaffLeaveRequest { id: string; staff_profile_id: string; policy_id: string; policy_name: string; policy_code: string; first_name: string; last_name: string; staff_code: string; designation: string; starts_on: string; ends_on: string; portion: "full_day" | "first_half" | "second_half"; requested_days: string; reason: string; handover_note: string; status: "submitted" | "approved" | "rejected" | "withdrawn"; revision: number; decision_note: string; submitted_at: string; affected_periods: number; coverage_tasks?: number; coverage_open?: number; coverage_fallback?: number; coverage_filled?: number; coverage_expired?: number; coverage_fallback_labels?: string }
+export interface LeaveReviewer { user_id: string; name: string }
+export interface LeaveReviewReadiness {
+  state: "ready" | "needs_configuration" | "unavailable";
+  reason: string | null;
+  reviewer: LeaveReviewer | null;
+  can_configure: boolean;
+}
+export interface LeaveReviewRoute {
+  state: "current" | "needs_reassignment" | "unavailable";
+  reviewer: LeaveReviewer | null;
+  current_reviewer: LeaveReviewer | null;
+  can_reroute: boolean;
+}
+export interface ReviewRouteBasis {
+  rule: { id: string; revision: number };
+  office: { id: string; revision: number };
+  appointment: { id: string; revision: number };
+  person: { id: string; revision: number };
+  sources: Array<{ id: string; revision: number }>;
+}
+export interface LeaveReviewRouting extends LeaveReviewReadiness { expected: ReviewRouteBasis | null }
+export interface StaffLeaveImpactInput {
+  policy_id: string;
+  starts_on: string;
+  ends_on: string;
+  portion: "full_day" | "first_half" | "second_half";
+}
+export interface StaffLeaveImpact {
+  state: "ready" | "empty";
+  as_of: string;
+  time_zone: string;
+  starts_on: string;
+  ends_on: string;
+  portion: StaffLeaveImpactInput["portion"];
+  items: Array<{
+    id: string;
+    kind: "class" | "duty";
+    date: string;
+    starts_at: string | null;
+    ends_at: string | null;
+    title: string;
+    location: string;
+    source: { kind: string; id: string; revision: number | null; version: number | null };
+    class_label: string | null;
+  }>;
+  total: number;
+  truncated: boolean;
+  scope: "published_timetable_and_dated_responsibilities";
+  limitations: string[];
+  staff_profile_revision: number;
+  policy_revision: number;
+}
+export interface StaffLeaveRequest { id: string; staff_profile_id: string; policy_id: string; policy_name: string; policy_code: string; first_name: string; last_name: string; staff_code: string; designation: string; starts_on: string; ends_on: string; portion: "full_day" | "first_half" | "second_half"; requested_days: string; reason: string; handover_note: string; status: "submitted" | "approved" | "rejected" | "withdrawn"; revision: number; decision_note: string; submitted_at: string; affected_periods: number; coverage_tasks?: number; coverage_open?: number; coverage_fallback?: number; coverage_filled?: number; coverage_expired?: number; coverage_fallback_labels?: string; review_route?: LeaveReviewRoute; affected_work?: StaffLeaveImpact }
 export interface WorkType { id: string; code: string; name: string; category: "academic" | "student_support" | "event" | "examination" | "operations" | "governance"; scope_kind: "school" | "class_section" | "event" | "scheduled_duty"; workflow_family: string; source_kind: "system" | "institute"; cloned_from_type_id: string | null; description: string; access_summary: string; requires_acceptance: boolean; restricted: boolean; is_active: boolean; revision: number; active_assignment_count?: number }
 export type ResponsibilityType = WorkType;
 export interface ResponsibilityAssignment {
@@ -43,7 +95,7 @@ export interface CoveragePolicy {
   fallback_label: string; supervisor_staff_profile_id: string | null;
   supervisor_first_name: string | null; supervisor_last_name: string | null; revision: number;
 }
-interface ResponsibilityWorkspace { access_roles?: AccessRole[]; role_assignments?: RoleAssignment[]; role_options?: RoleOptions; can_review_staff_leave?: boolean; work_types: WorkType[]; responsibility_types: WorkType[]; assignments: ResponsibilityAssignment[]; coverage_tasks: CoverageTask[]; coverage_policy?: CoveragePolicy }
+interface ResponsibilityWorkspace { access_roles?: AccessRole[]; role_assignments?: RoleAssignment[]; role_options?: RoleOptions; can_review_staff_leave?: boolean; leave_review_readiness?: LeaveReviewReadiness; work_types: WorkType[]; responsibility_types: WorkType[]; assignments: ResponsibilityAssignment[]; coverage_tasks: CoverageTask[]; coverage_policy?: CoveragePolicy }
 export interface AdminStaffWorkspace extends ResponsibilityWorkspace { mode: "admin"; academic_year: string; profiles: StaffProfile[]; onboarding_items: OnboardingItem[]; policies: LeavePolicy[]; balances: LeaveBalance[]; requests: StaffLeaveRequest[]; references: { classes: { id: string; name: string }[]; subjects: { id: string; name: string }[]; events: { id: string; title: string; starts_at: string; ends_at: string }[] } }
 export interface TeacherStaffWorkspace extends ResponsibilityWorkspace { mode: "staff"; academic_year: string; profile: StaffProfile; policies: LeavePolicy[]; balances: LeaveBalance[]; requests: StaffLeaveRequest[] }
 export type StaffWorkspace = AdminStaffWorkspace | TeacherStaffWorkspace;
@@ -57,6 +109,10 @@ export const adjustStaffBalance = (schoolId: string, input: { staff_profile_id: 
 export const submitStaffLeave = (schoolId: string, input: Record<string, unknown> & { command_id: string }) => apiFetch<StaffLeaveRequest>(root(schoolId, "leave-requests"), { method: "POST", body: JSON.stringify(input) });
 export const decideStaffLeave = (schoolId: string, requestId: string, input: { decision: "approved" | "rejected"; note: string; expected_revision: number; command_id: string }) => apiFetch<StaffLeaveRequest>(root(schoolId, `leave-requests/${requestId}/decision`), { method: "POST", body: JSON.stringify(input) });
 export const withdrawStaffLeave = (schoolId: string, requestId: string, expected_revision: number, commandId: string) => apiFetch<StaffLeaveRequest>(root(schoolId, `leave-requests/${requestId}/withdraw`), { method: "POST", body: JSON.stringify({ expected_revision, command_id: commandId }) });
+export const rerouteStaffLeave = (schoolId: string, requestId: string, input: { expected_revision: number; command_id: string }) => apiFetch<StaffLeaveRequest>(root(schoolId, `leave-requests/${requestId}/reroute`), { method: "POST", body: JSON.stringify(input) });
+export const getLeaveReviewRouting = (schoolId: string) => apiFetch<LeaveReviewRouting>(root(schoolId, "leave-review-routing"));
+export const previewStaffLeaveImpact = (schoolId: string, input: StaffLeaveImpactInput, signal?: AbortSignal) => apiFetch<StaffLeaveImpact>(root(schoolId, "leave-impact"), { method: "POST", body: JSON.stringify(input), signal });
+export const enableLeaveReviewRouting = (schoolId: string, input: { command_id: string; expected: ReviewRouteBasis; confirmed: true }) => apiFetch<{ confirmed: true; replayed: boolean }>(root(schoolId, "leave-review-routing"), { method: "POST", body: JSON.stringify(input) });
 export const createResponsibility = (schoolId: string, input: Record<string, unknown>) => apiFetch<ResponsibilityAssignment>(root(schoolId, "responsibilities"), { method: "POST", body: JSON.stringify(input) });
 export const respondResponsibility = (schoolId: string, assignmentId: string, input: { decision: "accepted" | "declined"; note: string; expected_revision: number }) => apiFetch(root(schoolId, `responsibilities/${assignmentId}/response`), { method: "POST", body: JSON.stringify(input) });
 export const revokeResponsibility = (schoolId: string, assignmentId: string, input: { reason: string; expected_revision: number }) => apiFetch(root(schoolId, `responsibilities/${assignmentId}/revoke`), { method: "POST", body: JSON.stringify(input) });

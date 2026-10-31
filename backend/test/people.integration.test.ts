@@ -3,58 +3,98 @@ import {Pool} from "pg";
 import {beforeAll,afterAll,describe,it,expect} from "vitest";
 import {PeopleService} from "../src/people/people.service.js";
 import {GuardianAuthorityService} from "../src/people/guardian-authority.service.js";
-import {SchoolService} from "../src/school/school.service.js";
-import {SchoolEventService} from "../src/school/school-event.service.js";
+import type {SchoolService} from "../src/school/school.service.js";
+import type {SchoolEventService} from "../src/school/school-event.service.js";
 import {CoordinationService} from "../src/coordination/coordination.service.js";
+import {FollowupModelBridgeService} from "../src/coordination/followup-model-bridge.service.js";
 import {DatabaseService} from "../src/database/database.service.js";
 import type {AuthUser,AuthenticatedRequest} from "../src/common/request.js";
 import {requireIsolatedTestDatabaseUrl} from "./test-database.js";
-import {createStaffCoverageReconciliationTestDouble} from "./staff-coverage-reconciliation.test-support.js";
+import {academicParticipationTestServices,rollbackAcademicFixture,fixtureTransactionDatabase} from './academic-participation.test-support.js';
+import {sql} from 'kysely';
+import {executionEnvironmentStorage} from '../src/campus-model-core/execution-time.runtime.js';
+import {createLiveExecutionEnvironment} from '../src/campus-model-core/execution-environment.runtime.js';
+import {ProgressiveWorkspaceProvisioner} from '../src/institution-onboarding/progressive-workspace.provisioner.js';
+import {linkFixtureStaffIdentity} from './fixture-human-identity.test-support.js';
 const pool=new Pool({connectionString:requireIsolatedTestDatabaseUrl(process.env.DATABASE_URL),max:2});
 let db:DatabaseService,people:PeopleService,school:SchoolService,events:SchoolEventService;
+let shared:ReturnType<typeof academicParticipationTestServices>;
 let admin:AuthenticatedRequest,teacher:AuthenticatedRequest,parent:AuthenticatedRequest;
 let schoolId:string,section:string,term:string,today:string,existingGuardian:string;
-const drafts:string[]=[];const students:string[]=[];const followups:string[]=[];
+const drafts:string[]=[];const students:string[]=[];
 const temporaryClasses:string[]=[];const temporaryRegisters:string[]=[];
 let roll=1000;
 let authority:GuardianAuthorityService;
 const leaveIds:string[]=[];
+let demoScope:Awaited<ReturnType<typeof demoActorScope>>;
+async function demoActorScope(){
+  const memberships=(await pool.query(`SELECT account.username,membership.school_id,membership.role,membership.is_active
+    FROM users account JOIN school_memberships membership ON membership.user_id=account.id
+    WHERE account.username IN ('meera.principal','kavita.staff','pooja.parent')
+    ORDER BY account.username,membership.school_id,membership.role`)).rows;
+  const children=(await pool.query(`SELECT account.username,relationship.id,relationship.student_id,relationship.is_primary,
+      relationship.can_authorize_leave,relationship.authority_revision
+    FROM users account JOIN parents guardian ON guardian.user_id=account.id
+    JOIN guardian_relationships relationship ON relationship.guardian_id=guardian.id
+    WHERE account.username='pooja.parent' ORDER BY relationship.id`)).rows;
+  return {memberships,children};
+}
 async function account(username:string){return {authUser:(await pool.query<AuthUser>("SELECT * FROM users WHERE username=$1",[username])).rows[0]!,requestId:randomUUID(),ip:"127.0.0.1",protocol:"http",headers:{host:"localhost:8000"}} as AuthenticatedRequest;}
 function input(){return {school_id:schoolId,first_name:"Ishaan",last_name:"Deshmukh",admission_number:`TEST-${randomUUID().slice(0,8)}`,date_of_birth:"2014-04-12",class_section_id:section,term_id:term,roll_number:roll++,enrolled_on:today,guardian:{mode:"new" as const,first_name:"Nandita",last_name:"Deshmukh",phone:"+91 90000 11001",email:""},relationship:"mother" as const,can_authorize_leave:false};}
 async function preview(value:unknown=input()){const result=await people.preview(admin,value);drafts.push(result.id);return result;}
 async function commit(id:string){const result=await people.commit(admin,id);if(!students.includes(result.student_id))students.push(result.student_id);return result.student_id;}
 async function registerFixture(state:"submitted"|"draft"){
   const id=(await pool.query("INSERT INTO class_sections(school_id,academic_year,grade,section) SELECT school_id,academic_year,$2,'Z' FROM academic_terms WHERE id=$1 RETURNING id",[term,`T${randomUUID().slice(0,8)}`])).rows[0].id;temporaryClasses.push(id);
-  const register=(await pool.query("INSERT INTO attendance_registers(school_id,class_section_id,term_id,date,state,revision,submitted_by,submitted_at) VALUES($1,$2,$3,$4,$5,1,$6,now()) RETURNING id",[schoolId,id,term,today,state,admin.authUser.id])).rows[0].id;temporaryRegisters.push(register);
-  return {section:id,register};
+  await pool.query(`INSERT INTO timetable_slots(class_section_id,term_id,subject_id,weekday,period_number,starts_at,ends_at,teacher_user_id)
+    SELECT $1,term_id,subject_id,weekday,period_number,starts_at,ends_at,teacher_user_id FROM timetable_slots WHERE class_section_id=$2`,[id,section]);
+  const person=(await pool.query("INSERT INTO school_people(school_id,first_name) VALUES($1,'Fixture original') RETURNING id",[schoolId])).rows[0].id;
+  const student=(await pool.query("INSERT INTO students(school_id,person_id,admission_number) VALUES($1,$2,$3) RETURNING id",[schoolId,person,`FIX-${randomUUID().slice(0,8)}`])).rows[0].id;
+  await pool.query("INSERT INTO enrollments(student_id,class_section_id,term_id,roll_number,enrolled_on) VALUES($1,$2,$3,1,$4)",[student,id,term,today]);
+  const prepared=await shared.bridge.prepareDaily(admin.authUser,schoolId,id,today,true);
+  if(state==='submitted')await shared.kernel.submitRecords(admin.authUser,schoolId,prepared.register_id,{expected_revision:0,records:[{person_id:person,status:'present'}]},
+    {...admin,requestId:randomUUID(),headers:{...admin.headers,'idempotency-key':randomUUID()}});
+  const register=prepared.context.legacy_register_id!;temporaryRegisters.push(register);
+  return {section:id,register,canonical:prepared.register_id};
 }
 beforeAll(async()=>{
-  db=new DatabaseService();events=new SchoolEventService(db);people=new PeopleService(db,events);school=new SchoolService(db,events,createStaffCoverageReconciliationTestDouble());
+  demoScope=await demoActorScope();
+  db=new DatabaseService();shared=academicParticipationTestServices(db);events=shared.events;school=shared.school;
+  people=new PeopleService(db,events,shared.core,shared.core,shared.core,shared.bridge);
   authority=new GuardianAuthorityService(db,events);
-  const row=(await pool.query("SELECT u.username,m.school_id FROM users u JOIN school_memberships m ON m.user_id=u.id WHERE m.role='admin' AND m.is_active ORDER BY u.created_at LIMIT 1")).rows[0];
-  admin=await account(row.username);schoolId=row.school_id;teacher=await account("kavita.staff");parent=await account("pooja.parent");
-  const target=(await pool.query("SELECT e.class_section_id,e.term_id,(now() AT TIME ZONE sc.timezone)::date::text AS today FROM students s JOIN enrollments e ON e.student_id=s.id JOIN users u ON u.id=s.user_id JOIN schools sc ON sc.id=s.school_id WHERE u.username='aarav.student' AND e.is_active LIMIT 1")).rows[0];
-  section=target.class_section_id;term=target.term_id;today=target.today;
-  existingGuardian=(await pool.query("SELECT id FROM parents WHERE user_id=$1",[parent.authUser.id])).rows[0].id;
+  const suffix=randomUUID(),owner=await db.insertInto('users').values({username:`people-owner-${suffix}`,email:`people-owner-${suffix}@example.test`,
+    password_hash:'isolated-test-only',first_name:'People',last_name:'Owner',role:'admin'}).returning(['id','username','email','first_name','last_name','role','is_active']).executeTakeFirstOrThrow();
+  const staffUsername=`people-teacher-${suffix}`,guardianUsername=`people-guardian-${suffix}`;
+  await db.insertInto('users').values([
+    {username:staffUsername,email:`${staffUsername}@example.test`,password_hash:'isolated-test-only',first_name:'Fixture',last_name:'Teacher',role:'staff'},
+    {username:guardianUsername,email:`${guardianUsername}@example.test`,password_hash:'isolated-test-only',first_name:'Fixture',last_name:'Guardian',role:'parent'},
+  ]).execute();
+  schoolId=await db.transaction().execute(tx=>new ProgressiveWorkspaceProvisioner(shared.core).createForAccount(tx,owner,'Asia/Kolkata'));
+  admin=await account(owner.username);teacher=await account(staffUsername);parent=await account(guardianUsername);
+  for(const req of [admin,teacher,parent])req.authUser.active_school_id=schoolId;
+  today=(await pool.query("SELECT campus_permission_date($1)::text AS today",[schoolId])).rows[0].today;
+  await pool.query("INSERT INTO school_memberships(school_id,user_id,role) VALUES($1,$2,'staff'),($1,$3,'guardian')",[schoolId,teacher.authUser.id,parent.authUser.id]);
+  await linkFixtureStaffIdentity(db,{school_id:schoolId,user_id:teacher.authUser.id,owner_user_id:owner.id,teaching:true});
+  existingGuardian=(await pool.query("INSERT INTO parents(user_id) VALUES($1) RETURNING id",[parent.authUser.id])).rows[0].id;
+  const guardianPerson=(await pool.query("INSERT INTO school_people(school_id,first_name,last_name) VALUES($1,$2,$3) RETURNING id",[schoolId,parent.authUser.first_name,parent.authUser.last_name])).rows[0].id;
+  await pool.query("INSERT INTO guardian_school_profiles(school_id,guardian_id,person_id) VALUES($1,$2,$3)",[schoolId,existingGuardian,guardianPerson]);
+  await db.transaction().execute(tx=>shared.core.linkAccountEndpoint(tx,{school_id:schoolId,person_id:guardianPerson,user_id:parent.authUser.id,
+    actor_user_id:owner.id,effective_from:new Date(Date.now()-86400000).toISOString(),effective_until:null,source_domain:'people',source_record_id:existingGuardian,source_revision:1,metadata:{fixture:true}}));
+  term=(await pool.query("INSERT INTO academic_terms(school_id,academic_year,name,starts_on,ends_on,is_active) VALUES($1,'2026-27','Fixture term',$2::date-90,$2::date+90,true) RETURNING id",[schoolId,today])).rows[0].id;
+  section=(await pool.query("INSERT INTO class_sections(school_id,academic_year,grade,section) VALUES($1,'2026-27','7','A') RETURNING id",[schoolId])).rows[0].id;
+  const subject=(await pool.query("INSERT INTO subjects(school_id,code,name,short_name) VALUES($1,'FIX','Mathematics','Math') RETURNING id",[schoolId])).rows[0].id;
+  await pool.query("INSERT INTO timetable_slots(class_section_id,term_id,subject_id,weekday,period_number,starts_at,ends_at,teacher_user_id) SELECT $1,$2,$3,day,1,'09:00','10:00',$4 FROM generate_series(1,7) day",[section,term,subject,teacher.authUser.id]);
+  await pool.query("INSERT INTO class_section_staff_assignments(school_id,class_section_id,user_id,role,valid_from,assigned_by) VALUES($1,$2,$3,'class_teacher',$4::date-90,$5)",[schoolId,section,teacher.authUser.id,today,owner.id]);
+  for(let index=1;index<=30;index++){
+    const person=(await pool.query("INSERT INTO school_people(school_id,first_name,last_name) VALUES($1,'Seed learner',$2) RETURNING id",[schoolId,String(index).padStart(2,'0')])).rows[0].id;
+    const student=(await pool.query("INSERT INTO students(school_id,person_id,admission_number) VALUES($1,$2,$3) RETURNING id",[schoolId,person,`SEED-${index}`])).rows[0].id;
+    await pool.query("INSERT INTO enrollments(student_id,class_section_id,term_id,roll_number,enrolled_on) VALUES($1,$2,$3,$4,$5::date-30)",[student,section,term,index,today]);
+  }
 });
 afterAll(async()=>{
-  for(const id of leaveIds){await pool.query("DELETE FROM notifications WHERE metadata->>'leave_request_id'=$1",[id]);await pool.query("DELETE FROM event_outbox WHERE aggregate_id=$1",[id]);await pool.query("DELETE FROM leave_requests WHERE id=$1",[id]);}
-  for(const id of followups){await pool.query("DELETE FROM coordination_commands WHERE followup_id=$1",[id]);await pool.query("DELETE FROM attendance_followup_entries WHERE followup_id=$1",[id]);await pool.query("DELETE FROM attendance_followups WHERE id=$1",[id]);await pool.query("DELETE FROM event_outbox WHERE aggregate_id=$1",[id]);await pool.query("DELETE FROM audit_events WHERE target_id=$1",[id]);}
-  for(const id of drafts)await pool.query("DELETE FROM people_intakes WHERE id=$1",[id]);
-  for(const id of students){
-    const remainingLeaves=(await pool.query("SELECT id FROM leave_requests WHERE student_id=$1",[id])).rows;
-    for(const leave of remainingLeaves){await pool.query("DELETE FROM notifications WHERE metadata->>'leave_request_id'=$1",[leave.id]);await pool.query("DELETE FROM event_outbox WHERE aggregate_id=$1",[leave.id]);await pool.query("DELETE FROM leave_requests WHERE id=$1",[leave.id]);}
-    const guardians=(await pool.query("SELECT p.id,gp.person_id FROM parents p JOIN guardian_relationships g ON g.guardian_id=p.id JOIN guardian_school_profiles gp ON gp.guardian_id=p.id WHERE g.student_id=$1 AND p.user_id IS NULL",[id])).rows;
-    const person=(await pool.query("SELECT person_id FROM students WHERE id=$1",[id])).rows[0];
-    await pool.query("DELETE FROM audit_events WHERE target_id IN (SELECT id FROM guardian_relationships WHERE student_id=$1)",[id]);
-    await pool.query("DELETE FROM guardian_relationships WHERE student_id=$1",[id]);
-    await pool.query("DELETE FROM event_outbox WHERE aggregate_id=$1",[id]);await pool.query("DELETE FROM audit_events WHERE target_id=$1",[id]);await pool.query("DELETE FROM students WHERE id=$1",[id]);
-    for(const g of guardians){await pool.query("DELETE FROM parents WHERE id=$1",[g.id]);await pool.query("DELETE FROM school_people WHERE id=$1",[g.person_id]);}
-    if(person)await pool.query("DELETE FROM school_people WHERE id=$1",[person.person_id]);
-  }
-  for(const id of temporaryRegisters){await pool.query("DELETE FROM audit_events WHERE target_id=$1",[id]);await pool.query("DELETE FROM attendance_registers WHERE id=$1",[id]);}
-  for(const id of temporaryClasses)await pool.query("DELETE FROM class_sections WHERE id=$1",[id]);
-  await db.destroy();await pool.end();
+  // Keep the random isolated institution and immutable accepted evidence together.
+  // The bounded test database is retired as a whole, never by deleting domain history.
+  try{expect(await demoActorScope()).toEqual(demoScope);}
+  finally{await db.destroy();await pool.end();}
 });
 describe("Account-optional school enrollment",()=>{
   it("backfills school identities without orphaning any existing student or guardian link",async()=>{
@@ -63,9 +103,15 @@ describe("Account-optional school enrollment",()=>{
     expect((await pool.query("SELECT relname FROM pg_class WHERE oid=ANY(ARRAY['school_people'::regclass,'guardian_school_profiles'::regclass,'people_intakes'::regclass]) AND relowner<>(SELECT relowner FROM pg_class WHERE oid='students'::regclass)")).rows).toHaveLength(0);
   });
   it("previews without creating a student, guardian or account",async()=>{
-    const before=(await pool.query("SELECT (SELECT count(*) FROM students) AS students,(SELECT count(*) FROM parents) AS parents,(SELECT count(*) FROM users) AS accounts")).rows[0];
-    const review=await preview();expect(review.class_name).toBe("Class 7A");expect(review.guardian.name).toBe("Nandita Deshmukh");
-    expect((await pool.query("SELECT (SELECT count(*) FROM students) AS students,(SELECT count(*) FROM parents) AS parents,(SELECT count(*) FROM users) AS accounts")).rows[0]).toEqual(before);
+    await db.transaction().setIsolationLevel('repeatable read').execute(async tx=>{
+      const transactional=fixtureTransactionDatabase(tx),services=academicParticipationTestServices(transactional),
+        local=new PeopleService(transactional,services.events,services.core,services.core,services.core,services.bridge);
+      const counts=async()=>(await sql`SELECT (SELECT count(*) FROM students) AS students,
+        (SELECT count(*) FROM parents) AS parents,(SELECT count(*) FROM users) AS accounts`.execute(tx)).rows[0];
+      const before=await counts(),review=await local.preview(admin,input());drafts.push(review.id);
+      expect(review.class_name).toBe('Class 7A');expect(review.guardian?.name).toBe('Nandita Deshmukh');
+      expect(await counts()).toEqual(before);
+    });
   });
   it("paginates the name-ordered directory without repeating students",async()=>{
     const first=await people.list(admin.authUser,{school_id:schoolId});expect(first.results).toHaveLength(25);expect(first.next_cursor).toBeTruthy();
@@ -73,11 +119,17 @@ describe("Account-optional school enrollment",()=>{
     expect(new Set([...first.results,...second.results].map(r=>r.id)).size).toBe(first.results.length+second.results.length);
   });
   it("atomically saves a named student, guardian, relationship and enrollment without accounts or attendance",async()=>{
-    const count=(await pool.query("SELECT count(*)::int AS n FROM users")).rows[0].n;
-    const value=input();const id=await commit((await preview(value)).id);
+    const value=input();
+    const id=await db.transaction().setIsolationLevel('repeatable read').execute(async tx=>{
+      const transactional=fixtureTransactionDatabase(tx),services=academicParticipationTestServices(transactional),
+        local=new PeopleService(transactional,services.events,services.core,services.core,services.core,services.bridge);
+      const counts=async()=>(await sql<{n:number}>`SELECT count(*)::int AS n FROM users`.execute(tx)).rows[0]!.n;
+      const count=await counts(),review=await local.preview(admin,value);drafts.push(review.id);
+      const accepted=await local.commit(admin,review.id);expect(await counts()).toBe(count);
+      return accepted.student_id;
+    });students.push(id);
     const row=(await pool.query("SELECT s.user_id,p.first_name,g.relationship,g.can_authorize_leave,pa.user_id AS guardian_account,e.enrolled_on::text FROM students s JOIN school_people p ON p.id=s.person_id JOIN guardian_relationships g ON g.student_id=s.id JOIN parents pa ON pa.id=g.guardian_id JOIN enrollments e ON e.student_id=s.id WHERE s.id=$1",[id])).rows[0];
     expect(row).toEqual({user_id:null,first_name:"Ishaan",relationship:"mother",can_authorize_leave:false,guardian_account:null,enrolled_on:today});
-    expect((await pool.query("SELECT count(*)::int AS n FROM users")).rows[0].n).toBe(count);
     expect((await pool.query("SELECT id FROM attendance_records WHERE student_id=$1",[id])).rows).toHaveLength(0);
     expect((await pool.query("SELECT classes_held FROM subject_attendance WHERE student_id=$1",[id])).rows.length).toBeGreaterThan(0);
     const listing=await people.list(admin.authUser,{school_id:schoolId,search:value.admission_number});expect(listing.results[0]).toMatchObject({id,name:"Ishaan Deshmukh",has_account:false,avatar_url:""});
@@ -100,7 +152,11 @@ describe("Account-optional school enrollment",()=>{
   });
   it("rejects an enrollment when an affected register is locked after review",async()=>{
     const fixture=await registerFixture("draft");const review=await preview({...input(),class_section_id:fixture.section});
-    await pool.query("UPDATE attendance_registers SET state='locked',locked_by=$2,locked_at=now() WHERE id=$1",[fixture.register,admin.authUser.id]);
+    const current=await shared.kernel.detail(admin.authUser,schoolId,fixture.canonical);
+    await shared.kernel.submitRecords(admin.authUser,schoolId,fixture.canonical,{expected_revision:0,records:current.roster.map(row=>({person_id:row.person_id,status:'present'}))},
+      {...admin,requestId:randomUUID(),headers:{...admin.headers,'idempotency-key':randomUUID()}});
+    await shared.kernel.transition(admin.authUser,schoolId,fixture.canonical,'finalize',{expected_revision:1},
+      {...admin,requestId:randomUUID(),headers:{...admin.headers,'idempotency-key':randomUUID()}});
     await expect(commit(review.id)).rejects.toThrow("register is locked");
     expect((await pool.query("SELECT id FROM students WHERE school_id=$1 AND admission_number=$2",[schoolId,review.input.admission_number])).rows).toHaveLength(0);
   });
@@ -143,13 +199,34 @@ describe("Account-optional school enrollment",()=>{
     const rows=(await pool.query("SELECT guardian_id FROM guardian_relationships WHERE student_id=ANY($1::uuid[])",[[first,second]])).rows;expect(new Set(rows.map(r=>r.guardian_id)).size).toBe(2);
   });
   it("supports attendance events and assisted follow-up for a student and guardian without accounts",async()=>{
-    const id=await commit((await preview()).id);
-    await pool.query("INSERT INTO attendance_records(student_id,class_section_id,date,status,marked_by) VALUES($1,$2,$3,'absent',$4)",[id,section,today,teacher.authUser.id]);
-    await db.transaction().execute(tx=>events.enqueueAttendanceUpdates(tx,{schoolId,classSectionId:section,termId:term,date:today,requestId:randomUUID(),records:[{student_id:id,status:"absent"}]}));
-    const coordination=new CoordinationService(db,events);const followup=await coordination.create(teacher,{student_id:id,attendance_date:today,question:"Please clarify the absence.",due_at:new Date(Date.now()+86400000).toISOString(),idempotency_key:randomUUID()});followups.push(followup.id);
-    const detail=await coordination.detail(teacher.authUser,followup.id,"staff");const guardian=detail.guardians[0] as {id:string;name:string};expect(guardian.name).toBe("Nandita Deshmukh");
-    await coordination.respond(teacher,followup.id,{context:"staff",kind:"assisted_reply",body:"Guardian phoned the office to explain the absence.",guardian_id:guardian.id,channel:"phone",observed_at:new Date().toISOString(),expected_revision:1,idempotency_key:randomUUID()});
-    expect((await coordination.detail(teacher.authUser,followup.id,"staff")).state).toBe("in_review");
+    const date=(await pool.query<{date:string}>(`SELECT day::date::text AS date
+      FROM generate_series($1::date+1,$1::date+14,interval '1 day') day
+      WHERE EXISTS(SELECT 1 FROM effective_school_schedule($2::uuid,day::date) lesson
+        WHERE lesson.class_section_id=$3::uuid AND lesson.weekday=extract(isodow FROM day)::int
+          AND NOT lesson.cancelled AND lesson.slot_type IN ('class','activity'))
+      ORDER BY day LIMIT 1`,[today,schoolId,section])).rows[0]!.date;
+    const now=new Date(`${date}T17:00:00Z`);
+    await rollbackAcademicFixture(db,async transactional=>{
+        const shared=academicParticipationTestServices(transactional),owner={...admin.authUser,active_school_id:schoolId};
+        const operator={...teacher,authUser:{...teacher.authUser,active_school_id:schoolId}};
+        const enrollment=new PeopleService(transactional,shared.events,shared.core,shared.core,shared.core,shared.bridge);
+        const review=await enrollment.preview({...admin,authUser:owner},input());
+        const {student_id:id}=await enrollment.commit({...admin,authUser:owner},review.id);
+        await executionEnvironmentStorage.run(createLiveExecutionEnvironment({institution_id:schoolId,clock:{now:()=>now,nowIso:()=>now.toISOString()}}),async()=>{
+        const current=await shared.school.teacherAttendanceScreen(owner,section,date);
+        await shared.school.saveStudentAttendance(owner,{class_section_id:section,date,student_id:id,status:'absent',
+          expected_revision:current.register.revision,reason:'Verified the fixture absence source'},
+          {...admin,authUser:owner,headers:{...admin.headers,'idempotency-key':randomUUID()}});
+        const coordination=new CoordinationService(transactional,shared.events,new FollowupModelBridgeService(shared.core,shared.core,shared.core));
+        const followup=await coordination.create(operator,{student_id:id,attendance_date:date,question:'Please clarify the absence.',
+          due_at:new Date(now.getTime()+86400000).toISOString(),idempotency_key:randomUUID()});
+        const detail=await coordination.detail(operator.authUser,followup.id,'staff');
+        const guardian=detail.guardians[0] as {id:string;name:string};expect(guardian.name).toBe('Nandita Deshmukh');
+        await coordination.respond(operator,followup.id,{context:'staff',kind:'assisted_reply',body:'Guardian phoned the office to explain the absence.',
+          guardian_id:guardian.id,channel:'phone',observed_at:now.toISOString(),expected_revision:1,idempotency_key:randomUUID()});
+        expect((await coordination.detail(operator.authUser,followup.id,'staff')).state).toBe('in_review');
+        });
+      });
   });
   it("rejects cross-tenant person links at the database boundary",async()=>{
     const client=await pool.connect();await client.query("BEGIN");

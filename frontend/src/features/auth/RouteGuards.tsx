@@ -1,7 +1,6 @@
 import type { ReactNode } from "react";
 import { Navigate, useLocation } from "react-router-dom";
-import { authDestination, useAuth, type Portal } from "./AuthContext";
-import { currentStaffMembership, teacherPathIsAuthorized } from "./staffAccess";
+import { authDestination, useAuth } from "./AuthContext";
 import { ThatCampusLoader } from "../../components/ThatCampusLoader";
 
 function SessionLoader() {
@@ -22,8 +21,10 @@ export function RoleLanding() {
   const location = useLocation();
   if (auth.status === "loading") return <SessionLoader />;
   const request=new URLSearchParams(location.search).get('visitor_request');
-  const marker=request&&/^[0-9a-f-]{36}$/i.test(request)?`?visitor_request=${encodeURIComponent(request)}`:'';
-  return <Navigate to={authDestination(auth)+marker} replace />;
+  const visitorRequest=request&&/^[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}$/i.test(request)?request:null;
+  const destination=new URL(authDestination(auth,{resumeUnfinishedSetup:!visitorRequest}),"https://thatcampus.invalid");
+  if(visitorRequest)destination.searchParams.set('visitor_request',visitorRequest);
+  return <Navigate to={`${destination.pathname}${destination.search}`} replace />;
 }
 
 export function PublicOnly({ children }: { children: ReactNode }) {
@@ -54,7 +55,15 @@ export function AuthenticatedOnly({ children }: { children: ReactNode }) {
   return children;
 }
 
-export function PortalOnly({ portal, children }: { portal: Portal; children: ReactNode }) {
+/**
+ * Transitional protection for institution workspaces.
+ *
+ * Membership proves only that the account has a relationship with an
+ * institution. It deliberately does not grant operational authority from a
+ * role label; each domain API remains responsible for capability and scope
+ * authorization.
+ */
+export function WorkspaceOnly({ children }: { children: ReactNode }) {
   const auth = useAuth();
   const location = useLocation();
   if (auth.status === "loading") return <SessionLoader />;
@@ -63,12 +72,7 @@ export function PortalOnly({ portal, children }: { portal: Portal; children: Rea
     return <Navigate to={`/login?next=${encodeURIComponent(next)}`} replace />;
   }
   if (auth.user?.email_verified === false) return securityRedirect(location);
-  if (!auth.hasPortal(portal)) return <Navigate to={authDestination(auth)} replace />;
-  if(portal==='teacher') {
-    const member=currentStaffMembership(auth.memberships);
-    if (member && !member.permissions?.length) return <Navigate to="/workspace" replace/>;
-    if(!teacherPathIsAuthorized(member,location.pathname)) return <Navigate to="/teacher" replace/>;
-  }
+  if (auth.memberships.length === 0) return <Navigate to={authDestination(auth)} replace />;
   return children;
 }
 

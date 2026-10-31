@@ -26,7 +26,7 @@ export class AppController {
 
   @Public()
   @Get("metrics")
-  metrics(
+  async metrics(
     @Headers("authorization") authorization: string | undefined,
     @Res({ passthrough: true }) reply: FastifyReply,
   ) {
@@ -43,6 +43,6 @@ export class AppController {
     // it with @Header forced JSON error bodies through Fastify's text serializer,
     // turning an intended 401 into a 500 response.
     reply.header("Content-Type", "text/plain; version=0.0.4; charset=utf-8");
-    return this.events.prometheusMetrics();
+    return (await this.events.prometheusMetrics())+this.db.prometheusMetrics();
   }
 }

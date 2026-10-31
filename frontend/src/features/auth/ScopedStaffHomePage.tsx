@@ -6,15 +6,15 @@ import { hasStaffPermission } from "./staffAccess";
 import "./scoped-staff-home.css";
 
 const capabilityLinks = [
-  { permission: "gate.manage", label: "In & Out", detail: "Scan QR passes, find students and record visitors", path: "/teacher/gate", icon: ShieldCheck },
-  { permission: "departure.collect", label: "Transport & departure", detail: "Assigned trip, riders and handovers", path: "/teacher/transport", icon: Bus },
-  { permission: "attendance.view", label: "Registers", detail: "Assigned attendance registers", path: "/teacher/attendance", icon: ClipboardCheck },
-  { permission: "timetable.view", label: "Timetable", detail: "Published teaching schedule", path: "/teacher/timetable", icon: CalendarDays },
-  { permission: "messages.view", label: "Messages", detail: "Permitted school conversations", path: "/teacher/messages", icon: MessageCircle },
-  { permission: "events.view", label: "Events", detail: "Assigned activities and sessions", path: "/teacher/events", icon: CalendarDays },
-  { permission: "safeguarding.review", label: "Safeguarding", detail: "Assigned welfare concerns", path: "/teacher/safeguarding", icon: ShieldAlert },
-  { permission: "assessments.view", label: "Assessments", detail: "Assigned assessments and marking", path: "/teacher/assessments", icon: Award },
-  { permission: "reports.comment", label: "Report remarks", detail: "Assigned report-card remarks", path: "/teacher/report-cards", icon: FileText },
+  { permission: "gate.manage", label: "In & Out", detail: "Scan QR passes, find students and record visitors", path: "/areas/in-out/operate", icon: ShieldCheck },
+  { permission: "departure.collect", label: "Transport & departure", detail: "Assigned trip, riders and handovers", path: "/areas/departure/plan", icon: Bus },
+  { permission: "attendance.view", label: "Registers", detail: "Assigned attendance registers", path: "/areas/attendance/registers", icon: ClipboardCheck },
+  { permission: "timetable.view", label: "Timetable", detail: "Published teaching schedule", path: "/areas/timetable/schedule", icon: CalendarDays },
+  { permission: "messages.view", label: "Messages", detail: "Permitted school conversations", path: "/areas/messages/conversations", icon: MessageCircle },
+  { permission: "events.view", label: "Events", detail: "Assigned activities and sessions", path: "/areas/events/assigned", icon: CalendarDays },
+  { permission: "safeguarding.review", label: "Student care", detail: "Assigned protected concerns", path: "/areas/care/concerns", icon: ShieldAlert },
+  { permission: "assessments.view", label: "Assessments", detail: "Assigned assessments and marking", path: "/areas/assessments/assigned", icon: Award },
+  { permission: "reports.comment", label: "Report remarks", detail: "Assigned report-card remarks", path: "/areas/reports/remarks", icon: FileText },
 ] as const;
 
 export function ScopedStaffHomePage({ member }: { member: SchoolMembership }) {
@@ -37,14 +37,14 @@ export function ScopedStaffHomePage({ member }: { member: SchoolMembership }) {
                 <div><strong>{label}</strong><small>{detail}</small></div>
               </Link>
             ))}
-            <Link to="/teacher/responsibilities">
+            <Link to="/areas/responsibilities/mine">
               <span><Handshake size={20} aria-hidden="true" /></span>
               <div><strong>My work</strong><small>Assignments and pending responses</small></div>
             </Link>
           </div>
         </section>
 
-        <Link className="scoped-staff-home__more" to="/teacher/more">
+        <Link className="scoped-staff-home__more" to="/more">
           <MoreHorizontal size={18} aria-hidden="true" />More tools
         </Link>
       </div>

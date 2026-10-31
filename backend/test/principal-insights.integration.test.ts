@@ -4,14 +4,22 @@ import {afterAll,beforeAll,describe,expect,it} from "vitest";
 import {DatabaseService} from "../src/database/database.service.js";
 import {PrincipalInsightsService} from "../src/principal-insights/principal-insights.service.js";
 import {shiftDate} from "../src/principal-insights/insight-rules.js";
-import type {AuthUser} from "../src/common/request.js";
+import type {AuthUser,AuthenticatedRequest} from "../src/common/request.js";
 import {requireIsolatedTestDatabaseUrl} from "./test-database.js";
+import {academicParticipationTestServices,rollbackAcademicFixture} from './academic-participation.test-support.js';
+import {sql} from 'kysely';
+import {linkFixtureStaffIdentity} from './fixture-human-identity.test-support.js';
+import {CoordinationService} from '../src/coordination/coordination.service.js';
+import {FollowupModelBridgeService} from '../src/coordination/followup-model-bridge.service.js';
+import {executionEnvironmentStorage} from '../src/campus-model-core/execution-time.runtime.js';
+import {createLiveExecutionEnvironment} from '../src/campus-model-core/execution-environment.runtime.js';
 const isolated=process.env.TEST_DATABASE_ISOLATED==="true";
 const pool=new Pool({connectionString:isolated?requireIsolatedTestDatabaseUrl(process.env.DATABASE_URL):"postgresql://invalid.invalid/unused",max:1});
 const suite=isolated?describe:describe.skip;
 suite("principal insights scoped database aggregation",()=>{
   let db:DatabaseService,service:PrincipalInsightsService,admin:AuthUser,staff:AuthUser;
   let school:string,otherSchool:string,classId:string,otherClass:string,term:string,subject:string;
+  let shared:ReturnType<typeof academicParticipationTestServices>;
   const students:string[]=[];
   const today=new Intl.DateTimeFormat("en-CA",{timeZone:"Asia/Kolkata",year:"numeric",month:"2-digit",day:"2-digit"}).format(new Date());
   const end=shiftDate(today,-1),start=shiftDate(end,-13),baseline=shiftDate(start,-14);
@@ -23,6 +31,8 @@ suite("principal insights scoped database aggregation",()=>{
     admin={...(await insert("INSERT INTO users(username,email,password_hash,first_name,last_name,role) VALUES($1,$2,'x','Insights','Admin','admin') RETURNING *",[key,key+'@example.test'])),active_school_id:school};
     staff={...(await insert("INSERT INTO users(username,email,password_hash,first_name,last_name,role) VALUES($1,$2,'x','Insights','Staff','staff') RETURNING *",['s'+key,'s'+key+'@example.test'])),active_school_id:school};
     await pool.query("INSERT INTO school_memberships(user_id,school_id,role) VALUES($1,$3,'admin'),($2,$3,'staff')",[admin.id,staff.id,school]);
+    shared=academicParticipationTestServices(db);
+    await linkFixtureStaffIdentity(db,{school_id:school,user_id:admin.id,owner_user_id:admin.id,teaching:true,effective_from:`${baseline}T00:00:00Z`});
     term=(await insert("INSERT INTO academic_terms(school_id,academic_year,name,starts_on,ends_on) VALUES($1,'2026-27','Insight term',$2,$3) RETURNING id",[school,baseline,shiftDate(today,30)])).id;
     classId=(await insert("INSERT INTO class_sections(school_id,academic_year,grade,section) VALUES($1,'2026-27','7','A') RETURNING id",[school])).id;
     otherClass=(await insert("INSERT INTO class_sections(school_id,academic_year,grade,section) VALUES($1,'2026-27','7','B') RETURNING id",[otherSchool])).id;
@@ -32,8 +42,15 @@ suite("principal insights scoped database aggregation",()=>{
       const person=(await insert("INSERT INTO school_people(school_id,first_name,last_name) VALUES($1,$2,'Learner') RETURNING id",[school,['Declining','Steady','Unrecorded'][i]])).id;
       const id=(await insert("INSERT INTO students(school_id,person_id,admission_number) VALUES($1,$2,$3) RETURNING id",[school,person,'I'+i])).id;students.push(id);
       await pool.query("INSERT INTO enrollments(student_id,class_section_id,term_id,roll_number,enrolled_on) VALUES($1,$2,$3,$4,$5)",[id,classId,term,i+1,baseline]);
-      await pool.query("INSERT INTO attendance_records(student_id,class_section_id,date,status,marked_by) SELECT $1,$2,d::date,$3,$4 FROM generate_series($5::date,$6::date,'1 day') d",[id,classId,i===1?'half_day':'present',admin.id,baseline,shiftDate(start,-1)]);
-      if(i<2) for(let day=0;day<14;day++) await pool.query("INSERT INTO attendance_records(student_id,class_section_id,date,status,marked_by) VALUES($1,$2,$3,$4,$5)",[id,classId,shiftDate(start,day),i===0?(day<7?'present':'absent'):(day<7?'excused':'half_day'),admin.id]);
+    }
+    for(let day=0;day<28;day++) {
+      const date=shiftDate(baseline,day);
+      for(let index=0;index<(day<14?3:2);index++) {
+        const status=day<14?(index===1?'half_day':'present'):index===0?(day<21?'present':'absent'):(day<21?'excused':'half_day');
+        const screen=await shared.school.teacherAttendanceScreen(admin,classId,date);
+        await shared.school.saveStudentAttendance(admin,{class_section_id:classId,date,student_id:students[index],status,
+          expected_revision:screen.register.revision},{authUser:admin,requestId:randomUUID(),headers:{'idempotency-key':randomUUID()}} as unknown as AuthenticatedRequest);
+      }
     }
     for(let i=0;i<2;i++) await pool.query("INSERT INTO diary_items(school_id,class_section_id,term_id,date,item_type,title,body,author_id,due_at,published_at) VALUES($1,$2,$3,$4,'homework','Practice','Exercises',$5,$6,$4::date)",[school,classId,term,start,admin.id,`${shiftDate(end,-i)}T12:00:00+05:30`]);
     const invoice=(await insert("INSERT INTO fee_invoices(school_id,student_id,reference,description,amount_paise,due_on,created_by) VALUES($1,$2,'INSIGHT-FEE','Tuition',10000,$3,$4) RETURNING id",[school,students[0],end,admin.id])).id;
@@ -60,14 +77,32 @@ suite("principal insights scoped database aggregation",()=>{
     expect((await service.overview(admin,school,{date:end,days:14,threshold:70})).learning[0]?.below).toBe(1);
   });
   it("tracks current overdue owners and deadline clusters independently of historical attendance",async()=>{
-    const record=(await insert("SELECT id FROM attendance_records WHERE student_id=$1 AND date=$2",[students[0],end])).id;
-    await pool.query("INSERT INTO attendance_followups(school_id,student_id,attendance_record_id,attendance_date,source_revision,question,owner_user_id,due_at) VALUES($1,$2,$3,$4,1,'Please review absence',$5,now()-interval '1 day')",[school,students[0],record,end,admin.id]);
+    const recordedAt=new Date(Date.now()-2*3600000),dueAt=new Date(Date.now()-3600000);
+    await executionEnvironmentStorage.run(createLiveExecutionEnvironment({institution_id:school,clock:{now:()=>recordedAt,nowIso:()=>recordedAt.toISOString()}}),
+      ()=>new CoordinationService(db,shared.events,new FollowupModelBridgeService(shared.core,shared.core,shared.core)).create({authUser:admin,requestId:randomUUID(),headers:{}} as AuthenticatedRequest,
+        {student_id:students[0],attendance_date:end,question:'Please review absence',due_at:dueAt.toISOString(),idempotency_key:randomUUID()}));
     for(let i=0;i<3;i++) await pool.query("INSERT INTO diary_items(school_id,class_section_id,term_id,date,item_type,title,body,author_id,due_at) VALUES($1,$2,$3,$4,'homework','Upcoming practice','Exercises',$5,$6)",[school,classId,term,today,admin.id,`${today}T23:00:00+05:30`]);
     const data=await service.overview(admin,school,{date:end,days:14});
     expect(data.followups).toMatchObject({awaiting:1,review:0,overdue:1});
     expect(data.followups.details[0]).toMatchObject({owner:'Insights Admin',class_id:classId});
     expect(data.engagement.without_followup).toBe(0);
     expect(data.deadlines).toEqual(expect.arrayContaining([expect.objectContaining({class_id:classId,total:3,homework:3})]));
+  });
+  it('requires the exact active common academic context and excludes another institution even for a dual-campus administrator',async()=>{
+    await rollbackAcademicFixture(db,async(transactional,tx)=>{
+      const current=(await sql<{participation_entry_id:string;attendance_record_id:string|null}>`SELECT participation_entry_id,attendance_record_id
+        FROM attendance_followups WHERE school_id=${school}::uuid AND student_id=${students[0]}::uuid`.execute(tx)).rows[0]!;
+      expect(current.participation_entry_id).toBeTruthy();expect(current.attendance_record_id).toBeNull();
+      const own=new PrincipalInsightsService(transactional);
+      expect((await own.overview(admin,school,{date:end,days:14})).followups.awaiting).toBe(1);
+      await sql`UPDATE activity_attendance_registers SET context_state='imported',context_activated_at=NULL
+        WHERE school_id=${school}::uuid AND id=(SELECT register_id FROM activity_attendance_entries
+          WHERE id=${current.participation_entry_id}::uuid)`.execute(tx);
+      expect((await own.overview(admin,school,{date:end,days:14})).followups).toMatchObject({awaiting:0,overdue:0,details:[]});
+      await sql`INSERT INTO school_memberships(school_id,user_id,role) VALUES(${otherSchool}::uuid,${admin.id}::uuid,'admin')`.execute(tx);
+      expect((await own.overview({...admin,active_school_id:otherSchool},otherSchool,{date:end,days:14})).followups)
+        .toMatchObject({awaiting:0,overdue:0,details:[]});
+    });
   });
   it("refuses non-admins, other institutions, cross-tenant filters and invalid dates",async()=>{
     await expect(service.overview(staff,school,{})).rejects.toThrow(/administrator/);

@@ -1,17 +1,21 @@
-import { spawn, type ChildProcess } from "node:child_process";
+import "reflect-metadata";
 import { randomUUID } from "node:crypto";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { Pool } from "pg";
 import { hashPassword } from "../src/auth/password.js";
+import { DatabaseService } from "../src/database/database.service.js";
+import { linkFixtureStaffIdentity } from "./fixture-human-identity.test-support.js";
+import { TestApiSession, startManagedTestApi, type ManagedTestApi } from "./http-api.test-support.js";
+import { requireIsolatedTestDatabaseUrl } from "./test-database.js";
 
 // This suite leaves immutable ledger records behind by design. It must only
 // run in a disposable database, never a school's staging/production database.
 const isolated = process.env.TEST_DATABASE_ISOLATED === "true";
 const suite = isolated ? describe : describe.skip;
 suite("school operations against disposable PostgreSQL", () => {
-  const pool = new Pool({ connectionString: process.env.DATABASE_URL, max: 2 });
-  const base = "http://127.0.0.1:8023";
-  let server: ChildProcess;
+  const databaseUrl = isolated ? requireIsolatedTestDatabaseUrl(process.env.DATABASE_URL) : "postgresql://invalid.invalid/unused_test";
+  const pool = new Pool({ connectionString: databaseUrl, max: 2 });
+  let server: ManagedTestApi | undefined;
   let school: string;
   let adminId: string;
   let studentId: string;
@@ -24,16 +28,10 @@ suite("school operations against disposable PostgreSQL", () => {
   const email = `admin.${suffix}@example.test`;
   const studentEmail = `learner.${suffix}@example.test`;
   const password = "Str0ng!RiverPebbles2026";
-  const cookies = new Map<string, string>();
+  const session = new TestApiSession("http://127.0.0.1:8023/api/v1/");
 
   async function request(path: string, body?: unknown, method = body === undefined ? "GET" : "POST", csrf = true) {
-    const headers: Record<string, string> = { Cookie: [...cookies].map(([k, v]) => `${k}=${v}`).join("; ") };
-    if (body !== undefined) headers["Content-Type"] = "application/json";
-    if (csrf && cookies.get("csrftoken")) headers["X-CSRFToken"] = cookies.get("csrftoken")!;
-    const response = await fetch(`${base}/api/v1/${path}`, { method, headers, ...(body !== undefined ? { body: JSON.stringify(body) } : {}) });
-    for (const cookie of response.headers.getSetCookie()) { const pair = cookie.split(";")[0]!; const at = pair.indexOf("="); cookies.set(pair.slice(0, at), pair.slice(at + 1)); }
-    const data: any = response.status === 204 ? null : await response.json();
-    return { status: response.status, data };
+    return session.request(path, body, method, csrf);
   }
   const schoolRequest = (path: string, body?: unknown, method?: string) => request(`schools/${school}/${path}/`, body, method);
   beforeAll(async () => {
@@ -42,14 +40,14 @@ suite("school operations against disposable PostgreSQL", () => {
     const created = await pool.query("INSERT INTO schools(name,code) VALUES('Isolated Operations School',$1) RETURNING id", [suffix.slice(0, 20)]);
     school = created.rows[0].id;
     await pool.query("INSERT INTO school_memberships(user_id,school_id,role) VALUES($1,$2,'admin')", [adminId, school]);
-    server = spawn(process.execPath, ["dist/main.js"], { env: { ...process.env, PORT: "8023", HOST: "127.0.0.1", NODE_ENV: "test", COOKIE_SECRET: "operations-test-cookie-secret-at-least-32", RATE_LIMIT_STORE: "memory", LOG_LEVEL: "silent" }, stdio: ["ignore", "ignore", "inherit"] });
-    let ready = false;
-    for (let i = 0; i < 100; i++) { try { if ((await fetch(`${base}/healthz`)).ok) { ready = true; break; } } catch { /* starting */ } await new Promise((resolve) => setTimeout(resolve, 50)); }
-    expect(ready).toBe(true);
+    const identityDb = new DatabaseService();
+    try { await linkFixtureStaffIdentity(identityDb, { school_id: school, user_id: adminId, owner_user_id: adminId }); }
+    finally { await identityDb.destroy(); }
+    server = await startManagedTestApi({ port:8023, databaseUrl, cookieSecret:"operations-test-cookie-secret-at-least-32", rateLimitStore:"memory" });
     await request("auth/csrf/");
     expect((await request("auth/login/", { identifier: email, password })).status).toBe(200);
   });
-  afterAll(async () => { server?.kill("SIGTERM"); await pool.end(); });
+  afterAll(async () => { try { await server?.stop(); } finally { await pool.end(); } });
 
   it("enforces CSRF and school boundaries", async () => {
     expect((await request(`schools/${school}/catalog/subjects/`, { code: "X", name: "X", short_name: "X" }, "POST", false)).status).toBe(403);
@@ -73,13 +71,35 @@ suite("school operations against disposable PostgreSQL", () => {
     expect((await schoolRequest(`students/${studentId}`, { first_name: "Mira", last_name: "Sen", admission_number: "S1", date_of_birth: "2020-02-20" }, "PATCH")).status).toBe(200);
     const peopleEvents = await pool.query("SELECT payload FROM event_outbox WHERE school_id=$1 AND event_type='people.updated' AND aggregate_id=$2 ORDER BY sequence", [school, studentId]);
     expect(peopleEvents.rows.map((row) => row.payload.action)).toEqual(["student_created", "student_updated"]);
-    const guardian = await schoolRequest("guardians", {
-      email: `guardian.${suffix}@example.test`, first_name: "Rhea", last_name: "Sen", student_id: studentId,
+    const guardianEmail = `guardian.${suffix}@example.test`;
+    const retired = await schoolRequest("guardians", {
+      email: guardianEmail, first_name: "Rhea", last_name: "Sen", student_id: studentId,
       phone: "+91 9000000000", relationship: "mother", is_primary: true, can_authorize_leave: true,
     });
-    expect(guardian.status).toBe(201);
-    expect((await pool.query("SELECT payload FROM event_outbox WHERE school_id=$1 AND event_type='people.updated' AND aggregate_id=$2", [school, guardian.data.id])).rows[0].payload)
-      .toMatchObject({ action: "guardian_linked", student_id: studentId });
+    expect(retired.status).toBe(404);
+    expect((await pool.query("SELECT id FROM guardian_relationships WHERE student_id=$1", [studentId])).rows).toEqual([]);
+    const person = await schoolRequest("people/participants", { first_name: "Rhea", last_name: "Sen",
+      contact_email: guardianEmail, contact_phone: "+91 9000000000", idempotency_key: randomUUID() });
+    expect(person.status).toBe(201);
+    const link = { school_id: school, student_id: studentId, person: { id: person.data.id, expected_revision: 1 },
+      relationship: "mother", is_primary: true, idempotency_key: randomUUID() };
+    const guardian = await request("people/guardian-links", link);
+    expect(guardian.status).toBe(200);
+    expect(guardian.data).toMatchObject({ person_id: person.data.id, student_id: studentId });
+    expect((await request("people/guardian-links", link)).data).toEqual(guardian.data);
+    expect((await pool.query(`SELECT relationship.can_authorize_leave,profile.person_id,parent.user_id
+      FROM guardian_relationships relationship JOIN guardian_school_profiles profile
+        ON profile.school_id=relationship.school_id AND profile.guardian_id=relationship.guardian_id
+      JOIN parents parent ON parent.id=profile.guardian_id WHERE relationship.id=$1`, [guardian.data.id])).rows)
+      .toEqual([{ can_authorize_leave: false, person_id: person.data.id, user_id: null }]);
+    expect((await pool.query("SELECT id FROM users WHERE email=$1", [guardianEmail])).rows).toEqual([]);
+    expect((await pool.query("SELECT payload FROM event_outbox WHERE school_id=$1 AND event_type='people.updated' AND aggregate_id=$2", [school, guardian.data.id])).rows)
+      .toEqual([{ payload: { action: "guardian_contact_linked", person_id: person.data.id, student_id: studentId,
+        refresh: ["people", "people.participants"] } }]);
+    expect((await pool.query(`SELECT command.state,outcome.status FROM campus_model_commands command
+      JOIN campus_model_command_outcomes outcome ON outcome.command_id=command.id
+      WHERE command.school_id=$1 AND command.command_type='people.guardian.attach' AND command.correlation_id=$2`, [school, link.idempotency_key])).rows)
+      .toEqual([{ state: "accepted", status: "accepted" }]);
   });
   it("protects linked catalogue edits with impact review, revision conflicts, audit context and an outbox event", async () => {
     const overview = await schoolRequest("administration");
@@ -175,7 +195,7 @@ suite("school operations against disposable PostgreSQL", () => {
     expect((await request("invitations/accept/", payload)).status).toBe(400);
   });
   it("limits the student to their own fees and denies administration", async () => {
-    cookies.clear(); await request("auth/csrf/");
+    session.clear(); await request("auth/csrf/");
     expect((await request("auth/login/", { identifier: studentEmail, password })).status).toBe(200);
     expect((await schoolRequest("administration")).status).toBe(403);
     expect((await schoolRequest("fees")).status).toBe(403);
@@ -190,7 +210,7 @@ suite("school operations against disposable PostgreSQL", () => {
   it("includes accountless students in administration and invoice selection", async () => {
     const person = await pool.query("INSERT INTO school_people(school_id,first_name,last_name) VALUES($1,'Accountless','Learner') RETURNING id", [school]);
     const student = await pool.query("INSERT INTO students(school_id,person_id,admission_number) VALUES($1,$2,$3) RETURNING id", [school, person.rows[0].id, `NOLOGIN-${suffix.slice(0, 8)}`]);
-    cookies.clear(); await request("auth/csrf/");
+    session.clear(); await request("auth/csrf/");
     expect((await request("auth/login/", { identifier: email, password })).status).toBe(200);
     const overview = await schoolRequest("administration");
     expect(overview.status).toBe(200);

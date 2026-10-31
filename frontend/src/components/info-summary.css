@@ -1,0 +1,33 @@
+/* Scoped above feature summary rules, without changing action disclosures. */
+:root details > summary.thatcampus-info-summary {
+  display: flex;
+  align-items: center;
+  justify-content: flex-start;
+  gap: 8px;
+  min-height: 44px;
+  min-width: 0;
+  padding-block: 8px;
+  box-sizing: border-box;
+  color: var(--thatcampus-ink-secondary);
+  font-size: 14px;
+  font-weight: 500;
+  line-height: 1.5;
+  list-style: none;
+  cursor: pointer;
+}
+
+:root details > summary.thatcampus-info-summary::marker { content: ""; }
+:root details > summary.thatcampus-info-summary::-webkit-details-marker { display: none; }
+:root details > summary.thatcampus-info-summary > .thatcampus-info-summary__icon {
+  display: inline-flex;
+  flex: 0 0 18px;
+  margin: 0;
+  color: inherit;
+}
+:root details > summary.thatcampus-info-summary > .thatcampus-info-summary__label {
+  min-width: 0;
+  margin: 0;
+  color: inherit;
+  font: inherit;
+  overflow-wrap: anywhere;
+}

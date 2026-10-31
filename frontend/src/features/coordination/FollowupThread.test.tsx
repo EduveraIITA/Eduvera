@@ -13,6 +13,13 @@ function mount(context: "staff" | "guardian", canResolve = context === "staff") 
   return render(<QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false }, mutations: { retry: false } } })}><FollowupThread id={detail.id} context={context} /></QueryClientProvider>);
 }
 describe("Attendance follow-up UI", () => {
+  it("keeps a missing mailbox route visible without removing the authorized manual path", async () => {
+    vi.mocked(getFollowup).mockResolvedValue({ ...detail, can_resolve: true, coordination: { status: "manual_followup",
+      exception_code: "configuration_missing", message: "The follow-up is saved, but its mailbox handoff is unavailable. Continue through this record." } });
+    render(<QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}><FollowupThread id={detail.id} context="staff" /></QueryClientProvider>);
+    expect(await screen.findByText(/mailbox handoff is unavailable/u)).toHaveAttribute("role", "status");
+    expect(screen.getByLabelText("Guardian")).toBeEnabled();
+  });
   it("offers a guardian response without resolution or staff attribution controls", async () => {
     mount("guardian");
     const user = userEvent.setup();

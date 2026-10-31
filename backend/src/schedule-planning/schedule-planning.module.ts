@@ -4,5 +4,8 @@ import { CampusModelCoreModule } from '../campus-model-core/campus-model-core.mo
 import { SchedulePlanningController } from './schedule-planning.controller.js';
 import { SchedulePlanningService } from './schedule-planning.service.js';
 import { StaffCoverageReconciliationModule } from '../staff-operations/staff-coverage-reconciliation.module.js';
-@Module({imports:[SchoolModule,CampusModelCoreModule,StaffCoverageReconciliationModule],controllers:[SchedulePlanningController],providers:[SchedulePlanningService]})
+import { ActivityPlanningService } from './activity-planning.service.js';
+import { ActivityPlanningController } from './activity-planning.controller.js';
+import { OwnedPlanFootprintBridge } from './owned-plan-footprint.bridge.js';
+@Module({imports:[SchoolModule,CampusModelCoreModule,StaffCoverageReconciliationModule],controllers:[SchedulePlanningController,ActivityPlanningController],providers:[SchedulePlanningService,ActivityPlanningService,OwnedPlanFootprintBridge],exports:[ActivityPlanningService,OwnedPlanFootprintBridge]})
 export class SchedulePlanningModule {}

@@ -8,7 +8,10 @@ import type { AuthUser } from '../common/request.js';
 import { InternalAgentDelegationService } from '../auth/internal-agent-delegation.js';
 
 /** Ephemeral transport credentials. Never store or include these in a model prompt. */
-export interface AgentCredentials { cookie?: string; csrf?: string; requestId: string; delegatedUser?: AuthUser }
+export interface AgentCredentials {
+  cookie?: string; csrf?: string; nativeToken?: string; delegatedUser?: AuthUser;
+  requestId: string; actorId: string; executionNamespace: string;
+}
 export interface Evidence { id: string; title: string; href: string; retrieved_at: string; capability: string; chart?:AgentChart }
 
 export function stableHash(value: unknown): string {
@@ -36,9 +39,30 @@ export function assertKnownIds(input: unknown, known: Set<string>) {
   const ids = collectIds(input);
   for (const id of ids) if (!known.has(id)) throw new BadRequestException('Read the target record first; identifiers must come from an authorized source.');
 }
+// These are reviewed catalogue destinations, not an /areas capability. Their
+// owning application routes still resolve current responsibility/relationship
+// authority; accepting an evidence link never authorizes its records.
+const neutralEvidenceScreens = new Set([
+  '/areas/people/classes', '/areas/attendance/registers', '/areas/messages/conversations',
+  '/areas/assessments/assigned', '/areas/assessments/manage', '/areas/assessments/results',
+  '/areas/events/assigned', '/areas/events/manage', '/areas/events/calendar',
+  '/areas/departure/plan', '/areas/departure/manage', '/areas/departure/operate',
+  '/areas/insights', '/areas/insights/review', '/areas/insights/learning-review',
+  '/areas/insights/followups', '/areas/insights/operations', '/areas/insights/finance',
+]);
+const evidenceRecordId = '[0-9a-fA-F]{8}(?:-[0-9a-fA-F]{4}){3}-[0-9a-fA-F]{12}';
+const neutralRecordScreen = new RegExp(`^/areas/(?:events/(?:assigned|manage|calendar)|departure/(?:manage/journeys|operate))/${evidenceRecordId}$`, 'u');
 export function assertLocalScreen(path: string): string {
-  if (!/^\/(principal|teacher|parent|student)(?:[/?]|$)/.test(path) && path !== '/account/security') throw new Error('Invalid agent screen.');
-  if (path.includes('\\') || /[\r\n]/.test(path)) throw new Error('Invalid agent screen.');
+  if (!path.startsWith('/') || path.startsWith('//') || path.includes('\\')
+    || [...path].some(character => character.charCodeAt(0) <= 32 || character.charCodeAt(0) === 127)) throw new Error('Invalid agent screen.');
+  const origin = 'https://thatcampus.invalid';
+  const screen = new URL(path, origin);
+  const rawPathname = path.split(/[?#]/u, 1)[0];
+  if (screen.origin !== origin || screen.hash || screen.pathname !== rawPathname || screen.pathname.includes('%') || screen.pathname.includes('//')) {
+    throw new Error('Invalid agent screen.');
+  }
+  if (!/^\/(principal|teacher|parent|student)(?:\/|$)/u.test(screen.pathname) && screen.pathname !== '/account/security'
+    && !neutralEvidenceScreens.has(screen.pathname) && !neutralRecordScreen.test(screen.pathname)) throw new Error('Invalid agent screen.');
   return path;
 }
 
@@ -48,15 +72,25 @@ export class AgentGateway {
   async dispatch(capability: Capability, input: unknown, scope: AgentScope, credentials: AgentCredentials, actionId?: string) {
     if (!capability.request || capability.kind === 'handoff') throw new ForbiddenException('This action must be completed in the app.');
     if (capability.kind === 'write' && !actionId) throw new ForbiddenException('An approved action is required.');
+    if (credentials.actorId !== scope.userId || !['live:global',`live:${scope.schoolId}`].includes(credentials.executionNamespace)) {
+      throw new ForbiddenException('The app session does not match this conversation.');
+    }
     const command = capability.request(input, scope, actionId);
     if (!command.path.startsWith('/') || command.path.includes('..') || command.path.includes('?') || command.path.includes('\\') || command.path.startsWith('//')) throw new BadRequestException('Invalid app operation.');
     const query = new URLSearchParams();
     for (const [key,value] of Object.entries(command.query ?? {})) if (typeof value === 'string' || typeof value === 'number' || typeof value === 'boolean') query.set(key,String(value));
     const app = this.adapter.httpAdapter.getInstance<FastifyInstance>();
+    if (credentials.nativeToken && (credentials.cookie || credentials.csrf || credentials.delegatedUser)) {
+      throw new ForbiddenException('Present one app session transport at a time.');
+    }
     const delegation = credentials.delegatedUser ? this.delegations.issue(credentials.delegatedUser,credentials.requestId) : undefined;
     const response = await app.inject({ method: command.method, url: `/api/v1${command.path}${query.size ? `?${query.toString()}` : ''}`,
       headers: { ...(credentials.cookie ? {cookie:credentials.cookie} : {}), ...(credentials.csrf ? {'x-csrftoken':credentials.csrf} : {}),
+        ...(credentials.nativeToken ? {authorization:`Bearer ${credentials.nativeToken}`} : {}),
         ...(delegation ? {'x-omnischool-agent-delegation':delegation} : {}),
+        // Assistant scope is Live-only. Resolve the original session afresh but
+        // refuse a campus/world switch while a run or queued read is in flight.
+        'x-thatcampus-execution-environment':credentials.executionNamespace,
         'x-request-id': credentials.requestId || randomUUID(), ...(actionId ? { 'idempotency-key':actionId } : {}), ...(command.body ? { 'content-type': 'application/json' } : {}) },
       ...(command.body ? { payload: JSON.stringify(command.body) } : {}),
     });

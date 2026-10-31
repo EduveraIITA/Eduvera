@@ -1,7 +1,8 @@
 # Campus Lab development harness
 
-Status: accepted implementation contract; retained throughout active development by
-owner decision, hosted showcase enablement and remaining hardening gates open,
+Status: accepted synthetic-actor harness over the product Simulation environment;
+retained throughout active development by owner decision. Local isolated data-plane
+adapter implemented; managed snapshot provider remains an open deployment gate,
 17 October 2026
 
 Normative parents:
@@ -13,11 +14,12 @@ Normative parents:
 
 ## 1. Purpose
 
-The synthetic school-day runner is a development-only harness for exercising the Cambridge International
-School synthetic fixture as the real clock advances. It lets developers and product
-reviewers watch scheduled fixture people and ordinary domain workflows change through
-the normal ThatCampus frontend. It may add an explicitly simulated overlay to the
-production Campus View, but it does not own that view, its navigation or its topology.
+The synthetic school-day runner is a development/demo actor harness for exercising a
+transient Simulation fork of the Cambridge International School synthetic fixture.
+It lets developers and product reviewers watch fixture people call ordinary domain
+APIs inside the same isolated execution namespace shown by the normal ThatCampus
+frontend. It does not own Campus View, navigation, topology or a parallel simulator
+UI; the product execution-environment boundary owns the fork.
 
 Its purpose is rapid observation while building the Campus Model Core and connected
 domain workflows, and a realistic synthetic campus for controlled product
@@ -31,12 +33,12 @@ The owner decision for this harness is deliberately simple:
 - it is available with the managed local development server and isolated Stage test
   deployment, and starts active unless an administrator explicitly stops it in
   Experimental settings;
-- it uses a fixture-configured accelerated clock: the current instructional day's
-  actual effective Cambridge timetable is replayed proportionally in sixty wall-clock
-  minutes, while displayed campus times remain the real timetable times;
-- it has one explicit **Activate simulation / Stop simulation** control for the
-  Cambridge actor process; the one-hour duration is versioned fixture configuration,
-  not an operator speed/scrub control;
+- it has four closed development clock modes: real time, or one effective school day
+  replayed in 1, 15 or 60 wall-clock minutes. Displayed campus times remain the
+  source timetable times;
+- it has explicit **Activate simulation / Stop simulation** and clock-mode controls
+  for the Cambridge actor process. These are harness controls, not customer timetable
+  or product-simulation configuration;
 - it resolves the current date in Cambridge's configured timezone and uses only that
   date's effective instructional schedule, including dated overrides, cancellations,
   holidays and closures;
@@ -46,13 +48,18 @@ The owner decision for this harness is deliberately simple:
 - synthetic presence and domain actions exist only inside the accelerated replay of
   an instructional date with an effective schedule; holidays, closures and empty
   schedules remain paused with zero synthetic actors and actions;
-- one activation produces one bounded one-hour run and then pauses; stopping and
-  activating starts a new run from the first real timetable phase;
+- accelerated activation advances across effective instructional dates within a
+  rolling 30-calendar-day window, skips non-instructional days and rotates only
+  inside that disposable harness window; real-time mode follows the actual local day;
 - it calls ordinary authenticated domain APIs so the normal event and frontend paths
   are exercised;
-- it may show a clearly labelled development-only **Rehearsal now** indication beside
-  the unchanged timetable on normal screens, but it never rewrites authoritative
-  timetable data or injects rehearsal state into a domain query cache;
+- its accelerated clock controls only when synthetic fixture clients issue calls; it
+  never becomes the clock/date of the Live application or makes a Live page query a
+  simulated date;
+- it may show a clearly labelled **Rehearsal now** indication only inside the explicit
+  Campus Lab developer route, beside a read-only copy of the unchanged timetable; it
+  never overlays normal Live domain routes or injects rehearsal state into their
+  query caches;
 - a real-market release may exclude simulated actor runtime and controls only after
   the owner explicitly requests the market-cleanup pass; until then the complete
   source and Cambridge fixture remain on the shared development branch.
@@ -64,12 +71,12 @@ the Model Core blueprint.
 
 | Campus Lab development harness | Model Core rehearsal/simulation |
 | --- | --- |
-| development and isolated Stage testing aid | future product/core capability |
-| configured one-hour projection of the current real timetable | isolated virtual clock |
+| development and isolated Stage testing aid | product capability for every institution |
+| closed 1/15/60-minute or real-time Cambridge replay | isolated virtual clock |
 | Cambridge synthetic fixture only | versioned synthetic or sanitized scenario snapshot |
-| normal domain APIs and exact synthetic fixture identities | scenario executors and sink-only dispatchers |
-| may intentionally update the disposable local fixture | must never mutate live domain truth |
-| no playback or time controls | deterministic scenario range, seed and baseline comparison |
+| normal domain APIs and run-local synthetic counterparts | scenario executors and sink-only dispatchers |
+| updates only a disposable Simulation database fork | must never mutate Live domain truth |
+| developer-only clock modes and rolling fixture window | administrator-selected scenario range, seed and baseline comparison |
 | retained development source; current runner is local-only until a hosted showcase contract is accepted | production code may expose an authorized isolated scenario service |
 | helps humans observe integration behavior | supports rehearsal and what-if analysis under declared assumptions |
 
@@ -111,7 +118,8 @@ The initial fixture includes:
 - the existing representative administrator/principal, teacher, guardian and learner
   demo identities, plus ordinary seeded Cambridge staff accounts for actions addressed
   to one exact synthetic person, for domain actions their real permissions permit;
-- existing seeded domain records rather than a parallel Campus Lab database.
+- a point-in-time copy of existing seeded domain records in the transient Simulation
+  database; the harness never maintains a second hand-authored Cambridge model.
 
 `cambridge-campus-replica.v1` is installed only by the guarded Campus Lab seed. The
 seed requires demo mode, explicit opt-in and a local/development/test environment,
@@ -169,13 +177,14 @@ not widen the external-side-effect surface.
 
 ## 4. Real-time routine
 
-### 4.1 Accelerated wall clock, current calendar date and school operating window
+### 4.1 Closed clock modes, instructional dates and school operating window
 
 The runner receives an injectable clock for tests. Local and hosted execution use the
-host's real wall clock to advance a fixture-configured projection: the full duration
-from the first to last effective Cambridge timetable slot is mapped proportionally to
-3,600 real seconds. It does not change the institution date, override `Date.now`, patch
-PostgreSQL time, or expose a user-adjustable speed multiplier.
+host's real wall clock and one of four validated modes: `realtime`, `1m`, `15m` or
+`60m`. In accelerated modes, the full duration from the first to last effective
+Cambridge timetable slot is mapped proportionally to the selected wall duration. It
+does not override `Date.now`, patch PostgreSQL time or alter institution configuration.
+Mode is stored only in the protected Cambridge harness control.
 
 For each schedule refresh, the runner records:
 
@@ -189,8 +198,10 @@ For each schedule refresh, the runner records:
   each lesson, break, transition and action;
 - an action receipt/idempotency ledger.
 
-The routine is built only from the current institution-local date's effective daily
-schedule. The calendar must first identify that date as instructional. Dated plans,
+The routine is built only from the selected institution-local date's effective daily
+schedule. In real-time mode that date is the actual local date. In accelerated modes
+it is the current date in a rolling 30-calendar-day harness window. The calendar must
+first identify it as instructional. Dated plans,
 slot cancellations, emergency closures and other effective-day changes take precedence
 over the recurring weekly timetable exactly as they do on normal domain screens. An
 empty effective schedule does not authorize the runner to select Monday, the next
@@ -207,25 +218,25 @@ Every effective teaching slot and explicit break retains its actual campus-local
 and end values on that date. Uncovered gaps become proportionally scaled transitions
 rather than being silently collapsed. A 9:00-9:45 AM lesson is still presented and
 identified as 9:00-9:45 AM, but its wall interval is its proportional share of the
-configured one-hour run. The active marker and all simulator projections use the
+configured replay duration. The active marker and all Campus Lab projections use the
 same mapping; no screen invents its own clock.
 
-Before activation, after the one-hour run completes, and for every non-instructional
-date, status is explicitly paused and contains no synthetic presence markers, current
-phase activity or due actions. Activation begins at the first effective phase. A
-periodic refresh re-resolves the current date and effective schedule; a newly published
+Before activation and for every non-instructional date, status contains no synthetic
+presence markers, current-phase activity or due actions. Accelerated activation begins
+at the first effective phase, advances to the next instructional date on completion,
+skips closures/holidays and rotates only after its bounded 30-day window. A periodic
+refresh re-resolves the selected date and effective schedule; a newly published
 closure or cancellation fails closed immediately. Actions are placed by configured
 phase-relative ratios so they remain observable when source-period durations change.
 
-### 4.2 One bounded administrator control
+### 4.2 Bounded administrator controls
 
-An administrator may stop or activate the entire Cambridge actor process from
-Experimental settings. Stopped means zero synthetic actors and zero synthetic actions;
-activation anchors a fresh one-hour run at the current wall instant. There is no
-separate speed, scrub, skip or virtual-date control. Completion pauses rather than
-looping, preventing unattended repeated mutations. Institution-local midnight triggers
-a new calendar resolution; it does not wrap the prior day's end into a manufactured
-next school day.
+An administrator may stop or activate the entire Cambridge actor process and select
+one of the four closed clock modes from Experimental settings. Stopped means zero
+synthetic actors and zero synthetic actions. Changing mode restarts the transient
+harness run; there is no scrub, arbitrary multiplier or direct virtual-date picker.
+The bounded rolling window prevents an unlimited unattended future. These controls
+never select the date or environment of the ordinary Live application.
 
 Routine definition belongs in a declarative fixture file, not hard-coded Model Core
 agent behavior. It defines participant selectors, action templates and safe fallback
@@ -310,57 +321,68 @@ simulation controls, developer graph terminology or domain mutation buttons.
 Campus Lab exercises existing boundaries rather than teaching the frontend a fake
 state path:
 
+Activation changes the administrator's server-owned execution environment from Live
+to the newly created Simulation fork. The root application, normal navigation and
+all ordinary domain routes stay unchanged; their existing database contracts are
+routed to the isolated driver. The shared marker therefore says **Simulation** and
+shows its virtual time. Runner status, planned positions and accelerated phases may
+add development observability, but they never substitute a second query/cache path.
+Stop clears application caches through the standard environment switch, returns the
+session to Live and destroys the fork.
+
 ```text
+point-in-time Cambridge Live snapshot -> isolated Simulation database
+                    |
+                    v
 current instructional date's effective Cambridge schedule
         + declarative safe actions + real wall clock
                     |
                     v
-local runner or isolated Stage runner + exact synthetic identity
+local runner + run-local synthetic counterpart session
                     |
                     v
 ordinary attendance / notices / chat / other domain API
                     |
                     v
-domain authorization, validation, audit and authoritative record
+domain authorization, validation, audit and Simulation record
                     |
                     v
-transactional event/outbox -> existing live-event bridge
+transactional event/outbox -> isolated realtime boundary
                     |
                     v
 normal query invalidation and domain screen update
 ```
 
-The development overlay adapter may poll the loopback runner or authenticated hosted
-proxy for ephemeral planned markers, the current real-time effective slot and runner health.
-Domain pages continue to fetch their authoritative timetable and other domain data
-from their normal APIs and react to the existing event bridge. The actor harness
+The explicit Campus Lab route may poll the loopback runner or authenticated hosted
+proxy for ephemeral planned markers, its projected effective slot and runner health.
+Ordinary domain pages continue to fetch timetable and other data from their normal
+APIs, but the server-selected run routes every query and command to the fork. The actor harness
 follows the institution's effective Operating rules. For
 academic attendance, `scheduled_session` selects an open register whose
 `schedule_slot_id` belongs to the configured active timetable phase, authenticates as
-that register's assigned synthetic teacher and submits the subject-session register.
+each register's assigned synthetic teacher and submits every eligible subject-session
+register configured for that teaching period. The Cambridge behavior fixture declares
+an `each_lesson` reaction policy: the runner expands it from the effective published
+timetable, and each assigned teacher reacts to their own resulting lesson obligation.
+It does not centrally hard-code period numbers, silently limit the rehearsal to
+Period 1, or let one representative teacher stand in for all classes.
 `daily_class` uses the daily class register; `none` performs no attendance action.
 The harness must not write one attendance model and describe it as completion of the
 other.
 
-To make Campus View and the normal timetable understandable together, a development
-build may add a separate **Rehearsal now** indication to a timetable row only when the
-status source record/revision, institution-local date and slot identity match the row
-returned by the domain API. That indication is a presentation overlay with a simulation
-label and the unchanged source schedule time. It must not replace row state, alter
-published start/end values, write a day plan, mutate a React Query/domain cache, or
-become an input to attendance, notifications or any other domain decision. If status
-is missing, stale, mismatched or degraded, the indication disappears or explains that
-the rehearsal is unavailable; the normal timetable remains usable and truthful.
+Inside the explicit Campus Lab route, a read-only timetable copy may show a separate
+**Rehearsal now** indication only when status source record/revision,
+institution-local date and slot identity match the row returned by the Simulation
+domain API. It is extra development observability, not the source of timetable state.
 
 When the routine is paused because the current date is non-instructional or the campus
 is outside its operating window, no role surface may navigate to, highlight or borrow a
 different date on the simulator's behalf. Normal role-specific Today/timetable behavior
 continues without a synthetic current-period indication.
 
-Principal timetable is the first role surface for this indication. Equivalent
-teacher, learner and guardian timetable indication remains an explicit parity gate
-until each role has been implemented and verified; Campus View alone is not evidence
-that those normal screens reflect the rehearsal.
+Campus Lab may retain role-specific inspection copies for diagnostics, but acceptance
+is measured on the normal Principal, teacher, learner and guardian routes bound to the
+same fork—not on those copies.
 
 The UI must be able to show both sides honestly: the fixture routine planned an action,
 and the domain accepted, refused or has not yet processed it. A completed runner task

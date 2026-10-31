@@ -69,7 +69,7 @@ export const demoTimetableDays: TimetableDay[] = [
       { id: "wed-3", period: "P3", time: "10:15 AM", endTime: "11:00 AM", subject: "Mathematics", teacher: "Prof. Rajesh Mehta", room: "Room 204", detail: "Ongoing: Linear Equations Practice", tone: "math" },
       { id: "wed-4", period: "P4", time: "11:30 AM", endTime: "12:15 PM", subject: "Physics Practicum", teacher: "Dr. Ananya Sen", room: "Science Lab C (Ground Floor)", flag: "Mandatory: Wear White Lab Coat & Carry Manual", tone: "lab" },
       { id: "wed-5", period: "P5", time: "12:15 PM", endTime: "01:00 PM", subject: "Social Science (History)", teacher: "Mr. Nair", room: "Room 204", detail: "The Delhi Sultanate Map Marking", tone: "humanities" },
-      { id: "wed-6", period: "P6", time: "01:00 PM", endTime: "01:45 PM", subject: "Computer Science", teacher: "Mrs. Verma", room: "IT Lab 1", detail: "Submit Lab Exercise #4 via School Portal", tone: "lab" },
+      { id: "wed-6", period: "P6", time: "01:00 PM", endTime: "01:45 PM", subject: "Computer Science", teacher: "Mrs. Verma", room: "IT Lab 1", detail: "Submit Lab Exercise #4 in ThatCampus", tone: "lab" },
       { id: "wed-7", period: "P7", time: "01:45 PM", endTime: "02:30 PM", subject: "Games & Physical Education", teacher: "Coach Rawat", room: "Main Sports Field / Turf", flag: "Change into Blue House PE Uniform", tone: "activity" },
     ],
   },

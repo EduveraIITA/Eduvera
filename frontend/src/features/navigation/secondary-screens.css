@@ -2,7 +2,6 @@
    severity, document/marksheet and live-map styles deliberately remain intact. */
 .portal-secondary-screen .workspace-context { margin:0; color:var(--thatcampus-ink-secondary); font-size:14px; line-height:1.5; }
 .portal-secondary-screen .workspace-text-action { display:inline-flex; justify-self:start; align-items:center; gap:8px; min-height:44px; padding:0 4px; color:var(--thatcampus-brand); background:none; border:0; font:inherit; font-size:14px; cursor:pointer; }
-.portal-secondary-screen .roll-call-summary h2 { font-size:20px; margin:0; line-height:1.4; }
 .portal-secondary-screen .workspace-disclosure { border:1px solid var(--thatcampus-border); background:var(--thatcampus-surface); border-radius:var(--thatcampus-radius-control); padding:0 12px; }
 .portal-secondary-screen .workspace-disclosure > summary { padding:12px 0; min-height:44px; font-size:14px; font-weight:600; cursor:pointer; }
 .portal-secondary-screen .workspace-disclosure .surface-card { box-shadow:none; }
@@ -34,22 +33,19 @@
 .portal-secondary-screen .eligibility-hero::before,.portal-secondary-screen .eligibility-hero::after { content:none; }
 .portal-secondary-screen .eligibility-hero .eyebrow,.portal-secondary-screen .eligibility-safe-zone p { color:var(--thatcampus-ink-secondary); }
 .portal-secondary-screen .eligibility-safe-zone > svg,.portal-secondary-screen .eligibility-hero__headline span { color:var(--thatcampus-brand); }
-.portal-secondary-screen :is(.campus-event-detail-hero,.family-event-detail-hero,.campus-event-register-hero) { padding:16px; min-height:0; background:var(--thatcampus-surface); color:var(--thatcampus-ink); border:1px solid var(--thatcampus-border); border-radius:var(--thatcampus-radius-control); box-shadow:none; gap:12px; }
+.portal-secondary-screen :is(.campus-event-detail-hero,.family-event-detail-hero) { padding:16px; min-height:0; background:var(--thatcampus-surface); color:var(--thatcampus-ink); border:1px solid var(--thatcampus-border); border-radius:var(--thatcampus-radius-control); box-shadow:none; gap:12px; }
 .portal-secondary-screen :is(.campus-event-detail-hero,.family-event-detail-hero) dl { margin-top:12px; gap:12px; }
 .portal-secondary-screen :is(.campus-event-detail-hero,.family-event-detail-hero) dd { font-size:14px; font-weight:500; }
 .portal-secondary-screen :is(.campus-event-detail-hero,.family-event-detail-hero) .campus-event-status { color:var(--thatcampus-ink); background:var(--thatcampus-surface-alt, #f3f5fa); }
 .portal-secondary-screen .campus-event-detail-actions { flex-direction:row; flex-wrap:wrap; min-width:0; }
 .portal-secondary-screen .campus-event-detail-actions .campus-event-secondary { color:var(--thatcampus-brand); background:var(--thatcampus-brand-soft); }
-.portal-secondary-screen .campus-event-detail-actions .campus-event-primary { color:var(--thatcampus-surface); background:var(--thatcampus-brand); }
-.portal-secondary-screen .campus-event-detail-actions .campus-event-danger-link { color:var(--thatcampus-danger, #a52940); }
-.portal-secondary-screen .campus-event-register-hero { flex-direction:row; align-items:center; }
-.portal-secondary-screen .campus-event-register-hero h2 { margin:0; font-size:18px; }
-.portal-secondary-screen .campus-event-register-hero p { margin:4px 0 0; font-size:13px; opacity:1; color:var(--thatcampus-ink-secondary); }
-.portal-secondary-screen :is(.campus-event-metrics,.campus-event-register-summary) { gap:0; border-bottom:1px solid var(--thatcampus-border); }
-.portal-secondary-screen :is(.campus-event-metrics,.campus-event-register-summary) article { min-height:0; padding:12px; border:0; border-radius:0; box-shadow:none; background:transparent; }
+.portal-secondary-screen .campus-event-detail-actions .campus-event-primary { color:var(--thatcampus-on-action); background:var(--thatcampus-action); }
+.portal-secondary-screen .campus-event-detail-actions .campus-event-danger-link { color:var(--thatcampus-danger, var(--thatcampus-danger)); }
+.portal-secondary-screen .campus-event-metrics { gap:0; border-bottom:1px solid var(--thatcampus-border); }
+.portal-secondary-screen .campus-event-metrics article { min-height:0; padding:12px; border:0; border-radius:0; box-shadow:none; background:transparent; }
 .portal-secondary-screen .campus-event-metrics article > span { display:none; }
 .portal-secondary-screen .campus-event-metrics article strong { font-size:20px; }
-.portal-secondary-screen :is(.campus-event-collection,.campus-event-detail-panel,.campus-event-register-workspace,.campus-event-card) { box-shadow:none; }
+.portal-secondary-screen :is(.campus-event-collection,.campus-event-detail-panel,.campus-event-card) { box-shadow:none; }
 .portal-secondary-screen :is(.staff-panel,.office-panel,.governance-panel,.assessment-panel,.report-panel,.departure-panel,.student-card,.parent-card) { box-shadow: none; }
 .portal-secondary-screen :is(.staff-hero,.student-diary-hero,.governance-summary,.policy-library__intro) {
   background: var(--thatcampus-surface); color: var(--thatcampus-ink); box-shadow: none;
@@ -63,7 +59,7 @@
 .portal-secondary-screen .staff-hero :is(h1,h2) { font-size: 20px; line-height: 1.4; margin: 4px 0; }
 .portal-secondary-screen .staff-hero__metrics { gap: 12px; }
 .portal-secondary-screen .staff-hero__metrics > span { background: transparent; border: 0; padding: 0; border-radius: 0; color: var(--thatcampus-ink-secondary); }
-.portal-secondary-screen .staff-hero > button { background: var(--thatcampus-brand); color: var(--thatcampus-surface); min-height: 44px; }
+.portal-secondary-screen .staff-hero > button { background: var(--thatcampus-action); color: var(--thatcampus-on-action); min-height: 44px; }
 .portal-secondary-screen .staff-tabs { position: static; }
 .portal-secondary-screen .staff-inline-summary { display:flex; align-items:center; justify-content:space-between; flex-wrap:wrap; gap:8px 16px; color:var(--thatcampus-ink-secondary); font-size:14px; }
 .portal-secondary-screen .staff-directory-actions { display:flex; align-items:center; gap:12px; }
@@ -107,4 +103,4 @@
   .portal-secondary-screen .governance-summary dl { grid-template-columns: repeat(2,minmax(0,1fr)); }
 }
 /* A persistent boundary marker keeps the public sandbox legible without adding dots or modal friction. */
-.public-demo-banner{position:fixed;z-index:120;right:14px;bottom:calc(82px + env(safe-area-inset-bottom));display:flex;min-height:42px;padding:8px 10px 8px 13px;align-items:center;gap:12px;border:1px solid #c7d7f3;border-radius:16px;color:#2d3b52;background:#fffffff2;box-shadow:0 12px 36px #18316022;backdrop-filter:blur(16px);font-size:10px}.public-demo-banner a,.public-demo-banner button{min-height:30px;padding:0 10px;border:0;border-radius:10px;color:var(--edura-brand);background:#eaf1ff;font:inherit;font-weight:800}.public-demo-banner button{color:#6d3740;background:#fff0f1}@media(max-width:520px){.public-demo-banner{left:12px;right:12px;bottom:calc(76px + env(safe-area-inset-bottom));justify-content:space-between}.public-demo-banner>span{max-width:145px}}
+.public-demo-banner{position:fixed;z-index:120;right:14px;bottom:calc(82px + env(safe-area-inset-bottom));display:flex;min-height:42px;padding:8px 10px 8px 13px;align-items:center;gap:12px;border:1px solid var(--thatcampus-border);border-radius:16px;color:var(--thatcampus-ink);background:color-mix(in srgb,var(--thatcampus-surface) 95%,transparent);box-shadow:var(--thatcampus-shadow-raised);backdrop-filter:blur(16px);font-size:10px}.public-demo-banner a,.public-demo-banner button{min-height:30px;padding:0 10px;border:0;border-radius:10px;color:var(--edura-brand);background:var(--thatcampus-surface-soft);font:inherit;font-weight:800}.public-demo-banner button{color:var(--thatcampus-danger);background:var(--thatcampus-danger-soft)}@media(max-width:520px){.public-demo-banner{left:12px;right:12px;bottom:calc(76px + env(safe-area-inset-bottom));justify-content:space-between}.public-demo-banner>span{max-width:145px}}

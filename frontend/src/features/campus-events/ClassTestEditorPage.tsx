@@ -1,3 +1,4 @@
+import { applicationNow } from "../simulation/applicationTime";
 import {
   BookOpenCheck,
   Check,
@@ -8,13 +9,14 @@ import {
 import { useMemo, useState, type FormEvent } from "react";
 import { Link, useSearchParams } from "react-router-dom";
 import { OperationsShell } from "../../pages/operations/OperationsShell";
-import { eventDetailHref, eventListHref } from "./eventNavigation";
+import { eventDetailHref, eventListHref, eventWorkspaceDetailHref, eventWorkspaceListHref } from "./eventNavigation";
 import type {
   CampusEventDto,
   CampusEventInput,
   EventCatalogResponse,
 } from "./types";
 import "./campus-events.css";
+import { EventPlacePicker } from "./EventPlacePicker";
 
 import { TemporalInput } from "../../components/forms/TemporalInput";
 function localValue(value: string) {
@@ -31,6 +33,7 @@ function initialTest(event?: CampusEventDto): CampusEventInput {
       title: event.title,
       description: event.description,
       venue: event.venue,
+      space_id: event.space_id ?? null,
       starts_at: localValue(event.starts_at),
       ends_at: localValue(event.ends_at),
       audience: event.audience,
@@ -46,6 +49,8 @@ function initialTest(event?: CampusEventDto): CampusEventInput {
           title,
           session_type,
           venue,
+          space_id,
+          use_event_space,
           starts_at,
           ends_at,
           attendance_mode,
@@ -55,6 +60,8 @@ function initialTest(event?: CampusEventDto): CampusEventInput {
           title,
           session_type,
           venue,
+          space_id: space_id ?? null,
+          use_event_space: use_event_space ?? false,
           starts_at: localValue(starts_at),
           ends_at: localValue(ends_at),
           attendance_mode,
@@ -68,7 +75,7 @@ function initialTest(event?: CampusEventDto): CampusEventInput {
       })),
       staff: event.staff.map(({ user_id, role }) => ({ user_id, role })),
     };
-  const start = new Date();
+  const start = applicationNow();
   start.setDate(start.getDate() + 7);
   start.setHours(10, 0, 0, 0);
   const end = new Date(start);
@@ -79,6 +86,7 @@ function initialTest(event?: CampusEventDto): CampusEventInput {
     title: "",
     description: "",
     venue: "",
+    space_id: null,
     starts_at: localValue(start.toISOString()),
     ends_at: localValue(end.toISOString()),
     audience: {
@@ -97,6 +105,8 @@ function initialTest(event?: CampusEventDto): CampusEventInput {
         title: "Class test",
         session_type: "activity",
         venue: "",
+        space_id: null,
+        use_event_space: true,
         starts_at: localValue(start.toISOString()),
         ends_at: localValue(end.toISOString()),
         attendance_mode: "none",
@@ -110,11 +120,13 @@ function initialTest(event?: CampusEventDto): CampusEventInput {
 
 export function ClassTestEditorPage({
   portal,
+  workspace,
   catalog,
   event,
   onSave,
 }: {
-  portal: "teacher" | "principal";
+  portal?: "teacher" | "principal";
+  workspace?: { basePath: string; kind: "manage" | "assigned" };
   catalog: EventCatalogResponse;
   event?: CampusEventDto;
   onSave: (input: CampusEventInput) => Promise<void>;
@@ -123,10 +135,15 @@ export function ClassTestEditorPage({
   const [input, setInput] = useState(() => initialTest(event));
   const [error, setError] = useState("");
   const [saving, setSaving] = useState(false);
-  const prefix = portal === "teacher" ? "/teacher" : "/principal";
-  const backHref = event
-    ? eventDetailHref(prefix, event.id, params)
-    : eventListHref(prefix, params);
+  const legacyPortal = portal ?? "teacher";
+  const prefix = legacyPortal === "teacher" ? "/teacher" : "/principal";
+  const backHref = workspace
+    ? event
+      ? eventWorkspaceDetailHref(workspace.basePath, event.id, params)
+      : eventWorkspaceListHref(workspace.basePath, params)
+    : event
+      ? eventDetailHref(prefix, event.id, params)
+      : eventListHref(prefix, params);
   const classId = input.audience.class_section_ids[0] ?? "";
   const subjects = useMemo(
     () =>
@@ -185,12 +202,11 @@ export function ClassTestEditorPage({
 
   return (
     <OperationsShell
-      portal={portal}
+      portal={workspace ? undefined : legacyPortal}
       active="events"
       title={event ? "Edit class test" : "Schedule class test"}
       subtitle="Events & activities"
       backTo={backHref}
-      contentHasHeading
     >
       <form
         className="campus-event-editor campus-test-editor"
@@ -315,15 +331,22 @@ export function ClassTestEditorPage({
                   setInput({
                     ...input,
                     venue: event.target.value,
+                    space_id: null,
                     sessions: input.sessions.map((session) => ({
                       ...session,
                       venue: event.target.value,
+                      space_id: null,
+                      use_event_space: true,
                     })),
                   })
                 }
                 placeholder="Room 204"
               />
             </label>
+            <EventPlacePicker catalog={catalog} label="Class test" spaceId={input.space_id} onChange={choice => setInput({
+              ...input, space_id: choice.space_id,
+              sessions: input.sessions.map(session => ({ ...session, space_id: null, use_event_space: true })),
+            })} />
             <label className="is-wide">
               Syllabus and preparation
               <textarea

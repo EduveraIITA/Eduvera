@@ -1,0 +1,4 @@
+.campus-space-fields { border:0; padding:0; margin:0; display:grid; gap:16px; min-width:0; }
+.campus-space-fields details > summary { min-height:44px; display:flex; align-items:center; cursor:pointer; font-weight:700; }
+.campus-space-fields details[open] > summary { margin-bottom:16px; }
+.campus-space-fields details .office-form-grid { margin-bottom:16px; }

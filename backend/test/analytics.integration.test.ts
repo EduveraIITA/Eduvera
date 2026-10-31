@@ -4,11 +4,10 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { AnalyticsService } from "../src/analytics/analytics.service.js";
 import { DatabaseService } from "../src/database/database.service.js";
 import type { Database } from "../src/database/types.js";
-import type { AuthUser } from "../src/common/request.js";
-import { SchoolService } from "../src/school/school.service.js";
-import type { SchoolEventService } from "../src/school/school-event.service.js";
+import type { AuthUser,AuthenticatedRequest } from "../src/common/request.js";
 import { requireIsolatedTestDatabaseUrl } from "./test-database.js";
-import { createStaffCoverageReconciliationTestDouble } from "./staff-coverage-reconciliation.test-support.js";
+import { academicParticipationTestServices,fixtureTransactionDatabase } from './academic-participation.test-support.js';
+import { linkFixtureStaffIdentity } from './fixture-human-identity.test-support.js';
 
 const suite = process.env.TEST_DATABASE_ISOLATED === "true" ? describe : describe.skip;
 suite("permission-scoped analytics against PostgreSQL", () => {
@@ -16,16 +15,9 @@ suite("permission-scoped analytics against PostgreSQL", () => {
   beforeAll(() => { requireIsolatedTestDatabaseUrl(process.env.DATABASE_URL); database = new DatabaseService(); });
   afterAll(async () => { await database?.destroy(); });
 
-  async function fixture(tx: Transaction<Database>) {
-    const db = tx as unknown as DatabaseService;
-    const service = new AnalyticsService(
-      db,
-      new SchoolService(
-        db,
-        {} as SchoolEventService,
-        createStaffCoverageReconciliationTestDouble(),
-      ),
-    );
+  async function fixture(tx: Transaction<Database>,options:{attendance?:boolean}={}) {
+    const db=fixtureTransactionDatabase(tx),shared=academicParticipationTestServices(db);
+    const service=new AnalyticsService(db,shared.school);
     const school = randomUUID(), otherSchool = randomUUID(), term = randomUUID(), classA = randomUUID(), classB = randomUUID();
     const pupilA = randomUUID(), pupilB = randomUUID(), parentId = randomUUID(), subject = randomUUID(), cycle = randomUUID();
     const today = (await sql<{ date: string }>`SELECT (now() AT TIME ZONE 'Asia/Kolkata')::date::text AS date`.execute(tx)).rows[0]!.date;
@@ -41,6 +33,12 @@ suite("permission-scoped analytics against PostgreSQL", () => {
       await sql`INSERT INTO school_memberships(school_id,user_id,role) VALUES(${school}::uuid,${id}::uuid,${member})`.execute(tx);
     }
     const admin = users.admin!, teacher = users.teacher!, parent = users.parent!, student = users.student!;
+    await sql`UPDATE schools SET created_by_user_id=${admin.id}::uuid WHERE id=${school}::uuid`.execute(tx);
+    const founder=(await sql<{id:string}>`INSERT INTO school_people(school_id,first_name,last_name)
+      VALUES(${school}::uuid,'admin','Analytics') RETURNING id`.execute(tx)).rows[0]!;
+    await shared.core.linkAccountEndpoint(tx,{school_id:school,person_id:founder.id,user_id:admin.id,actor_user_id:admin.id,
+      effective_from:new Date(Date.parse(today)-101*86400000).toISOString(),effective_until:null,source_domain:'institution_onboarding',
+      source_record_id:school,source_revision:1,metadata:{fixture:'explicit_analytics_founder'}});
     await sql`INSERT INTO academic_terms(id,school_id,academic_year,name,starts_on,ends_on,attendance_threshold)
       VALUES(${term}::uuid,${school}::uuid,'test-year','Current term',${today}::date-100,${today}::date+100,85)`.execute(tx);
     await sql`INSERT INTO class_sections(id,school_id,academic_year,grade,section) VALUES
@@ -53,22 +51,37 @@ suite("permission-scoped analytics against PostgreSQL", () => {
         VALUES(${id}::uuid,${cls}::uuid,${term}::uuid,1,${today}::date-100)`.execute(tx);
     }
     const guardianPerson = randomUUID();
-    await sql`INSERT INTO parents(id,user_id,phone) VALUES(${parentId}::uuid,${parent.id}::uuid,'9000000000')`.execute(tx);
+    await sql`INSERT INTO parents(id,user_id) VALUES(${parentId}::uuid,${parent.id}::uuid)`.execute(tx);
     await sql`INSERT INTO school_people(id,school_id,first_name,last_name) VALUES(${guardianPerson}::uuid,${school}::uuid,'Parent','Analytics')`.execute(tx);
     await sql`INSERT INTO guardian_school_profiles(school_id,guardian_id,person_id) VALUES(${school}::uuid,${parentId}::uuid,${guardianPerson}::uuid)`.execute(tx);
     await sql`INSERT INTO guardian_relationships(school_id,guardian_id,student_id,relationship,is_primary)
       VALUES(${school}::uuid,${parentId}::uuid,${pupilA}::uuid,'guardian',true)`.execute(tx);
     const staffProfile = randomUUID();
-    await sql`INSERT INTO staff_profiles(id,school_id,user_id,staff_code,first_name,last_name,email,staff_kind,designation,employment_type,joined_on,status,created_by,updated_by)
-      VALUES(${staffProfile}::uuid,${school}::uuid,${teacher.id}::uuid,'T1','Teacher','Analytics',${teacher.email},'teaching','Teacher','full_time',${today}::date-100,'active',${admin.id}::uuid,${admin.id}::uuid)`.execute(tx);
+    await sql`WITH staff_fixture_input(id,school_id,user_id,staff_code,first_name,last_name,email,staff_kind,designation,employment_type,joined_on,status,created_by,updated_by,person_id) AS (VALUES (${staffProfile}::uuid,${school}::uuid,${teacher.id}::uuid,'T1','Teacher','Analytics',${teacher.email},'teaching','Teacher','full_time',${today}::date-100,'active',${admin.id}::uuid,${admin.id}::uuid,gen_random_uuid())), canonical_fixture_person AS (INSERT INTO school_people(id,school_id,first_name,last_name,contact_email,contact_phone) SELECT input.person_id::uuid,input.school_id::uuid,input.first_name,input.last_name,input.email,'' FROM staff_fixture_input input RETURNING id) INSERT INTO staff_profiles(id,school_id,user_id,staff_code,staff_kind,designation,employment_type,joined_on,status,created_by,updated_by,person_id) SELECT input.id::uuid,input.school_id::uuid,input.user_id::uuid,input.staff_code,input.staff_kind,input.designation,input.employment_type,input.joined_on::date,input.status,input.created_by::uuid,input.updated_by::uuid,input.person_id::uuid FROM staff_fixture_input input JOIN canonical_fixture_person person ON person.id=input.person_id::uuid`.execute(tx);
     const assignment = (await sql<{ id: string }>`INSERT INTO staff_responsibility_assignments(school_id,responsibility_type_id,staff_profile_id,class_section_id,starts_on,status,assigned_by)
       SELECT ${school}::uuid,id,${staffProfile}::uuid,${classA}::uuid,${today}::date-60,'active',${admin.id}::uuid
       FROM staff_responsibility_types WHERE school_id=${school}::uuid AND code='class_teacher' RETURNING id`.execute(tx)).rows[0]!.id;
-    for (const [offset, status] of [[5,"present"], [4,"late"], [3,"half_day"], [2,"absent"], [1,"excused"], [80,"absent"], [-1,"absent"]] as const) {
-      await sql`INSERT INTO attendance_records(student_id,class_section_id,date,status) VALUES(${pupilA}::uuid,${classA}::uuid,${today}::date-${offset}::int,${status})`.execute(tx);
-    }
-    await sql`INSERT INTO attendance_records(student_id,class_section_id,date,status) VALUES(${pupilB}::uuid,${classB}::uuid,${today}::date-1,'present')`.execute(tx);
+    await linkFixtureStaffIdentity(db,{school_id:school,user_id:teacher.id,owner_user_id:admin.id,teaching:true,
+      effective_from:new Date(Date.parse(today)-100*86400000).toISOString()});
     await sql`INSERT INTO subjects(id,school_id,code,name,short_name) VALUES(${subject}::uuid,${school}::uuid,'MTH','Mathematics','Maths')`.execute(tx);
+    const request=()=>({authUser:admin,requestId:randomUUID(),headers:{'idempotency-key':randomUUID()}}) as unknown as AuthenticatedRequest;
+    if(options.attendance!==false) {
+      await sql`INSERT INTO timetable_slots(class_section_id,term_id,weekday,period_number,starts_at,ends_at,slot_type,title)
+        SELECT cls,${term}::uuid,day,1,'09:00','10:00','activity','Analytics expected participation'
+        FROM unnest(ARRAY[${classA}::uuid,${classB}::uuid]) cls CROSS JOIN generate_series(1,7) day`.execute(tx);
+      for(const [pupil,cls,offset,status] of [
+        [pupilA,classA,5,'present'],[pupilA,classA,4,'late'],[pupilA,classA,3,'half_day'],
+        [pupilA,classA,2,'absent'],[pupilA,classA,1,'excused'],[pupilA,classA,80,'absent'],[pupilB,classB,1,'present'],
+      ] as const) {
+        const date=new Date(Date.parse(today)-offset*86400000).toISOString().slice(0,10);
+        const screen=await shared.school.teacherAttendanceScreen(admin,cls,date);
+        await shared.school.saveStudentAttendance(admin,{class_section_id:cls,date,student_id:pupil,status,
+          expected_revision:screen.register.revision},request());
+      }
+      // A future expectation has no accepted decision, especially not absence.
+      await shared.bridge.prepareDailyInTransaction(tx,admin,school,classA,
+        new Date(Date.parse(today)+86400000).toISOString().slice(0,10),true);
+    }
     await sql`INSERT INTO assessment_cycles(id,school_id,term_id,name,code,starts_on,ends_on,created_by,updated_by)
       VALUES(${cycle}::uuid,${school}::uuid,${term}::uuid,'Term cycle','T1',${today}::date-100,${today}::date+100,${admin.id}::uuid,${admin.id}::uuid)`.execute(tx);
     async function assessment(cls: string, pupil: string, releases: Array<{ outcome: string; marks: number | null }>, assigned = false) {
@@ -89,6 +102,8 @@ suite("permission-scoped analytics against PostgreSQL", () => {
       return id;
     }
     async function lessons() {
+      await sql`DELETE FROM timetable_slots WHERE class_section_id IN (${classA}::uuid,${classB}::uuid)
+        AND title='Analytics expected participation'`.execute(tx);
       const science = randomUUID();
       await sql`INSERT INTO subjects(id,school_id,code,name,short_name) VALUES(${science}::uuid,${school}::uuid,'SCI','Science','Science')`.execute(tx);
       await sql`INSERT INTO timetable_slots(class_section_id,term_id,subject_id,weekday,period_number,starts_at,ends_at)
@@ -96,14 +111,15 @@ suite("permission-scoped analytics against PostgreSQL", () => {
           CASE WHEN period=1 THEN '09:00'::time ELSE '10:00'::time END,CASE WHEN period=1 THEN '09:45'::time ELSE '10:45'::time END
         FROM unnest(ARRAY[${classA}::uuid,${classB}::uuid]) cls CROSS JOIN generate_series(1,7) day CROSS JOIN generate_series(1,2) period`.execute(tx);
     }
-    return { service, school, otherSchool, term, classA, classB, pupilA, pupilB, today, admin, teacher, parent, student, assignment, assessment, lessons };
+    return { service, shared, school, otherSchool, term, classA, classB, pupilA, pupilB, today, admin, adminPersonId: founder.id, teacher, parent, student, assignment, assessment, lessons };
   }
 
-  async function isolated(test: (f: Awaited<ReturnType<typeof fixture>>, tx: Transaction<Database>) => Promise<void>) {
+  async function isolated(test: (f: Awaited<ReturnType<typeof fixture>>, tx: Transaction<Database>) => Promise<void>,options:{attendance?:boolean}={}) {
     const rollback = new Error("rollback analytics fixture");
-    try { await database.transaction().execute(async tx => { await test(await fixture(tx), tx); throw rollback; }); }
+    try { await database.transaction().execute(async tx => { await test(await fixture(tx,options), tx); throw rollback; }); }
     catch (error) { if (error !== rollback) throw error; }
   }
+  const withoutRecordedFacts=(test:Parameters<typeof isolated>[0])=>isolated(test,{attendance:false});
 
   it("uses exact weighted totals, date bounds and distinct class denominators", async () => isolated(async f => {
     const report = await f.service.overview(f.admin, f.school, "principal", { period: "30" });
@@ -123,8 +139,7 @@ suite("permission-scoped analytics against PostgreSQL", () => {
       ['teaching','active',true,f.school], ['teaching','active',false,f.otherSchool],
     ] as const) {
       const id = randomUUID();
-      await sql`INSERT INTO staff_profiles(school_id,staff_code,first_name,email,staff_kind,designation,employment_type,joined_on,status)
-        VALUES(${school}::uuid,${id},'Staff',${`${id}@example.test`},${kind},'Staff','part_time',${f.today}::date+${future ? 1 : -1}::int,${status})`.execute(tx);
+      await sql`WITH staff_fixture_input(school_id,staff_code,first_name,email,staff_kind,designation,employment_type,joined_on,status,person_id) AS (VALUES (${school}::uuid,${id},'Staff',${`${id}@example.test`},${kind},'Staff','part_time',${f.today}::date+${future ? 1 : -1}::int,${status},gen_random_uuid())), canonical_fixture_person AS (INSERT INTO school_people(id,school_id,first_name,last_name,contact_email,contact_phone) SELECT input.person_id::uuid,input.school_id::uuid,input.first_name,'',input.email,'' FROM staff_fixture_input input RETURNING id) INSERT INTO staff_profiles(school_id,staff_code,staff_kind,designation,employment_type,joined_on,status,person_id) SELECT input.school_id::uuid,input.staff_code,input.staff_kind,input.designation,input.employment_type,input.joined_on::date,input.status,input.person_id::uuid FROM staff_fixture_input input JOIN canonical_fixture_person person ON person.id=input.person_id::uuid`.execute(tx);
     }
     const report = await f.service.overview(f.admin,f.school,'principal',{ period: '30' });
     expect(report.institution).toMatchObject({ students: 2, configured_classes: 3, populated_classes: 2,
@@ -151,7 +166,7 @@ suite("permission-scoped analytics against PostgreSQL", () => {
     }
   }));
 
-  it("counts scheduled class-days once and distinguishes missing schedules from unsubmitted registers", async () => isolated(async (f, tx) => {
+  it("counts scheduled class-days once and distinguishes missing schedules from unsubmitted registers", async () => withoutRecordedFacts(async (f, tx) => {
     const empty = await f.service.overview(f.admin,f.school,'principal',{ period: '30' });
     expect(empty.registers).toMatchObject({ expected: 0, outstanding: 0, percentage: null, unscheduled_classes: 2 });
     await f.lessons();
@@ -161,11 +176,17 @@ suite("permission-scoped analytics against PostgreSQL", () => {
       VALUES(${f.school}::uuid,${f.today}::date-1,'Closure',false)`.execute(tx);
     // Five dates: A 5 + B 3; closure removes two -> six expected class-days.
     // Multiple lessons in one day must not produce multiple registers.
-    await sql`INSERT INTO attendance_registers(school_id,class_section_id,term_id,date,state)
-      VALUES(${f.school}::uuid,${f.classA}::uuid,${f.term}::uuid,${f.today}::date-4,'submitted'),
-        (${f.school}::uuid,${f.classB}::uuid,${f.term}::uuid,${f.today}::date-2,'locked'),
-        (${f.school}::uuid,${f.classA}::uuid,${f.term}::uuid,${f.today}::date-1,'submitted'),
-        (${f.school}::uuid,${f.classB}::uuid,${f.term}::uuid,${f.today}::date+1,'submitted')`.execute(tx);
+    const req=()=>({authUser:f.admin,requestId:randomUUID(),headers:{'idempotency-key':randomUUID()}}) as unknown as AuthenticatedRequest;
+    for(const [classId,offset] of [[f.classA,4],[f.classB,2]] as const) {
+      const date=new Date(Date.parse(f.today)-offset*86400000).toISOString().slice(0,10);
+      const screen=await f.shared.school.teacherAttendanceScreen(f.admin,classId,date);
+      await f.shared.school.saveTeacherAttendance(f.admin,{class_section_id:classId,date,expected_revision:screen.register.revision,
+        records:screen.roster.map(person=>({student_id:person.id,status:'present'}))},req());
+      if(classId===f.classB)await f.shared.school.setAttendanceRegisterLock(f.admin,classId,true,{date},req());
+    }
+    const nextDate=new Date(Date.parse(f.today)+86400000).toISOString().slice(0,10);
+    const future=await f.shared.bridge.prepareDailyInTransaction(tx,f.admin,f.school,f.classB,nextDate,true);
+    expect((await f.shared.kernel.detail(f.admin,f.school,future.register_id,tx)).counts.recorded).toBe(0);
     const report = await f.service.overview(f.admin,f.school,'principal',{ period: '30' });
     expect(report.registers).toMatchObject({ expected: 6, submitted: 1, locked: 1, outstanding: 4, percentage: 33.33, unscheduled_classes: 0 });
     expect(report.registers?.classes.map(row => row.expected)).toEqual([4,2]);
@@ -177,16 +198,17 @@ suite("permission-scoped analytics against PostgreSQL", () => {
     const plan = randomUUID();
     await sql`INSERT INTO day_plans(id,school_id,class_section_id,term_id,date,owner_id)
       VALUES(${plan}::uuid,${f.school}::uuid,${f.classA}::uuid,${f.term}::uuid,${f.today}::date,${f.admin.id}::uuid)`.execute(tx);
-    await sql`INSERT INTO day_plan_versions(school_id,plan_id,version,state,created_by)
-      VALUES(${f.school}::uuid,${plan}::uuid,1,'published',${f.admin.id}::uuid)`.execute(tx);
+    await sql`INSERT INTO day_plan_versions(school_id,plan_id,version,state,created_by,published_revision)
+      VALUES(${f.school}::uuid,${plan}::uuid,1,'published',${f.admin.id}::uuid,1)`.execute(tx);
     await sql`INSERT INTO day_plan_periods(school_id,plan_id,version,period_number,starts_at,ends_at,title,slot_type,cancelled)
       VALUES(${f.school}::uuid,${plan}::uuid,1,1,'09:00','10:00','Activity','activity',true)`.execute(tx);
     await sql`UPDATE day_plans SET published_version=1 WHERE id=${plan}::uuid`.execute(tx);
     expect((await f.service.overview(f.admin,f.school,'principal',{})).registers?.expected).toBe(5);
     await sql`UPDATE day_plan_periods SET cancelled=false WHERE plan_id=${plan}::uuid`.execute(tx);
-    await sql`UPDATE attendance_registers SET state='draft' WHERE school_id=${f.school}::uuid AND state='locked'`.execute(tx);
+    await f.shared.school.setAttendanceRegisterLock(f.admin,f.classB,false,
+      {date:new Date(Date.parse(f.today)-2*86400000).toISOString().slice(0,10),reason:'Reopened the accepted fixture for review'},req());
     expect((await f.service.overview(f.admin,f.school,'principal',{})).registers)
-      .toMatchObject({ expected: 6, submitted: 1, locked: 0, outstanding: 5, percentage: 16.67 });
+      .toMatchObject({ expected: 6, submitted: 2, locked: 0, outstanding: 4, percentage: 33.33 });
   }));
 
   it("restricts teachers to currently authorized classes AND the assignment's historical dates", async () => isolated(async (f, tx) => {
@@ -214,6 +236,41 @@ suite("permission-scoped analytics against PostgreSQL", () => {
     expect((await f.service.overview(f.student, f.school, "student", { period: "30" })).student?.id).toBe(f.pupilA);
   }));
 
+  it("opens an administrator's assigned Insights using only the exact analytical appointment", async () => withoutRecordedFacts(async (f, tx) => {
+    const assigned = await f.assessment(f.classA, f.pupilA, [{ outcome: "scored", marks: 15 }], true);
+    await sql`UPDATE assessment_staff_assignments SET user_id=${f.admin.id}::uuid WHERE assessment_id=${assigned}::uuid`.execute(tx);
+    await f.assessment(f.classB, f.pupilB, [{ outcome: "scored", marks: 20 }]);
+    const report = await f.service.overview(f.admin, f.school, "teacher", {});
+    expect(report).toMatchObject({ portal: "teacher", attendance: null, institution: null, registers: null });
+    expect(report.classes.map(item => item.id)).toEqual([f.classA]);
+    expect(report.assessments?.overall).toMatchObject({ scored: 1, average: 75 });
+    expect(report.assessments?.classes.map(item => item.id)).toEqual([f.classA]);
+    await expect(f.service.overview(f.admin, f.school, "teacher", { class_id: f.classB })).rejects.toThrow(/not available/);
+    await expect(f.service.overview(f.admin, f.school, "teacher", { student_id: f.pupilB })).rejects.toThrow(/filter is not available/);
+    await sql`DELETE FROM assessment_staff_assignments WHERE assessment_id=${assigned}::uuid`.execute(tx);
+    expect(await f.service.overview(f.admin, f.school, "teacher", {})).toMatchObject({ classes: [], attendance: null, assessments: null, institution: null, registers: null });
+  }));
+
+  it("bounds an administrator's assigned attendance by class, historical dates and current expiry", async () => isolated(async (f, tx) => {
+    const profile = randomUUID();
+    await sql`INSERT INTO staff_profiles(id,school_id,user_id,staff_code,staff_kind,designation,employment_type,joined_on,status,created_by,updated_by,person_id)
+      VALUES(${profile}::uuid,${f.school}::uuid,${f.admin.id}::uuid,${profile},'teaching','Director','full_time',${f.today}::date-100,'active',${f.admin.id}::uuid,${f.admin.id}::uuid,${f.adminPersonId}::uuid)`.execute(tx);
+    const appointment = (await sql<{ id: string }>`INSERT INTO staff_responsibility_assignments(school_id,responsibility_type_id,staff_profile_id,class_section_id,starts_on,status,assigned_by)
+      SELECT ${f.school}::uuid,id,${profile}::uuid,${f.classA}::uuid,${f.today}::date-3,'active',${f.admin.id}::uuid
+      FROM staff_responsibility_types WHERE school_id=${f.school}::uuid AND code='class_teacher' RETURNING id`.execute(tx)).rows[0]!.id;
+    const report = await f.service.overview(f.admin, f.school, "teacher", { period: "30" });
+    expect(report.classes.map(item => item.id)).toEqual([f.classA]);
+    expect(report.attendance).toMatchObject({ recorded: 3, half_day: 1, absent: 1, excused: 1, percentage: 25 });
+    expect(report.attendance?.classes.map(item => item.id)).toEqual([f.classA]);
+    expect(report.institution).toBeNull(); expect(report.registers).toBeNull(); expect(report.assessments).toBeNull();
+    await expect(f.service.overview(f.admin, f.school, "teacher", { class_id: f.classB })).rejects.toThrow(/not available/);
+    await sql`UPDATE staff_responsibility_assignments SET ends_on=${f.today}::date-1 WHERE id=${appointment}::uuid`.execute(tx);
+    expect(await f.service.overview(f.admin, f.school, "teacher", {})).toMatchObject({ classes: [], attendance: null, assessments: null, institution: null, registers: null });
+    // The separate administrator audience still has its own institution grant;
+    // expiring a class duty does not turn My work into that broader report.
+    expect((await f.service.overview(f.admin, f.school, "principal", { period: "30" })).attendance?.recorded).toBe(6);
+  }));
+
   it("reads latest publication only, omits private marks, and excludes non-scored outcomes", async () => isolated(async f => {
     await f.assessment(f.classA, f.pupilA, [{ outcome: "scored", marks: 10 }, { outcome: "scored", marks: 16 }], true);
     await f.assessment(f.classA, f.pupilA, [{ outcome: "absent", marks: null }], true);
@@ -238,11 +295,10 @@ suite("permission-scoped analytics against PostgreSQL", () => {
     expect(JSON.stringify(teacher.assessments)).not.toMatch(/student_id|feedback|source_result/);
   }));
 
-  it("rejects malformed filters and gives null rather than a fabricated zero", async () => isolated(async (f, tx) => {
+  it("rejects malformed filters and gives null rather than a fabricated zero", async () => withoutRecordedFacts(async (f) => {
     await expect(f.service.overview(f.admin, f.school, "principal", { period: "36500" })).rejects.toThrow();
     await expect(f.service.overview(f.admin, f.school, "principal", { class_id: "bad" })).rejects.toThrow();
     await expect(f.service.overview(f.teacher, f.school, "teacher", { student_id: f.pupilA })).rejects.toThrow(/filter/);
-    await sql`DELETE FROM attendance_records WHERE student_id IN (${f.pupilA}::uuid,${f.pupilB}::uuid)`.execute(tx);
     const report = await f.service.overview(f.admin, f.school, "principal", {});
     expect(report.attendance?.percentage).toBeNull();
     expect(report.attendance?.classes.every(cls => cls.percentage === null)).toBe(true);
@@ -306,16 +362,31 @@ suite("permission-scoped analytics against PostgreSQL", () => {
     expect(family.attendance?.subjects.map(row => row.percentage)).toEqual([75,50]);
     const filtered = await f.service.overview(f.admin, f.school, "principal", { period: "30", class_id: f.classB });
     expect(filtered.attendance?.subjects.map(row => row.percentage)).toEqual([100,100]);
-    // A real checkout overrides the fallback first-half lesson allocation.
-    await sql`UPDATE attendance_records SET check_out_at=(date+'10:45'::time) AT TIME ZONE 'Asia/Kolkata'
-      WHERE student_id=${f.pupilA}::uuid AND status='half_day'`.execute(tx);
-    const checkout = await f.service.overview(f.parent, f.school, "parent", { period: "30" });
-    expect(checkout.attendance?.subjects.map(row => row.percentage)).toEqual([75,75]);
     await sql`INSERT INTO school_calendar_days(school_id,date,label,is_instructional)
       VALUES(${f.school}::uuid,${f.today}::date-5,'Holiday',false)`.execute(tx);
     const holiday = await f.service.overview(f.parent, f.school, "parent", { period: "30" });
     expect(holiday.attendance?.subjects.map(row => row.held)).toEqual([4,4]);
     await sql`UPDATE staff_responsibility_assignments SET status='revoked',revoked_at=now(),revocation_reason='Access ended' WHERE id=${f.assignment}::uuid`.execute(tx);
     expect((await f.service.overview(f.teacher, f.school, "teacher", {})).attendance).toBeNull();
+  }));
+
+  it('preserves an original historical checkout through import without inventing its unknown signer or observation time',async()=>withoutRecordedFacts(async(f,tx)=>{
+    await f.lessons();
+    const date=new Date(Date.parse(f.today)-3*86400000).toISOString().slice(0,10);
+    // Controlled PRE-cutover source fixture, never an application write path.
+    // Restore its immutable guard before calling the actual import bridge.
+    await sql`ALTER TABLE attendance_records_legacy_source DISABLE TRIGGER participation_archived_source_immutable`.execute(tx);
+    const original=(await sql<{id:string}>`INSERT INTO attendance_records_legacy_source(student_id,class_section_id,date,status,check_out_at,marked_by)
+      VALUES(${f.pupilA}::uuid,${f.classA}::uuid,${date}::date,'half_day',(${date}::date+'10:45'::time) AT TIME ZONE 'Asia/Kolkata',NULL)
+      RETURNING id`.execute(tx)).rows[0]!;
+    await sql`ALTER TABLE attendance_records_legacy_source ENABLE TRIGGER participation_archived_source_immutable`.execute(tx);
+    const imported=await f.shared.bridge.prepareDailyInTransaction(tx,f.admin,f.school,f.classA,date,true);
+    expect((await sql`SELECT id,status,observed_at,recorded_by FROM activity_attendance_entries
+      WHERE register_id=${imported.register_id}::uuid`.execute(tx)).rows)
+      .toEqual([{id:original.id,status:'half_day',observed_at:null,recorded_by:null}]);
+    expect((await sql<{count:number}>`SELECT count(*)::int AS count FROM campus_model_observations
+      WHERE school_id=${f.school}::uuid`.execute(tx)).rows[0]!.count).toBe(0);
+    const checkout=await f.service.overview(f.parent,f.school,'parent',{period:'30'});
+    expect(checkout.attendance?.subjects.map(row=>row.percentage)).toEqual([100,100]);
   }));
 });

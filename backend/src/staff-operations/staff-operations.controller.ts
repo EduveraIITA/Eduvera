@@ -109,6 +109,11 @@ export class StaffOperationsController {
     return this.staff.requestLeave(req.authUser, schoolId, req.body);
   }
 
+  @Post("leave-impact/")
+  leaveImpact(@Req() req: AuthenticatedRequest, @Param("schoolId") schoolId: string) {
+    return this.staff.leaveImpact(req.authUser, schoolId, req.body);
+  }
+
   @Post("leave-requests/:requestId/decision/")
   decideLeave(@Req() req: AuthenticatedRequest, @Param("schoolId") schoolId: string, @Param("requestId") requestId: string) {
     return this.staff.decideLeave(req.authUser, schoolId, requestId, req.body);
@@ -117,5 +122,10 @@ export class StaffOperationsController {
   @Post("leave-requests/:requestId/withdraw/")
   withdrawLeave(@Req() req: AuthenticatedRequest, @Param("schoolId") schoolId: string, @Param("requestId") requestId: string) {
     return this.staff.withdrawLeave(req.authUser, schoolId, requestId, req.body);
+  }
+
+  @Post("leave-requests/:requestId/reroute/")
+  rerouteLeave(@Req() req: AuthenticatedRequest, @Param("schoolId") schoolId: string, @Param("requestId") requestId: string) {
+    return this.staff.rerouteLeave(req.authUser, schoolId, requestId, req.body);
   }
 }

@@ -1,0 +1,116 @@
+.operations-main .security-page--workspace,
+.operations-main .account-profile-page--workspace {
+  min-height: 0;
+  padding: 0;
+  background: transparent;
+}
+
+.more-workspace-connections,
+.more-workspace-feedback {
+  width: min(100%, 760px);
+  margin: 0 auto;
+}
+
+.more-workspace-scope,
+.more-workspace-empty,
+.more-workspace-context {
+  margin: 0 auto 14px;
+  padding: 18px;
+  border: 1px solid var(--thatcampus-line);
+  border-radius: var(--thatcampus-radius-card);
+  color: var(--thatcampus-ink);
+  background: var(--appearance-surface, #fff);
+}
+
+.more-workspace-scope h2,
+.more-workspace-empty h2 {
+  margin: 0;
+  font-size: 17px;
+}
+
+.more-workspace-scope p,
+.more-workspace-empty p {
+  margin: 5px 0 0;
+  color: var(--thatcampus-ink-muted);
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+.more-workspace-scope [role="radiogroup"] {
+  display: grid;
+  margin-top: 14px;
+  gap: 8px;
+}
+
+.more-workspace-scope [role="radio"] {
+  display: flex;
+  min-height: 58px;
+  padding: 11px 13px;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 3px;
+  border: 1px solid var(--thatcampus-line);
+  border-radius: var(--thatcampus-radius-control);
+  color: var(--thatcampus-ink);
+  background: transparent;
+  font: inherit;
+  text-align: left;
+}
+
+.more-workspace-scope [role="radio"][aria-checked="true"] {
+  border-color: var(--thatcampus-brand);
+  background: var(--thatcampus-surface-strong);
+}
+
+.more-workspace-scope [role="radio"] small,
+.more-workspace-context span {
+  color: var(--thatcampus-ink-muted);
+  font-size: 11px;
+  line-height: 1.45;
+}
+
+.more-workspace-context {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.more-workspace-segmented {
+  display: grid;
+  margin: 0 auto 14px;
+  padding: 4px;
+  grid-template-columns: 1fr 1fr;
+  border-radius: var(--thatcampus-radius-control);
+  background: var(--thatcampus-surface-strong);
+}
+
+.more-workspace-segmented button {
+  min-height: 42px;
+  border: 0;
+  border-radius: var(--thatcampus-radius-control-inset);
+  color: var(--thatcampus-ink-muted);
+  background: transparent;
+  font: inherit;
+  font-size: 13px;
+  font-weight: 750;
+}
+
+.more-workspace-segmented button[aria-selected="true"] {
+  color: var(--thatcampus-brand);
+  background: var(--appearance-surface, #fff);
+  box-shadow: 0 1px 4px #11254a14;
+}
+
+.operations-main .campus-start--workspace {
+  width: min(100%, 720px);
+  min-height: 0;
+  margin: 0 auto;
+  padding: 0;
+  background: transparent;
+  --start-ink: var(--thatcampus-ink);
+  --start-muted: var(--thatcampus-ink-muted);
+  --start-blue: var(--thatcampus-brand);
+  --start-line: var(--thatcampus-line);
+  --start-surface: var(--appearance-surface, #fff);
+  --start-soft: var(--thatcampus-surface-soft);
+}

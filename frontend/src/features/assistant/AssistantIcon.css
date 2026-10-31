@@ -1,5 +1,5 @@
 .assistant-brand-icon {
-  display: inline-block;
+  display: inline-flex;
   flex-shrink: 0;
   overflow: visible;
   vertical-align: middle;
@@ -7,6 +7,15 @@
   transform: scale(1.3);
   animation: assistant-icon-float 4s ease-in-out infinite;
 }
+.assistant-brand-icon > picture,
+.assistant-brand-icon img {
+  display: block;
+  width: 100%;
+  height: 100%;
+}
+.assistant-brand-icon > .assistant-brand-icon__dark { display: none; }
+:root[data-theme="dark"] .assistant-brand-icon__light { display: none; }
+:root[data-theme="dark"] .assistant-brand-icon__dark { display: block; }
 @keyframes assistant-icon-float {
   0%, 100% { transform: translateY(0) rotate(-2deg) scale(1.3); }
   50% { transform: translateY(-2px) rotate(2deg) scale(1.3); }

@@ -1,3 +1,4 @@
+import { executionNow } from "../campus-model-core/execution-time.runtime.js";
 import {
   Inject,
   Injectable,
@@ -19,13 +20,20 @@ import { config } from "../config.js";
 import { DatabaseService } from "../database/database.service.js";
 import { postgresClientConnectionConfig } from "../database/connection-policy.js";
 import type { Database } from "../database/types.js";
+import { ExecutionDataPlaneScope } from "../database/execution-data-plane.js";
 import { CAMPUS_MODEL_CORE_PORT, type CampusModelCorePort } from "../campus-model-core/campus-model-core.port.js";
 import { COORDINATION_RUNTIME_PORT, type CoordinationRuntimePort } from "../campus-model-core/coordination-runtime.port.js";
+import {
+  executionRealtimeBinding,
+  executionRealtimeCursor,
+  liveRealtimeNamespace,
+  parseExecutionRealtimeCursor,
+  type ExecutionRealtimeBinding,
+} from "./execution-realtime.js";
 
 type Db = Kysely<Database> | Transaction<Database>;
 
 const BROKER_CHANNEL = "omnischool_school_events_v1";
-const SSE_CURSOR_VERSION = "v2";
 const HEARTBEAT_MS = 20_000;
 const CLEANUP_MS = 60_000;
 const OVERDUE_REGISTER_CHECK_MS = 60_000;
@@ -74,6 +82,7 @@ interface StreamClient {
   id: string;
   userId: string;
   sessionHash: string;
+  binding: ExecutionRealtimeBinding;
   reply: FastifyReply;
   lastSequence: number | null;
   replaying: boolean;
@@ -116,13 +125,13 @@ interface RegisterEventInput {
   requestId: string;
   state: "submitted" | "locked" | "draft" | "unlocked";
   revision: number;
-  actorId: string;
+  actorId: string | null;
   action?: string;
 }
 
 interface UserEventInput {
   schoolId: string;
-  eventType: "gate.visitor.updated" | "leave.updated" | "notification.created" | "timetable.updated" | "calendar.updated" | "coordination.updated" | "people.updated" | "day_plan.updated" | "campus_event.updated" | "diary.updated" | "departure.updated" | "transport.updated" | "notice.updated" | "chat.updated" | "teacher_feedback.updated" | "governance.policy.rejected" | "assessment.updated" | "academic_report.updated";
+  eventType: "gate.visitor.updated" | "leave.updated" | "notification.created" | "timetable.updated" | "calendar.updated" | "coordination.updated" | "people.updated" | "day_plan.updated" | "campus_event.updated" | "diary.updated" | "departure.updated" | "transport.updated" | "notice.updated" | "chat.updated" | "teacher_feedback.updated" | "governance.policy.rejected" | "assessment.updated" | "academic_report.updated" | "resources.updated";
   aggregateType: string;
   aggregateId: string;
   audienceUserIds: string[];
@@ -155,6 +164,9 @@ export class SchoolEventService implements OnApplicationBootstrap, BeforeApplica
   private brokerReady = false;
   private shuttingDown = false;
   private publishing = false;
+  private readonly simulationPublishing = new Set<string>();
+  private readonly domainWork = new Map<string, () => Promise<unknown>>();
+  private readonly domainWorkInFlight = new Map<string, Promise<void>>();
   private lastPublishSucceededAt: Date | null = null;
   private lastPublishFailedAt: Date | null = null;
   private cachedOutboxMetrics: {
@@ -168,11 +180,15 @@ export class SchoolEventService implements OnApplicationBootstrap, BeforeApplica
     private readonly db: DatabaseService,
     @Optional() @Inject(CAMPUS_MODEL_CORE_PORT) private readonly campusModelCore?: CampusModelCorePort,
     @Optional() @Inject(COORDINATION_RUNTIME_PORT) private readonly coordinationRuntime?: CoordinationRuntimePort,
+    @Optional() private readonly executionScope?: ExecutionDataPlaneScope,
   ) {}
 
   onApplicationBootstrap(): void {
     void this.connectBroker();
-    this.workerTimer = setInterval(() => { void this.publishPending(); }, config().EVENT_WORKER_INTERVAL_MS);
+    this.workerTimer = setInterval(() => {
+      void this.publishPending();
+      void this.publishSimulationNamespaces();
+    }, config().EVENT_WORKER_INTERVAL_MS);
     this.workerTimer.unref();
     this.heartbeatTimer = setInterval(() => { void this.heartbeatAndValidateSessions(); }, HEARTBEAT_MS);
     this.heartbeatTimer.unref();
@@ -180,11 +196,11 @@ export class SchoolEventService implements OnApplicationBootstrap, BeforeApplica
     this.cleanupTimer.unref();
     this.overdueRegisterTimer = setInterval(() => {
       void this.enqueueOverdueRegisters();
-      void this.finalizeDueAttendanceRegisters();
+      void this.runRegisteredDomainWork().catch(error => this.logger.warn(`Scheduled domain work failed: ${error instanceof Error ? error.message : String(error)}`));
     }, OVERDUE_REGISTER_CHECK_MS);
     this.overdueRegisterTimer.unref();
     void this.enqueueOverdueRegisters();
-    void this.finalizeDueAttendanceRegisters();
+    void this.runRegisteredDomainWork().catch(error => this.logger.warn(`Scheduled domain work failed: ${error instanceof Error ? error.message : String(error)}`));
     void this.cleanupExpiredEvents();
     void this.publishPending();
   }
@@ -201,6 +217,7 @@ export class SchoolEventService implements OnApplicationBootstrap, BeforeApplica
     if (this.reconnectTimer) clearTimeout(this.reconnectTimer);
     for (const client of this.clients.values()) this.closeClient(client);
     this.clients.clear();
+    this.simulationPublishing.clear();
     if (this.broker) {
       this.broker.removeAllListeners();
       await this.broker.end().catch(() => undefined);
@@ -220,7 +237,7 @@ export class SchoolEventService implements OnApplicationBootstrap, BeforeApplica
     last_publish_succeeded_at: string | null;
     last_publish_failed_at: string | null;
   }> {
-    if (!this.cachedOutboxMetrics || this.cachedOutboxMetrics.expiresAt <= Date.now()) {
+    if (!this.cachedOutboxMetrics || this.cachedOutboxMetrics.expiresAt <= executionNow().getTime()) {
       const result = await sql<{
         pending_events: string;
         dead_lettered_events: string;
@@ -238,7 +255,7 @@ export class SchoolEventService implements OnApplicationBootstrap, BeforeApplica
       `.execute(this.db);
       const row = result.rows[0];
       this.cachedOutboxMetrics = {
-        expiresAt: Date.now() + 5_000,
+        expiresAt: executionNow().getTime() + 5_000,
         pendingEvents: Number(row?.pending_events ?? 0),
         deadLetteredEvents: Number(row?.dead_lettered_events ?? 0),
         oldestPendingSeconds: Math.max(0, Number(row?.oldest_pending_seconds ?? 0)),
@@ -361,10 +378,10 @@ export class SchoolEventService implements OnApplicationBootstrap, BeforeApplica
           title: changed ? "Attendance corrected" : "Attendance recorded",
           body: `${recipient.student_name}'s attendance for ${input.date} is ${record.status.replace("_", " ")}.`,
           student_id: record.student_id,
-          student_link: "/student/attendance",
+          student_link: `/areas/attendance/records?scope=self&student_id=${record.student_id}`,
           parent_link: record.id
-            ? `/parent/attendance?student_id=${record.student_id}&date=${input.date}&attendance_record_id=${record.id}&attendance_revision=${record.revision ?? 1}`
-            : `/parent/attendance?student_id=${record.student_id}`,
+            ? `/areas/attendance/records?scope=dependent&student_id=${record.student_id}&date=${input.date}&attendance_record_id=${record.id}&attendance_revision=${record.revision ?? 1}`
+            : `/areas/attendance/records?scope=dependent&student_id=${record.student_id}`,
           status: record.status,
           previous_status: record.previous_status ?? null,
           ...(record.id ? {
@@ -555,6 +572,9 @@ export class SchoolEventService implements OnApplicationBootstrap, BeforeApplica
               date_trunc('day',now() AT TIME ZONE school.timezone)+school.attendance_submission_cutoff
                 +(COALESCE(rule.attendance_overdue_reminder_minutes,15)||' minutes')::interval
             AND COALESCE(rule.attendance_academic_mode,'scheduled_session')='daily_class'
+            AND NOT EXISTS(SELECT 1 FROM activity_attendance_source_contexts migrated
+              WHERE migrated.school_id=school.id AND migrated.source_kind='daily_class' AND migrated.state='active'
+                AND migrated.source_id=concat(section.id,':',term.id,':',(now() AT TIME ZONE school.timezone)::date))
             AND COALESCE((
               SELECT calendar.is_instructional
               FROM school_calendar_days calendar
@@ -640,8 +660,8 @@ export class SchoolEventService implements OnApplicationBootstrap, BeforeApplica
           jsonb_build_object(
             'title', 'Attendance register reminder',
             'body', concat('Class ', prepared.grade, prepared.section, ' attendance has not been submitted.'),
-            'staff_link', concat('/teacher/attendance?class_section_id=', prepared.class_section_id, '&date=', prepared.school_date),
-            'admin_link', concat('/principal/attendance?class_section_id=', prepared.class_section_id, '&date=', prepared.school_date),
+            'staff_link', concat('/areas/attendance/registers?class_section_id=', prepared.class_section_id, '&date=', prepared.school_date),
+            'admin_link', concat('/areas/attendance/coordination?class_section_id=', prepared.class_section_id, '&date=', prepared.school_date),
             'class_section_id', prepared.class_section_id,
             'date', prepared.school_date
           )
@@ -691,6 +711,9 @@ export class SchoolEventService implements OnApplicationBootstrap, BeforeApplica
             AND membership.user_id=register.scheduled_teacher_id AND membership.role='staff' AND membership.is_active
           JOIN users account ON account.id=membership.user_id AND account.is_active
           WHERE register.state='draft' AND register.scheduled_teacher_id IS NOT NULL
+            AND NOT EXISTS(SELECT 1 FROM activity_attendance_source_contexts migrated
+              WHERE migrated.school_id=register.school_id AND migrated.source_kind='scheduled_session'
+                AND migrated.state='active' AND migrated.source_id=register.id::text)
             AND now() >= ((register.session_date+register.ends_at) AT TIME ZONE scope.timezone
               +((scope.close_after_minutes+scope.reminder_minutes)||' minutes')::interval)
         )
@@ -709,7 +732,7 @@ export class SchoolEventService implements OnApplicationBootstrap, BeforeApplica
           jsonb_build_object(
             'title','Subject attendance reminder',
             'body',concat(due.subject_name,' · Class ',due.grade,due.section,' has not been submitted.'),
-            'staff_link',concat('/teacher/attendance?date=',due.session_date,'&session_id=',due.id),
+            'staff_link',concat('/areas/attendance/registers?date=',due.session_date,'&session_id=',due.id),
             'session_id',due.id,'class_section_id',due.class_section_id,'date',due.session_date
           )
         FROM due
@@ -725,7 +748,7 @@ export class SchoolEventService implements OnApplicationBootstrap, BeforeApplica
     const coordinationRuntime = this.coordinationRuntime;
     if (!coordinationRuntime) return 0;
     return this.db.transaction().execute(async (db) => {
-      const work = await sql<{
+      const candidates = await sql<{
         outbox_id: string;
         school_id: string;
         event_type: "attendance.register.overdue" | "attendance.session.overdue";
@@ -751,12 +774,26 @@ export class SchoolEventService implements OnApplicationBootstrap, BeforeApplica
           AND subject.school_id=outbox.school_id
         WHERE outbox.event_type IN ('attendance.register.overdue','attendance.session.overdue')
           AND cardinality(outbox.audience_user_ids)=1
-          AND NOT EXISTS(SELECT 1 FROM campus_model_events event
-            WHERE event.school_id=outbox.school_id AND event.source_outbox_event_id=outbox.id)
+          AND NOT EXISTS(SELECT 1 FROM activity_attendance_source_contexts migrated
+            WHERE migrated.school_id=outbox.school_id AND migrated.state='active' AND (
+              (outbox.event_type='attendance.session.overdue' AND migrated.source_kind='scheduled_session'
+                AND migrated.source_id=outbox.payload->>'session_id')
+              OR (outbox.event_type='attendance.register.overdue' AND migrated.source_kind='daily_class'
+                AND migrated.source_id=concat(outbox.payload->>'class_section_id',':',outbox.payload->>'term_id',':',outbox.payload->>'date'))
+            ))
         ORDER BY outbox.created_at,outbox.id
-        LIMIT ${Math.max(1, Math.min(500, Math.trunc(batchSize)))}
+        LIMIT ${Math.max(1, Math.min(500, Math.trunc(batchSize) * 4))}
         FOR UPDATE OF outbox SKIP LOCKED`.execute(db);
-      for (const item of work.rows) {
+      const work: typeof candidates.rows = [];
+      for (const candidate of candidates.rows) {
+        const alreadyCoordinated = await coordinationRuntime.hasAcceptedSourceEvent(db, {
+          school_id: candidate.school_id,
+          source_outbox_event_id: candidate.outbox_id,
+        });
+        if (!alreadyCoordinated) work.push(candidate);
+        if (work.length >= batchSize) break;
+      }
+      for (const item of work) {
         const occurredAt = new Date(item.occurred_at).toISOString();
         const date = typeof item.payload.date === "string" ? item.payload.date : occurredAt.slice(0, 10);
         const sessionId = typeof item.payload.session_id === "string" ? item.payload.session_id : null;
@@ -806,7 +843,7 @@ export class SchoolEventService implements OnApplicationBootstrap, BeforeApplica
               session_id: sessionId,
               date,
               operating_rule_revision: item.rule_revision,
-              action_path: `/teacher/attendance?date=${encodeURIComponent(date)}${sessionId ? `&session_id=${encodeURIComponent(sessionId)}` : `&class_section_id=${encodeURIComponent(classSectionId)}`}`,
+              action_path: `/areas/attendance/registers?date=${encodeURIComponent(date)}${sessionId ? `&session_id=${encodeURIComponent(sessionId)}` : `&class_section_id=${encodeURIComponent(classSectionId)}`}`,
             },
           },
           selector_input: {
@@ -816,36 +853,45 @@ export class SchoolEventService implements OnApplicationBootstrap, BeforeApplica
           },
         });
       }
-      const satisfied = await sql<{
+      const messageWork = await coordinationRuntime.listOperationalMessageWork(db, {
+        workflow: "attendance_completion",
+        states: ["queued", "delivered", "acknowledged"],
+        limit: Math.max(1, Math.min(500, Math.trunc(batchSize))),
+        claim: true,
+      });
+      const satisfied: Array<{
         message_id: string;
         school_id: string;
         register_state: "submitted" | "locked";
-      }>`SELECT message.id AS message_id,message.school_id,
-          CASE
-            WHEN message.payload->>'session_id' IS NOT NULL THEN session_register.state
-            ELSE daily_register.state
-          END AS register_state
-        FROM campus_model_operational_messages message
-        LEFT JOIN attendance_session_registers session_register
-          ON session_register.school_id=message.school_id
-          AND session_register.id=(message.payload->>'session_id')::uuid
-        LEFT JOIN attendance_registers daily_register
-          ON daily_register.school_id=message.school_id
-          AND daily_register.class_section_id=(message.payload->>'class_section_id')::uuid
-          AND daily_register.date=(message.payload->>'date')::date
-        WHERE message.state IN ('queued','delivered','acknowledged')
-          AND message.payload->>'workflow'='attendance_completion'
-          AND (
-            (message.payload->>'session_id' IS NOT NULL
-              AND session_register.state IN ('submitted','locked'))
-            OR
-            (message.payload->>'session_id' IS NULL
-              AND daily_register.state IN ('submitted','locked'))
-          )
-        ORDER BY message.queued_at,message.id
-        FOR UPDATE OF message SKIP LOCKED`.execute(db);
-      const occurredAt = new Date().toISOString();
-      for (const item of satisfied.rows) {
+      }> = [];
+      for (const message of messageWork) {
+        const sessionId = typeof message.payload.session_id === "string" ? message.payload.session_id : null;
+        const classSectionId = typeof message.payload.class_section_id === "string"
+          ? message.payload.class_section_id
+          : null;
+        const date = typeof message.payload.date === "string" ? message.payload.date : null;
+        const register = sessionId
+          ? (await sql<{ state: "draft" | "submitted" | "locked" }>`SELECT state
+              FROM attendance_session_registers
+              WHERE school_id=${message.school_id}::uuid AND id=${sessionId}::uuid`
+            .execute(db)).rows[0]
+          : classSectionId && date
+            ? (await sql<{ state: "draft" | "submitted" | "locked" }>`SELECT state
+                FROM attendance_registers
+                WHERE school_id=${message.school_id}::uuid
+                  AND class_section_id=${classSectionId}::uuid AND date=${date}::date`
+              .execute(db)).rows[0]
+            : null;
+        if (register?.state === "submitted" || register?.state === "locked") {
+          satisfied.push({
+            message_id: message.message_id,
+            school_id: message.school_id,
+            register_state: register.state,
+          });
+        }
+      }
+      const occurredAt = executionNow().toISOString();
+      for (const item of satisfied) {
         await coordinationRuntime.recordMessageOutcome(db, {
           school_id: item.school_id,
           message_id: item.message_id,
@@ -859,228 +905,82 @@ export class SchoolEventService implements OnApplicationBootstrap, BeforeApplica
           idempotency_key: `attendance-completion-satisfied:${item.message_id}:${item.register_state}`,
         });
       }
-      return work.rows.length + satisfied.rows.length;
+      return work.length + satisfied.length;
     });
   }
 
-  private async finalizeDueAttendanceRegisters(batchSize = 100): Promise<number> {
-    const limit = Math.max(1, Math.min(500, Math.trunc(batchSize)));
-    try {
-      return await this.db.transaction().execute(async (db) => {
-        const claim = await sql<{ task_name: string }>`
-          UPDATE event_maintenance_leases lease
-          SET last_claimed_at=clock_timestamp()
-          WHERE lease.task_name='attendance_register_auto_finalize'
-            AND (lease.last_claimed_at IS NULL
-              OR lease.last_claimed_at <= clock_timestamp() - interval '30 seconds')
-          RETURNING lease.task_name
-        `.execute(db);
-        if (!claim.rows.length) return 0;
-        const due = await sql<{
-          id: string; school_id: string; class_section_id: string; term_id: string;
-          date: string; revision: number; submitted_by: string;
-          auto_finalize_at: Date; finalization_policy_revision: number | null;
-        }>`
-          SELECT register.id,register.school_id,register.class_section_id,register.term_id,
-            register.date::text,register.revision,register.submitted_by,
-            register.auto_finalize_at,register.finalization_policy_revision
-          FROM attendance_registers register
-          WHERE register.state='submitted'
-            AND register.submitted_by IS NOT NULL
-            AND register.auto_finalize_at IS NOT NULL
-            AND register.auto_finalize_at<=clock_timestamp()
-          ORDER BY register.auto_finalize_at,register.id
-          FOR UPDATE OF register SKIP LOCKED
-          LIMIT ${limit}
-        `.execute(db);
-        for (const register of due.rows) {
-          const revision = Number(register.revision) + 1;
-          const finalizedAt = new Date();
-          const requestId = randomUUID();
-          await db.updateTable("attendance_registers").set({
-            state: "locked", revision, locked_by: register.submitted_by,
-            locked_at: finalizedAt, auto_finalize_at: null,
-            finalization_source: "automatic", updated_at: finalizedAt,
-          }).where("id", "=", register.id).where("state", "=", "submitted").execute();
-          await db.insertInto("audit_events").values({
-            action: "attendance.register.finalized_automatically",
-            actor_id: register.submitted_by, school_id: register.school_id,
-            target_type: "attendance_register", target_id: register.id,
-            request_id: requestId, ip_hash: null,
-            metadata: {
-              class_section_id: register.class_section_id, date: register.date,
-              revision, scheduled_at: register.auto_finalize_at,
-              finalization_policy_revision: register.finalization_policy_revision,
-              automated: true,
-            },
-          }).execute();
-          const registerEventId = await this.enqueueRegisterEvent(db, {
-            schoolId: register.school_id, classSectionId: register.class_section_id,
-            termId: register.term_id, date: register.date, requestId,
-            state: "locked", revision, actorId: register.submitted_by,
-          });
-          if (this.campusModelCore) await this.campusModelCore.recordAcceptedChange(db, {
-            school_id: register.school_id,
-            actor_user_id: register.submitted_by,
-            command_type: "attendance.register.finalize_automatically",
-            target: { domain: "attendance", domain_id: register.id },
-            idempotency_key: `attendance-register-auto-finalize:${register.id}:${revision}`,
-            correlation_id: requestId,
-            causation_id: null,
-            expected_revision: Number(register.revision),
-            authority_evidence: [
-              `attendance_register:${register.id}`,
-              `institution_operating_rules:${register.finalization_policy_revision ?? 0}`,
-            ],
-            operating_rule_version_ref: `institution_operating_rules:${register.finalization_policy_revision ?? 0}`,
-            source_domain: "attendance",
-            safe_context: {
-              class_section_id: register.class_section_id,
-              term_id: register.term_id,
-              date: register.date,
-              automation_executor: "attendance_register_auto_finalize",
-            },
-            entities: [{
-              kind: "attendance_register",
-              domain: "attendance",
-              domain_id: register.id,
-              label: `Daily attendance · ${register.date}`,
-              lifecycle_state: "active",
-              source_revision: revision,
-              metadata: { class_section_id: register.class_section_id, term_id: register.term_id, date: register.date },
-            }],
-            relationships: [],
-            outcome: {
-              code: "finalized_automatically",
-              explanation: "The submitted attendance register became final under the institution's snapshotted Operating rule.",
-              resulting_revision: revision,
-              metadata: {
-                scheduled_at: new Date(register.auto_finalize_at).toISOString(),
-                finalization_policy_revision: register.finalization_policy_revision,
-                automation_executor: "attendance_register_auto_finalize",
-              },
-            },
-            domain_event_id: registerEventId,
-          });
-        }
-        const sessionLimit = Math.max(0, limit - due.rows.length);
-        const dueSessions = sessionLimit ? await sql<{
-          id: string; school_id: string; class_section_id: string; term_id: string; subject_id: string;
-          session_date: string; period_number: number; revision: number; submitted_by: string;
-          auto_finalize_at: Date; finalization_policy_revision: number | null;
-        }>`
-          SELECT register.id,register.school_id,register.class_section_id,register.term_id,register.subject_id,
-            register.session_date::text,register.period_number,register.revision,register.submitted_by,
-            register.auto_finalize_at,register.finalization_policy_revision
-          FROM attendance_session_registers register
-          WHERE register.state='submitted'
-            AND register.submitted_by IS NOT NULL
-            AND register.auto_finalize_at IS NOT NULL
-            AND register.auto_finalize_at<=clock_timestamp()
-          ORDER BY register.auto_finalize_at,register.id
-          FOR UPDATE OF register SKIP LOCKED
-          LIMIT ${sessionLimit}
-        `.execute(db) : { rows: [] };
-        for (const register of dueSessions.rows) {
-          const revision = Number(register.revision) + 1;
-          const finalizedAt = new Date();
-          const requestId = randomUUID();
-          await sql`UPDATE attendance_session_registers SET state='locked',revision=${revision},
-            locked_by=${register.submitted_by}::uuid,locked_at=${finalizedAt},auto_finalize_at=NULL,
-            finalization_source='automatic',updated_at=${finalizedAt}
-            WHERE id=${register.id}::uuid AND state='submitted'`.execute(db);
-          await sql`INSERT INTO attendance_session_audits(school_id,session_id,actor_id,action,metadata)
-            VALUES(${register.school_id}::uuid,${register.id}::uuid,${register.submitted_by}::uuid,'register.finalized_automatically',
-              ${JSON.stringify({ class_section_id: register.class_section_id, subject_id: register.subject_id, session_date: register.session_date, period_number: register.period_number, revision, scheduled_at: register.auto_finalize_at, finalization_policy_revision: register.finalization_policy_revision, request_id: requestId })}::jsonb)`.execute(db);
-          await db.insertInto("audit_events").values({
-            action: "attendance.session.finalized_automatically",
-            actor_id: register.submitted_by, school_id: register.school_id,
-            target_type: "attendance_session_register", target_id: register.id,
-            request_id: requestId, ip_hash: null,
-            metadata: {
-              class_section_id: register.class_section_id, subject_id: register.subject_id,
-              date: register.session_date, period_number: register.period_number,
-              revision, scheduled_at: register.auto_finalize_at,
-              finalization_policy_revision: register.finalization_policy_revision,
-              automated: true,
-            },
-          }).execute();
-          const registerEventId = await this.enqueueRegisterEvent(db, {
-            schoolId: register.school_id,
-            classSectionId: register.class_section_id,
-            termId: register.term_id,
-            date: register.session_date,
-            sessionId: register.id,
-            requestId,
-            state: "locked",
-            revision,
-            actorId: register.submitted_by,
-            action: "finalized_automatically",
-          });
-          if (this.campusModelCore) await this.campusModelCore.recordAcceptedChange(db, {
-            school_id: register.school_id,
-            actor_user_id: register.submitted_by,
-            command_type: "attendance.session.finalize_automatically",
-            target: { domain: "attendance", domain_id: register.id },
-            idempotency_key: `attendance-session-auto-finalize:${register.id}:${revision}`,
-            correlation_id: requestId,
-            causation_id: null,
-            expected_revision: Number(register.revision),
-            authority_evidence: [
-              `attendance_session_register:${register.id}`,
-              `institution_operating_rules:${register.finalization_policy_revision ?? 0}`,
-            ],
-            operating_rule_version_ref: `institution_operating_rules:${register.finalization_policy_revision ?? 0}`,
-            source_domain: "attendance",
-            safe_context: {
-              class_section_id: register.class_section_id,
-              term_id: register.term_id,
-              subject_id: register.subject_id,
-              date: register.session_date,
-              period_number: register.period_number,
-              automation_executor: "attendance_register_auto_finalize",
-            },
-            entities: [{
-              kind: "attendance_register",
-              domain: "attendance",
-              domain_id: register.id,
-              label: `Subject attendance · ${register.session_date} · Period ${register.period_number}`,
-              lifecycle_state: "active",
-              source_revision: revision,
-              metadata: {
-                class_section_id: register.class_section_id,
-                term_id: register.term_id,
-                subject_id: register.subject_id,
-                session_date: register.session_date,
-                period_number: register.period_number,
-              },
-            }],
-            relationships: [],
-            outcome: {
-              code: "finalized_automatically",
-              explanation: "The submitted subject attendance register became final under the institution's snapshotted Operating rule.",
-              resulting_revision: revision,
-              metadata: {
-                scheduled_at: new Date(register.auto_finalize_at).toISOString(),
-                finalization_policy_revision: register.finalization_policy_revision,
-                automation_executor: "attendance_register_auto_finalize",
-              },
-            },
-            domain_event_id: registerEventId,
-          });
-        }
-        return due.rows.length + dueSessions.rows.length;
-      });
-    } catch (error) {
-      this.logger.warn(`Attendance register auto-finalization failed: ${error instanceof Error ? error.message : String(error)}`);
-      return 0;
+
+  /** Same domain workers, explicitly bound to a durable isolated world. */
+  registerDomainWork(key: string, work: () => Promise<unknown>): () => void {
+    if (this.domainWork.has(key)) throw new Error(`Domain work is already registered: ${key}`);
+    this.domainWork.set(key, work);
+    return () => { if (this.domainWork.get(key) === work) this.domainWork.delete(key); };
+  }
+
+  private async runRegisteredDomainWork(): Promise<void> {
+    const namespace = this.executionScope?.current()?.namespace_id ?? "live";
+    const inFlight = this.domainWorkInFlight.get(namespace);
+    if (inFlight) return inFlight;
+    const work = (async () => {
+      for (const callback of this.domainWork.values()) await callback();
+    })();
+    this.domainWorkInFlight.set(namespace, work);
+    try { await work; } finally {
+      if (this.domainWorkInFlight.get(namespace) === work) this.domainWorkInFlight.delete(namespace);
     }
   }
 
+  async advanceSimulationDomainWork(): Promise<void> {
+    if (this.executionScope?.current()?.kind !== "simulation") {
+      throw new Error("Simulation domain work requires an isolated execution environment.");
+    }
+    await this.enqueueOverdueRegisters();
+    await this.runRegisteredDomainWork();
+    await this.publishPendingInSelectedEnvironment(false);
+  }
+
   async openStream(user: AuthUser, reply: FastifyReply, request: AuthenticatedRequest): Promise<void> {
-    if (!this.brokerReady) throw new ServiceUnavailableException("Live updates are temporarily unavailable. Retry shortly.");
+    const environment = request.executionEnvironment;
+    if (!environment) {
+      throw new HttpException("Select an institution before opening live updates.", HttpStatus.CONFLICT);
+    }
+    const binding = executionRealtimeBinding(environment);
+    if (user.active_school_id !== binding.institution_id) {
+      throw new HttpException("The live-update context no longer matches the active institution.", HttpStatus.CONFLICT);
+    }
+    if (binding.kind === "live" && !this.brokerReady) {
+      throw new ServiceUnavailableException("Live updates are temporarily unavailable. Retry shortly.");
+    }
+    // The browser owns one shared stream for a session. A replacement document
+    // can reach the origin before a proxy has delivered the prior response's
+    // close event, so retire only this authenticated session's older streams
+    // before applying capacity limits. This keeps the configured limit intact
+    // without allowing one session to evict another session's connection.
+    const activeSessionClients = [...this.clients.values()].filter((candidate) => (
+      candidate.sessionHash === request.sessionHash && !candidate.closed
+    ));
+    for (const candidate of activeSessionClients) {
+      if (candidate.binding.namespace_id === binding.namespace_id) continue;
+      this.send(candidate, "environment.changed", { reason: "server_session_switched" });
+      this.closeClient(candidate);
+    }
+    const sameNamespaceClients = activeSessionClients.filter((candidate) => (
+      !candidate.closed && candidate.binding.namespace_id === binding.namespace_id
+    ));
+    const replacementCount = Math.max(
+      0,
+      sameNamespaceClients.length - config().SSE_MAX_CONNECTIONS_PER_SESSION + 1,
+    );
+    for (const candidate of sameNamespaceClients.slice(0, replacementCount)) {
+      this.send(candidate, "stream.replaced", { reason: "newer_session_connection" });
+      this.closeClient(candidate);
+    }
     if (this.clients.size >= config().SSE_MAX_CONNECTIONS) throw new ServiceUnavailableException("Live update capacity has been reached.");
-    const sessionCount = [...this.clients.values()].filter((client) => client.sessionHash === request.sessionHash && !client.closed).length;
+    const sessionCount = [...this.clients.values()].filter((client) => (
+      client.sessionHash === request.sessionHash
+      && client.binding.namespace_id === binding.namespace_id
+      && !client.closed
+    )).length;
     if (sessionCount >= config().SSE_MAX_CONNECTIONS_PER_SESSION) throw new HttpException("Too many live update connections are open for this session.", HttpStatus.TOO_MANY_REQUESTS);
 
     reply.hijack();
@@ -1095,19 +995,20 @@ export class SchoolEventService implements OnApplicationBootstrap, BeforeApplica
 
     const header = request.headers["last-event-id"];
     const rawLastId = Array.isArray(header) ? header[0] : header;
-    // Cursor IDs are explicitly versioned. Numeric IDs came from the legacy
-    // insert-order cursor and cannot safely be interpreted as commit order.
-    const cursorMatch = rawLastId?.match(new RegExp(`^${SSE_CURSOR_VERSION}-(\\d+)$`));
-    const parsedLastId = cursorMatch?.[1] ? Number(cursorMatch[1]) : null;
-    const lastId = parsedLastId !== null && Number.isSafeInteger(parsedLastId) ? parsedLastId : null;
+    // Cursor IDs are positions only inside the server-selected namespace.
+    // Legacy/numeric/cross-run cursor values force a safe full refresh.
+    const lastId = parseExecutionRealtimeCursor(binding, rawLastId);
     const client: StreamClient = {
       id: randomUUID(), userId: user.id, sessionHash: request.sessionHash,
+      binding,
       reply, lastSequence: lastId, replaying: true, replayOverflow: false,
       pendingEvents: new Map(), closed: false,
     };
     this.clients.set(client.id, client);
     const close = () => this.closeClient(client);
     request.raw.once("close", close);
+    request.raw.once("aborted", close);
+    reply.raw.once("close", close);
     reply.raw.once("error", close);
 
     try {
@@ -1116,7 +1017,14 @@ export class SchoolEventService implements OnApplicationBootstrap, BeforeApplica
       } else {
         await this.replay(client, lastId);
       }
-      this.send(client, "stream.ready", { connected_at: new Date().toISOString() });
+      const connectedAt = environment.kind === "simulation"
+        ? environment.virtual_clock.nowIso()
+        : environment.clock.nowIso();
+      this.send(client, "stream.ready", {
+        connected_at: connectedAt,
+        environment: binding.kind,
+        namespace_id: binding.namespace_id,
+      });
     } catch (error) {
       this.logger.error("Unable to initialize SSE replay", error instanceof Error ? error.stack : String(error));
       try {
@@ -1130,6 +1038,10 @@ export class SchoolEventService implements OnApplicationBootstrap, BeforeApplica
   }
 
   private async replay(client: StreamClient, afterSequence: number): Promise<void> {
+    return this.runInClientEnvironment(client, () => this.replayInSelectedEnvironment(client, afterSequence));
+  }
+
+  private async replayInSelectedEnvironment(client: StreamClient, afterSequence: number): Promise<void> {
     if (client.closed) return;
     const limit = config().EVENT_REPLAY_LIMIT;
     // Bounds and rows must share one PostgreSQL statement snapshot. Otherwise
@@ -1162,6 +1074,8 @@ export class SchoolEventService implements OnApplicationBootstrap, BeforeApplica
           AND event.delivery_sequence > ${afterSequence}
           AND event.published_at IS NOT NULL
           AND event.expires_at > now()
+          AND event.school_id = ${client.binding.institution_id}::uuid
+          AND event_source_is_valid(event.school_id,event.event_type,event.aggregate_type,event.aggregate_id,event.payload)
           AND event.audience_user_ids @> ARRAY[${client.userId}::uuid]
           AND event_user_is_authorized(event.school_id, event.event_type, event.payload, ${client.userId}::uuid)
         ORDER BY event.delivery_sequence
@@ -1202,7 +1116,7 @@ export class SchoolEventService implements OnApplicationBootstrap, BeforeApplica
       await this.requestFullSync(client, "replay_limit_exceeded");
       return;
     }
-    for (const event of events) this.dispatchToClient(client, event);
+    for (const event of events) this.dispatchToClient(client, event, client.binding.namespace_id);
   }
 
   private async connectBroker(): Promise<void> {
@@ -1242,7 +1156,7 @@ export class SchoolEventService implements OnApplicationBootstrap, BeforeApplica
       // Establish the instance cursor while new streams are still rejected.
       // Existing clients replay from their own cursors below, so notifications
       // committed between LISTEN and this snapshot cannot create a gap.
-      this.brokerWatermark = await this.readCurrentWatermark();
+      this.brokerWatermark = await this.queryCurrentWatermark();
       if (this.shuttingDown) return;
       this.brokerReady = true;
       this.reconnectAttempt = 0;
@@ -1328,6 +1242,7 @@ export class SchoolEventService implements OnApplicationBootstrap, BeforeApplica
   }
 
   private async drainPublishedEvents(): Promise<void> {
+    await this.validateClientSessions(false, true);
     const limit = Math.max(1, config().EVENT_BATCH_SIZE);
     for (;;) {
       // NOTIFY is only a wake-up. Draining the committed cursor range in
@@ -1348,6 +1263,7 @@ export class SchoolEventService implements OnApplicationBootstrap, BeforeApplica
               WHERE event_user_is_authorized(
                 event.school_id, event.event_type, event.payload, candidate.user_id
               )
+                AND event_source_is_valid(event.school_id,event.event_type,event.aggregate_type,event.aggregate_id,event.payload)
             ) AS audience_user_ids
           FROM event_outbox event CROSS JOIN bounds
           WHERE event.published_at IS NOT NULL
@@ -1393,7 +1309,7 @@ export class SchoolEventService implements OnApplicationBootstrap, BeforeApplica
         if (!Number.isSafeInteger(sequence) || sequence <= this.brokerWatermark) {
           throw new Error("Invalid event delivery sequence");
         }
-        this.dispatch(event);
+        this.dispatch(event, liveRealtimeNamespace(event.school_id));
         this.brokerWatermark = sequence;
       }
       if (this.brokerWatermark >= publishedMax) return;
@@ -1404,28 +1320,93 @@ export class SchoolEventService implements OnApplicationBootstrap, BeforeApplica
     if (this.publishing || !this.brokerReady) return;
     this.publishing = true;
     try {
-      const eventIds = await this.claimPendingEvents(config().EVENT_BATCH_SIZE);
-      if (!eventIds.length) return;
-      try {
-        const published = await this.publishClaimedEvents(eventIds);
-        if (published > 0) this.lastPublishSucceededAt = new Date();
-      } catch (batchError) {
-        this.lastPublishFailedAt = new Date();
-        this.logger.error("Event outbox batch publishing failed; isolating claimed rows", batchError instanceof Error ? batchError.stack : String(batchError));
-        for (const eventId of eventIds) {
-          try {
-            const published = await this.publishClaimedEvents([eventId]);
-            if (published > 0) this.lastPublishSucceededAt = new Date();
-          } catch (eventError) {
-            await this.recordPublishFailure(eventId, eventError);
-          }
-        }
-      }
+      await this.publishPendingInSelectedEnvironment(true);
     } catch (error) {
-      this.lastPublishFailedAt = new Date();
+      this.lastPublishFailedAt = executionNow();
       this.logger.error("Event outbox claim failed", error instanceof Error ? error.stack : String(error));
     } finally {
       this.publishing = false;
+    }
+  }
+
+  private async publishPendingInSelectedEnvironment(recordOperationalHealth: boolean): Promise<void> {
+    const eventIds = await this.claimPendingEvents(config().EVENT_BATCH_SIZE);
+    if (!eventIds.length) return;
+    try {
+      const published = await this.publishClaimedEvents(eventIds);
+      if (recordOperationalHealth && published > 0) this.lastPublishSucceededAt = executionNow();
+    } catch (batchError) {
+      if (recordOperationalHealth) this.lastPublishFailedAt = executionNow();
+      this.logger.error("Event outbox batch publishing failed; isolating claimed rows", batchError instanceof Error ? batchError.stack : String(batchError));
+      for (const eventId of eventIds) {
+        try {
+          const published = await this.publishClaimedEvents([eventId]);
+          if (recordOperationalHealth && published > 0) this.lastPublishSucceededAt = executionNow();
+        } catch (eventError) {
+          await this.recordPublishFailure(eventId, eventError);
+        }
+      }
+    }
+  }
+
+  /**
+   * Simulation has no access to the Live LISTEN connection. Its pending outbox
+   * is published and replayed only while running inside the exact run-scoped data
+   * plane selected by the authenticated clients. This is intentionally polling:
+   * the data-plane registry is process-local today, so claiming a shared broker
+   * would be false multi-instance evidence.
+   */
+  private async publishSimulationNamespaces(): Promise<void> {
+    const simulationClients = [...this.clients.values()].filter((client) => (
+      !client.closed && client.binding.kind === "simulation"
+    ));
+    if (!simulationClients.length) return;
+    if (!this.executionScope) {
+      for (const client of simulationClients) {
+        this.send(client, "sync.required", { reason: "simulation_realtime_unavailable" });
+        this.closeClient(client);
+      }
+      return;
+    }
+    try {
+      await this.validateClientSessions(false, true);
+    } catch {
+      return;
+    }
+    const bindings = new Map<string, ExecutionRealtimeBinding>();
+    for (const client of simulationClients) {
+      if (!client.closed) bindings.set(client.binding.namespace_id, client.binding);
+    }
+    await Promise.all([...bindings.values()].map((binding) => this.publishSimulationNamespace(binding)));
+  }
+
+  private async publishSimulationNamespace(binding: ExecutionRealtimeBinding): Promise<void> {
+    if (binding.kind !== "simulation" || this.simulationPublishing.has(binding.namespace_id)) return;
+    this.simulationPublishing.add(binding.namespace_id);
+    try {
+      await this.executionScope!.run(binding.environment, async () => {
+        await this.publishPendingInSelectedEnvironment(false);
+        const clients = [...this.clients.values()].filter((client) => (
+          !client.closed && client.binding.namespace_id === binding.namespace_id
+        ));
+        await Promise.all(clients.map(async (client) => {
+          const sequence = client.lastSequence;
+          if (sequence === null) {
+            await this.requestFullSync(client, "simulation_cursor_unavailable");
+          } else {
+            await this.replay(client, sequence);
+          }
+        }));
+      });
+    } catch (error) {
+      this.logger.warn(`Simulation realtime publication failed for ${binding.namespace_id}: ${error instanceof Error ? error.message : String(error)}`);
+      for (const client of this.clients.values()) {
+        if (client.binding.namespace_id !== binding.namespace_id) continue;
+        this.send(client, "sync.required", { reason: "simulation_realtime_unavailable" });
+        this.closeClient(client);
+      }
+    } finally {
+      this.simulationPublishing.delete(binding.namespace_id);
     }
   }
 
@@ -1436,6 +1417,7 @@ export class SchoolEventService implements OnApplicationBootstrap, BeforeApplica
         FROM event_outbox
         WHERE published_at IS NULL
           AND dead_lettered_at IS NULL
+          AND event_source_is_valid(school_id,event_type,aggregate_type,aggregate_id,payload)
           AND available_at <= now()
           AND (claim_expires_at IS NULL OR claim_expires_at <= now())
         ORDER BY available_at, created_at, id
@@ -1461,6 +1443,7 @@ export class SchoolEventService implements OnApplicationBootstrap, BeforeApplica
           WHERE id=ANY(${eventIds}::uuid[])
             AND published_at IS NULL
             AND dead_lettered_at IS NULL
+            AND event_source_is_valid(school_id,event_type,aggregate_type,aggregate_id,payload)
             AND published_by=${this.workerId}
           ORDER BY created_at, id
           FOR UPDATE SKIP LOCKED
@@ -1495,11 +1478,11 @@ export class SchoolEventService implements OnApplicationBootstrap, BeforeApplica
             COALESCE(c.notification_payload->>'title', 'Attendance updated'),
             COALESCE(c.notification_payload->>'body', 'A school attendance record changed.'),
             CASE u.role
-              WHEN 'parent' THEN COALESCE(c.notification_payload->>'parent_link', c.notification_payload->>'link', '/parent/attendance')
-              WHEN 'student' THEN COALESCE(c.notification_payload->>'student_link', c.notification_payload->>'link', '/student/attendance')
-              WHEN 'staff' THEN COALESCE(c.notification_payload->>'staff_link', c.notification_payload->>'link', '/teacher/attendance')
-              WHEN 'admin' THEN COALESCE(c.notification_payload->>'admin_link', c.notification_payload->>'link', '/principal/attendance')
-              ELSE COALESCE(c.notification_payload->>'link', '/')
+              WHEN 'parent' THEN COALESCE(c.notification_payload->>'parent_link', c.notification_payload->>'link', '/areas/attendance/records')
+              WHEN 'student' THEN COALESCE(c.notification_payload->>'student_link', c.notification_payload->>'link', '/areas/attendance/records')
+              WHEN 'staff' THEN COALESCE(c.notification_payload->>'staff_link', c.notification_payload->>'link', '/areas/attendance/registers')
+              WHEN 'admin' THEN COALESCE(c.notification_payload->>'admin_link', c.notification_payload->>'link', '/areas/attendance/coordination')
+              ELSE COALESCE(c.notification_payload->>'link', '/today')
             END,
             COALESCE(c.notification_payload, '{}'::jsonb),
             'event:' || c.id::text,
@@ -1639,6 +1622,7 @@ export class SchoolEventService implements OnApplicationBootstrap, BeforeApplica
             ), false) AS eligible
           ) attention_contract
           WHERE event_user_is_authorized(c.school_id, c.event_type, c.payload, recipients.recipient_id)
+            AND event_source_is_valid(c.school_id,c.event_type,c.aggregate_type,c.aggregate_id,c.payload)
           ON CONFLICT (recipient_id, dedupe_key) WHERE dedupe_key IS NOT NULL DO NOTHING
           RETURNING id
         )
@@ -1679,9 +1663,11 @@ export class SchoolEventService implements OnApplicationBootstrap, BeforeApplica
     }
   }
 
-  private dispatch(event: EventEnvelope): void {
+  private dispatch(event: EventEnvelope, namespaceId: string): void {
     const audience = new Set(event.audience_user_ids);
     for (const client of this.clients.values()) {
+      if (client.binding.namespace_id !== namespaceId
+        || client.binding.institution_id !== event.school_id) continue;
       if (!audience.has(client.userId)) continue;
       if (client.replaying) {
         const sequence = Number(event.sequence);
@@ -1693,12 +1679,17 @@ export class SchoolEventService implements OnApplicationBootstrap, BeforeApplica
           client.pendingEvents.set(sequence, event);
         }
       } else {
-        this.dispatchToClient(client, event);
+        this.dispatchToClient(client, event, namespaceId);
       }
     }
   }
 
-  private dispatchToClient(client: StreamClient, event: EventEnvelope): void {
+  private dispatchToClient(client: StreamClient, event: EventEnvelope, namespaceId: string): void {
+    // Replay, buffered delivery and ordinary dispatch share this final boundary.
+    // An account's authority in another campus/run does not select that context.
+    if (client.binding.namespace_id !== namespaceId
+      || client.binding.institution_id !== event.school_id
+      || !event.audience_user_ids.includes(client.userId)) return;
     const sequence = Number(event.sequence);
     if (!Number.isSafeInteger(sequence) || sequence < 1) {
       this.send(client, "sync.required", { reason: "invalid_event_sequence" });
@@ -1711,13 +1702,18 @@ export class SchoolEventService implements OnApplicationBootstrap, BeforeApplica
       aggregate_type: event.aggregate_type,
       aggregate_id: event.aggregate_id,
       school_id: event.school_id,
+      namespace_id: namespaceId,
       payload: parsePayload(event.payload),
       created_at: event.created_at instanceof Date ? event.created_at.toISOString() : event.created_at,
     }, sequence);
     if (accepted) client.lastSequence = sequence;
   }
 
-  private async readCurrentWatermark(): Promise<number> {
+  private async readCurrentWatermark(client: StreamClient): Promise<number> {
+    return this.runInClientEnvironment(client, () => this.queryCurrentWatermark());
+  }
+
+  private async queryCurrentWatermark(): Promise<number> {
     const result = await sql<{ sequence: string | number | null }>`
       SELECT last_sequence AS sequence FROM event_delivery_cursor WHERE singleton
     `.execute(this.db);
@@ -1729,7 +1725,7 @@ export class SchoolEventService implements OnApplicationBootstrap, BeforeApplica
   }
 
   private async advanceToCurrentWatermark(client: StreamClient): Promise<number> {
-    const watermark = await this.readCurrentWatermark();
+    const watermark = await this.readCurrentWatermark(client);
     // A full cache read supersedes the old cursor. Under normal operation this
     // only advances; replacing a cursor from another/reset database prevents a
     // permanently future Last-Event-ID from forcing full sync on every retry.
@@ -1748,7 +1744,12 @@ export class SchoolEventService implements OnApplicationBootstrap, BeforeApplica
   }
 
   private async recoverConnectedClients(): Promise<void> {
-    const clients = [...this.clients.values()].filter((client) => !client.closed);
+    await this.validateClientSessions(false, true);
+    // The PostgreSQL LISTEN connection belongs only to the authoritative Live
+    // data plane. Simulation connections recover through their own scoped poll.
+    const clients = [...this.clients.values()].filter((client) => (
+      !client.closed && client.binding.kind === "live"
+    ));
     await Promise.all(clients.map(async (client) => {
       client.replaying = true;
       try {
@@ -1780,7 +1781,7 @@ export class SchoolEventService implements OnApplicationBootstrap, BeforeApplica
     while (client.pendingEvents.size) {
       const pending = [...client.pendingEvents.entries()].sort(([left], [right]) => left - right);
       client.pendingEvents.clear();
-      for (const [, event] of pending) this.dispatchToClient(client, event);
+      for (const [, event] of pending) this.dispatchToClient(client, event, client.binding.namespace_id);
       if (client.replayOverflow) return this.finishReplay(client);
     }
     client.replaying = false;
@@ -1791,7 +1792,7 @@ export class SchoolEventService implements OnApplicationBootstrap, BeforeApplica
       this.closeClient(client);
       return false;
     }
-    const frame = `${sequence === undefined ? "" : `id: ${SSE_CURSOR_VERSION}-${sequence}\n`}event: ${eventName}\ndata: ${JSON.stringify(data)}\n\n`;
+    const frame = `${sequence === undefined ? "" : `id: ${executionRealtimeCursor(client.binding, sequence)}\n`}event: ${eventName}\ndata: ${JSON.stringify(data)}\n\n`;
     try {
       const accepted = client.reply.raw.write(frame);
       if (!accepted) {
@@ -1816,27 +1817,66 @@ export class SchoolEventService implements OnApplicationBootstrap, BeforeApplica
     if (!client.reply.raw.writableEnded) client.reply.raw.end();
   }
 
+  private runInClientEnvironment<T>(client: StreamClient, work: () => T): T {
+    const selected = this.executionScope?.current();
+    if (selected && (selected.namespace_id !== client.binding.namespace_id
+      || selected.institution_id !== client.binding.institution_id)) {
+      throw new Error("Realtime work cannot cross the selected execution-environment namespace.");
+    }
+    if (selected) return work();
+    if (!this.executionScope) {
+      if (client.binding.kind === "simulation") {
+        throw new Error("Simulation realtime requires the server execution-environment scope.");
+      }
+      // Direct unit/integration construction predates the globally injected
+      // scope. It remains safe only for the authoritative Live data plane.
+      return work();
+    }
+    return this.executionScope.run(client.binding.environment, work);
+  }
+
   private async heartbeatAndValidateSessions(): Promise<void> {
-    const liveClients = [...this.clients.values()].filter((client) => !client.closed);
-    if (!liveClients.length) return;
-    const sessionHashes = [...new Set(liveClients.map((client) => client.sessionHash))];
+    await this.validateClientSessions(true, false);
+  }
+
+  private async validateClientSessions(sendHeartbeat: boolean, failClosed: boolean): Promise<void> {
+    const connectedClients = [...this.clients.values()].filter((client) => !client.closed);
+    if (!connectedClients.length) return;
+    const sessionHashes = [...new Set(connectedClients.map((client) => client.sessionHash))];
     try {
-      const active = await sql<{ token_hash: string }>`
-        SELECT s.token_hash FROM auth_sessions s
+      const active = await sql<{ token_hash: string; namespace_id: string | null }>`
+        SELECT s.token_hash,
+          CASE
+            WHEN environment.token_hash IS NOT NULL
+              AND environment.expires_at > now()
+              AND environment.school_id=s.active_school_id
+              THEN environment.namespace_id
+            WHEN s.active_school_id IS NOT NULL
+              THEN 'live:' || s.active_school_id::text
+            ELSE NULL
+          END AS namespace_id
+        FROM auth_sessions s
         JOIN users u ON u.id=s.user_id AND u.is_active
+        LEFT JOIN auth_session_execution_environments environment
+          ON environment.token_hash=s.token_hash
         WHERE s.token_hash = ANY(${sessionHashes}::text[]) AND s.expires_at > now()
       `.execute(this.db);
-      const valid = new Set(active.rows.map((row) => row.token_hash));
-      for (const client of liveClients) {
-        if (!valid.has(client.sessionHash)) {
+      const currentNamespace = new Map(active.rows.map((row) => [row.token_hash, row.namespace_id]));
+      for (const client of connectedClients) {
+        const selectedNamespace = currentNamespace.get(client.sessionHash);
+        if (!selectedNamespace) {
           this.send(client, "session.expired", { reason: "session_invalid" });
           this.closeClient(client);
-        } else {
+        } else if (selectedNamespace !== client.binding.namespace_id) {
+          this.send(client, "environment.changed", { reason: "server_session_switched" });
+          this.closeClient(client);
+        } else if (sendHeartbeat) {
           try { client.reply.raw.write(": heartbeat\n\n"); } catch { this.closeClient(client); }
         }
       }
     } catch (error) {
       this.logger.warn(`SSE session validation failed: ${error instanceof Error ? error.message : String(error)}`);
+      if (failClosed) throw error;
     }
   }
 

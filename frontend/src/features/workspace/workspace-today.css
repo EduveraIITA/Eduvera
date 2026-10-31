@@ -1,0 +1,62 @@
+/* Today uses the same source actions as Work, with a short plan underneath. */
+.workspace-today { gap: 28px; padding-top: 0; }
+.workspace-today .workspace-section { gap: 12px; }
+.workspace-today .workspace-section > header { gap: 12px; min-height: 44px; padding: 0; }
+.workspace-today .workspace-section__link { min-height: 44px; flex-shrink: 0; font-size: 14px; }
+.workspace-today .workspace-today__context { display: flex; min-height: 44px; gap: 4px; align-items: flex-start; flex-direction: column; justify-content: center; }
+.workspace-today__context > strong { font-size: 16px; line-height: 1.5; }
+.workspace-today .workspace-freshness { min-width: 0; font-size: 12px; }
+.workspace-today-warning { margin: 0; padding: 12px 16px; border-radius: var(--thatcampus-radius-control); color: var(--thatcampus-warning); background: var(--thatcampus-warning-soft); font-size: 14px; line-height: 1.5; }
+.workspace-today-actions,
+.workspace-today-agenda { min-width: 0; margin: 0; padding: 0; list-style: none; }
+.workspace-today-actions { overflow: hidden; border: 1px solid var(--thatcampus-border); border-radius: var(--thatcampus-radius-row); background: var(--thatcampus-surface-row); box-shadow: var(--thatcampus-shadow-card); }
+.workspace-today-actions li + li { border-top: 1px solid var(--thatcampus-border); }
+.workspace-today-actions .workspace-work-item { min-height: 0; padding: 16px; grid-template-columns: 32px minmax(0,1fr); align-items: start; column-gap: 12px; row-gap: 8px; }
+.workspace-today-actions .workspace-work-item__icon { width: 32px; height: 32px; background: transparent; }
+.workspace-today-actions .workspace-work-item__icon svg { width: 26px; height: 26px; }
+.workspace-today-actions .workspace-work-item__meta { flex-wrap: wrap; gap: 4px 8px; font-size: 12px; line-height: 1.5; }
+.workspace-today-actions .workspace-work-item__meta b { letter-spacing: 0; text-transform: none; }
+.workspace-today-actions .workspace-work-item__body { gap: 4px; }
+.workspace-today-actions .workspace-work-item__body strong { font-size: 16px; line-height: 1.4; }
+.workspace-today-actions .workspace-work-item__body small { font-size: 14px; line-height: 1.5; }
+.workspace-today-actions .workspace-record__action { grid-column: 2; justify-self: start; justify-content: start; white-space: normal; font-size: 14px; }
+.workspace-today-actions .workspace-record__source { font-size: 12px; }
+.workspace-today-attention__status { margin: -4px 0 0; color: var(--thatcampus-ink-secondary); font-size: 14px; }
+.workspace-today-attention__remaining { display: flex; min-height: 44px; align-items: center; gap: 4px; justify-content: flex-end; color: var(--thatcampus-brand); font-size: 14px; font-weight: 600; }
+.workspace-current-list { display: grid; gap: 16px; }
+.workspace-today .workspace-current-activity { padding: 20px; border: 1px solid var(--thatcampus-border); border-radius: var(--thatcampus-radius-card); background: var(--thatcampus-surface-row); box-shadow: var(--thatcampus-shadow-card); }
+.workspace-current-activity__context { display: flex; align-items: center; gap: 12px; }
+.workspace-current-activity__icon { display: grid; width: 40px; height: 40px; flex: 0 0 40px; place-items: center; border-radius: var(--thatcampus-radius-control); color: var(--thatcampus-logo-green); background: var(--thatcampus-logo-green-soft); }
+.workspace-current-activity__time { margin: 0; color: var(--thatcampus-ink-secondary); font-size: 14px; line-height: 1.5; }
+.workspace-today .workspace-current-activity h3 { margin: 12px 0 6px; font-size: 22px; font-weight: 650; line-height: 1.3; letter-spacing: -.025em; }
+.workspace-today .workspace-current-activity__detail { margin: 0; color: var(--thatcampus-ink-secondary); font-size: 14px; line-height: 1.5; }
+.workspace-current-activity__action { display: inline-flex; min-height: 48px; margin-top: 16px; padding: 12px 16px; align-items: center; justify-content: center; gap: 12px; border-radius: var(--thatcampus-radius-control); color: var(--thatcampus-on-action); background: var(--thatcampus-action); box-shadow: var(--thatcampus-shadow-control); font-size: 15px; font-weight: 600; }
+.workspace-current-activity__evidence { margin-top: 12px; color: var(--thatcampus-ink-secondary); font-size: 12px; }
+.workspace-current-activity__evidence summary { display: flex; min-height: 44px; width: fit-content; align-items: center; cursor: pointer; text-decoration: underline; text-underline-offset: 3px; }
+.workspace-current-activity__evidence p { margin: 0; padding-bottom: 8px; line-height: 1.5; }
+.workspace-current-activity:is(.is-critical,.is-attention) { border-color: var(--thatcampus-warning); }
+.workspace-current-activity.is-critical { border-color: var(--thatcampus-danger); }
+.workspace-today .workspace-agenda-entry { display: grid; min-width: 0; min-height: 80px; padding: 16px 0; grid-template-columns: minmax(0,1fr) auto; gap: 12px; align-items: center; border-bottom: 0; color: var(--thatcampus-ink); }
+.workspace-today .workspace-agenda-entry.has-timing { grid-template-columns: 76px minmax(0,1fr) auto; }
+.workspace-today-agenda > li + li { border-top: 1px solid var(--thatcampus-border); }
+.workspace-today .workspace-agenda-entry__date { max-width: 76px; padding-right: 12px; border-right: 1px solid var(--thatcampus-border); color: var(--thatcampus-ink-secondary); font-size: 13px; line-height: 1.5; }
+.workspace-today .workspace-agenda-entry__copy { display: grid; min-width: 0; gap: 4px; }
+.workspace-today .workspace-agenda-entry__time { color: var(--thatcampus-ink-secondary); font-size: 13px; font-weight: 600; }
+.workspace-today .workspace-agenda-entry__copy strong { overflow-wrap: anywhere; font-size: 16px; line-height: 1.4; }
+.workspace-today .workspace-agenda-entry__copy small,
+.workspace-agenda-entry__status { color: var(--thatcampus-ink-secondary); font-size: 14px; line-height: 1.5; }
+.workspace-today .workspace-agenda-entry > svg { width: 16px; height: 16px; }
+.workspace-upcoming-more { border-top: 1px solid var(--thatcampus-border); }
+.workspace-upcoming-more > summary { display: flex; min-height: 48px; align-items: center; gap: 8px; list-style: none; color: var(--thatcampus-ink-secondary); font-size: 14px; cursor: pointer; }
+.workspace-upcoming-more > summary::-webkit-details-marker { display: none; }
+.workspace-upcoming-more > summary span { margin-left: auto; font-size: 12px; }
+.workspace-upcoming-more[open] > summary svg { transform: rotate(180deg); }
+.workspace-today :is(a,summary):focus-visible { outline: 2px solid var(--thatcampus-brand); outline-offset: 3px; }
+@media (min-width: 768px) {
+  .workspace-today { gap: 32px; }
+  .workspace-today .workspace-today__context { flex-direction: row; align-items: center; justify-content: space-between; }
+  .workspace-today-actions .workspace-work-item { grid-template-columns: 32px minmax(0,1fr) auto; align-items: center; }
+  .workspace-today-actions .workspace-record__action { grid-column: 3; }
+}
+
+.workspace-today-actions .workspace-work-item:focus-visible { outline-offset: -3px; }

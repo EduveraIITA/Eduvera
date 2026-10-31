@@ -1,0 +1,11 @@
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import {buildDayTimings} from '../../packages/contracts/src/schedule-timings';
+import {registerCategory,registerGroup,registerKindLabel,registerListParams} from '../../packages/contracts/src/activity-attendance-queue';
+
+
+import type {ActivityRegisterSummary} from '../../packages/contracts/src/activity-register';
+
+test('shared timings preserve actual lesson/break sequence and bounded campus day',() => {let id=0;const input = {start: '08:00',count: 3,minutes: 40,breakAfter: 2,breakMinutes: 15,days: [1,1,3],room: 'Class A'},rows = buildDayTimings(input,()=>String(++id));assert.equal(rows.length,8);assert.deepEqual(rows.slice(0,4).map(row => [row.title,row.starts_at,row.ends_at,row.room]),[['Lesson 1','08:00','08:40','Class A'],['Lesson 2','08:40','09:20','Class A'],['Break','09:20','09:35',''],['Lesson 3','09:35','10:15','Class A']]);assert.deepEqual([...new Set(rows.map(row => row.weekday))],[1,3]);assert.throws(() => buildDayTimings({...input,start: '23:00'},()=>''));assert.throws(() => buildDayTimings({...input,days: [8]},()=>''));});
+test('shared register classification retains explicit owning queue state and selected clock',() => {const value = {state: 'draft',starts_at: '2026-10-29T10:00:00Z'} as ActivityRegisterSummary;assert.equal(registerGroup(value,new Date('2026-10-29T09:00:00Z')),'upcoming');assert.equal(registerGroup(value,new Date('2026-10-29T11:00:00Z')),'needs_recording');assert.equal(registerGroup({...value,queue_category: 'automatic_pending'},new Date()),'automatic_pending');assert.equal(registerGroup({...value,occurrence_state: 'cancelled'},new Date()),'cancelled');assert.equal(registerCategory('students'),'all');assert.equal(registerKindLabel('future_context'),'future context');});
+test('opening and returning a register retains date/filter/page context while filter changes reset page',() => {const original = new URLSearchParams('date=2026-10-20&page=4&attendance_view=needs_recording&activity_kind=duty&search=North'),opened = registerListParams(original,{register_id: 'one'});assert.equal(registerListParams(opened,{register_id: '',occurrence_id: ''}).toString(),original.toString());assert.equal(registerListParams(original,{search: 'South'}).has('page'),false);});

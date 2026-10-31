@@ -98,7 +98,7 @@ describe("attendance continuity review", () => {
     await interact.click(screen.getByText("Enter a paper register"));
     expect(screen.getByRole("link", { name: /Enter sheet/ })).toHaveAttribute(
       "href",
-      "/principal/attendance?class_section_id=class-7a&date=2026-10-03&source=paper",
+      "/areas/attendance/coordination?class_section_id=class-7a&date=2026-10-03&source=paper",
     );
     expect(screen.getByText("4")).not.toBeVisible();
     await interact.click(screen.getByText("Processed · 3 Oct 2026"));

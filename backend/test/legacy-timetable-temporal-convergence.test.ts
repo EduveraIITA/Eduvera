@@ -11,10 +11,6 @@ const school = readFileSync(
   resolve(process.cwd(), "src/school/school.service.ts"),
   "utf8",
 );
-const activation = readFileSync(
-  resolve(process.cwd(), "src/institution-activation/institution-activation.service.ts"),
-  "utf8",
-);
 const migration = readFileSync(
   resolve(process.cwd(), "migrations/115_legacy_timetable_temporal_convergence.sql"),
   "utf8",
@@ -250,21 +246,4 @@ describe("legacy timetable temporal convergence", () => {
     expect(operation).toContain('"created",created');
   });
 
-  it("projects the activation quick-start timetable instead of bypassing the Core", () => {
-    const operation = between(
-      activation,
-      "  async quickStart(",
-      "  async review(",
-    );
-    expectOrdered(operation, [
-      "prepareEffectiveCoverageProjection",
-      "INSERT INTO timetable_slots",
-      "recordLegacyTimetableSlotChange",
-      "reconcileEffectiveCoverage",
-    ]);
-    expect(operation).toContain("previous_source_revision: null");
-    expect(operation).toContain("coverage_projection_preparation: coveragePreparation");
-    expect(operation).toContain("temporal_projection: temporalProjection");
-    expect(operation).toContain("coverage_reconciliation: coverageReconciliation");
-  });
 });

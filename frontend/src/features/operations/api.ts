@@ -70,6 +70,68 @@ export interface TeacherTimetableSlot {
   class_name: string;
 }
 
+export interface OperatingDaySession {
+  id: string;
+  occurrence_id: string;
+  period_number: number;
+  class_section_id: string;
+  class_label: string;
+  subject_label: string | null;
+  space_label: string | null;
+  teacher: { agent_id: string; label: string } | null;
+  title: string;
+  slot_type: "class" | "break" | "activity";
+  starts_at: string;
+  ends_at: string;
+  state: "completed" | "in_progress" | "upcoming";
+  attendance: {
+    register_id: string | null;
+    state: "not_started" | "in_progress" | "submitted" | "locked" | "not_required";
+    revision: number | null;
+    marked_count: number;
+    expected_count: number;
+    submitted_at: string | null;
+  };
+  source: { domain: "timetable" | "day_plan"; record_id: string; revision: number; change_kind: string };
+  target_path: string | null;
+}
+
+export interface OperatingDayProjection {
+  schema_version: 1;
+  environment: { kind: "live" | "simulation"; label: "Live" | "Simulation"; namespace_id: string | null };
+  institution: { id: string; name: string; timezone: string };
+  viewer: { role: "admin" | "staff"; agent_id: string | null };
+  date: string;
+  as_of: string;
+  summary: {
+    scheduled_sessions: number;
+    completed_sessions: number;
+    current_sessions: number;
+    upcoming_sessions: number;
+    registers_expected: number;
+    registers_submitted: number;
+    registers_in_progress: number;
+    registers_not_started: number;
+    gate_entries: number;
+    gate_exits: number;
+  };
+  now: OperatingDaySession[];
+  next: OperatingDaySession[];
+  sessions: OperatingDaySession[];
+  contradictions: Array<{
+    id: string;
+    kind: string;
+    student_id: string;
+    student_label: string;
+    explanation: string;
+    gate_observed_at: string;
+    expected_from: string;
+    expected_until: string;
+    attendance_status: string | null;
+  }>;
+  freshness: { schedule: "current"; attendance: "authoritative"; gate: "accepted_points" };
+}
+
 export interface TeacherHomeResponse {
   date: string;
   teacher: { id: string; name: string; role: "staff" | "admin" };
@@ -77,6 +139,12 @@ export interface TeacherHomeResponse {
   weekly_timetable: TeacherTimetableSlot[];
   home_actions: HomeAction[];
   more_attention?: Record<string, number>;
+  operating_day?: OperatingDayProjection | null;
+}
+
+export interface AssignedClassesWorkspaceResponse {
+  date: string;
+  classes: TeacherClassSummary[];
 }
 
 export interface TeacherRosterStudent {
@@ -244,6 +312,7 @@ export interface PrincipalHomeResponse {
   exceptions: Array<{ id: string; admission_number: string; name: string; class_section_id: string; class_name: string; recorded_days: number; percentage: number; threshold: number }>;
   home_actions: HomeAction[];
   more_attention?: Record<string, number>;
+  operating_day?: OperatingDayProjection | null;
 }
 
 export interface PrincipalTimetableResponse {
@@ -280,8 +349,20 @@ export function getTeacherHome(date = schoolDateToday()) {
   return apiFetch<TeacherHomeResponse>(query("/api/v1/screens/teacher/home/", { date }));
 }
 
+export function getAssignedClasses(date = schoolDateToday()) {
+  return apiFetch<AssignedClassesWorkspaceResponse>(query("/api/v1/areas/people/classes/", { date }));
+}
+
+export function getAssignedClass(classSectionId: string, date = schoolDateToday()) {
+  return apiFetch<TeacherAttendanceResponse>(query(`/api/v1/areas/people/classes/${encodeURIComponent(classSectionId)}/`, { date }));
+}
+
 export function getTeacherAttendance(classSectionId: string, date = schoolDateToday()) {
   return apiFetch<TeacherAttendanceResponse>(query("/api/v1/screens/teacher/attendance/", { class_section_id: classSectionId, date }));
+}
+
+export function getAttendanceRegister(classSectionId: string, date = schoolDateToday()) {
+  return apiFetch<TeacherAttendanceResponse>(query(`/api/v1/attendance-registers/${encodeURIComponent(classSectionId)}/`, { date }));
 }
 
 export interface AttendanceModelWorkspace {
@@ -289,6 +370,43 @@ export interface AttendanceModelWorkspace {
   campus_mode: "none" | "entry_only" | "entry_exit";
   capture_channels: string[];
   registers: TeacherClassSummary[];
+}
+
+export interface ResponsibilityAttendanceWorkspaceResponse extends AttendanceModelWorkspace {
+  surface: "registers" | "coordination" | "thresholds";
+  date: string;
+  continuity: AttendanceContinuityWorkspace | null;
+  thresholds: Array<{
+    id: string;
+    admission_number: string;
+    name: string;
+    class_section_id: string;
+    class_name: string;
+    recorded_days: number;
+    percentage: number;
+    threshold: number;
+  }> | null;
+  authority: {
+    capabilities: string[];
+    scopes: Array<{ kind: string; id?: string; label?: string }>;
+  };
+  context: {
+    institution_id: string;
+    environment: { kind: "live" | "simulation"; namespace_id: string | null };
+    as_of: string;
+  };
+}
+
+export function getResponsibilityAttendanceWorkspace(
+  surface: "registers" | "coordination" | "thresholds",
+  date = schoolDateToday(),
+  caseId?: string,
+) {
+  return apiFetch<ResponsibilityAttendanceWorkspaceResponse>(query("/api/v1/attendance/workspace", {
+    surface,
+    date,
+    case_id: caseId,
+  }));
 }
 
 export function getAttendanceModelWorkspace(date = schoolDateToday()) {

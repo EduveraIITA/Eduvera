@@ -1,5 +1,5 @@
 import { AlertCircle, CalendarClock, ChevronRight, List, Radio, X } from "lucide-react";
-import { useEffect, useRef } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { Link } from "react-router-dom";
 import { plannedHeadcount, roomCapacityPresentation, supportsSeatPattern } from "./roomOccupancy";
 import type { CampusViewResponse, CampusViewSpace, CampusViewZoneOverlay } from "./types";
@@ -17,7 +17,7 @@ function activityEvidence(item: ActivityItem) {
   if (item.state === "in_progress") return "In progress · Expected plan";
   if (item.state === "upcoming") return "Later today · Expected plan";
   if (item.state === "ended") return "Earlier today · Expected plan";
-  if (item.spatial_claim === "point_observation_only") return "Accepted point event";
+  if (item.spatial_claim === "point_observation_only") return item.state_dimension === "accepted" ? "Accepted point event" : "Observed point event";
   if (item.state_dimension === "accepted") return "Accepted record";
   if (item.state_dimension === "observed") return "Observed point";
   if (item.state_dimension === "expected") return "Expected plan";
@@ -31,37 +31,37 @@ export function CampusMapPanel({ mode, spaces, zones, activity, formatTime, form
   activity: ActivityItem[];
   formatTime: (date: Date) => string;
   formatClock: (date: Date) => string;
-  returnFocus: HTMLElement | null;
+  returnFocus: HTMLElement | SVGElement | null;
   onSelectSpace: (space: CampusViewSpace) => void;
   onClose: () => void;
 }) {
   const dialog = useRef<HTMLDialogElement>(null);
   const title = useRef<HTMLHeadingElement>(null);
+  const [activityLimit, setActivityLimit] = useState(30);
+  const close = useCallback(() => {
+    dialog.current?.close();
+    onClose();
+    window.setTimeout(() => returnFocus?.focus(), 0);
+  }, [onClose, returnFocus]);
 
   useEffect(() => {
     const node = dialog.current;
     if (!node) return;
     node.showModal();
     title.current?.focus();
-    const cancel = (event: Event) => { event.preventDefault(); onClose(); };
+    const cancel = (event: Event) => { event.preventDefault(); close(); };
     node.addEventListener("cancel", cancel);
     return () => {
       node.removeEventListener("cancel", cancel);
       if (node.open) node.close();
     };
-  }, [onClose]);
-
-  const close = () => {
-    dialog.current?.close();
-    onClose();
-    window.setTimeout(() => returnFocus?.focus(), 0);
-  };
+  }, [close]);
 
   const select = (space: CampusViewSpace) => {
     dialog.current?.close();
     onSelectSpace(space);
   };
-  const visibleActivity = activity.slice(0, 30);
+  const visibleActivity = activity.slice(0, activityLimit);
   const timetable = activity.filter((item) => item.spatial_claim === "expected_context_only"
     && (item.state === "in_progress" || item.state === "upcoming" || item.state === "ended"));
   const eyebrow = mode === "spaces" ? "Accessible map directory" : mode === "timetable" ? "Published schedule" : "Current snapshot";
@@ -107,6 +107,7 @@ export function CampusMapPanel({ mode, spaces, zones, activity, formatTime, form
           <div><strong>{item.title}</strong><p>{item.detail}</p><small>{activityEvidence(item)} · {item.source_label} · {formatTime(new Date(item.occurred_at))}</small></div>
           {item.target_path ? <Link to={item.target_path} aria-label={`Open ${item.title}`}><ChevronRight size={18} /></Link> : null}
         </li>)}</ol>
+        {visibleActivity.length < activity.length ? <button type="button" className="campus-scene-button" onClick={() => setActivityLimit(limit => limit + 30)}>Load more activity</button> : null}
       </> : <div className="campus-map-panel__empty"><List size={23} /><strong>No recorded activity yet</strong><p>Silence is not treated as absence. Source-backed campus events will appear here.</p></div>}
     </div>
   </dialog>;

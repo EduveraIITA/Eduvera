@@ -31,6 +31,8 @@ export interface ParentLeaveDraft {
 
 export interface ParentLeavePageProps {
   data: ParentLeaveData;
+  /** Render inside the neutral responsibility workspace instead of a persona shell. */
+  embedded?: boolean;
   onSelectChild?: (childId: string) => ParentPageAction;
   onAuthorize?: (requestId: string, guardianRemark: string) => ParentPageAction;
   onRequestClarification?: (requestId: string, note: string) => ParentPageAction;
@@ -96,6 +98,7 @@ function LeaveHistory({ data, focusRequestId }: { data: ParentLeaveData; focusRe
 
 export function ParentLeavePage({
   data,
+  embedded = false,
   onSelectChild,
   onAuthorize,
   onRequestClarification,
@@ -201,8 +204,7 @@ export function ParentLeavePage({
     setDraftError("");
   };
 
-  return (
-    <ParentShell active="leave" pageLabel="Leave" child={data.child} onSelectChild={onSelectChild}>
+  const content = (
       <div className="parent-stack leave-page">
         <div className="leave-tabs" role="tablist" aria-label="Leave views">
           <button className={tab === "pending" ? "is-active" : ""} type="button" role="tab" aria-selected={tab === "pending"} onClick={() => setTab("pending")}>
@@ -364,6 +366,11 @@ export function ParentLeavePage({
           </section>
         ) : null}
       </div>
+  );
+  if (embedded) return <div className="parent-app parent-app--embedded">{content}</div>;
+  return (
+    <ParentShell active="leave" pageLabel="Leave" child={data.child} onSelectChild={onSelectChild}>
+      {content}
     </ParentShell>
   );
 }

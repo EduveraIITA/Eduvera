@@ -22,11 +22,15 @@ type RowMap = Record<string, Array<Record<string, unknown>>>;
 function transactionWith(rows: RowMap) {
   return {
     selectFrom(table: string) {
-      const result = rows[table] ?? [];
+      let result = rows[table] ?? [];
       const query = {
         select: () => query,
         selectAll: () => query,
-        where: () => query,
+        where: (column: string, operator: string, value: unknown) => {
+          const key = column.split('.').at(-1)!;
+          result = result.filter(row => operator === 'in' ? Array.isArray(value) && value.includes(row[key]) : row[key] === value);
+          return query;
+        },
         forShare: () => query,
         execute: () => Promise.resolve(result),
         executeTakeFirst: () => Promise.resolve(result[0]),
@@ -62,6 +66,8 @@ function authorityRows(): RowMap {
     }],
     "institution_governance_appointments as appointment": [{
       id: ids.appointment,
+      school_id: ids.school,
+      office_id: ids.office,
       person_id: ids.person,
       linked_user_id: ids.owner,
       starts_on: "2026-10-17",
@@ -90,13 +96,13 @@ function authorityRows(): RowMap {
     school_memberships: [{ id: ids.membership, user_id: ids.owner, school_id: ids.school, role: "staff", is_active: true }],
     institution_authority_sources: [
       {
-        id: ids.sourceA, revision: 6, source_kind: "governing_instrument", reference: "GOV-1",
+        id: ids.sourceA, school_id: ids.school, revision: 6, source_kind: "governing_instrument", reference: "GOV-1",
         provision: "Section 4", evidence_reference: "document:GOV-1", verification_state: "verified",
         effective_from: "2026-04-01", effective_until: null, verified_by: ids.owner,
         verified_at: new Date("2026-04-01T04:00:00.000Z"),
       },
       {
-        id: ids.sourceB, revision: 7, source_kind: "appointment_order", reference: "APPT-1",
+        id: ids.sourceB, school_id: ids.school, revision: 7, source_kind: "appointment_order", reference: "APPT-1",
         provision: "Principal appointment", evidence_reference: "document:APPT-1", verification_state: "self_attested",
         effective_from: "2026-04-01", effective_until: null, verified_by: null, verified_at: null,
       },
@@ -166,6 +172,23 @@ describe("governance decision-authority port", () => {
       ids.otherAdmin,
       new Date("2026-10-17T06:00:00.000Z"),
     )).rejects.toThrow(/current officeholder/i);
+  });
+
+  it("does not turn a manually confirmed fee rule into adopted current Finance authority", async () => {
+    const rows = authorityRows();
+    const at = new Date("2026-10-17T06:00:00.000Z");
+    await expect(service().resolveDecisionOwner(transactionWith(rows), ids.school, "fee_instalment_decision", at))
+      .rejects.toThrow("No confirmed decision route is effective for fee instalment.");
+    rows.institution_decision_matter_rules![0]!.code = "fee_instalment_decision";
+    await expect(service().assertDecisionAuthority(transactionWith(rows), ids.school, "fee_instalment_decision", ids.owner, at))
+      .rejects.toThrow("Current Finance identity verification is unavailable.");
+    rows.institution_decision_matter_rules![0]!.decision_mode = "collective";
+    await expect(service().resolveDecisionOwner(transactionWith(rows), ids.school, "fee_instalment_decision", at))
+      .rejects.toThrow("Fee instalment requires one configured individual or delegated decision owner.");
+    rows.institution_decision_matter_rules![0]!.decision_mode = "individual";
+    rows.institution_authority_sources![0]!.verification_state = "superseded";
+    await expect(service().resolveDecisionOwner(transactionWith(rows), ids.school, "fee_instalment_decision", at))
+      .rejects.toThrow("The fee instalment decision route has missing, unconfirmed or expired authority evidence.");
   });
 
   it("keeps same-day rules, appointments and authority sources effective through that date", async () => {
@@ -270,7 +293,8 @@ describe("governance decision-authority port", () => {
     const seedSource = readFileSync(new URL("../src/database/seed-governance-authority.ts", import.meta.url), "utf8");
     expect(moduleSource).toContain("GOVERNANCE_DECISION_AUTHORITY_PORT");
     expect(moduleSource).toContain("useExisting: GovernanceService");
-    expect(moduleSource).toContain("exports: [GOVERNANCE_DECISION_AUTHORITY_PORT]");
+    expect(moduleSource).toContain("exports: [GOVERNANCE_DECISION_AUTHORITY_PORT, FeeAuthorityService]");
     expect(seedSource).not.toContain("staff_leave_decision");
+    expect(seedSource).not.toContain("fee_instalment_decision");
   });
 });

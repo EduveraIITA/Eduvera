@@ -4,7 +4,7 @@ import { MemoryRouter } from "react-router-dom";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { ReactNode } from "react";
 import type { ChatReport, ChatReportQueue } from "./api";
-import { PrincipalSafeguardingRoute } from "./SafeguardingPage";
+import { WorkspaceCareRoute } from "./SafeguardingPage";
 
 const api = vi.hoisted(() => ({
   getChatReport: vi.fn(),
@@ -13,14 +13,27 @@ const api = vi.hoisted(() => ({
   updateChatReport: vi.fn(),
 }));
 
+const workspace = vi.hoisted(() => ({
+  capabilities: ["restricted_care.intake", "safeguarding.review"] as string[],
+}));
+
 vi.mock("./api", () => api);
-vi.mock("../auth/AuthContext", () => ({
-  useAuth: () => ({
-    memberships: [{ role: "admin", school_id: "school-1", school_name: "Cambridge International School" }],
+vi.mock("../simulation/ExecutionEnvironmentContext", () => ({
+  useExecutionEnvironment: () => ({ mode: "live" }),
+}));
+vi.mock("../workspace/useWorkspaceManifest", () => ({
+  useWorkspaceManifest: () => ({
+    data: {
+      context: { institution_id: "school-1", institution_label: "Cambridge International School", environment: { kind: "live" } },
+      areas: [{ key: "care", surfaces: [{ key: "concerns", capabilities: workspace.capabilities }] }],
+    },
+    isPending: false,
+    error: null,
+    refetch: vi.fn(),
   }),
 }));
 vi.mock("../restricted-care/RestrictedCarePage", () => ({
-  RestrictedCarePage: ({ messageReports }: { messageReports?: ReactNode }) => <>{messageReports}</>,
+  ProtectedCareWorkspace: ({ messageReports }: { messageReports?: ReactNode }) => <><span>Protected care workspace</span>{messageReports}</>,
 }));
 
 const exactReport: ChatReport = {
@@ -59,6 +72,7 @@ const emptyQueue: ChatReportQueue = {
 afterEach(cleanup);
 beforeEach(() => {
   vi.clearAllMocks();
+  workspace.capabilities = ["restricted_care.intake", "safeguarding.review"];
   api.getChatReportReviewers.mockResolvedValue({ results: [] });
   api.updateChatReport.mockResolvedValue(exactReport);
 });
@@ -72,8 +86,8 @@ describe("focused safeguarding report loading", () => {
 
     render(
       <QueryClientProvider client={client}>
-        <MemoryRouter initialEntries={["/principal/safeguarding?section=message_reports&report=report-101"]}>
-          <PrincipalSafeguardingRoute />
+        <MemoryRouter initialEntries={["/areas/care/concerns?section=message_reports&report=report-101"]}>
+          <WorkspaceCareRoute />
         </MemoryRouter>
       </QueryClientProvider>,
     );
@@ -83,6 +97,24 @@ describe("focused safeguarding report loading", () => {
     expect(api.getChatReport).toHaveBeenCalledWith("report-101");
 
     act(() => { resolveQueue(emptyQueue); });
+    client.clear();
+  });
+
+  it("does not load message moderation for a care responsibility without review authority", async () => {
+    workspace.capabilities = ["restricted_care.intake"];
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false }, mutations: { retry: false } } });
+
+    render(
+      <QueryClientProvider client={client}>
+        <MemoryRouter initialEntries={["/areas/care/concerns"]}>
+          <WorkspaceCareRoute />
+        </MemoryRouter>
+      </QueryClientProvider>,
+    );
+
+    expect(await screen.findByText("Protected care workspace")).toBeVisible();
+    expect(api.getChatReports).not.toHaveBeenCalled();
+    expect(api.getChatReportReviewers).not.toHaveBeenCalled();
     client.clear();
   });
 });

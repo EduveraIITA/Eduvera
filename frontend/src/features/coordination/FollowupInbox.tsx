@@ -1,7 +1,8 @@
 import { useEffect, useMemo, useState } from "react";
 import { useInfiniteQuery, useQuery } from "@tanstack/react-query";
-import { CheckCheck, ChevronDown, Clock3, MessageCircleMore, MessageSquare } from "lucide-react";
+import { CheckCheck, ChevronDown, Clock3, MessageCircleMore } from "lucide-react";
 import { useOptionalAuth } from "../auth/AuthContext";
+import { ProductIcon } from "../../components/ProductIcon";
 import { getFollowup, getFollowups, type FollowupContext } from "./api";
 import { FollowupThread } from "./FollowupThread";
 import "./followups.css";
@@ -56,7 +57,7 @@ function Inbox({ context, studentId, userId, hideWithoutOpenFollowups = false, s
   }, [initialFollowupId, records]);
   if (!initialFollowupId && hideWithoutOpenFollowups && filter === "open" && (query.isPending || query.isError || records.length === 0)) return null;
   return <section className={`followup-panel${showHeading ? "" : " followup-panel--standalone"}`} id="attendance-followups" aria-label="Attendance follow-ups">
-    <header className="followup-panel__heading">{showHeading ? <div><span className="followup-eyebrow">School & home</span><h2><MessageSquare size={20} />Attendance follow-ups</h2></div> : null}
+    <header className="followup-panel__heading">{showHeading ? <div><span className="followup-eyebrow">School & home</span><h2><ProductIcon name="messages" size={28} />Attendance follow-ups</h2></div> : null}
       <div className="followup-filters" role="group" aria-label="Follow-up status">
         {(["open", "resolved"] as const).map((value) => <button key={value} type="button" aria-pressed={filter === value} onClick={() => { setFilter(value); setSelected(null); }}>{value === "open" ? "Open" : "Resolved"}</button>)}
       </div>

@@ -1,0 +1,8 @@
+import type { ArrangedVisit, VisitDetail, VisitOptions, VisitsWorkspace } from "./visitApi";
+
+export function visitFixture(overrides: Partial<ArrangedVisit> = {}): ArrangedVisit {
+  return { id: "visit-1", revision: 1, title: "Laboratory demonstration", person: null, guest_name: "Riverview School", guest_label: "Riverview School", party_size: 12, starts_at: "2026-10-27T09:00:00Z", ends_at: "2026-10-27T10:00:00Z", place: { id: "room", label: "Robotics laboratory", kind: "room", campus_label: "Main campus" }, contact: { id: "contact", label: "Meera Das", revision: 3 }, state: "confirmed", created_at: "2026-10-26T08:00:00Z", updated_at: "2026-10-26T08:00:00Z", cancelled_at: null, last_movement: null, ...overrides };
+}
+export function visitDetail(overrides: Partial<VisitDetail> = {}): VisitDetail { return { visit: visitFixture(), can_edit: true, can_cancel: true, can_record_arrival: true, can_record_exit: true, ...overrides }; }
+export function visitPage(overrides: Partial<VisitsWorkspace> = {}): VisitsWorkspace { return { visits: [visitFixture()], timezone: "UTC", can_manage: true, totals: { upcoming: 1, past: 0, cancelled: 0 }, pagination: { page: 1, page_size: 10, total: 1, total_pages: 1 }, ...overrides }; }
+export function visitOptions(): VisitOptions { return { actor: { person_id: "contact", label: "Meera Das", revision: 3 }, people: [{ id: "person-1", label: "Aarav Sharma", revision: 8 }, { id: "contact", label: "Meera Das", revision: 3 }], places: [{ id: "room", label: "Robotics laboratory", kind: "room", campus_label: "Main campus" }], timezone: "UTC", pagination: { page: 1, page_size: 25, people_has_more: false, places_has_more: false } }; }

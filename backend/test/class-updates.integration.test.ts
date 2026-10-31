@@ -11,7 +11,7 @@ afterAll(() => db.destroy());
 it("scopes class activity, private replies, terms and unread changes without a student anchor", async () => {
   await db.transaction().execute(async tx => {
     await sql`CREATE TEMP TABLE academic_terms(id uuid,starts_on date,ends_on date) ON COMMIT DROP`.execute(tx);
-    await sql`CREATE TEMP TABLE diary_items(id uuid,class_section_id uuid,term_id uuid,author_id uuid,title text,body text,date date,published_at timestamptz) ON COMMIT DROP`.execute(tx);
+    await sql`CREATE TEMP TABLE diary_items(id uuid,class_section_id uuid,term_id uuid,author_id uuid,title text,body text,date date,published_at timestamptz,item_type text DEFAULT 'note',school_id uuid,subject_id uuid) ON COMMIT DROP`.execute(tx);
     await sql`CREATE TEMP TABLE diary_notes(id uuid,item_id uuid,body text,created_at timestamptz) ON COMMIT DROP`.execute(tx);
     await sql`CREATE TEMP TABLE day_plans(id uuid,class_section_id uuid) ON COMMIT DROP`.execute(tx);
     await sql`CREATE TEMP TABLE notifications(id uuid,recipient_id uuid,title text,body text,metadata jsonb,created_at timestamptz,read_at timestamptz) ON COMMIT DROP`.execute(tx);
@@ -22,7 +22,7 @@ it("scopes class activity, private replies, terms and unread changes without a s
       [ownItem,cls,term,teacher,"Assigned note",true], [otherItem,cls,term,otherTeacher,"Other teacher note",true],
       [randomUUID(),otherClass,term,teacher,"Wrong class",true], [randomUUID(),cls,oldTerm,teacher,"Wrong term",true],
       [randomUUID(),cls,term,teacher,"Unpublished",false],
-    ] as const) await sql`INSERT INTO diary_items VALUES(${id}::uuid,${classId}::uuid,${termId}::uuid,${author}::uuid,${title},'Body',${date}::date,${published ? sql`now()-interval '1 minute'` : sql`NULL`})`.execute(tx);
+    ] as const) await sql`INSERT INTO diary_items(id,class_section_id,term_id,author_id,title,body,date,published_at) VALUES(${id}::uuid,${classId}::uuid,${termId}::uuid,${author}::uuid,${title},'Body',${date}::date,${published ? sql`now()-interval '1 minute'` : sql`NULL`})`.execute(tx);
     await sql`INSERT INTO diary_notes VALUES (${randomUUID()}::uuid,${ownItem}::uuid,'Reply for this teacher',now()),(${randomUUID()}::uuid,${otherItem}::uuid,'Private reply for someone else',now())`.execute(tx);
     await sql`INSERT INTO day_plans VALUES(${plan}::uuid,${cls}::uuid)`.execute(tx);
     for (const recipient of [teacher,otherTeacher]) await sql`INSERT INTO notifications VALUES(${randomUUID()}::uuid,${recipient}::uuid,'Plan updated','Change',${JSON.stringify({day_plan_id:plan})}::jsonb,now(),NULL)`.execute(tx);

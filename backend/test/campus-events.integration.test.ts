@@ -7,6 +7,7 @@ import type { CampusEventDto } from "../src/campus-events/contracts.js";
 import { DatabaseService } from "../src/database/database.service.js";
 import { SchoolEventService } from "../src/school/school-event.service.js";
 import { requireIsolatedTestDatabaseUrl } from "./test-database.js";
+import { ownedParticipationTestServices } from './owned-participation.test-support.js';
 
 const isolated = process.env.TEST_DATABASE_ISOLATED === "true";
 const databaseUrl = isolated ? requireIsolatedTestDatabaseUrl(process.env.DATABASE_URL) : "postgresql://invalid.invalid/unused";
@@ -45,7 +46,8 @@ describe.skipIf(!isolated)("campus event business rules", () => {
   let picnicSessionTimes: { id: string; starts_at: Date; ends_at: Date }[] = [];
 
   beforeAll(async () => {
-    service = new CampusEventsService(new DatabaseService(), new SchoolEventService(new DatabaseService()));
+    const database=new DatabaseService(),participation=ownedParticipationTestServices(database);
+    service = new CampusEventsService(database, new SchoolEventService(database),participation.bridge,participation.authorities,participation.core,participation.footprints,participation.planning);
     const context = (await pool.query<{
       school_id: string; class_id: string; subject_id: string;
       valid_start: Date; valid_end: Date; sunday_start: Date; sunday_end: Date;

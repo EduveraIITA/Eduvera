@@ -59,6 +59,8 @@ export interface StudentEligibilityPageProps {
   onAskCopilot?: AttendanceCopilotHandler;
   onViewTimetable?: () => void;
   onSubmitDocument?: (payload: AbsenceDocumentPayload) => void | Promise<void>;
+  /** The responsibility-composed Attendance Area owns the shared shell. */
+  embedded?: boolean;
 }
 
 export const demoEligibilityData: StudentEligibilityData = {
@@ -94,6 +96,7 @@ export function StudentEligibilityPage({
   proFeaturesEnabled = false,
   onViewTimetable,
   onSubmitDocument,
+  embedded = false,
 }: StudentEligibilityPageProps) {
   const navigate = useNavigate();
   const [sheetOpen, setSheetOpen] = useState(false);
@@ -167,8 +170,7 @@ export function StudentEligibilityPage({
     }
   }
 
-  return (
-    <StudentShell activeNav="attendance" routes={routes} className={data.className}>
+  const content = <>
       <div className="student-page-stack eligibility-page">
         <section className="eligibility-greeting">
           <div className="eligibility-greeting__meta">
@@ -196,7 +198,7 @@ export function StudentEligibilityPage({
           </div>
         </section>
 
-        <button className="soft-action" type="button" onClick={onViewTimetable ?? (() => navigate("/student/timetable"))}><CalendarDays size={19} />{data.nextClass ? `Next: ${data.nextClass.name} · ${data.nextClass.time}` : "View timetable"}</button>
+        <button className="soft-action" type="button" onClick={onViewTimetable ?? (() => navigate("/areas/timetable/schedule?scope=self"))}><CalendarDays size={19} />{data.nextClass ? `Next: ${data.nextClass.name} · ${data.nextClass.time}` : "View timetable"}</button>
         {data.nextClass ? <p className="workspace-context">{data.nextClass.room} · {data.nextClass.block} · {data.nextClass.teacher} · {data.nextClass.startsIn}</p> : null}
         {proFeaturesEnabled && <button className="copilot-question" type="button" onClick={() => { setCopilotQuestion(attendanceQuestion); setCopilotOpen(true); }}>
           <span><Sparkles size={18} /></span>
@@ -247,6 +249,7 @@ export function StudentEligibilityPage({
         onClose={() => setCopilotOpen(false)}
         onAsk={onAskCopilot}
       />
-    </StudentShell>
-  );
+    </>;
+  if (embedded) return content;
+  return <StudentShell activeNav="attendance" routes={routes} className={data.className}>{content}</StudentShell>;
 }

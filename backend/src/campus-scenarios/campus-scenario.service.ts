@@ -8,6 +8,10 @@ import {
   NotFoundException,
 } from "@nestjs/common";
 import type { AuthUser } from "../common/request.js";
+import type {
+  TransientExecutionRunCatalog,
+  TransientExecutionRunReference,
+} from "../campus-model-core/transient-execution-run.contracts.js";
 import {
   InMemoryScenarioRunStore,
   IsolatedScenarioEngine,
@@ -98,10 +102,43 @@ const metricPresentation: Record<string, Pick<CampusScenarioMetricView,
 
 interface RunMetadata {
   school_id: string;
+  scenario_kind: CampusScenarioRunView["scenario_kind"];
   created_at: string;
+  time_zone: string;
   horizon_days: number;
   intervention: CampusScenarioRunView["intervention"];
   counts: CampusScenarioRepositorySnapshot["counts"];
+  counterpart_coverage: CampusScenarioRunView["run_local_counterpart_coverage"];
+}
+
+function runLocalCounterpartCoverage(
+  snapshot: CampusScenarioRepositorySnapshot,
+): CampusScenarioRunView["run_local_counterpart_coverage"] {
+  const counterpartsByKind = {
+    human: 0,
+    team: 0,
+    device: 0,
+    integration: 0,
+    software: 0,
+  };
+  const readiness = { modelled: 0, passive: 0, unsupported: 0 };
+  let counterpartCount = 0;
+  for (const identity of snapshot.identities) {
+    if (!("counterpart" in identity)) continue;
+    counterpartCount += 1;
+    counterpartsByKind[identity.counterpart.source_agent_kind] += 1;
+    readiness[identity.counterpart.readiness] += 1;
+  }
+  return {
+    scope: "captured_active_model_core_agents",
+    source_agent_count: snapshot.counts.agents,
+    counterpart_count: counterpartCount,
+    coverage: counterpartCount === snapshot.counts.agents ? "complete" : "partial",
+    counterparts_by_kind: counterpartsByKind,
+    readiness,
+    behaviour_parity: false,
+    explanation: "Counts cover only active Model Core agents captured in this run-local snapshot. Readiness reports registered counterpart behaviour; it does not claim application or real-person parity.",
+  };
 }
 
 function maximumRevision(reference: string | undefined): number | null {
@@ -127,7 +164,7 @@ interface ResolvedBehaviourPolicy {
 }
 
 @Injectable()
-export class CampusScenarioService {
+export class CampusScenarioService implements TransientExecutionRunCatalog {
   private readonly engine = new IsolatedScenarioEngine();
   private readonly executor = new CampusOperationsScenarioExecutor();
   private readonly store = new InMemoryScenarioRunStore({
@@ -275,6 +312,7 @@ export class CampusScenarioService {
       run: {
         id: result.run_id,
         status: "completed",
+        scenario_kind: metadata.scenario_kind,
         created_at: metadata.created_at,
         snapshot_at: result.snapshot_at,
         expires_at: result.expires_at,
@@ -285,6 +323,30 @@ export class CampusScenarioService {
         metrics,
         progress: 100,
         failure_reason: null,
+        execution_environment: {
+          mode: "simulation",
+          namespace_id: result.namespace_id,
+          run_id: result.run_id,
+          virtual_clock: {
+            now: result.horizon.from,
+            time_zone: metadata.time_zone,
+          },
+          source_snapshot_at: result.snapshot_at,
+          expires_at: result.expires_at,
+        },
+        projection_capabilities: {
+          application_parity: false,
+          supported: ["campus_performance"],
+          unsupported: [
+            "today",
+            "timetable",
+            "attendance",
+            "requests",
+            "notifications",
+            "campus_view",
+          ],
+        },
+        run_local_counterpart_coverage: metadata.counterpart_coverage,
         side_effect_policy: {
           mode: "sink_only",
           production_writes: false,
@@ -309,6 +371,9 @@ export class CampusScenarioService {
           deterministic_seed: result.deterministic_seed,
           executor: result.executor,
           ensemble_sample_count: result.ensemble.sample_count,
+          identity_manifest_hash: result.identity_manifest_hash,
+          identity_count: result.identity_manifest.identities.length,
+          configuration_ref_count: result.identity_manifest.configuration_refs.length,
         },
         stochastic_policy: result.ensemble.behaviour_policy,
       },
@@ -394,158 +459,188 @@ export class CampusScenarioService {
 
   async create(user: AuthUser, schoolId: string, rawInput: unknown): Promise<CampusScenarioResponse> {
     const parsed = createCampusScenarioSchema.safeParse(rawInput);
-    if (!parsed.success) throw new BadRequestException("Choose a valid 7–30 day scenario and intervention.");
+    if (!parsed.success) {
+      throw new BadRequestException("Choose a valid 7–30 day snapshot or supported intervention.");
+    }
     const input = parsed.data;
+    const snapshotOnly = input.kind === "baseline_snapshot";
+    const interventionInput = snapshotOnly ? null : input.intervention;
+    const behaviourPolicyVersionId = snapshotOnly ? undefined : input.behaviour_policy_version_id;
     await this.assertAdmin(user, schoolId);
     this.acquireExecutionSlot(schoolId);
     try {
-    this.prepareStoreCapacity(schoolId);
-    const [school, campuses] = await Promise.all([
-      this.repository.school(schoolId),
-      this.repository.campuses(schoolId),
-    ]);
-    if (!school) throw new NotFoundException("Institution not found.");
-    const campus = input.campus_id
-      ? campuses.find((candidate) => candidate.id === input.campus_id)
-      : (campuses.find((candidate) => candidate.is_primary) ?? campuses[0]);
-    if (!campus) throw new NotFoundException("An active campus is required for this scenario.");
-    const createdAt = new Date().toISOString();
-    const target = await this.repository.resolveTarget(
-      schoolId,
-      campus.id,
-      input.intervention.type,
-      input.intervention.target_id,
-      createdAt,
-    );
-    if (!target) throw new BadRequestException("The intervention target is not active in the selected campus.");
-
-    const horizonTo = new Date(Date.parse(createdAt) + input.horizon_days * 24 * 60 * 60 * 1_000).toISOString();
-    const interventionStart = Date.parse(input.intervention.starts_at);
-    const interventionEnd = Date.parse(input.intervention.ends_at);
-    if (interventionEnd <= interventionStart
-      || interventionEnd <= Date.parse(createdAt)
-      || interventionStart < Date.parse(createdAt) - 5 * 60 * 1_000
-      || interventionEnd > Date.parse(horizonTo)) {
-      throw new BadRequestException("The intervention must fall within the selected future horizon.");
-    }
-    const scenarioId = randomUUID();
-    const runId = randomUUID();
-    const expiresAt = new Date(Date.parse(createdAt) + RUN_TTL_MILLISECONDS).toISOString();
-    const repositorySnapshot = await this.repository.snapshot({
-      school_id: schoolId,
-      campus_id: campus.id,
-      timezone: campus.timezone || school.timezone || "Asia/Kolkata",
-      captured_at: createdAt,
-      horizon_to: horizonTo,
-      target,
-      scenario_id: scenarioId,
-      behaviour_policy_version_id: input.behaviour_policy_version_id ?? null,
-    });
-    const resolvedPolicy = this.resolveBehaviourPolicy(
-      repositorySnapshot.approved_behaviour_policy,
-      input.behaviour_policy_version_id,
-      createdAt,
-    );
-    if (repositorySnapshot.snapshot.sessions.length > MAX_SNAPSHOT_SESSIONS) {
-      throw new HttpException(
-        `This snapshot exceeds the ${MAX_SNAPSHOT_SESSIONS}-session synchronous scenario limit. Narrow the campus or horizon.`,
-        HttpStatus.PAYLOAD_TOO_LARGE,
-      );
-    }
-    if (target.type === "teacher_unavailable"
-      && !repositorySnapshot.snapshot.sessions.some((session) => session.teacher_agent_id === target.id)) {
-      throw new BadRequestException("This teacher has no effective sessions in the selected campus and horizon.");
-    }
-    const canonicalIntervention = {
-      ...input.intervention,
-      target_id: target.id,
-      target_label: target.label,
-    };
-    const affectedSessionCount = repositorySnapshot.snapshot.sessions.filter((session) => (
-      Date.parse(session.starts_at) < interventionEnd
-      && Date.parse(session.ends_at) > interventionStart
-      && (target.type === "teacher_unavailable"
-        ? session.teacher_agent_id === target.id
-        : session.space_id === target.id)
-    )).length;
-    if (affectedSessionCount === 0) {
-      throw new BadRequestException(
-        "No effective session for this target overlaps the intervention window. Choose one of the target's eligible session windows.",
-      );
-    }
-    const sampleCount = resolvedPolicy?.sample_count ?? 0;
-    const executionUnits = repositorySnapshot.snapshot.sessions.length
-      * (2 + (sampleCount * 2));
-    if (executionUnits > MAX_EXECUTION_UNITS) {
-      throw new HttpException(
-        "This scenario exceeds the synchronous execution budget. Use a shorter horizon or deterministic mode.",
-        HttpStatus.PAYLOAD_TOO_LARGE,
-      );
-    }
-
-    let result: ScenarioRunResult;
-    try {
-      result = await this.engine.run({
-        mode: "simulation",
-        scenario_id: scenarioId,
-        namespace_id: `scenario:${scenarioId}`,
-        institution_id: schoolId,
-        run_id: runId,
-        requested_at: createdAt,
-        expires_at: expiresAt,
-        deterministic_seed: runId,
-        source: {
-          snapshot: repositorySnapshot.snapshot as unknown as ScenarioValue,
-          snapshot_version: "campus_operations_snapshot/v1",
-          snapshot_at: createdAt,
-          source_revisions: repositorySnapshot.source_revisions,
-        },
-        horizon: { from: createdAt, to: horizonTo },
-        configuration_snapshot: [
-          ...repositorySnapshot.configuration_snapshot,
-          ...(resolvedPolicy ? [{
-            kind: "behaviour" as const,
-            key: resolvedPolicy.policy.policy_id,
-            version_id: resolvedPolicy.policy.version_id,
-            configuration_hash: resolvedPolicy.policy.configuration_hash,
-            effective_from: resolvedPolicy.policy.effective_from,
-            effective_until: resolvedPolicy.policy.effective_until,
-          }] : []),
-        ],
-        identities: repositorySnapshot.identities,
-        assumptions: [
-          "The simulation is a transient copy-on-write projection and cannot update live campus records.",
-          "Only schedule, staffing, active enrolment counts and canonical-space capacity are connected in this first scenario adapter.",
-          "Historical coverage evidence is privacy-minimized cohort evidence and is never activated as behaviour without an explicit versioned policy.",
-          "The point-in-time capture was assembled in one read-only repeatable-read database transaction.",
-        ],
-        baseline: { key: "baseline", label: "Current plan", intervention: null },
-        alternative: {
-          key: "alternative",
-          label: `${target.label} unavailable`,
-          intervention: canonicalIntervention,
-        },
-        monte_carlo: resolvedPolicy ? {
-          sample_count: resolvedPolicy.sample_count,
-          behaviour_policy: resolvedPolicy.policy,
-        } : null,
-      }, this.executor);
-      this.store.save(result);
-    } catch (error) {
-      if (error instanceof ScenarioRunStoreCapacityError) {
-        throw new HttpException("The temporary scenario workspace is full. Discard an existing run and try again.", HttpStatus.TOO_MANY_REQUESTS);
+      this.prepareStoreCapacity(schoolId);
+      const [school, campuses] = await Promise.all([
+        this.repository.school(schoolId),
+        this.repository.campuses(schoolId),
+      ]);
+      if (!school) throw new NotFoundException("Institution not found.");
+      const campus = input.campus_id
+        ? campuses.find((candidate) => candidate.id === input.campus_id)
+        : (campuses.find((candidate) => candidate.is_primary) ?? campuses[0]);
+      if (input.campus_id && !campus) throw new NotFoundException("The selected active campus was not found.");
+      if (!campus && !snapshotOnly) {
+        throw new NotFoundException("An active campus is required for an intervention scenario.");
       }
-      throw error;
-    }
-    const metadata: RunMetadata = {
-      school_id: schoolId,
-      created_at: createdAt,
-      horizon_days: input.horizon_days,
-      intervention: canonicalIntervention,
-      counts: repositorySnapshot.counts,
-    };
-    this.metadata.set(runId, metadata);
-    return this.view(result, metadata);
+      const createdAt = new Date().toISOString();
+      const horizonTo = new Date(
+        Date.parse(createdAt) + input.horizon_days * 24 * 60 * 60 * 1_000,
+      ).toISOString();
+      const target = interventionInput ? await this.repository.resolveTarget(
+        schoolId,
+        campus!.id,
+        interventionInput.type,
+        interventionInput.target_id,
+        createdAt,
+      ) : null;
+      if (interventionInput && !target) {
+        throw new BadRequestException("The intervention target is not active in the selected campus.");
+      }
+      if (interventionInput) {
+        const interventionStart = Date.parse(interventionInput.starts_at);
+        const interventionEnd = Date.parse(interventionInput.ends_at);
+        if (interventionEnd <= interventionStart
+          || interventionEnd <= Date.parse(createdAt)
+          || interventionStart < Date.parse(createdAt) - 5 * 60 * 1_000
+          || interventionEnd > Date.parse(horizonTo)) {
+          throw new BadRequestException("The intervention must fall within the selected future horizon.");
+        }
+      }
+
+      const scenarioId = randomUUID();
+      const runId = randomUUID();
+      const expiresAt = new Date(Date.parse(createdAt) + RUN_TTL_MILLISECONDS).toISOString();
+      const repositorySnapshot = await this.repository.snapshot({
+        school_id: schoolId,
+        campus_id: campus?.id ?? null,
+        timezone: campus?.timezone || school.timezone || "Asia/Kolkata",
+        captured_at: createdAt,
+        horizon_to: horizonTo,
+        target,
+        scenario_id: scenarioId,
+        run_id: runId,
+        behaviour_policy_version_id: behaviourPolicyVersionId ?? null,
+      });
+      const resolvedPolicy = this.resolveBehaviourPolicy(
+        repositorySnapshot.approved_behaviour_policy,
+        behaviourPolicyVersionId,
+        createdAt,
+      );
+      if (repositorySnapshot.snapshot.sessions.length > MAX_SNAPSHOT_SESSIONS) {
+        throw new HttpException(
+          `This snapshot exceeds the ${MAX_SNAPSHOT_SESSIONS}-session synchronous scenario limit. Narrow the campus or horizon.`,
+          HttpStatus.PAYLOAD_TOO_LARGE,
+        );
+      }
+      if (target?.type === "teacher_unavailable"
+        && !repositorySnapshot.snapshot.sessions.some((session) => session.teacher_agent_id === target.id)) {
+        throw new BadRequestException("This teacher has no effective sessions in the selected campus and horizon.");
+      }
+      const canonicalIntervention = interventionInput && target ? {
+        ...interventionInput,
+        target_id: target.id,
+        target_label: target.label,
+      } : null;
+      if (canonicalIntervention && target) {
+        const interventionStart = Date.parse(canonicalIntervention.starts_at);
+        const interventionEnd = Date.parse(canonicalIntervention.ends_at);
+        const affectedSessionCount = repositorySnapshot.snapshot.sessions.filter((session) => (
+          Date.parse(session.starts_at) < interventionEnd
+          && Date.parse(session.ends_at) > interventionStart
+          && (target.type === "teacher_unavailable"
+            ? session.teacher_agent_id === target.id
+            : session.space_id === target.id)
+        )).length;
+        if (affectedSessionCount === 0) {
+          throw new BadRequestException(
+            "No effective session for this target overlaps the intervention window. Choose one of the target's eligible session windows.",
+          );
+        }
+      }
+      const sampleCount = resolvedPolicy?.sample_count ?? 0;
+      const executionUnits = repositorySnapshot.snapshot.sessions.length
+        * (2 + (sampleCount * 2));
+      if (executionUnits > MAX_EXECUTION_UNITS) {
+        throw new HttpException(
+          "This scenario exceeds the synchronous execution budget. Use a shorter horizon or deterministic mode.",
+          HttpStatus.PAYLOAD_TOO_LARGE,
+        );
+      }
+
+      let result: ScenarioRunResult;
+      try {
+        result = await this.engine.run({
+          mode: "simulation",
+          scenario_id: scenarioId,
+          namespace_id: `scenario:${scenarioId}:run:${runId}`,
+          institution_id: schoolId,
+          run_id: runId,
+          requested_at: createdAt,
+          expires_at: expiresAt,
+          deterministic_seed: runId,
+          source: {
+            snapshot: repositorySnapshot.snapshot as unknown as ScenarioValue,
+            snapshot_version: "campus_operations_snapshot/v1",
+            snapshot_at: createdAt,
+            source_revisions: repositorySnapshot.source_revisions,
+          },
+          horizon: { from: createdAt, to: horizonTo },
+          configuration_snapshot: [
+            ...repositorySnapshot.configuration_snapshot,
+            ...(resolvedPolicy ? [{
+              kind: "behaviour" as const,
+              key: resolvedPolicy.policy.policy_id,
+              version_id: resolvedPolicy.policy.version_id,
+              configuration_hash: resolvedPolicy.policy.configuration_hash,
+              effective_from: resolvedPolicy.policy.effective_from,
+              effective_until: resolvedPolicy.policy.effective_until,
+            }] : []),
+          ],
+          identities: repositorySnapshot.identities,
+          assumptions: [
+            "The simulation is transient and isolated; it cannot update live campus records.",
+            "Only schedule, staffing, active enrolment counts and canonical-space capacity are connected in this bounded adapter.",
+            ...(snapshotOnly ? [
+              "This snapshot-only run records the supported campus baseline and does not apply an intervention.",
+              "Attendance behaviour and outcomes are not modelled by this adapter.",
+            ] : [
+              "Historical coverage evidence is privacy-minimized cohort evidence and is never activated as behaviour without an explicit versioned policy.",
+            ]),
+            "The point-in-time capture was assembled in one read-only repeatable-read database transaction.",
+          ],
+          baseline: { key: "baseline", label: "Captured baseline", intervention: null },
+          alternative: {
+            key: "alternative",
+            label: canonicalIntervention ? `${canonicalIntervention.target_label} unavailable` : "Captured baseline",
+            intervention: canonicalIntervention ?? { type: "baseline_snapshot" },
+          },
+          monte_carlo: resolvedPolicy ? {
+            sample_count: resolvedPolicy.sample_count,
+            behaviour_policy: resolvedPolicy.policy,
+          } : null,
+        }, this.executor);
+        this.store.save(result);
+      } catch (error) {
+        if (error instanceof ScenarioRunStoreCapacityError) {
+          throw new HttpException(
+            "The temporary scenario workspace is full. Discard an existing run and try again.",
+            HttpStatus.TOO_MANY_REQUESTS,
+          );
+        }
+        throw error;
+      }
+      const metadata: RunMetadata = {
+        school_id: schoolId,
+        scenario_kind: snapshotOnly ? "baseline_snapshot" : "intervention",
+        created_at: createdAt,
+        time_zone: repositorySnapshot.snapshot.timezone,
+        horizon_days: input.horizon_days,
+        intervention: canonicalIntervention,
+        counts: repositorySnapshot.counts,
+        counterpart_coverage: runLocalCounterpartCoverage(repositorySnapshot),
+      };
+      this.metadata.set(runId, metadata);
+      return this.view(result, metadata);
     } finally {
       this.releaseExecutionSlot(schoolId);
     }
@@ -560,6 +655,31 @@ export class CampusScenarioService {
       throw new NotFoundException("Scenario run not found or expired.");
     }
     return this.view(result, metadata);
+  }
+
+  async resolveAuthorizedRun(input: {
+    actor_id: string;
+    institution_id: string;
+    run_id: string;
+  }): Promise<TransientExecutionRunReference | null> {
+    if (!(await this.repository.hasActiveAdminMembership(input.actor_id, input.institution_id))) {
+      throw new ForbiddenException("An active institution administrator membership is required.");
+    }
+    this.sweepMetadata();
+    const result = this.store.get(input.institution_id, input.run_id);
+    const metadata = this.metadata.get(input.run_id);
+    if (!result || !metadata || metadata.school_id !== input.institution_id) return null;
+    return {
+      institution_id: input.institution_id,
+      scenario_id: result.scenario_id,
+      run_id: result.run_id,
+      namespace_id: result.namespace_id as `scenario:${string}:run:${string}`,
+      virtual_now: result.horizon.from,
+      time_zone: metadata.time_zone,
+      source_snapshot_at: result.snapshot_at,
+      source_snapshot_ref: `sha256:${result.snapshot_hash}`,
+      expires_at: result.expires_at,
+    };
   }
 
   async discard(user: AuthUser, schoolId: string, runId: string) {

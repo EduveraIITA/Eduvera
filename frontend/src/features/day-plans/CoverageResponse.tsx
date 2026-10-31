@@ -1,3 +1,4 @@
+import { applicationNow } from "../simulation/applicationTime";
 import { useEffect, useRef, useState } from "react";
 import { respondCoverage, type DayPeriod } from "./api";
 import { TemporalInput } from "../../components/forms/TemporalInput";
@@ -20,7 +21,7 @@ export function CoverageResponse({
     "phone",
   );
   const [received, setReceived] = useState(() => {
-    const now = new Date();
+    const now = applicationNow();
     return new Date(now.getTime() - now.getTimezoneOffset() * 60000)
       .toISOString()
       .slice(0, 19);

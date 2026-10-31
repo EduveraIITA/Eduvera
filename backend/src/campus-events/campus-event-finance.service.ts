@@ -1,3 +1,4 @@
+import { executionNow } from "../campus-model-core/execution-time.runtime.js";
 import {
   ConflictException,
   ForbiddenException,
@@ -11,6 +12,7 @@ import { DatabaseService } from "../database/database.service.js";
 import type { Database } from "../database/types.js";
 import { effectiveSchoolAccess } from "../roles/authorization.js";
 import { SchoolEventService } from "../school/school-event.service.js";
+import { eventWorkHref, relationshipEventHref } from "../workspace/canonical-application-links.js";
 import {
   campusEventFinanceIdSchema,
   campusEventFinanceQuerySchema,
@@ -256,11 +258,17 @@ export class CampusEventFinanceService {
         kind: "general",
         title: notification.title,
         body: notification.body,
-        link: `/events/${event.id}`,
-        student_link: `/student/events/${event.id}`,
-        parent_link: `/parent/events/${event.id}?student_id=${studentId}&focus=payment&${source.kind === "event_withdrawal" ? "withdrawal_id" : "refund_id"}=${source.id}`,
-        staff_link: `/teacher/events/${event.id}`,
-        admin_link: `/principal/events/${event.id}`,
+        link: "/areas/events",
+        student_link: relationshipEventHref("self", studentId, event.id, [
+          ["focus", "payment"],
+          [source.kind === "event_withdrawal" ? "withdrawal_id" : "refund_id", source.id],
+        ]),
+        parent_link: relationshipEventHref("dependent", studentId, event.id, [
+          ["focus", "payment"],
+          [source.kind === "event_withdrawal" ? "withdrawal_id" : "refund_id", source.id],
+        ]),
+        staff_link: eventWorkHref("assigned", event.id),
+        admin_link: eventWorkHref("manage", event.id),
         event_id: event.id,
         student_id: studentId,
         attention_eligible: true,
@@ -365,7 +373,7 @@ export class CampusEventFinanceService {
         withdrawn_at: iso(row.withdrawn_at),
         can_withdraw: isGuardian && event.status === "published" && event.payment_required
           && event.participation_requirement === "optional" && row.rsvp_status === "accepted"
-          && !row.withdrawal_id && event.starts_at.getTime() > Date.now(),
+          && !row.withdrawal_id && event.starts_at.getTime() > executionNow().getTime(),
         finance_state: event.payment_required ? this.financeState(row) : "not_required",
         currency: "INR",
         invoice_id: visible ? row.invoice_id : null,
@@ -416,7 +424,7 @@ export class CampusEventFinanceService {
       }
       const prior = await this.priorCommand<EventFinanceResponse>(db, input.school_id, req.authUser.id, input.idempotency_key, "withdraw_paid_event", hash);
       if (prior) return prior;
-      if (event.status !== "published" || event.starts_at.getTime() <= Date.now()) {
+      if (event.status !== "published" || event.starts_at.getTime() <= executionNow().getTime()) {
         throw new ConflictException("A participant can withdraw only before the published event starts.");
       }
       if (!event.payment_required || event.participation_requirement !== "optional") {

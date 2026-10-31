@@ -1,0 +1,31 @@
+/* Content first: two short tool rows, with occasional choices disclosed on demand. */
+.activity-workspace--timetable { gap:12px; }
+.portal-page-title:has(.activity-create) { display:grid; grid-template-columns:44px minmax(0,1fr) auto; gap:8px; }
+.portal-page-title:has(.activity-create) .portal-page-title__trailing { grid-column:3; margin-left:0; justify-self:end; }
+.activity-create { min-height:44px; gap:4px; padding:8px 10px; white-space:nowrap; }
+.activity-timetable-navigation { display:flex; flex-wrap:wrap; min-width:0; align-items:center; justify-content:flex-start; gap:8px; }
+.activity-timetable-tools { display:flex; min-width:0; align-items:center; justify-content:space-between; gap:8px; }
+.activity-timetable-tools > div { display:flex; align-items:center; gap:4px; }
+.activity-timetable-tools .date-view-select select.date-view-select__input { padding-left:0; background:transparent; font-weight:500; }
+.activity-workspace--timetable .date-navigation__dates { overflow-x:auto; }
+.activity-workspace--timetable .date-navigation__weekdays,.activity-workspace--timetable .date-navigation__grid { grid-template-columns:repeat(7,minmax(44px,1fr)); }
+.activity-timetable-tabs { display:flex; min-width:0; gap:20px; }
+.activity-timetable-tabs button { min-height:44px; padding:8px 0; border:0; border-bottom:2px solid transparent; background:transparent; color:var(--thatcampus-ink-secondary); font-size:14px; font-weight:600; }
+.activity-timetable-tabs button[aria-pressed=true] { border-bottom-color:var(--thatcampus-ink); color:var(--thatcampus-ink); }
+.activity-timetable-options-toggle { display:flex; flex:none; min-height:44px; align-items:center; gap:4px; padding:8px; border:0; border-radius:var(--thatcampus-radius-control); background:transparent; color:var(--thatcampus-ink-secondary); font-size:14px; }
+.activity-timetable-options { display:grid; gap:16px; padding:16px; border-radius:var(--thatcampus-radius-row); background:var(--thatcampus-surface-row); }
+.activity-timetable-options .activity-calendar-view { display:flex; align-items:end; flex-wrap:wrap; gap:12px; }
+.activity-timetable-options label,.activity-timetable-scope { display:grid; min-width:0; gap:8px; font-size:14px; }
+.activity-timetable-options select { min-height:44px; max-width:100%; min-width:0; padding:8px 12px; border:1px solid var(--thatcampus-border); border-radius:var(--thatcampus-radius-control); color:var(--thatcampus-ink); background:var(--thatcampus-surface); font:inherit; font-size:16px; }
+.activity-timetable-search-toggle { display:grid; flex:none; place-items:center; width:44px; height:44px; padding:0; border:0; border-radius:var(--thatcampus-radius-control); color:var(--thatcampus-ink); background:transparent; }
+.activity-workspace--timetable .activity-agenda { margin-top:8px; }
+.activity-workspace--timetable .activity-calendar { margin-top:4px; }
+.activity-workspace--timetable .activity-calendar .school-calendar__scroll { max-height:none; overflow-x:auto; overscroll-behavior-x:contain; }
+.activity-calendar .school-calendar-block { border-radius:4px; }
+.activity-calendar .school-calendar__scroll { border-radius:8px; }
+.activity-calendar .school-calendar-day__inner { flex-direction:row; min-height:48px; }
+.activity-calendar .school-calendar-event__content { display:flex; flex-direction:column; gap:4px; min-width:0; padding-right:0; font-size:14px; line-height:1.35; }
+.activity-calendar .school-calendar-event__content strong { display:-webkit-box; -webkit-line-clamp:2; -webkit-box-orient:vertical; overflow:hidden; white-space:normal; overflow-wrap:anywhere; font-size:14px; line-height:1.35; }
+.activity-calendar .school-calendar-event__content time { position:static; max-width:none; text-align:left; font-size:12px; }
+@media(hover:hover) { .activity-timetable-options-toggle:hover { background:var(--thatcampus-surface-soft); } }
+@media(max-width:359px) { .activity-timetable-tabs { gap:12px; }.activity-timetable-options-toggle { padding-inline:4px; } }

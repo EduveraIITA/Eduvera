@@ -3,19 +3,19 @@ import compress from "@fastify/compress";
 import cookie from "@fastify/cookie";
 import helmet from "@fastify/helmet";
 import multipart from "@fastify/multipart";
-import fastifyStatic from "@fastify/static";
+import { PRIVATE_IMAGE_SOURCES } from "./common/attachment-headers.js";
 import { Logger } from "@nestjs/common";
 import { NestFactory } from "@nestjs/core";
 import { FastifyAdapter, type NestFastifyApplication } from "@nestjs/platform-fastify";
 import { DocumentBuilder, SwaggerModule } from "@nestjs/swagger";
-import { access } from "node:fs/promises";
 import { randomUUID } from "node:crypto";
-import { join } from "node:path";
 import { AppModule } from "./app.module.js";
 import { ApiExceptionFilter } from "./common/errors.js";
+import { registerApiResponseCacheControl } from "./common/api-response-cache.js";
 import { rateLimitHook } from "./common/rate-limit.js";
 import { config } from "./config.js";
 import { DatabaseService } from "./database/database.service.js";
+import { registerWebAssets, WEB_ASSET_SCRIPT_SOURCES } from "./web-assets.js";
 
 async function bootstrap(): Promise<void> {
   const settings = config();
@@ -27,14 +27,16 @@ async function bootstrap(): Promise<void> {
   });
   const app = await NestFactory.create<NestFastifyApplication>(AppModule, adapter, { bufferLogs: true, rawBody: true });
   const server = app.getHttpAdapter().getInstance();
+  registerApiResponseCacheControl(server);
   await app.register(cookie, { secret: settings.COOKIE_SECRET, hook: "onRequest" });
   const googleSources = settings.GOOGLE_CLIENT_ID ? ["https://accounts.google.com"] : [];
   const razorpay = settings.RAZORPAY_ENABLED;
   await app.register(helmet, {
     crossOriginOpenerPolicy: { policy: "same-origin-allow-popups" },
     contentSecurityPolicy: settings.NODE_ENV === "production" ? { directives: {
+      imgSrc: PRIVATE_IMAGE_SOURCES,
       formAction: ["'self'", ...(razorpay ? ["https://api.razorpay.com"] : [])],
-      scriptSrc: ["'self'", ...googleSources, ...(razorpay ? ["https://checkout.razorpay.com", "https://cdn.razorpay.com", "https://checkout-static-next.razorpay.com"] : [])],
+      scriptSrc: [...WEB_ASSET_SCRIPT_SOURCES, ...googleSources, ...(razorpay ? ["https://checkout.razorpay.com", "https://cdn.razorpay.com", "https://checkout-static-next.razorpay.com"] : [])],
       styleSrc: ["'self'", "'unsafe-inline'", "https:", ...googleSources],
       frameSrc: ["'self'", ...googleSources, ...(razorpay ? ["https://api.razorpay.com", "https://checkout.razorpay.com"] : [])],
       connectSrc: ["'self'", ...googleSources, ...(razorpay ? ["https://api.razorpay.com", "https://api-dark.razorpay.com", "https://checkout.razorpay.com", "https://express.razorpay.com", "https://lumberjack.razorpay.com", "https://lumberjack-cx.razorpay.com", "https://lumberjack-metrics.razorpay.com"] : [])],
@@ -42,33 +44,7 @@ async function bootstrap(): Promise<void> {
   });
   await app.register(compress);
   await app.register(multipart, { limits: { files: 1, fileSize: 24 * 1024 * 1024, fields: 20, parts: 21 } });
-  try {
-    await access(join(settings.spaDistDir, "index.html"));
-    await app.register(fastifyStatic, {
-      root: join(settings.spaDistDir, "assets"),
-      prefix: "/assets/",
-      wildcard: true,
-    });
-    await app.register(fastifyStatic, {
-      root: join(settings.spaDistDir, "icons"),
-      prefix: "/icons/",
-      wildcard: true,
-      decorateReply: false,
-    });
-  } catch {
-    // The API remains runnable before the separately-built React bundle exists.
-  }
-  try {
-    await access(join(settings.staffDistDir, "index.html"));
-    await app.register(fastifyStatic, {
-      root: join(settings.staffDistDir, "assets"),
-      prefix: "/staff/assets/",
-      wildcard: true,
-      decorateReply: false,
-    });
-  } catch {
-    // The desktop staff console is optional; the API and mobile app run without it.
-  }
+  await registerWebAssets(server, settings.spaDistDir);
   app.enableCors({
     credentials: true,
     origin(origin, callback) {
@@ -85,7 +61,7 @@ async function bootstrap(): Promise<void> {
   server.addHook("onRequest", rateLimitHook(app.get(DatabaseService)));
   app.useGlobalFilters(new ApiExceptionFilter());
 
-  const swagger = new DocumentBuilder().setTitle("ThatCampus API").setDescription("Versioned APIs powering the ThatCampus parent and student experiences.").setVersion("1.0.0").addCookieAuth(settings.SESSION_COOKIE_NAME).build();
+  const swagger = new DocumentBuilder().setTitle("ThatCampus API").setDescription("Versioned APIs powering ThatCampus web and native experiences.").setVersion("1.0.0").addCookieAuth(settings.SESSION_COOKIE_NAME).addBearerAuth({ type: "http", scheme: "bearer", description: "Opaque native session issued by /api/v1/auth/native/login/." }, "native-session").build();
   const document = SwaggerModule.createDocument(app, swagger);
   SwaggerModule.setup("api/docs", app, document, { jsonDocumentUrl: "/api/schema" });
 

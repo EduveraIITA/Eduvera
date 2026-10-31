@@ -1,3 +1,4 @@
+import { executionNow } from "../campus-model-core/execution-time.runtime.js";
 import {
   BadRequestException,
   ConflictException,
@@ -6,20 +7,30 @@ import {
   Injectable,
   NotFoundException,
   Optional,
+  ServiceUnavailableException,
 } from "@nestjs/common";
 import { sql, type Transaction } from "kysely";
 import { z } from "zod";
 import { attendanceWorkspace, type AttendanceClassWorkspace } from "../attendance/attendance-workspace.js";
-import type { AuthUser } from "../common/request.js";
+import type { AuthUser, InstitutionMembershipRole } from "../common/request.js";
 import { DatabaseService } from "../database/database.service.js";
 import type { Database } from "../database/types.js";
+import { ExecutionDataPlaneScope } from "../database/execution-data-plane.js";
 import {
   GOVERNANCE_DECISION_AUTHORITY_PORT,
   type GovernanceDecisionAuthorityPort,
 } from "../governance/decision-authority.port.js";
 import { effectiveSchoolAccess } from "../roles/authorization.js";
+import { FinanceArrangementsReadService } from "../operations/finance-arrangements.read.js";
 import { safeguardingReportAttentionHref } from "../chat/chat-links.js";
+import {
+  assessmentWorkHref,
+  eventSessionAttendanceHref,
+  eventWorkHref,
+  relationshipEventHref,
+} from "../workspace/canonical-application-links.js";
 export { safeguardingReportAttentionHref } from "../chat/chat-links.js";
+import { WorkspaceProjectionReads } from "../workspace/workspace-projection-reads.js";
 import type {
   RequestCategory,
   RequestInboxItem,
@@ -37,6 +48,31 @@ interface Scope {
   timezone: string;
   student_id: string | null;
   student_name: string | null;
+}
+
+/**
+ * Server-owned context for projecting existing domain obligations into the
+ * responsibility-composed Work queue.  This is deliberately structural and
+ * contains no portal/persona selector: relationships and effective
+ * responsibilities decide which domain contributions may be read.
+ */
+export interface WorkspaceRequestContext {
+  readonly school_id: string;
+  readonly environment_namespace_id: string;
+  readonly recorded_at: string;
+  readonly school_name: string;
+  readonly timezone: string;
+  readonly membership_roles: readonly InstitutionMembershipRole[];
+  readonly relationships: readonly {
+    relationship: "self" | "dependent";
+    student_id: string;
+    student_label: string;
+  }[];
+  readonly assignments: readonly {
+    action_key: string;
+    capability_key: string;
+    scope: { kind: string; id?: string };
+  }[];
 }
 
 interface StaffActionRow {
@@ -84,15 +120,15 @@ export type ParentEventActionFocus = "rsvp" | "consent" | "payment" | "checklist
 
 export function parentDiaryAttentionHref(studentId: string, itemId: string, itemDate: string | Date): string {
   const date = iso(itemDate)?.slice(0, 10) ?? "";
-  return `/parent/diary?student_id=${encodeURIComponent(studentId)}&date=${encodeURIComponent(date)}&diary_item=${encodeURIComponent(itemId)}`;
+  return `/areas/messages/diary?scope=dependent&student_id=${encodeURIComponent(studentId)}&date=${encodeURIComponent(date)}&diary_item=${encodeURIComponent(itemId)}`;
 }
 
 export function parentEventAttentionHref(eventId: string, studentId: string, focus: ParentEventActionFocus): string {
-  return `/parent/events/${encodeURIComponent(eventId)}?student_id=${encodeURIComponent(studentId)}&focus=${focus}`;
+  return relationshipEventHref("dependent", studentId, eventId, [["focus", focus]]);
 }
 
 export function principalNoticeAttentionHref(noticeId: string): string {
-  return `/principal/notices/${encodeURIComponent(noticeId)}?focus=attention`;
+  return `/areas/messages/updates/${encodeURIComponent(noticeId)}?focus=attention`;
 }
 
 export function eventSessionAttentionHref(
@@ -100,31 +136,31 @@ export function eventSessionAttentionHref(
   eventId: string,
   sessionId: string,
 ): string {
-  return `/${portal}/events/${encodeURIComponent(eventId)}/sessions/${encodeURIComponent(sessionId)}/attendance`;
+  return eventSessionAttendanceHref(portal === "teacher" ? "assigned" : "manage", eventId, sessionId);
 }
 
 export function eventFinanceAttentionHref(portal: "teacher" | "principal", eventId: string): string {
-  return `/${portal}/events/${encodeURIComponent(eventId)}?view=finance&focus=refunds`;
+  return eventWorkHref(portal === "teacher" ? "assigned" : "manage", eventId, [["view", "finance"], ["focus", "refunds"]]);
 }
 
 export function eventDutyAttentionHref(portal: "teacher" | "principal", eventId: string): string {
-  return `/${portal}/events/${encodeURIComponent(eventId)}?focus=duty`;
+  return eventWorkHref(portal === "teacher" ? "assigned" : "manage", eventId, [["focus", "duty"]]);
 }
 
 export function journeyAttentionHref(tripId: string): string {
-  return `/principal/departure/journeys/${encodeURIComponent(tripId)}?focus=reconciliation`;
+  return `/areas/departure/manage/journeys/${encodeURIComponent(tripId)}?focus=reconciliation`;
 }
 
 export function peopleImportAttentionHref(
-  portal: "teacher" | "principal",
+  _portal: "teacher" | "principal",
   schoolId: string,
   importId: string,
 ): string {
-  return `/${portal}/students/import?school=${encodeURIComponent(schoolId)}&import=${encodeURIComponent(importId)}`;
+  return `/more/setup/people/import?school=${encodeURIComponent(schoolId)}&import=${encodeURIComponent(importId)}`;
 }
 
 export function governancePolicyAttentionHref(policyFamilyId: string): string {
-  return `/principal/governance?section=register&policy=${encodeURIComponent(policyFamilyId)}`;
+  return `/more/governance?section=register&policy=${encodeURIComponent(policyFamilyId)}`;
 }
 
 export function dayPlanAttentionHref(
@@ -133,11 +169,11 @@ export function dayPlanAttentionHref(
   classSectionId: string,
   planId: string,
 ): string {
-  return `/principal/timetable/day?school=${encodeURIComponent(schoolId)}&date=${encodeURIComponent(date)}&class=${encodeURIComponent(classSectionId)}&plan=${encodeURIComponent(planId)}`;
+  return `/areas/timetable/planning/day?school=${encodeURIComponent(schoolId)}&date=${encodeURIComponent(date)}&class=${encodeURIComponent(classSectionId)}&plan=${encodeURIComponent(planId)}`;
 }
 
 export function scheduleDraftAttentionHref(classSectionId: string, termId: string, versionId: string): string {
-  return `/principal/timetable/weekly?settings=pattern&class=${encodeURIComponent(classSectionId)}&term=${encodeURIComponent(termId)}&version=${encodeURIComponent(versionId)}`;
+  return `/areas/timetable/planning/settings?settings=pattern&class=${encodeURIComponent(classSectionId)}&term=${encodeURIComponent(termId)}&version=${encodeURIComponent(versionId)}`;
 }
 
 export function teachingAssignmentAttentionHref(input: {
@@ -152,27 +188,27 @@ export function teachingAssignmentAttentionHref(input: {
   if (input.dayPlanId) {
     return `${dayPlanAttentionHref(input.schoolId, input.date, input.classSectionId, input.dayPlanId)}&period=${encodeURIComponent(input.periodId)}`;
   }
-  return `/principal/timetable/weekly?class=${encodeURIComponent(input.classSectionId)}&term=${encodeURIComponent(input.termId)}&day=${input.weekday}&date=${encodeURIComponent(input.date)}&period=${encodeURIComponent(input.periodId)}`;
+  return `/areas/timetable/planning/settings?class=${encodeURIComponent(input.classSectionId)}&term=${encodeURIComponent(input.termId)}&day=${input.weekday}&date=${encodeURIComponent(input.date)}&period=${encodeURIComponent(input.periodId)}`;
 }
 
 export function staffAssignmentAttentionHref(staffProfileId: string, assignmentId: string): string {
-  return `/principal/staff/${encodeURIComponent(staffProfileId)}?assignment=${encodeURIComponent(assignmentId)}`;
+  return `/more/setup/responsibilities?staff=${encodeURIComponent(staffProfileId)}&assignment=${encodeURIComponent(assignmentId)}`;
 }
 
 export function paymentCaptureAttentionHref(invoiceId: string, orderId: string): string {
-  return `/principal/fees?view=review&invoice=${encodeURIComponent(invoiceId)}&order=${encodeURIComponent(orderId)}`;
+  return `/areas/fees/ledger?view=review&invoice=${encodeURIComponent(invoiceId)}&order=${encodeURIComponent(orderId)}`;
 }
 
 export function collectorDutyAttentionHref(tripId: string): string {
-  return `/principal/departure?section=roster&trip=${encodeURIComponent(tripId)}`;
+  return `/areas/departure/manage?section=roster&trip=${encodeURIComponent(tripId)}`;
 }
 
 export function departurePlanAttentionHref(planId: string, studentId: string, date: string): string {
-  return `/principal/departure?section=pickup&date=${encodeURIComponent(date)}&student=${encodeURIComponent(studentId)}&plan=${encodeURIComponent(planId)}`;
+  return `/areas/departure/manage?section=pickup&date=${encodeURIComponent(date)}&student=${encodeURIComponent(studentId)}&plan=${encodeURIComponent(planId)}`;
 }
 
 export function attendanceDeclineAttentionHref(studentId: string, date: string, classSectionId: string): string {
-  return `/principal/insights/review/${encodeURIComponent(studentId)}?date=${encodeURIComponent(date)}&insight_days=28&class=${encodeURIComponent(classSectionId)}&followup=missing`;
+  return `/areas/attendance/coordination?student_id=${encodeURIComponent(studentId)}&date=${encodeURIComponent(date)}&class_section_id=${encodeURIComponent(classSectionId)}&focus=missing_followup`;
 }
 
 export function sortRequestItems(items: RequestInboxItem[]): RequestInboxItem[] {
@@ -195,6 +231,29 @@ export function summarizeRequestItems(items: readonly RequestInboxItem[]): Reque
     normal: items.filter((item) => item.priority === "normal").length,
     categories,
   };
+}
+
+const operationalCategoryPrefixes: Readonly<Record<RequestCategory, readonly string[]>> = {
+  attendance: ["attendance.", "followups."],
+  academics: ["timetable.", "day_plan.", "day-plans.", "assessments.", "reports."],
+  events: ["events."],
+  leave: ["leave.", "staff_leave.", "staff-leave."],
+  staffing: ["staff.", "responsibilities.", "coverage."],
+  transport: ["departure.", "transport."],
+  finance: ["fees.", "finance."],
+  governance: ["governance.", "policies."],
+  communication: ["messages.", "notices."],
+  care: ["care.", "safeguarding."],
+};
+
+function institutionOperationalCategories(context: WorkspaceRequestContext): Set<RequestCategory> {
+  const authority = context.assignments.filter((assignment) => assignment.scope.kind === "institution"
+    && assignment.scope.id === context.school_id);
+  return new Set((Object.keys(operationalCategoryPrefixes) as RequestCategory[]).filter((category) => {
+    const prefixes = operationalCategoryPrefixes[category];
+    return authority.some((assignment) => [assignment.action_key, assignment.capability_key]
+      .some((key) => prefixes.some((prefix) => key === prefix.slice(0, -1) || key.startsWith(prefix))));
+  }));
 }
 
 /**
@@ -251,7 +310,7 @@ export function principalAttendanceExceptionItems(
           : "Attendance was saved even though this class has no effective lesson on this date.",
         status_label: authorityMismatch ? "Assignment mismatch" : "Schedule mismatch",
         action_label: "Review register",
-        href: `/principal/attendance?class_section_id=${encodeURIComponent(row.class_section_id)}&date=${encodeURIComponent(date)}`,
+        href: `/areas/attendance/registers?class_section_id=${encodeURIComponent(row.class_section_id)}&date=${encodeURIComponent(date)}`,
         source_id: sourceId,
         subject_label: row.class_name,
         occurs_at: row.submitted_at ? iso(row.submitted_at) : `${date}T12:00:00.000Z`,
@@ -263,11 +322,14 @@ export function principalAttendanceExceptionItems(
 
 @Injectable()
 export class RequestsService {
+  private readonly projectionReads = new WorkspaceProjectionReads();
   constructor(
     private readonly db: DatabaseService,
     @Optional()
     @Inject(GOVERNANCE_DECISION_AUTHORITY_PORT)
     private readonly decisionAuthority?: GovernanceDecisionAuthorityPort,
+    @Optional() private readonly executionScope?: ExecutionDataPlaneScope,
+    @Optional() private readonly feeArrangements?: FinanceArrangementsReadService,
   ) {}
 
   private async canReviewStaffLeave(
@@ -283,7 +345,7 @@ export class RequestsService {
         schoolId,
         "staff_leave_decision",
         user.id,
-        new Date(),
+        executionNow(),
       );
       return true;
     } catch (error) {
@@ -307,7 +369,7 @@ export class RequestsService {
         schoolId,
         "transport_duty_change_decision",
         user.id,
-        new Date(),
+        executionNow(),
       );
       return true;
     } catch (error) {
@@ -349,7 +411,7 @@ export class RequestsService {
     const items = sortRequestItems([...deduplicated.values()]);
     return {
       portal,
-      generated_at: new Date().toISOString(),
+      generated_at: executionNow().toISOString(),
       scope: {
         school_id: scope.school_id,
         school_name: scope.school_name,
@@ -360,6 +422,98 @@ export class RequestsService {
       summary: summarizeRequestItems(items),
       items,
     };
+  }
+
+  /**
+   * Transitional domain contribution bridge for the canonical Work surface.
+   *
+   * Existing domain-owned queues remain authoritative and continue to execute
+   * their own authorization queries. This method removes portal selection from
+   * the caller: canonical relationships contribute family/learner work,
+   * personally addressed staff records contribute individual work, and broad
+   * institution queues contribute only for an explicit institution-scoped
+   * operational responsibility. Administrator membership alone is setup
+   * authority and never opts a person into campus-wide operational work.
+   *
+   * Domain queries use the same request-bound DatabaseService as their owning
+   * screens. In Simulation its reviewed driver reads only the frozen/COW world
+   * and substitutes SQL time. Require that exact binding before contributing
+   * native obligations; missing or mismatched scope must never read Live.
+   */
+  async workspaceItems(user: AuthUser, context: WorkspaceRequestContext): Promise<RequestInboxItem[]> {
+    const environment = this.executionScope?.current();
+    if (user.active_school_id && user.active_school_id !== context.school_id) {
+      throw new ForbiddenException("Work must belong to the selected institution.");
+    }
+    if (context.environment_namespace_id !== `live:${context.school_id}`) {
+      if (!environment || environment.kind !== "simulation"
+        || environment.institution_id !== context.school_id
+        || environment.namespace_id !== context.environment_namespace_id
+        || environment.virtual_clock.nowIso() !== context.recorded_at) {
+        throw new ConflictException("This Work projection is not bound to the selected Simulation checkpoint.");
+      }
+    } else if (environment && (environment.kind !== "live"
+      || environment.institution_id !== context.school_id
+      || environment.namespace_id !== context.environment_namespace_id)) {
+      throw new ConflictException("This Work projection is not bound to the selected Live campus.");
+    }
+    const batches: RequestInboxItem[][] = [];
+    for (const relationship of context.relationships) {
+      const scope: Scope = {
+        school_id: context.school_id,
+        school_name: context.school_name,
+        timezone: context.timezone,
+        student_id: relationship.student_id,
+        student_name: relationship.student_label,
+      };
+      const items = relationship.relationship === "self"
+        ? await this.studentWorkspaceItems(user, scope)
+        : (await Promise.all([
+          this.parentItems(user, scope),
+          this.parentCanonicalItems(user, scope),
+        ])).flat();
+      batches.push(items.map((item) => ({
+        ...item,
+        id: `${relationship.relationship}:${relationship.student_id}:${item.id}`,
+      })));
+    }
+
+    if (context.membership_roles.includes("staff")) {
+      const scope: Scope = {
+        school_id: context.school_id,
+        school_name: context.school_name,
+        timezone: context.timezone,
+        student_id: null,
+        student_name: null,
+      };
+      batches.push((await Promise.all([
+        this.teacherItems(user, scope),
+        this.teacherCanonicalItems(user, scope),
+      ])).flat());
+    }
+
+    const oversightCategories = institutionOperationalCategories(context);
+    if (context.membership_roles.includes("admin") && oversightCategories.size > 0) {
+      const scope: Scope = {
+        school_id: context.school_id,
+        school_name: context.school_name,
+        timezone: context.timezone,
+        student_id: null,
+        student_name: null,
+      };
+      const oversight = (await Promise.all([
+        this.principalItems(user, scope),
+        this.principalCanonicalItems(user, scope),
+      ])).flat().filter((item) => oversightCategories.has(item.category));
+      batches.push(oversight);
+    }
+
+    const deduplicated = new Map<string, RequestInboxItem>();
+    for (const item of batches.flat()) {
+      const key = `${item.kind}:${item.source_id}:${item.href}`;
+      if (!deduplicated.has(key)) deduplicated.set(key, item);
+    }
+    return sortRequestItems([...deduplicated.values()]);
   }
 
   private async scope(user: AuthUser, portal: RequestPortal, requestedStudentId?: string): Promise<Scope> {
@@ -496,12 +650,16 @@ export class RequestsService {
       kind: "attendance_session_register",
       category: "attendance",
       action_label: portal === "teacher" ? "Take attendance" : "Review register",
-      href: `/${portal}/attendance?date=${encodeURIComponent(date)}${row.entity_id ? `&session_id=${encodeURIComponent(row.entity_id)}` : ""}`,
+      href: `/areas/attendance/registers?date=${encodeURIComponent(date)}${row.entity_id ? `&session_id=${encodeURIComponent(row.entity_id)}` : ""}`,
     }, row.priority ?? (portal === "principal" ? "urgent" : "high")));
   }
 
-  private eventItems(rows: readonly EventActionRow[], scope: Scope): RequestInboxItem[] {
-    const now = Date.now();
+  private eventItems(
+    rows: readonly EventActionRow[],
+    scope: Scope,
+    relationship: "self" | "dependent" = "dependent",
+  ): RequestInboxItem[] {
+    const now = executionNow().getTime();
     const studentId = scope.student_id!;
     return rows.flatMap((row): RequestInboxItem[] => {
       const startsAt = iso(row.starts_at)!;
@@ -517,31 +675,44 @@ export class RequestsService {
         action_label: "Open event",
       };
       const actions: RequestInboxItem[] = [];
+      const eventHref = (focus: ParentEventActionFocus) => relationship === "dependent"
+        ? parentEventAttentionHref(row.event_id, studentId, focus)
+        : relationshipEventHref("self", studentId, row.event_id, [["focus", focus]]);
       if (row.requires_rsvp && row.rsvp_status === "pending") {
+        const guardianDecision = relationship === "self" && row.payment_required;
         actions.push({
           ...base, id: `event-rsvp:${row.event_id}`, kind: "event_rsvp",
-          href: parentEventAttentionHref(row.event_id, studentId, "rsvp"),
-          priority: imminent ? "urgent" : "high", title: `Respond to ${row.title}`,
-          detail: "Accept or decline the invitation so the school can plan the participant roster.",
-          status_label: imminent ? "Starts soon" : "RSVP pending", action_label: "Respond now", due_at: startsAt,
+          href: eventHref("rsvp"),
+          priority: imminent ? "urgent" : "high",
+          title: guardianDecision ? `Guardian response needed for ${row.title}` : `Respond to ${row.title}`,
+          detail: guardianDecision
+            ? "A linked guardian must accept or decline this paid activity."
+            : "Accept or decline the invitation so the school can plan the participant roster.",
+          status_label: imminent ? "Starts soon" : "RSVP pending",
+          action_label: guardianDecision ? "View event" : "Respond now",
+          due_at: startsAt,
         });
       }
       if (accepted && row.requires_guardian_consent && row.consent_status === "pending") {
         actions.push({
           ...base, id: `event-consent:${row.event_id}`, kind: "event_consent",
-          href: parentEventAttentionHref(row.event_id, studentId, "consent"),
+          href: eventHref("consent"),
           priority: imminent ? "urgent" : "high", title: `Guardian consent needed for ${row.title}`,
-          detail: "Review the event details and record the guardian decision.",
-          status_label: imminent ? "Starts soon" : "Consent pending", action_label: "Review consent", due_at: startsAt,
+          detail: relationship === "dependent"
+            ? "Review the event details and record the guardian decision."
+            : "A linked guardian needs to review and record the consent decision.",
+          status_label: imminent ? "Starts soon" : "Consent pending",
+          action_label: relationship === "dependent" ? "Review consent" : "View details",
+          due_at: startsAt,
         });
       }
       const invoiceAmount = Number(row.invoice_amount_paise);
       const paid = Number(row.paid_paise);
-      if (participationReady && row.payment_required && invoiceAmount > paid) {
-        const overdue = Boolean(row.payment_due_on && row.payment_due_on < new Date().toISOString().slice(0, 10));
+      if (relationship === "dependent" && participationReady && row.payment_required && invoiceAmount > paid) {
+        const overdue = Boolean(row.payment_due_on && row.payment_due_on < executionNow().toISOString().slice(0, 10));
         actions.push({
           ...base, id: `event-payment:${row.event_id}`, kind: "event_payment",
-          href: parentEventAttentionHref(row.event_id, studentId, "payment"),
+          href: eventHref("payment"),
           priority: overdue ? "urgent" : "high", title: `Event fee due for ${row.title}`,
           detail: `Review the outstanding school ledger balance of ₹${Math.ceil((invoiceAmount - paid) / 100).toLocaleString("en-IN")}.`,
           status_label: row.payment_due_on ? `Due ${row.payment_due_on}` : "Fee pending", action_label: "View fee",
@@ -554,7 +725,7 @@ export class RequestsService {
         const remaining = required - completed;
         actions.push({
           ...base, id: `event-checklist:${row.event_id}`, kind: "event_checklist",
-          href: parentEventAttentionHref(row.event_id, studentId, "checklist"),
+          href: eventHref("checklist"),
           priority: imminent ? "urgent" : "normal", title: `Prepare for ${row.title}`,
           detail: `${remaining} required ${remaining === 1 ? "item is" : "items are"} still unchecked.`,
           status_label: `${completed}/${required} ready`, action_label: "Open checklist", due_at: startsAt,
@@ -686,7 +857,7 @@ export class RequestsService {
         concat('₹',to_char(gateway.amount_paise/100.0,'FM99,99,99,990.00'))::text AS subject_label,
         'urgent'::text AS priority
       FROM fee_gateway_orders gateway
-      JOIN fee_invoices invoice ON invoice.id=gateway.invoice_id AND invoice.school_id=gateway.school_id
+      JOIN fee_effective_invoices invoice ON invoice.id=gateway.invoice_id AND invoice.school_id=gateway.school_id
       JOIN students student ON student.id=invoice.student_id AND student.school_id=invoice.school_id
       JOIN school_people person ON person.id=student.person_id
       WHERE gateway.school_id=${scope.school_id}::uuid AND gateway.state='review_required'
@@ -701,7 +872,7 @@ export class RequestsService {
   private async principalOperationalItems(scope: Scope): Promise<RequestInboxItem[]> {
     const [refunds, journeys, governance, dayPlans, schedules, teachingGaps, responsibilityDeclines,
       paymentCaptures, collectorDeclines, departureExceptions] = await Promise.all([
-      sql<StaffActionRow>`
+      this.projectionReads.run(() => sql<StaffActionRow>`
         SELECT event.id,event.title,concat('₹',to_char(balance.refund_due/100.0,'FM99,99,99,990.00'),
             ' remains to be returned across ',balance.family_count,' ',
             CASE WHEN balance.family_count=1 THEN 'family' ELSE 'families' END,'.')::text AS detail,
@@ -730,8 +901,8 @@ export class RequestsService {
         ) balance ON balance.refund_due>0
         WHERE event.school_id=${scope.school_id}::uuid
         ORDER BY balance.first_credit_at,event.id
-      `.execute(this.db),
-      sql<StaffActionRow>`
+      `.execute(this.db)),
+      this.projectionReads.run(() => sql<StaffActionRow>`
         SELECT trip.id,route.name::text AS title,
           concat(roster.unresolved_count,' rider ',CASE WHEN roster.unresolved_count=1 THEN 'outcome remains' ELSE 'outcomes remain' END,
             CASE WHEN roster.exception_count>0 THEN ' · '||roster.exception_count||' marked exception' ELSE '' END)::text AS detail,
@@ -752,8 +923,8 @@ export class RequestsService {
             (trip.collector_assignment_status<>'declined'
               AND trip.service_date+trip.scheduled_departure_time+interval '4 hours'<now() AT TIME ZONE ${scope.timezone}))
         ORDER BY trip.service_date,trip.scheduled_departure_time,trip.id
-      `.execute(this.db),
-      sql<StaffActionRow>`
+      `.execute(this.db)),
+      this.projectionReads.run(() => sql<StaffActionRow>`
         SELECT family.id,family.title,
           CASE WHEN work.status='draft' AND work.reviewed_at IS NOT NULL AND trim(work.review_note)<>''
             THEN work.review_note
@@ -784,8 +955,8 @@ export class RequestsService {
           AND ((work.status='draft' AND work.reviewed_at IS NOT NULL AND trim(work.review_note)<>'')
             OR current_version.review_due_on<=((now() AT TIME ZONE ${scope.timezone})::date+30))
         ORDER BY urgent DESC,current_version.review_due_on NULLS LAST,family.id
-      `.execute(this.db),
-      sql<StaffActionRow>`
+      `.execute(this.db)),
+      this.projectionReads.run(() => sql<StaffActionRow>`
         WITH clock AS (SELECT (now() AT TIME ZONE ${scope.timezone})::date AS today),
         due_dates AS (
           SELECT today,COALESCE((SELECT candidate::date
@@ -808,8 +979,8 @@ export class RequestsService {
         WHERE plan.school_id=${scope.school_id}::uuid AND plan.draft_version IS NOT NULL
           AND plan.date IN (dates.today,dates.next_instructional)
         ORDER BY plan.date,section.grade,section.section,plan.id
-      `.execute(this.db),
-      sql<StaffActionRow>`
+      `.execute(this.db)),
+      this.projectionReads.run(() => sql<StaffActionRow>`
         SELECT version.id,version.class_section_id AS target_id,version.term_id,
           concat('Publish ',section.grade,section.section,' timetable')::text AS title,
           concat(term.name,' · ',to_char(version.starts_on,'DD Mon'),'–',to_char(version.ends_on,'DD Mon'))::text AS detail,
@@ -826,8 +997,8 @@ export class RequestsService {
           AND version.starts_on<=((now() AT TIME ZONE ${scope.timezone})::date+7)
           AND version.ends_on>=(now() AT TIME ZONE ${scope.timezone})::date
         ORDER BY version.starts_on,section.grade,section.section,version.id
-      `.execute(this.db),
-      sql<StaffActionRow>`
+      `.execute(this.db)),
+      this.projectionReads.run(() => sql<StaffActionRow>`
         WITH clock AS (SELECT (now() AT TIME ZONE ${scope.timezone})::date AS today),
         due_dates AS (
           SELECT candidate::date AS date,clock.today
@@ -853,10 +1024,10 @@ export class RequestsService {
         WHERE slot.slot_type='class' AND NOT slot.cancelled
           AND (slot.teacher_user_id IS NULL OR slot.coverage_status IN ('unassigned','declined'))
         ORDER BY dates.date,slot.starts_at,section.grade,section.section,slot.id
-      `.execute(this.db),
-      sql<StaffActionRow>`
+      `.execute(this.db)),
+      this.projectionReads.run(() => sql<StaffActionRow>`
         SELECT assignment.id,profile.id AS target_id,concat('Reassign ',type.name)::text AS title,
-          concat_ws(' · ',concat_ws(' ',profile.first_name,profile.last_name),
+          concat_ws(' · ',concat_ws(' ',person.first_name,person.last_name),
             COALESCE(NULLIF(assignment.scope_label,''),
               CASE WHEN section.id IS NOT NULL THEN concat('Class ',section.grade,section.section) END,
               event.title,'Institution'),NULLIF(assignment.response_note,''))::text AS detail,
@@ -868,6 +1039,7 @@ export class RequestsService {
         FROM staff_responsibility_assignments assignment
         JOIN staff_responsibility_types type ON type.id=assignment.responsibility_type_id AND type.school_id=assignment.school_id
         JOIN staff_profiles profile ON profile.id=assignment.staff_profile_id AND profile.school_id=assignment.school_id
+        JOIN school_people person ON person.id=profile.person_id AND person.school_id=profile.school_id
         LEFT JOIN class_sections section ON section.id=assignment.class_section_id AND section.school_id=assignment.school_id
         LEFT JOIN campus_events event ON event.id=assignment.event_id AND event.school_id=assignment.school_id
         WHERE assignment.school_id=${scope.school_id}::uuid AND assignment.status='declined'
@@ -884,9 +1056,9 @@ export class RequestsService {
               AND COALESCE(replacement.ends_on,'infinity'::date)>=assignment.starts_on
           )
         ORDER BY assignment.starts_on,assignment.id
-      `.execute(this.db),
-      this.paymentCaptureItems(scope),
-      sql<StaffActionRow>`
+      `.execute(this.db)),
+      this.projectionReads.run(() => this.paymentCaptureItems(scope)),
+      this.projectionReads.run(() => sql<StaffActionRow>`
         SELECT trip.id,route.name::text AS title,
           concat_ws(' · ',concat_ws(' ',collector.first_name,collector.last_name),route.vehicle_label,
             NULLIF(trip.assignment_note,''))::text AS detail,
@@ -902,8 +1074,8 @@ export class RequestsService {
         WHERE trip.school_id=${scope.school_id}::uuid AND trip.state='planned'
           AND trip.collector_assignment_status='declined'
         ORDER BY trip.service_date,trip.scheduled_departure_time,trip.id
-      `.execute(this.db),
-      sql<StaffActionRow>`
+      `.execute(this.db)),
+      this.projectionReads.run(() => sql<StaffActionRow>`
         SELECT plan.id,plan.student_id AS target_id,
           concat('Resolve departure exception · ',concat_ws(' ',person.first_name,person.last_name))::text AS title,
           concat(to_char(plan.service_date,'Dy, DD Mon'),' · ',replace(plan.mode,'_',' '))::text AS detail,
@@ -918,7 +1090,7 @@ export class RequestsService {
         WHERE plan.school_id=${scope.school_id}::uuid AND plan.is_current AND plan.state='exception'
           AND plan.mode<>'school_transport'
         ORDER BY plan.service_date,plan.id
-      `.execute(this.db),
+      `.execute(this.db)),
     ]);
     return [
       ...refunds.rows.map((row) => this.item(row, {
@@ -967,6 +1139,31 @@ export class RequestsService {
         href: departurePlanAttentionHref(row.id, row.target_id ?? "", iso(row.due_at)?.slice(0, 10) ?? ""),
       }, row.priority ?? (row.urgent ? "urgent" : "high"))),
     ];
+  }
+
+  private async homeworkWorkspaceItems(user: AuthUser, scope: Scope, relationship: "self" | "dependent"): Promise<RequestInboxItem[]> {
+    const rows = (await sql<StaffActionRow>`SELECT DISTINCT item.id,item.title,
+      'Report your practice completion, or open the instructions.'::text AS detail,
+      'To do'::text AS status_label,item.due_at,item.date AS occurs_at,item.created_at,
+      (item.due_at IS NOT NULL AND item.due_at<now())::boolean AS urgent,${scope.student_name}::text AS subject_label
+      FROM students student JOIN enrollments enrollment ON enrollment.student_id=student.id
+        AND enrollment.is_active AND enrollment.enrolled_on<=(now() AT TIME ZONE ${scope.timezone})::date
+        AND (enrollment.inactive_from IS NULL OR enrollment.inactive_from>(now() AT TIME ZONE ${scope.timezone})::date)
+      JOIN academic_terms term ON term.id=enrollment.term_id AND (now() AT TIME ZONE ${scope.timezone})::date BETWEEN term.starts_on AND term.ends_on
+      JOIN diary_items item ON item.class_section_id=enrollment.class_section_id AND item.term_id=enrollment.term_id AND item.school_id=student.school_id
+      WHERE student.id=${scope.student_id}::uuid AND student.school_id=${scope.school_id}::uuid
+        AND item.item_type='homework' AND item.published_at<=now()
+        AND (${relationship === "self"} AND student.user_id=${user.id}::uuid OR ${relationship === "dependent"} AND EXISTS(
+          SELECT 1 FROM guardian_relationships guardian JOIN parents parent ON parent.id=guardian.guardian_id
+          JOIN school_memberships membership ON membership.user_id=parent.user_id AND membership.school_id=guardian.school_id AND membership.is_active AND membership.role='guardian'
+          WHERE guardian.school_id=student.school_id AND guardian.student_id=student.id AND parent.user_id=${user.id}::uuid))
+        AND NOT EXISTS(SELECT 1 FROM homework_completions completion WHERE completion.item_id=item.id AND completion.student_id=student.id)
+      ORDER BY item.due_at NULLS LAST,item.created_at,item.id`.execute(this.db)).rows;
+    // The diary date selects its day; it is not a scheduled appointment time.
+    // Work falls back to the real creation instant rather than inventing noon.
+    return rows.map(row => ({ ...this.item({ ...row, occurs_at: null }, { kind: "homework_completion", category: "academics", action_label: "Open practice",
+      href: `/areas/messages/diary?${new URLSearchParams({ scope: relationship, student_id: scope.student_id!, date: iso(row.occurs_at)!.slice(0,10), diary_item: row.id }).toString()}` }, row.urgent ? "urgent" : "normal"),
+      id: `homework_completion:${scope.student_id}:${row.id}` }));
   }
 
   private async parentCanonicalItems(user: AuthUser, scope: Scope): Promise<RequestInboxItem[]> {
@@ -1064,11 +1261,108 @@ export class RequestsService {
       `.execute(this.db),
     ]);
     return [
-      ...followups.rows.map((row) => this.item(row, { kind: "attendance_followup", category: "attendance", action_label: "Reply", href: `/parent/home?student_id=${encodeURIComponent(scope.student_id!)}&followup=${encodeURIComponent(row.id)}#attendance-followups` })),
+      ...await this.homeworkWorkspaceItems(user, scope, "dependent"),
+      ...followups.rows.map((row) => this.item(row, { kind: "attendance_followup", category: "attendance", action_label: "Reply", href: `/areas/attendance/follow-ups?scope=dependent&student_id=${encodeURIComponent(scope.student_id!)}&followup=${encodeURIComponent(row.id)}` })),
       ...diary.rows.map((row) => this.item(row, { kind: "diary_acknowledgement", category: "communication", action_label: "Open diary", href: parentDiaryAttentionHref(scope.student_id!, row.id, row.occurs_at!) }, row.urgent ? "urgent" : "normal")),
-      ...leave.rows.map((row) => this.item(row, { kind: "leave_signature", category: "leave", action_label: "Review leave", href: `/parent/leave?student_id=${encodeURIComponent(scope.student_id!)}&leave_id=${encodeURIComponent(row.id)}` })),
+      ...leave.rows.map((row) => this.item(row, { kind: "leave_signature", category: "leave", action_label: "Review leave", href: `/areas/attendance/leave?scope=dependent&student_id=${encodeURIComponent(scope.student_id!)}&leave_id=${encodeURIComponent(row.id)}` })),
       ...this.eventItems(events.rows, scope),
-      ...feedback.rows.map((row) => this.item(row, { kind: "teacher_feedback", category: "academics", action_label: "Give feedback", href: `/parent/teacher-feedback?student_id=${encodeURIComponent(scope.student_id!)}&campaign=${encodeURIComponent(row.id)}` }, row.urgent ? "urgent" : "normal")),
+      ...feedback.rows.map((row) => this.item(row, { kind: "teacher_feedback", category: "academics", action_label: "Give feedback", href: `/more/feedback?scope=dependent&student_id=${encodeURIComponent(scope.student_id!)}&campaign=${encodeURIComponent(row.id)}` }, row.urgent ? "urgent" : "normal")),
+    ];
+  }
+
+  /**
+   * Actionable learner contributions which previously appeared only on the
+   * student home card. Informational notices are intentionally excluded: Work
+   * contains requests/tasks/offers, while ordinary notices remain Updates.
+   */
+  private async studentWorkspaceItems(user: AuthUser, scope: Scope): Promise<RequestInboxItem[]> {
+    const [notices, diary, policies, events] = await Promise.all([
+      sql<StaffActionRow>`
+        SELECT notice.id,notice.title,
+          CASE notice.response_mode WHEN 'acknowledgement' THEN 'Read and acknowledge.' ELSE 'Choose a response.' END::text AS detail,
+          CASE WHEN notice.due_at<now() THEN 'Response deadline passed'
+            WHEN notice.response_mode='acknowledgement' THEN 'Acknowledgement needed' ELSE 'Response needed' END::text AS status_label,
+          notice.due_at,notice.published_at AS occurs_at,notice.created_at,
+          (notice.priority='urgent' OR notice.due_at<now())::boolean AS urgent,
+          notice.priority::text AS priority,${scope.student_name}::text AS subject_label
+        FROM school_notice_recipients recipient
+        JOIN school_notices notice ON notice.id=recipient.notice_id AND notice.school_id=recipient.school_id
+        JOIN students student ON student.id=${scope.student_id}::uuid
+          AND student.school_id=recipient.school_id AND student.user_id=${user.id}::uuid
+        WHERE recipient.user_id=${user.id}::uuid AND notice.school_id=${scope.school_id}::uuid
+          AND notice.status='published' AND notice.response_mode<>'information' AND recipient.responded_at IS NULL
+          AND (notice.due_at IS NULL OR notice.due_at>=now())
+        ORDER BY notice.due_at,notice.id
+      `.execute(this.db),
+      sql<StaffActionRow>`
+        SELECT DISTINCT ON (item.id) item.id,item.title,
+          'Review and acknowledge this diary item.'::text AS detail,'Acknowledgement needed'::text AS status_label,
+          item.due_at,item.date AS occurs_at,item.created_at,(item.due_at IS NOT NULL AND item.due_at<now())::boolean AS urgent,
+          ${scope.student_name}::text AS subject_label
+        FROM students student
+        JOIN enrollments enrollment ON enrollment.student_id=student.id AND enrollment.is_active
+        JOIN diary_items item ON item.class_section_id=enrollment.class_section_id AND item.term_id=enrollment.term_id
+        WHERE student.id=${scope.student_id}::uuid AND student.school_id=${scope.school_id}::uuid
+          AND student.user_id=${user.id}::uuid AND item.requires_acknowledgement AND item.published_at<=now()
+          AND NOT EXISTS(SELECT 1 FROM diary_acknowledgements acknowledgement
+            WHERE acknowledgement.item_id=item.id AND acknowledgement.student_id=student.id)
+        ORDER BY item.id,item.due_at NULLS LAST,item.created_at
+      `.execute(this.db),
+      sql<StaffActionRow>`
+        SELECT version.id,version.title,'Read and acknowledge the published learner policy.'::text AS detail,
+          'Acknowledgement needed'::text AS status_label,NULL::timestamptz AS due_at,
+          version.published_at AS occurs_at,version.published_at AS created_at,
+          false AS urgent,
+          ${scope.student_name}::text AS subject_label
+        FROM institution_policy_versions version
+        JOIN students student ON student.school_id=version.school_id AND student.id=${scope.student_id}::uuid
+          AND student.user_id=${user.id}::uuid
+        WHERE version.school_id=${scope.school_id}::uuid AND version.status='published'
+          AND version.requires_acknowledgement AND 'student'=ANY(version.audience_roles)
+          AND NOT EXISTS(SELECT 1 FROM institution_policy_acknowledgements acknowledgement
+            WHERE acknowledgement.policy_version_id=version.id AND acknowledgement.user_id=${user.id}::uuid)
+        ORDER BY version.effective_on NULLS LAST,version.id
+      `.execute(this.db),
+      sql<EventActionRow>`
+        SELECT event.id AS event_id,event.title,event.starts_at,event.payment_due_on,
+          event.requires_rsvp,event.requires_guardian_consent,event.payment_required,
+          participant.participation_requirement,participant.rsvp_status,
+          COALESCE(consent.status,'pending') AS consent_status,
+          COALESCE(invoice.amount_paise,0)::int AS invoice_amount_paise,
+          COALESCE((SELECT sum(payment.amount_paise)::int FROM fee_payments payment
+            WHERE payment.invoice_id=invoice.id),0)::int AS paid_paise,
+          (SELECT count(*)::int FROM campus_event_checklist_items item
+            WHERE item.event_id=event.id AND item.required) AS required_items,
+          (SELECT count(*)::int FROM campus_event_checklist_completions completion
+            JOIN campus_event_checklist_items item ON item.id=completion.item_id AND item.required
+            WHERE completion.event_id=event.id AND completion.student_id=participant.student_id) AS required_completed
+        FROM campus_event_participants participant
+        JOIN students student ON student.id=participant.student_id AND student.school_id=participant.school_id
+          AND student.user_id=${user.id}::uuid
+        JOIN campus_events event ON event.id=participant.event_id AND event.school_id=participant.school_id
+        LEFT JOIN campus_event_consents consent ON consent.event_id=event.id AND consent.student_id=participant.student_id
+        LEFT JOIN fee_invoices invoice ON invoice.id=participant.fee_invoice_id
+        WHERE participant.student_id=${scope.student_id}::uuid AND participant.school_id=${scope.school_id}::uuid
+          AND event.status='published' AND event.ends_at>=now()
+        ORDER BY event.starts_at,event.id
+      `.execute(this.db),
+    ]);
+    return [
+      ...await this.homeworkWorkspaceItems(user, scope, "self"),
+      ...await this.feeDueWorkspaceItems(user, scope, "self"),
+      ...notices.rows.map((row) => this.item(row, {
+        kind: "notice_response", category: "communication", action_label: "Open update",
+        href: `/areas/messages/updates/${encodeURIComponent(row.id)}?scope=self&student_id=${encodeURIComponent(scope.student_id ?? "")}`,
+      }, row.priority ?? (row.urgent ? "urgent" : "normal"))),
+      ...diary.rows.map((row) => this.item(row, {
+        kind: "diary_acknowledgement", category: "communication", action_label: "Open diary",
+        href: `/areas/messages/diary?scope=self&student_id=${encodeURIComponent(scope.student_id ?? "")}&diary_item=${encodeURIComponent(row.id)}`,
+      }, row.urgent ? "urgent" : "normal")),
+      ...policies.rows.map((row) => this.item(row, {
+        kind: "policy_acknowledgement", category: "governance", action_label: "Review policy",
+        href: `/more/policies?scope=self&student_id=${encodeURIComponent(scope.student_id ?? "")}&policy=${encodeURIComponent(row.id)}`,
+      }, row.urgent ? "urgent" : "normal")),
+      ...this.eventItems(events.rows, scope, "self"),
     ];
   }
 
@@ -1081,9 +1375,9 @@ export class RequestsService {
     const date = clock.date;
     const role = portal === "principal" ? "admin" : "staff";
     const [classes, subjectAttendance, duties, reports, care, assignedSafeguardingReports, eventSessions] = await Promise.all([
-      attendanceWorkspace(this.db, scope.school_id, user.id, role, date),
-      this.subjectAttendanceCompletionItems(user, scope, portal, date),
-      sql<StaffActionRow>`
+      this.projectionReads.run(() => attendanceWorkspace(this.db, scope.school_id, user.id, role, date)),
+      this.projectionReads.run(() => this.subjectAttendanceCompletionItems(user, scope, portal, date)),
+      this.projectionReads.run(() => sql<StaffActionRow>`
         SELECT event.id,event.title,
           concat(replace(staff.role,'_',' '),' duty',CASE WHEN event.venue<>'' THEN ' · '||event.venue ELSE '' END)::text AS detail,
           'Assigned event duty'::text AS status_label,event.starts_at AS due_at,event.starts_at AS occurs_at,event.created_at,
@@ -1100,8 +1394,8 @@ export class RequestsService {
               AND binding.starts_on<=current_date AND (binding.ends_on IS NULL OR binding.ends_on>=current_date)
           ))
         ORDER BY event.starts_at,event.id
-      `.execute(this.db),
-      portal === "principal" ? sql<StaffActionRow>`
+      `.execute(this.db)),
+      this.projectionReads.run(() => portal === "principal" ? sql<StaffActionRow>`
         SELECT batch.id,scheme.name AS title,
           concat('Class ',section.grade,section.section,' · ',term.name,' · Release ',batch.sequence)::text AS detail,
           CASE batch.status WHEN 'reviewed' THEN 'Ready to publish' ELSE 'Report review needed' END::text AS status_label,
@@ -1132,8 +1426,8 @@ export class RequestsService {
               AND binding.role_active AND binding.status='active' AND 'reports.comment'=ANY(binding.permissions)
               AND binding.starts_on<=CURRENT_DATE AND (binding.ends_on IS NULL OR binding.ends_on>=CURRENT_DATE))
         ORDER BY batch.generated_at,batch.id
-      `.execute(this.db),
-      sql<StaffActionRow>`
+      `.execute(this.db)),
+      this.projectionReads.run(() => sql<StaffActionRow>`
         SELECT DISTINCT care.id,'Restricted care action needed'::text AS title,
           'Open the assigned protected case and record the required action.'::text AS detail,
           CASE WHEN care.safety_state='immediate_action_required' THEN 'Immediate action required' ELSE 'Reporting decision required' END::text AS status_label,
@@ -1146,11 +1440,11 @@ export class RequestsService {
           AND assignment.revoked_at IS NULL AND care.status<>'closed'
           AND (care.safety_state='immediate_action_required' OR care.reporting_state IN ('assessment_required','reporting_required'))
         ORDER BY (care.safety_state='immediate_action_required') DESC,care.last_activity_at,care.id
-      `.execute(this.db),
-      portal === "teacher"
+      `.execute(this.db)),
+      this.projectionReads.run(() => portal === "teacher"
         ? this.teacherSafeguardingReportItems(user, scope)
-        : Promise.resolve([]),
-      this.eventSessionRegisterItems(user, scope, portal),
+        : Promise.resolve([])),
+      this.projectionReads.run(() => this.eventSessionRegisterItems(user, scope, portal)),
     ]);
     return [
       ...(clock.academic_mode === "daily_class"
@@ -1159,8 +1453,8 @@ export class RequestsService {
       ...subjectAttendance,
       ...(portal === "principal" ? principalAttendanceExceptionItems(date, classes) : []),
       ...duties.rows.map((row) => this.item(row, { kind: "event_duty", category: "events", action_label: "Open duty", href: eventDutyAttentionHref(portal, row.id) }, row.urgent ? "urgent" : "normal")),
-      ...reports.rows.map((row) => this.item(row, { kind: "report_card_review", category: "academics", action_label: portal === "principal" ? "Review reports" : "Open remarks", href: `/${portal}/report-cards?view=releases&batch=${encodeURIComponent(row.id)}` }, row.priority ?? (row.urgent ? "high" : "normal"))),
-      ...care.rows.map((row) => this.item(row, { kind: "restricted_care_case", category: "care", action_label: "Open protected case", href: `/${portal}/safeguarding?section=cases&case=${encodeURIComponent(row.id)}` }, row.priority ?? (row.urgent ? "urgent" : "high"))),
+      ...reports.rows.map((row) => this.item(row, { kind: "report_card_review", category: "academics", action_label: portal === "principal" ? "Review reports" : "Open remarks", href: `/areas/reports/remarks?view=releases&batch=${encodeURIComponent(row.id)}` }, row.priority ?? (row.urgent ? "high" : "normal"))),
+      ...care.rows.map((row) => this.item(row, { kind: "restricted_care_case", category: "care", action_label: "Open protected case", href: `/areas/care/concerns?section=cases&case=${encodeURIComponent(row.id)}` }, row.priority ?? (row.urgent ? "urgent" : "high"))),
       ...assignedSafeguardingReports,
       ...eventSessions,
     ];
@@ -1239,15 +1533,17 @@ export class RequestsService {
     ]);
     return [
       ...base,
-      ...followups.rows.map((row) => this.item(row, { kind: "attendance_followup", category: "attendance", action_label: "Review follow-up", href: `/teacher?followup=${encodeURIComponent(row.id)}#attendance-followups` })),
+      ...followups.rows.map((row) => this.item(row, { kind: "attendance_followup", category: "attendance", action_label: "Review follow-up", href: `/areas/attendance/follow-ups?followup=${encodeURIComponent(row.id)}` })),
       ...peopleImports,
     ];
   }
 
   private async principalCanonicalItems(user: AuthUser, scope: Scope): Promise<RequestInboxItem[]> {
-    const [base, followups, studentLeave, coverage, assessmentsReady, attendanceDeclines, peopleImports, operational] = await Promise.all([
-      this.staffCanonicalBase(user, scope, "principal"),
-      sql<StaffActionRow>`
+    // Aggregate phases never hold a permit while calling limited leaf readers.
+    // Nested eager Promise.all previously exhausted the Simulation COW pool.
+    const base = await this.staffCanonicalBase(user, scope, "principal");
+    const [followups, studentLeave, coverage, assessmentsReady, attendanceDeclines, peopleImports] = await Promise.all([
+      this.projectionReads.run(() => sql<StaffActionRow>`
         SELECT followup.id,concat('Attendance follow-up · ',concat_ws(' ',person.first_name,person.last_name))::text AS title,
           followup.question AS detail,
           CASE WHEN followup.due_at<now() THEN 'Overdue' ELSE 'School review needed' END::text AS status_label,
@@ -1259,8 +1555,8 @@ export class RequestsService {
         WHERE followup.school_id=${scope.school_id}::uuid AND followup.state<>'resolved'
           AND (followup.state='in_review' OR followup.due_at<now())
         ORDER BY (followup.due_at<now()) DESC,followup.due_at,followup.id
-      `.execute(this.db),
-      sql<StaffActionRow>`
+      `.execute(this.db)),
+      this.projectionReads.run(() => sql<StaffActionRow>`
         SELECT request.id,concat_ws(' ',person.first_name,person.last_name)||' · Student leave' AS title,
           concat(to_char(request.starts_on,'DD Mon'),'–',to_char(request.ends_on,'DD Mon'),' · ',request.reason)::text AS detail,
           'School decision needed'::text AS status_label,request.starts_on AS due_at,
@@ -1272,10 +1568,10 @@ export class RequestsService {
         JOIN school_people person ON person.id=student.person_id
         WHERE request.status='authorized'
         ORDER BY request.starts_on,request.id
-      `.execute(this.db),
-      sql<StaffActionRow>`
+      `.execute(this.db)),
+      this.projectionReads.run(() => sql<StaffActionRow>`
         SELECT task.id,task.title,
-          concat_ws(' · ',concat_ws(' ',profile.first_name,profile.last_name),to_char(task.duty_date,'DD Mon'),
+          concat_ws(' · ',concat_ws(' ',person.first_name,person.last_name),to_char(task.duty_date,'DD Mon'),
             NULLIF(task.location,''))::text AS detail,
           CASE task.status WHEN 'declined' THEN 'Cover declined' ELSE 'Cover needed' END::text AS status_label,
           task.duty_date AS due_at,task.updated_at AS occurs_at,task.created_at,
@@ -1283,23 +1579,24 @@ export class RequestsService {
           CASE WHEN section.id IS NOT NULL THEN concat('Class ',section.grade,section.section) END::text AS subject_label
         FROM staff_coverage_tasks task
         JOIN staff_profiles profile ON profile.id=task.absent_staff_profile_id
+        JOIN school_people person ON person.id=profile.person_id AND person.school_id=profile.school_id
         LEFT JOIN class_sections section ON section.id=task.class_section_id
         WHERE task.school_id=${scope.school_id}::uuid AND task.status IN ('open','declined')
         ORDER BY task.duty_date,task.id
-      `.execute(this.db),
-      sql<StaffActionRow>`
+      `.execute(this.db)),
+      this.projectionReads.run(() => sql<StaffActionRow>`
         SELECT assessment.id,assessment.title,
           concat('Class ',section.grade,section.section,' · ',subject.name)::text AS detail,
-          'Ready to publish'::text AS status_label,assessment.scheduled_at AS due_at,
+          'Ready to publish'::text AS status_label,NULL::timestamptz AS due_at,
           assessment.moderated_at AS occurs_at,assessment.created_at,false AS urgent,
-          subject.name AS subject_label,'high'::text AS priority
+          subject.name AS subject_label,'normal'::text AS priority
         FROM assessments assessment
         JOIN class_sections section ON section.id=assessment.class_section_id AND section.school_id=assessment.school_id
         JOIN subjects subject ON subject.id=assessment.subject_id AND subject.school_id=assessment.school_id
         WHERE assessment.school_id=${scope.school_id}::uuid AND assessment.status='moderated'
         ORDER BY assessment.moderated_at,assessment.id
-      `.execute(this.db),
-      sql<StaffActionRow>`
+      `.execute(this.db)),
+      this.projectionReads.run(() => sql<StaffActionRow>`
         WITH clock AS (SELECT (now() AT TIME ZONE ${scope.timezone})::date AS today),
         cohort AS MATERIALIZED (
           SELECT student.id,concat_ws(' ',person.first_name,person.last_name) AS student_name,
@@ -1361,20 +1658,29 @@ export class RequestsService {
           AND NOT EXISTS(SELECT 1 FROM attendance_followups followup
             WHERE followup.school_id=${scope.school_id}::uuid AND followup.student_id=stats.id AND followup.state<>'resolved')
         ORDER BY (stats.current_points*100/stats.current_scored-stats.previous_points*100/stats.previous_scored),stats.student_name,stats.id
-      `.execute(this.db),
-      this.peopleImportItems(user, scope, "principal"),
-      this.principalOperationalItems(scope),
+      `.execute(this.db)),
+      this.projectionReads.run(() => this.peopleImportItems(user, scope, "principal")),
     ]);
+    const operational = await this.principalOperationalItems(scope);
     return [
       ...base,
-      ...followups.rows.map((row) => this.item(row, { kind: "attendance_followup", category: "attendance", action_label: "Review follow-up", href: `/principal/followups?followup=${encodeURIComponent(row.id)}` })),
-      ...studentLeave.rows.map((row) => this.item(row, { kind: "student_leave_review", category: "leave", action_label: "Review student leave", href: `/principal/student-leave?request=${encodeURIComponent(row.id)}` })),
-      ...coverage.rows.map((row) => this.item(row, { kind: "coverage_gap", category: "staffing", action_label: "Arrange cover", href: `/principal/staff?section=leave&coverage=${encodeURIComponent(row.id)}` })),
-      ...assessmentsReady.rows.map((row) => this.item(row, { kind: "assessment_publish", category: "academics", action_label: "Publish results", href: `/principal/assessments?assessment=${encodeURIComponent(row.id)}` }, "high")),
+      ...followups.rows.map((row) => this.item(row, { kind: "attendance_followup", category: "attendance", action_label: "Review follow-up", href: `/areas/attendance/coordination?followup=${encodeURIComponent(row.id)}` })),
+      ...studentLeave.rows.map((row) => this.item(row, { kind: "student_leave_review", category: "leave", action_label: "Review student leave", href: `/areas/attendance/leave?request=${encodeURIComponent(row.id)}` })),
+      ...coverage.rows.map((row) => this.item(row, { kind: "coverage_gap", category: "staffing", action_label: "Arrange cover", href: `/areas/responsibilities/coverage?coverage=${encodeURIComponent(row.id)}` })),
+      ...assessmentsReady.rows.map((row) => this.item(row, { kind: "assessment_publish", category: "academics", action_label: "Publish results", href: assessmentWorkHref("manage", row.id) }, "normal")),
       ...attendanceDeclines.rows.map((row) => this.item(row, { kind: "attendance_decline_review", category: "attendance", action_label: "Review student", href: attendanceDeclineAttentionHref(row.id, iso(row.occurs_at)?.slice(0, 10) ?? "", row.target_id ?? "") }, "normal")),
       ...peopleImports,
       ...operational,
     ];
+  }
+
+  private async feeDueWorkspaceItems(user: AuthUser, scope: Scope, relationship: "self" | "dependent"): Promise<RequestInboxItem[]> {
+    if (!scope.student_id) return [];
+    if (!this.feeArrangements) throw new ServiceUnavailableException("Current fee obligations could not be loaded. Open Fees or try again.");
+    const rows = await this.feeArrangements.dueWork(user, scope.school_id, scope.student_id, relationship);
+    return rows.map(row => this.item({ ...row, occurs_at: row.created_at, subject_label: scope.student_name, urgent: row.priority === "urgent" },
+      { kind: "fee_due", category: "finance", action_label: "View fees",
+        href: `/areas/fees/account?${new URLSearchParams({ scope: relationship, student_id: scope.student_id!, invoice: row.id }).toString()}` }, row.priority));
   }
 
   private async parentItems(user: AuthUser, scope: Scope): Promise<RequestInboxItem[]> {
@@ -1399,8 +1705,8 @@ export class RequestsService {
         SELECT version.id,version.title,
           'Read and acknowledge the published school policy.'::text AS detail,
           'Acknowledgement needed'::text AS status_label,
-          version.effective_on AS due_at,version.published_at AS occurs_at,version.published_at AS created_at,
-          (version.review_due_on IS NOT NULL AND version.review_due_on<=current_date)::boolean AS urgent,
+          NULL::timestamptz AS due_at,version.published_at AS occurs_at,version.published_at AS created_at,
+          false AS urgent,
           ${scope.school_name}::text AS subject_label
         FROM institution_policy_versions version
         WHERE version.school_id=${scope.school_id}::uuid AND version.status='published'
@@ -1409,44 +1715,12 @@ export class RequestsService {
             WHERE acknowledgement.policy_version_id=version.id AND acknowledgement.user_id=${user.id}::uuid)
         ORDER BY version.effective_on NULLS LAST,version.id
       `.execute(this.db),
-      sql<StaffActionRow>`
-        SELECT invoice.id,invoice.description AS title,
-          ('Outstanding balance: ₹'||to_char(GREATEST(invoice.amount_paise-COALESCE(credit.amount_paise,0)-COALESCE(paid.amount_paise,0),0)/100.0,'FM99,99,99,990.00'))::text AS detail,
-          ('Due '||to_char(invoice.due_on,'DD Mon'))::text AS status_label,
-          invoice.due_on AS due_at,invoice.created_at AS occurs_at,invoice.created_at,
-          (invoice.due_on<current_date)::boolean AS urgent,${scope.student_name}::text AS subject_label
-        FROM fee_invoices invoice
-        LEFT JOIN LATERAL (SELECT COALESCE(sum(entry.amount_paise),0)::int AS amount_paise
-          FROM fee_invoice_credits entry WHERE entry.invoice_id=invoice.id) credit ON true
-        LEFT JOIN LATERAL (SELECT COALESCE(sum(payment.amount_paise),0)::int AS amount_paise
-          FROM fee_payments payment WHERE payment.invoice_id=invoice.id) paid ON true
-        WHERE invoice.school_id=${scope.school_id}::uuid AND invoice.student_id=${scope.student_id}::uuid
-          AND invoice.amount_paise-COALESCE(credit.amount_paise,0)>COALESCE(paid.amount_paise,0)
-          -- While a live event owns this invoice, its RSVP/consent/payment
-          -- workflow is the one useful destination. Listing the same balance
-          -- again as a generic fee would double-count one family obligation.
-          -- Once the event is no longer live, the ordinary fee ledger resumes
-          -- ownership so an unpaid balance can never disappear.
-          AND NOT EXISTS (
-            SELECT 1
-            FROM campus_event_participants participant
-            JOIN campus_events event ON event.id=participant.event_id AND event.school_id=participant.school_id
-            LEFT JOIN campus_event_consents consent
-              ON consent.event_id=participant.event_id AND consent.student_id=participant.student_id
-            WHERE participant.school_id=invoice.school_id
-              AND participant.student_id=invoice.student_id
-              AND participant.fee_invoice_id=invoice.id
-              AND event.status='published' AND event.ends_at>=now() AND event.payment_required
-              AND (participant.participation_requirement='mandatory' OR participant.rsvp_status='accepted')
-              AND (NOT event.requires_guardian_consent OR consent.status='granted')
-          )
-        ORDER BY invoice.due_on,invoice.id
-      `.execute(this.db),
+      this.feeDueWorkspaceItems(user, scope, "dependent"),
     ]);
     return [
-      ...notices.rows.map((row) => this.item(row, { kind: "notice_response", category: "communication", action_label: "Open notice", href: `/parent/notices/${encodeURIComponent(row.id)}?student_id=${encodeURIComponent(scope.student_id ?? "")}` }, row.priority ?? (row.urgent ? "urgent" : "normal"))),
-      ...policies.rows.map((row) => this.item(row, { kind: "policy_acknowledgement", category: "governance", action_label: "Review policy", href: `/parent/policies?policy=${encodeURIComponent(row.id)}` }, row.urgent ? "urgent" : "normal")),
-      ...invoices.rows.map((row) => this.item(row, { kind: "fee_due", category: "finance", action_label: "View fees", href: `/parent/fees?student_id=${encodeURIComponent(scope.student_id ?? "")}&invoice=${encodeURIComponent(row.id)}` })),
+      ...notices.rows.map((row) => this.item(row, { kind: "notice_response", category: "communication", action_label: "Open update", href: `/areas/messages/updates/${encodeURIComponent(row.id)}?scope=dependent&student_id=${encodeURIComponent(scope.student_id ?? "")}` }, row.priority ?? (row.urgent ? "urgent" : "normal"))),
+      ...policies.rows.map((row) => this.item(row, { kind: "policy_acknowledgement", category: "governance", action_label: "Review policy", href: `/more/policies?scope=dependent&student_id=${encodeURIComponent(scope.student_id ?? "")}&policy=${encodeURIComponent(row.id)}` }, row.urgent ? "urgent" : "normal")),
+      ...invoices,
     ];
   }
 
@@ -1455,7 +1729,7 @@ export class RequestsService {
       const canReview = await this.canReviewStaffLeave(user, scope.school_id, transaction);
       if (!canReview) return [];
       const result = await sql<StaffActionRow>`
-        SELECT request.id,concat(profile.first_name,' ',profile.last_name,' · ',policy.name)::text AS title,
+        SELECT request.id,concat(person.first_name,' ',person.last_name,' · ',policy.name)::text AS title,
           concat(to_char(request.starts_on,'DD Mon'),'–',to_char(request.ends_on,'DD Mon'),' · ',request.reason)::text AS detail,
           'Leave decision needed'::text AS status_label,request.starts_on AS due_at,
           request.submitted_at AS occurs_at,request.created_at,
@@ -1463,6 +1737,7 @@ export class RequestsService {
           profile.designation AS subject_label
         FROM staff_leave_requests request
         JOIN staff_profiles profile ON profile.id=request.staff_profile_id
+        JOIN school_people person ON person.id=profile.person_id AND person.school_id=profile.school_id
         JOIN staff_leave_policies policy ON policy.id=request.policy_id
         WHERE request.school_id=${scope.school_id}::uuid AND request.status='submitted'
         ORDER BY request.starts_on,request.id
@@ -1593,9 +1868,8 @@ export class RequestsService {
         SELECT assessment.id,assessment.title,
           concat('Class ',section.grade,section.section,' · ',subject.name)::text AS detail,
           CASE assignment.role WHEN 'moderator' THEN 'Moderation needed' ELSE 'Marking needed' END::text AS status_label,
-          assessment.scheduled_at AS due_at,assignment.assigned_at AS occurs_at,assignment.assigned_at AS created_at,
-          (assessment.scheduled_at IS NOT NULL AND assessment.scheduled_at<now())::boolean AS urgent,
-          subject.name AS subject_label
+          NULL::timestamptz AS due_at,assignment.assigned_at AS occurs_at,assignment.assigned_at AS created_at,
+          false AS urgent,subject.name AS subject_label,'normal'::text AS priority
         FROM assessment_staff_assignments assignment
         JOIN assessments assessment ON assessment.id=assignment.assessment_id AND assessment.school_id=assignment.school_id
         JOIN class_sections section ON section.id=assessment.class_section_id
@@ -1614,9 +1888,9 @@ export class RequestsService {
       `.execute(this.db),
       sql<StaffActionRow>`
         SELECT version.id,version.title,'Read and acknowledge the published staff policy.'::text AS detail,
-          'Acknowledgement needed'::text AS status_label,version.effective_on AS due_at,
+          'Acknowledgement needed'::text AS status_label,NULL::timestamptz AS due_at,
           version.published_at AS occurs_at,version.published_at AS created_at,
-          (version.review_due_on IS NOT NULL AND version.review_due_on<=current_date)::boolean AS urgent,
+          false AS urgent,
           NULL::text AS subject_label
         FROM institution_policy_versions version
         WHERE version.school_id=${scope.school_id}::uuid AND version.status='published'
@@ -1627,14 +1901,14 @@ export class RequestsService {
       `.execute(this.db),
     ]);
     return [
-      ...notices.rows.map((row) => this.item(row, { kind: "notice_response", category: "communication", action_label: "Open notice", href: `/teacher/notices/${encodeURIComponent(row.id)}` }, row.priority ?? (row.urgent ? "urgent" : "normal"))),
-      ...assignments.rows.map((row) => this.item(row, { kind: "responsibility_offer", category: "staffing", action_label: "Review assignment", href: `/teacher/responsibilities?assignment=${encodeURIComponent(row.id)}` })),
-      ...coverage.rows.map((row) => this.item(row, { kind: "coverage_offer", category: "staffing", action_label: "Review cover", href: `/teacher/responsibilities?coverage=${encodeURIComponent(row.id)}` })),
-      ...trips.rows.map((row) => this.item(row, { kind: "transport_assignment", category: "transport", action_label: "Review ride", href: `/teacher/transport/${encodeURIComponent(row.id)}` })),
-      ...swaps.rows.map((row) => this.item(row, { kind: "transport_swap", category: "transport", action_label: "Respond", href: `/teacher/transport?swap=${encodeURIComponent(row.id)}` })),
-      ...invigilation.rows.map((row) => this.item(row, { kind: "assessment_invigilation", category: "academics", action_label: "Review duty", href: `/teacher/assessments?assessment=${encodeURIComponent(row.entity_id ?? row.id)}` })),
-      ...assessments.rows.map((row) => this.item(row, { kind: "assessment_work", category: "academics", action_label: "Open assessment", href: `/teacher/assessments?assessment=${encodeURIComponent(row.id)}` })),
-      ...policies.rows.map((row) => this.item(row, { kind: "policy_acknowledgement", category: "governance", action_label: "Review policy", href: `/teacher/policies?policy=${encodeURIComponent(row.id)}` }, row.urgent ? "urgent" : "normal")),
+      ...notices.rows.map((row) => this.item(row, { kind: "notice_response", category: "communication", action_label: "Open update", href: `/areas/messages/updates/${encodeURIComponent(row.id)}` }, row.priority ?? (row.urgent ? "urgent" : "normal"))),
+      ...assignments.rows.map((row) => this.item(row, { kind: "responsibility_offer", category: "staffing", action_label: "Review assignment", href: `/areas/responsibilities/mine?assignment=${encodeURIComponent(row.id)}` })),
+      ...coverage.rows.map((row) => this.item(row, { kind: "coverage_offer", category: "staffing", action_label: "Review cover", href: `/areas/responsibilities/coverage?coverage=${encodeURIComponent(row.id)}` })),
+      ...trips.rows.map((row) => this.item(row, { kind: "transport_assignment", category: "transport", action_label: "Review journey", href: `/areas/departure/operate/${encodeURIComponent(row.id)}` })),
+      ...swaps.rows.map((row) => this.item(row, { kind: "transport_swap", category: "transport", action_label: "Respond", href: `/areas/departure/operate?swap=${encodeURIComponent(row.id)}` })),
+      ...invigilation.rows.map((row) => this.item(row, { kind: "assessment_invigilation", category: "academics", action_label: "Review duty", href: assessmentWorkHref("assigned", row.entity_id ?? row.id) })),
+      ...assessments.rows.map((row) => this.item(row, { kind: "assessment_work", category: "academics", action_label: "Open assessment", href: assessmentWorkHref("assigned", row.id) })),
+      ...policies.rows.map((row) => this.item(row, { kind: "policy_acknowledgement", category: "governance", action_label: "Review policy", href: `/more/policies?policy=${encodeURIComponent(row.id)}` }, row.urgent ? "urgent" : "normal")),
       ...leave,
     ];
   }
@@ -1677,7 +1951,7 @@ export class RequestsService {
         ORDER BY notice.due_at NULLS LAST,notice.id
       `.execute(transaction),
       sql<StaffActionRow>`
-        SELECT request.id,concat(profile.first_name,' ',profile.last_name,' · ',policy.name)::text AS title,
+        SELECT request.id,concat(person.first_name,' ',person.last_name,' · ',policy.name)::text AS title,
           concat(to_char(request.starts_on,'DD Mon'),'–',to_char(request.ends_on,'DD Mon'),' · ',request.reason)::text AS detail,
           'Leave decision needed'::text AS status_label,request.starts_on AS due_at,
           request.submitted_at AS occurs_at,request.created_at,
@@ -1685,6 +1959,7 @@ export class RequestsService {
           profile.designation AS subject_label
         FROM staff_leave_requests request
         JOIN staff_profiles profile ON profile.id=request.staff_profile_id
+        JOIN school_people person ON person.id=profile.person_id AND person.school_id=profile.school_id
         JOIN staff_leave_policies policy ON policy.id=request.policy_id
         WHERE request.school_id=${scope.school_id}::uuid AND request.status='submitted'
           AND ${canReviewStaffLeave}
@@ -1723,17 +1998,18 @@ export class RequestsService {
       `.execute(transaction),
       sql<StaffActionRow>`
         SELECT request.id,invoice.id AS target_id,concat('Payment review · ',invoice.reference)::text AS title,
-          concat(person.first_name,' ',person.last_name,' · ',request.note)::text AS detail,
-          'Finance review needed'::text AS status_label,invoice.due_on AS due_at,
+          concat(person.first_name,' ',person.last_name)::text AS detail,
+          'Finance review needed'::text AS status_label,NULL::timestamptz AS due_at,
           request.created_at AS occurs_at,request.created_at,
-          (invoice.due_on<current_date)::boolean AS urgent,concat('₹',to_char(request.amount_paise/100.0,'FM99,99,99,990.00'))::text AS subject_label
-        FROM fee_review_requests request
-        JOIN fee_invoices invoice ON invoice.id=request.invoice_id AND invoice.school_id=request.school_id
+          false AS urgent,'normal'::text AS priority,concat('₹',to_char(request.amount_paise/100.0,'FM99,99,99,990.00'))::text AS subject_label
+        FROM fee_native_review_requests request
+        JOIN fee_effective_invoices invoice ON invoice.id=request.invoice_id AND invoice.school_id=request.school_id
         JOIN students student ON student.id=invoice.student_id
         JOIN school_people person ON person.id=student.person_id
-        LEFT JOIN fee_review_decisions decision ON decision.request_id=request.id
-        WHERE request.school_id=${scope.school_id}::uuid AND decision.id IS NULL
-        ORDER BY invoice.due_on,request.id
+        LEFT JOIN fee_native_review_decisions decision ON decision.review_id=request.id
+        WHERE request.school_id=${scope.school_id}::uuid AND request.route_kind='guardian_queue' AND decision.id IS NULL
+          AND NOT EXISTS(SELECT 1 FROM fee_native_review_withdrawals w WHERE w.school_id=request.school_id AND w.review_id=request.id)
+        ORDER BY request.created_at,request.id
       `.execute(transaction),
       sql<StaffActionRow>`
         SELECT version.id,family.id AS target_id,version.title,version.summary AS detail,
@@ -1749,10 +2025,9 @@ export class RequestsService {
       sql<StaffActionRow>`
         SELECT assessment.id,assessment.title,
           concat('Class ',section.grade,section.section,' · ',subject.name)::text AS detail,
-          'Moderation needed'::text AS status_label,assessment.scheduled_at AS due_at,
+          'Moderation needed'::text AS status_label,NULL::timestamptz AS due_at,
           assessment.submitted_at AS occurs_at,assessment.created_at,
-          (assessment.scheduled_at IS NOT NULL AND assessment.scheduled_at<now())::boolean AS urgent,
-          subject.name AS subject_label
+          false AS urgent,subject.name AS subject_label,'normal'::text AS priority
         FROM assessments assessment
         JOIN class_sections section ON section.id=assessment.class_section_id
         JOIN subjects subject ON subject.id=assessment.subject_id
@@ -1783,15 +2058,15 @@ export class RequestsService {
       `.execute(transaction),
     ]);
     return [
-      ...notices.rows.map((row) => this.item(row, { kind: "notice_response", category: "communication", action_label: "Open notice", href: `/principal/notices/${encodeURIComponent(row.id)}` }, row.priority ?? (row.urgent ? "urgent" : "normal"))),
+      ...notices.rows.map((row) => this.item(row, { kind: "notice_response", category: "communication", action_label: "Open update", href: `/areas/messages/updates/${encodeURIComponent(row.id)}` }, row.priority ?? (row.urgent ? "urgent" : "normal"))),
       ...noticeExceptions.rows.map((row) => this.item(row, { kind: "notice_exception", category: "communication", action_label: "Review notice", href: principalNoticeAttentionHref(row.id) }, "urgent")),
       ...leave.rows.map((row) => this.item(row, { kind: "staff_leave_review", category: "leave", action_label: "Review leave", href: `/work/staff-leave?school=${encodeURIComponent(scope.school_id)}&request=${encodeURIComponent(row.id)}` })),
-      ...departure.rows.map((row) => this.item(row, { kind: "departure_change", category: "transport", action_label: "Review change", href: `/principal/departure?section=requests&request=${encodeURIComponent(row.id)}` })),
-      ...swaps.rows.map((row) => this.item(row, { kind: "transport_swap_approval", category: "transport", action_label: "Review duty change", href: `/principal/departure?section=roster&swap=${encodeURIComponent(row.id)}` })),
-      ...fees.rows.map((row) => this.item(row, { kind: "fee_review", category: "finance", action_label: "Review payment", href: `/principal/fees?view=review&review=${encodeURIComponent(row.id)}` })),
-      ...policies.rows.map((row) => this.item(row, { kind: "policy_review", category: "governance", action_label: "Review policy", href: `/principal/governance?section=register&policy=${encodeURIComponent(row.target_id ?? row.id)}` })),
-      ...assessments.rows.map((row) => this.item(row, { kind: "assessment_moderation", category: "academics", action_label: "Review assessment", href: `/principal/assessments?assessment=${encodeURIComponent(row.id)}` })),
-      ...continuity.rows.map((row) => this.item(row, { kind: "attendance_reconciliation", category: "attendance", action_label: "Review entry", href: `/principal/attendance?review_case=${encodeURIComponent(row.id)}` }, "urgent")),
+      ...departure.rows.map((row) => this.item(row, { kind: "departure_change", category: "transport", action_label: "Review change", href: `/areas/departure/manage?section=requests&request=${encodeURIComponent(row.id)}` })),
+      ...swaps.rows.map((row) => this.item(row, { kind: "transport_swap_approval", category: "transport", action_label: "Review duty change", href: `/areas/departure/manage?section=roster&swap=${encodeURIComponent(row.id)}` })),
+      ...fees.rows.map((row) => this.item(row, { kind: "fee_review", category: "finance", action_label: "Review payment", href: `/areas/fees/ledger?view=review&review=${encodeURIComponent(row.id)}` }, "normal")),
+      ...policies.rows.map((row) => this.item(row, { kind: "policy_review", category: "governance", action_label: "Review policy", href: `/more/governance?section=register&policy=${encodeURIComponent(row.target_id ?? row.id)}` })),
+      ...assessments.rows.map((row) => this.item(row, { kind: "assessment_moderation", category: "academics", action_label: "Review assessment", href: assessmentWorkHref("manage", row.id) })),
+      ...continuity.rows.map((row) => this.item(row, { kind: "attendance_reconciliation", category: "attendance", action_label: "Review entry", href: `/areas/attendance/coordination?review_case=${encodeURIComponent(row.id)}` }, "urgent")),
       ...concerns.rows.map((row) => this.item(row, { kind: "student_concern", category: "care", action_label: "Review concern", href: safeguardingReportAttentionHref("principal", row.id) })),
     ];
     });

@@ -3,9 +3,10 @@ import { AuthModule } from "../auth/auth.module.js";
 import { CampusModelCoreModule } from "../campus-model-core/campus-model-core.module.js";
 import { InstitutionOnboardingController } from "./institution-onboarding.controller.js";
 import { InstitutionOnboardingService } from "./institution-onboarding.service.js";
+import { ProgressiveWorkspaceModule } from "./progressive-workspace.module.js";
 
 @Module({
-  imports: [AuthModule, CampusModelCoreModule],
+  imports: [AuthModule, CampusModelCoreModule, ProgressiveWorkspaceModule],
   controllers: [InstitutionOnboardingController],
   providers: [InstitutionOnboardingService],
 })

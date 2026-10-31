@@ -1,0 +1,650 @@
+var __decorate = (this && this.__decorate) || function (decorators, target, key, desc) {
+    var c = arguments.length, r = c < 3 ? target : desc === null ? desc = Object.getOwnPropertyDescriptor(target, key) : desc, d;
+    if (typeof Reflect === "object" && typeof Reflect.decorate === "function") r = Reflect.decorate(decorators, target, key, desc);
+    else for (var i = decorators.length - 1; i >= 0; i--) if (d = decorators[i]) r = (c < 3 ? d(r) : c > 3 ? d(target, key, r) : d(target, key)) || r;
+    return c > 3 && r && Object.defineProperty(target, key, r), r;
+};
+var __metadata = (this && this.__metadata) || function (k, v) {
+    if (typeof Reflect === "object" && typeof Reflect.metadata === "function") return Reflect.metadata(k, v);
+};
+import { ConflictException, ForbiddenException, Injectable, NotFoundException, UnprocessableEntityException } from '@nestjs/common';
+import { createHash, randomUUID } from 'node:crypto';
+import { sql } from 'kysely';
+import { z } from 'zod';
+import { executionNow } from '../campus-model-core/execution-time.runtime.js';
+import { DatabaseService } from '../database/database.service.js';
+import { institutionSchoolPermissionForUser } from '../roles/authorization.js';
+import { retainOperatingDestination } from '../institution-onboarding/operating-resume.js';
+import { FacilitiesAccess } from './facilities.access.js';
+import { FacilitiesModel } from './facilities.model.js';
+import { FacilitiesArtifactStore, repairPhotoMetadata } from './facilities-artifacts.js';
+import { facilitiesAction, facilitiesSettings, facilitiesReport, facilitiesList, facilitiesOptions, facilitiesCommand, facilitiesExternalGrant, facilitiesExternalEnd, facilitiesHref } from './facilities.contracts.js';
+import { facilitiesWorkOnly } from './facilities-external.access.js';
+import { readWorkInvitation } from '../operations/person-work-invitation-read.js';
+import { readFacilitiesMapSignals } from './facilities-map.read.js';
+const iso = (value) => value === null ? null : new Date(value).toISOString();
+const personLabel = (first, last) => `${first} ${last}`.trim();
+let FacilitiesService = class FacilitiesService {
+    db;
+    access;
+    model;
+    artifacts;
+    constructor(db, access, model, artifacts) {
+        this.db = db;
+        this.access = access;
+        this.model = model;
+        this.artifacts = artifacts;
+    }
+    async ordinary(tx, user, school) { if (await facilitiesWorkOnly(tx, school, user.id))
+        throw new ForbiddenException('Your campus access is limited to the work explicitly shared with you.'); }
+    external(tx, repair) { return repair.external_assignment_id ? tx.selectFrom('facilities_external_assignments').selectAll().where('school_id', '=', repair.school_id).where('id', '=', repair.external_assignment_id).executeTakeFirst() : Promise.resolve(undefined); }
+    externalCurrent(access) { const at = executionNow(); return Boolean(access?.status === 'granted' && access.starts_at <= at && access.ends_at > at); }
+    internalParticipant(repair, person, external) { return [repair.reporter_person_id, repair.recorder_person_id, repair.verifier_person_id, repair.coordinator_person_id].includes(person) || repair.handler_person_id === person && external?.person_id !== person; }
+    async externalView(tx, user, repair, external, canManage) {
+        if (!external)
+            return null;
+        const person = await tx.selectFrom('school_people').select(['id', 'first_name', 'last_name', 'revision']).where('school_id', '=', repair.school_id).where('id', '=', external.person_id).executeTakeFirstOrThrow();
+        const endpoint = await this.endpointAvailable(tx, repair.school_id, person.id, true), at = executionNow();
+        const state = external.status === 'ended' ? 'ended' : external.ends_at <= at ? 'expired' : external.starts_at > at ? 'scheduled' : repair.handler_person_id === person.id ? 'active' : !endpoint ? 'awaiting_sign_in' : 'ready';
+        return { id: external.id, person: { id: person.id, label: personLabel(person.first_name, person.last_name), revision: person.revision, has_app_access: Boolean(endpoint) }, starts_at: iso(external.starts_at), ends_at: iso(external.ends_at), instructions: external.instructions, shared_photo_ids: external.shared_photo_ids, state, can_manage: canManage, invitation: canManage ? await readWorkInvitation(tx, { school_id: repair.school_id, repair_id: repair.id, assignment_id: external.id, person_id: external.person_id }) : null,
+            can_activate: state === 'ready' && endpoint?.user_id === user.id && !['closed', 'awaiting_verification'].includes(repair.state) };
+    }
+    async person(tx, schoolId, id) {
+        const person = (await sql `SELECT id,first_name,last_name FROM school_people WHERE school_id=${schoolId}::uuid AND id=${id}::uuid AND retired_at IS NULL FOR SHARE`.execute(tx)).rows[0];
+        if (!person)
+            throw new UnprocessableEntityException('Choose a current person from this campus.');
+        return { id: person.id, label: personLabel(person.first_name, person.last_name) };
+    }
+    async endpoint(tx, school, person, manage = false, allowWorkOnly = false) {
+        const endpoint = await this.access.identities.resolvePersonAgent(tx, { school_id: school, person_id: person, at: executionNow().toISOString() });
+        if (!endpoint.acting || endpoint.person_id !== person)
+            throw new UnprocessableEntityException('The named responsible person needs current campus app access. No replacement recipient was invented.');
+        if (!allowWorkOnly && await facilitiesWorkOnly(tx, school, endpoint.user_id))
+            throw new UnprocessableEntityException('This person has assigned-work access only. Use the explicit technician assignment for their job.');
+        if (manage)
+            await institutionSchoolPermissionForUser(tx, endpoint.user_id, school, 'facilities.manage', true);
+        return { person_id: person, user_id: endpoint.user_id };
+    }
+    async currentRule(tx, school) { return tx.selectFrom('facilities_intake_rules').selectAll().where('school_id', '=', school).orderBy('revision', 'desc').executeTakeFirst(); }
+    async settingsIn(tx, user, school) {
+        const canManage = await this.access.manages(tx, user, school), rule = await this.currentRule(tx, school);
+        const display = async (id) => { const person = await tx.selectFrom('school_people').select(['id', 'first_name', 'last_name']).where('school_id', '=', school).where('id', '=', id).executeTakeFirstOrThrow(); return { id: person.id, label: personLabel(person.first_name, person.last_name) }; };
+        return rule ? { configured: true, can_manage: canManage, revision: rule.revision, handler_person_id: rule.handler_person_id, handler: await display(rule.handler_person_id), verifier_mode: rule.verifier_mode, verifier_person_id: rule.verifier_person_id, verifier: rule.verifier_person_id ? await display(rule.verifier_person_id) : null, emergency_contact: rule.emergency_contact }
+            : { configured: false, can_manage: canManage, revision: 0, handler_person_id: null, handler: null, verifier_mode: 'reporter', verifier_person_id: null, verifier: null, emergency_contact: '' };
+    }
+    settings(user, school) { return this.db.transaction().execute(async (tx) => { await this.access.campus(tx, user, school); await this.ordinary(tx, user, school); return this.settingsIn(tx, user, school); }); }
+    async saveSettings(user, school, raw) {
+        const input = facilitiesSettings.parse(raw);
+        return this.db.transaction().execute(async (tx) => {
+            const actor = await this.access.manager(tx, user, school);
+            await tx.selectFrom('schools').select('id').where('id', '=', school).forUpdate().executeTakeFirstOrThrow();
+            const old = await this.currentRule(tx, school), prepared = await this.model.prepare(tx, user, actor, { id: school, school_id: school, revision: old?.revision ?? 0 }, 'rule_configured', input, 'facilities.manage', { school_id: school, permission: 'facilities.manage' });
+            if (prepared.replay)
+                return this.settingsIn(tx, user, school);
+            await this.person(tx, school, input.handler_person_id);
+            await this.endpoint(tx, school, input.handler_person_id);
+            if (input.verifier_person_id) {
+                await this.person(tx, school, input.verifier_person_id);
+                await this.endpoint(tx, school, input.verifier_person_id);
+            }
+            const rule = await tx.insertInto('facilities_intake_rules').values({ id: input.command_id, school_id: school, revision: (old?.revision ?? 0) + 1, handler_person_id: input.handler_person_id, verifier_mode: input.verifier_mode, verifier_person_id: input.verifier_person_id, emergency_contact: input.emergency_contact, created_by_person_id: actor.person_id, created_by_user_id: user.id, command_id: prepared.prepared.command_id, created_at: executionNow() }).returningAll().executeTakeFirstOrThrow();
+            await this.model.finishSettings(tx, user, rule, prepared.prepared);
+            return this.settingsIn(tx, user, school);
+        });
+    }
+    async repair(tx, school, id, lock = false) { let query = tx.selectFrom('facilities_repairs').selectAll().where('school_id', '=', school).where('id', '=', id); if (lock)
+        query = query.forUpdate(); const repair = await query.executeTakeFirst(); if (!repair)
+        throw new NotFoundException('This repair is unavailable in the selected campus.'); return repair; }
+    participants(repair) { return [repair.reporter_person_id, repair.recorder_person_id, repair.handler_person_id, repair.verifier_person_id, repair.coordinator_person_id]; }
+    async endpointAvailable(tx, school, person, allowWorkOnly = false) { try {
+        return await this.endpoint(tx, school, person, false, allowWorkOnly);
+    }
+    catch (error) {
+        if (error instanceof UnprocessableEntityException || error instanceof ForbiddenException)
+            return null;
+        throw error;
+    } }
+    async readable(tx, user, repair) {
+        const actor = await this.access.campus(tx, user, repair.school_id), manager = await this.access.manages(tx, user, repair.school_id), external = await this.external(tx, repair), internal = this.internalParticipant(repair, actor.person_id, external), shared = external?.person_id === actor.person_id && this.externalCurrent(external), participant = internal || shared;
+        const coordinated = !participant ? (await sql `SELECT facilities_repair_coordination_available(${repair.school_id}::uuid,${repair.id}::uuid) AS valid`.execute(tx)).rows[0]?.valid : false;
+        if (!participant && (!manager || repair.state === 'closed' || coordinated))
+            throw new ForbiddenException('This repair is private to its exact participants.');
+        return { actor, manager, participant, external, external_only: !internal && shared, internal };
+    }
+    async nextRecipient(tx, repair) {
+        if (repair.state === 'closed')
+            return null;
+        const verifier = repair.state === 'awaiting_verification', external = await this.external(tx, repair);
+        if (!verifier && external?.status === 'granted' && (repair.handler_person_id !== external.person_id || !this.externalCurrent(external)))
+            return null;
+        if (!verifier && external?.person_id === repair.handler_person_id && !this.externalCurrent(external))
+            return null;
+        try {
+            return await this.endpoint(tx, repair.school_id, verifier ? repair.verifier_person_id : repair.handler_person_id, false, !verifier && external?.person_id === repair.handler_person_id && this.externalCurrent(external));
+        }
+        catch (error) {
+            if (error instanceof UnprocessableEntityException || error instanceof ForbiddenException)
+                return null;
+            throw error;
+        }
+    }
+    async routeReady(tx, repair) {
+        if (repair.state === 'closed')
+            return true;
+        const recipient = await this.nextRecipient(tx, repair), retained = repair.coordination_receipt;
+        if (!recipient || retained.route_unavailable || !retained.message_id || retained.recipient_user_id !== recipient.user_id)
+            return false;
+        const trace = await this.model.coordination.findExactTrace(tx, { school_id: repair.school_id, source_domain: 'facilities', source_record_id: repair.id, event_type: retained.event_type, source_revision: retained.source_revision, message_id: retained.message_id });
+        return Boolean(trace?.message_open && trace.message_id === retained.message_id);
+    }
+    async audience(tx, repair, ending = false) { const users = [], external = await this.external(tx, repair); for (const person of new Set([...this.participants(repair), ...(external ? [external.person_id] : [])])) {
+        if (!this.internalParticipant(repair, person, external) && !(external?.person_id === person && (this.externalCurrent(external) || ending && external.status === 'ended')))
+            continue;
+        const endpoint = await this.access.identities.resolvePersonAgent(tx, { school_id: repair.school_id, person_id: person, at: executionNow().toISOString() });
+        if (endpoint.acting)
+            users.push(endpoint.user_id);
+    } return users; }
+    async summaries(tx, repairs) {
+        if (!repairs.length)
+            return [];
+        const school = repairs[0].school_id;
+        const personIds = [...new Set(repairs.flatMap(row => this.participants(row)))], spaceIds = repairs.flatMap(row => row.space_id ? [row.space_id] : []), holdingIds = repairs.flatMap(row => row.holding_id ? [row.holding_id] : []);
+        const persons = await tx.selectFrom('school_people').select(['id', 'first_name', 'last_name']).where('school_id', '=', school).where('id', 'in', personIds).execute();
+        const spaces = spaceIds.length ? await tx.selectFrom('campus_spaces').select(['id', 'name']).where('school_id', '=', school).where('id', 'in', spaceIds).execute() : [];
+        const holdings = holdingIds.length ? await tx.selectFrom('campus_resource_holdings').select(['id', 'name', 'asset_tag']).where('school_id', '=', school).where('id', 'in', holdingIds).execute() : [];
+        const person = (id) => { const row = persons.find(p => p.id === id); return { id, label: row ? personLabel(row.first_name, row.last_name) : 'Campus person' }; };
+        return repairs.map(repair => {
+            const place = spaces.find(row => row.id === repair.space_id), item = holdings.find(row => row.id === repair.holding_id);
+            return { id: repair.id, title: repair.problem.split('\n')[0].slice(0, 160), state: repair.state, urgent: repair.urgent, revision: repair.revision, asset_impact: repair.asset_impact, reporter: person(repair.reporter_person_id), recorder: person(repair.recorder_person_id), coordinator: person(repair.coordinator_person_id), handler: person(repair.handler_person_id), verifier: person(repair.verifier_person_id), place: place ? { id: place.id, label: place.name } : null, item: item ? { id: item.id, label: item.name, asset_tag: item.asset_tag } : null, location_note: repair.location_note, expected_finish_at: iso(repair.expected_finish_at), wait_reason: repair.wait_reason, created_at: iso(repair.created_at), updated_at: iso(repair.updated_at) };
+        });
+    }
+    async summary(tx, repair) { return (await this.summaries(tx, [repair]))[0]; }
+    async limitedDetail(tx, repair, recovery) { const summary = await this.summary(tx, repair), routeUnavailable = recovery && !await this.nextRecipient(tx, repair), coordinatorUnavailable = recovery && !await this.endpointAvailable(tx, repair.school_id, repair.coordinator_person_id), verificationUnavailable = recovery && !await this.endpointAvailable(tx, repair.school_id, repair.verifier_person_id); return { ...summary, external_view: false, external_access: null, can_invite_external: false, title: recovery ? 'Repair responsibility needs review' : 'Repair responsibility transferred', problem: recovery ? 'Restore the named repair responsibility to continue.' : 'The next responsible person can continue this repair.', location_note: '', asset_impact: null, place: null, item: null, reporter: { id: '', label: 'Campus person' }, recorder: { id: '', label: 'Campus person' }, space_id: null, holding_id: null, rule_id: repair.rule_id, verifier_mode: 'named', emergency_contact: '', route_unavailable: routeUnavailable, coordinator_unavailable: coordinatorUnavailable, verification_route_unavailable: verificationUnavailable, recovery_only: recovery, access_transferred: !recovery, latest_progress: null, history: [], history_has_more: false, history_pagination: { page: 1, page_size: 10, total: 0 }, photos: [], allowed_actions: { accept: false, assign: recovery, assign_verifier: recovery, assign_coordinator: recovery, update: false, complete: false, verify: false, reopen: false, add_photo: false }, photo_limits: { max_bytes: 5 * 1024 * 1024, max_photos: 20, content_types: ['image/jpeg', 'image/png'] } }; }
+    async externalDetail(tx, user, repair, external, historyPage) {
+        const summary = await this.summary(tx, repair), routeReady = await this.routeReady(tx, repair), assigned = repair.handler_person_id === external.person_id;
+        const visible = tx.selectFrom('facilities_repair_receipts').selectAll().where('school_id', '=', repair.school_id).where('repair_id', '=', repair.id).where('actor_person_id', '=', external.person_id).where('revision', '>=', external.source_revision);
+        const entries = await visible.orderBy('revision', 'desc').limit(10).offset((historyPage - 1) * 10).execute(), count = await visible.clearSelect().select(({ fn }) => fn.countAll().as('total')).executeTakeFirstOrThrow();
+        const latest = await visible.where('action', 'in', ['updated', 'completed']).where('note', '!=', '').orderBy('revision', 'desc').limit(1).executeTakeFirst();
+        const photos = await tx.selectFrom('facilities_repair_photos').select(['id', 'file_name', 'content_type', 'size', 'created_at']).where('school_id', '=', repair.school_id).where('repair_id', '=', repair.id).where(eb => eb.or([eb('id', 'in', external.shared_photo_ids.length ? external.shared_photo_ids : ['00000000-0000-0000-0000-000000000000']), eb('created_by_person_id', '=', external.person_id)])).orderBy('created_at').execute();
+        const meta = await this.externalView(tx, user, repair, external, false), worker = meta.person;
+        return { ...summary, title: external.instructions.split('\n')[0].slice(0, 160), problem: external.instructions, reporter: { id: '', label: 'Campus person' }, recorder: { id: '', label: 'Campus person' }, handler: { id: worker.id, label: worker.label }, verifier: { id: '', label: 'Campus check' }, location_note: '', asset_impact: null,
+            space_id: repair.space_id, holding_id: repair.holding_id, rule_id: '', coordinator_person_id: repair.coordinator_person_id, verifier_mode: 'named', emergency_contact: '', route_unavailable: assigned && !routeReady, coordinator_unavailable: false, verification_route_unavailable: false, recovery_only: false, access_transferred: false,
+            external_view: true, external_access: meta, can_invite_external: false,
+            latest_progress: latest ? { id: latest.id, revision: latest.revision, action: latest.action, reopen_kind: latest.reopen_kind, actor_label: worker.label, note: latest.note, state: latest.state, wait_reason: latest.wait_reason, expected_finish_at: iso(latest.expected_finish_at), recorded_at: iso(latest.recorded_at) } : null,
+            history: entries.map(row => ({ id: row.id, revision: row.revision, action: row.action, reopen_kind: row.reopen_kind, actor_label: worker.label, handler_label: worker.label, previous_handler_label: null, verifier_label: null, previous_verifier_label: null, coordinator_label: summary.coordinator.label, previous_coordinator_label: null, assignment_target: null, note: row.note, state: row.state, wait_reason: row.wait_reason, expected_finish_at: iso(row.expected_finish_at), recorded_at: iso(row.recorded_at) })), history_has_more: historyPage * 10 < Number(count.total), history_pagination: { page: historyPage, page_size: 10, total: Number(count.total) },
+            photos: photos.map(photo => ({ ...photo, created_at: iso(photo.created_at), href: `/api/v1/schools/${repair.school_id}/facilities/repairs/${repair.id}/photos/${photo.id}` })),
+            allowed_actions: { accept: assigned && repair.state === 'reported' && routeReady, assign: false, assign_verifier: false, assign_coordinator: false, update: assigned && ['accepted', 'in_progress', 'waiting'].includes(repair.state) && routeReady, complete: assigned && ['accepted', 'in_progress', 'waiting'].includes(repair.state) && routeReady, verify: false, reopen: false, add_photo: assigned && repair.state !== 'closed' },
+            photo_limits: { max_bytes: 5 * 1024 * 1024, max_photos: 20, content_types: ['image/jpeg', 'image/png'] } };
+    }
+    async detailIn(tx, user, repair, historyPage = 1) {
+        const permission = await this.readable(tx, user, repair), currentHandler = permission.actor.person_id === repair.handler_person_id, verifier = permission.actor.person_id === repair.verifier_person_id, reporter = permission.actor.person_id === repair.reporter_person_id, coordinator = permission.actor.person_id === repair.coordinator_person_id;
+        if (!permission.participant)
+            return this.limitedDetail(tx, repair, true);
+        if (permission.external_only && permission.external)
+            return this.externalDetail(tx, user, repair, permission.external, historyPage);
+        const entries = await tx.selectFrom('facilities_repair_receipts as receipt').innerJoin('school_people as actor', 'actor.id', 'receipt.actor_person_id').innerJoin('school_people as handler', 'handler.id', 'receipt.handler_person_id')
+            .selectAll('receipt').select(['actor.first_name as actor_first', 'actor.last_name as actor_last', 'handler.first_name as handler_first', 'handler.last_name as handler_last']).where('receipt.school_id', '=', repair.school_id).where('receipt.repair_id', '=', repair.id).orderBy('receipt.revision', 'desc').limit(10).offset((historyPage - 1) * 10).execute();
+        // The current explanation must not disappear when someone pages older history
+        // or adds a photo. Read it from this selected store only after participant access.
+        const latestProgress = await tx.selectFrom('facilities_repair_receipts as receipt').innerJoin('school_people as actor', 'actor.id', 'receipt.actor_person_id')
+            .select(['receipt.id', 'receipt.revision', 'receipt.action', 'receipt.note', 'receipt.state', 'receipt.wait_reason', 'receipt.expected_finish_at', 'receipt.recorded_at', 'receipt.reopen_kind', 'actor.first_name as actor_first', 'actor.last_name as actor_last'])
+            .where('receipt.school_id', '=', repair.school_id).where('receipt.repair_id', '=', repair.id).where('receipt.action', 'in', ['updated', 'completed', 'reopened', 'verified']).where('receipt.note', '!=', '').orderBy('receipt.revision', 'desc').limit(1).executeTakeFirst();
+        const photos = await tx.selectFrom('facilities_repair_photos').select(['id', 'file_name', 'content_type', 'size', 'created_at']).where('school_id', '=', repair.school_id).where('repair_id', '=', repair.id).orderBy('created_at').orderBy('id').execute();
+        const historicPersonIds = [...new Set(entries.flatMap(row => [row.verifier_person_id, row.coordinator_person_id, ...(row.previous_handler_person_id ? [row.previous_handler_person_id] : []), ...(row.previous_verifier_person_id ? [row.previous_verifier_person_id] : []), ...(row.previous_coordinator_person_id ? [row.previous_coordinator_person_id] : [])]))];
+        const historicPeople = historicPersonIds.length ? await tx.selectFrom('school_people').select(['id', 'first_name', 'last_name']).where('school_id', '=', repair.school_id).where('id', 'in', historicPersonIds).execute() : [];
+        const historicLabel = (id) => { const person = historicPeople.find(row => row.id === id); return person ? personLabel(person.first_name, person.last_name) : null; };
+        const routeReady = await this.routeReady(tx, repair);
+        const rule = await tx.selectFrom('facilities_intake_rules').select(['verifier_mode', 'emergency_contact']).where('school_id', '=', repair.school_id).where('id', '=', repair.rule_id).executeTakeFirstOrThrow();
+        let verificationUnavailable = false;
+        try {
+            await this.endpoint(tx, repair.school_id, repair.verifier_person_id);
+        }
+        catch (error) {
+            if (error instanceof UnprocessableEntityException || error instanceof ForbiddenException)
+                verificationUnavailable = true;
+            else
+                throw error;
+        }
+        const coordinatorUnavailable = !await this.endpointAvailable(tx, repair.school_id, repair.coordinator_person_id), externalPending = permission.external?.status === 'granted' && permission.external.ends_at > executionNow() && repair.handler_person_id !== permission.external.person_id && repair.state !== 'awaiting_verification', canCoordinate = coordinator || permission.manager && (!routeReady && !externalPending || coordinatorUnavailable);
+        return { ...await this.summary(tx, repair), problem: repair.problem, space_id: repair.space_id, holding_id: repair.holding_id, rule_id: repair.rule_id, coordinator_person_id: repair.coordinator_person_id, verifier_mode: rule.verifier_mode, emergency_contact: rule.emergency_contact, route_unavailable: !routeReady && !externalPending, coordinator_unavailable: coordinatorUnavailable, verification_route_unavailable: verificationUnavailable, recovery_only: false, access_transferred: false, external_view: false, external_access: await this.externalView(tx, user, repair, permission.external, canCoordinate), can_invite_external: canCoordinate && !['closed', 'awaiting_verification'].includes(repair.state) && permission.external?.person_id !== repair.handler_person_id,
+            latest_progress: latestProgress ? { id: latestProgress.id, revision: latestProgress.revision, action: latestProgress.action, reopen_kind: latestProgress.reopen_kind, actor_label: personLabel(latestProgress.actor_first, latestProgress.actor_last), note: latestProgress.note, state: latestProgress.state, wait_reason: latestProgress.wait_reason, expected_finish_at: iso(latestProgress.expected_finish_at), recorded_at: iso(latestProgress.recorded_at) } : null,
+            history: entries.map(row => ({ id: row.id, revision: row.revision, action: row.action, reopen_kind: row.reopen_kind, actor_label: personLabel(row.actor_first, row.actor_last), handler_label: personLabel(row.handler_first, row.handler_last), previous_handler_label: historicLabel(row.previous_handler_person_id), verifier_label: historicLabel(row.verifier_person_id), previous_verifier_label: historicLabel(row.previous_verifier_person_id), coordinator_label: historicLabel(row.coordinator_person_id), previous_coordinator_label: historicLabel(row.previous_coordinator_person_id), assignment_target: row.action === 'assigned' ? row.previous_coordinator_person_id ? 'coordinator' : row.previous_verifier_person_id ? 'verifier' : 'handler' : null, note: row.note, state: row.state, wait_reason: row.wait_reason, expected_finish_at: iso(row.expected_finish_at), recorded_at: iso(row.recorded_at) })), history_has_more: historyPage * 10 < repair.revision, history_pagination: { page: historyPage, page_size: 10, total: repair.revision },
+            photos: photos.map(photo => ({ ...photo, created_at: iso(photo.created_at), href: `/api/v1/schools/${repair.school_id}/facilities/repairs/${repair.id}/photos/${photo.id}` })),
+            allowed_actions: { accept: currentHandler && repair.state === 'reported' && routeReady, assign: canCoordinate && repair.state !== 'closed', assign_verifier: canCoordinate && repair.state !== 'closed', assign_coordinator: canCoordinate && repair.state !== 'closed', update: currentHandler && ['accepted', 'in_progress', 'waiting'].includes(repair.state) && routeReady, complete: currentHandler && ['accepted', 'in_progress', 'waiting'].includes(repair.state) && routeReady, verify: verifier && repair.state === 'awaiting_verification' && routeReady, reopen: (verifier || reporter) && ['awaiting_verification', 'closed'].includes(repair.state), add_photo: permission.participant && repair.state !== 'closed' },
+            photo_limits: { max_bytes: 5 * 1024 * 1024, max_photos: 20, content_types: ['image/jpeg', 'image/png'] } };
+    }
+    detail(user, school, id, raw = {}) { const query = z.object({ history_page: z.coerce.number().int().min(1).max(100000).default(1) }).strict().parse(raw); return this.db.transaction().execute(async (tx) => { await this.access.campus(tx, user, school); return this.detailIn(tx, user, await this.repair(tx, school, id), query.history_page); }); }
+    async options(user, school, raw = {}) {
+        const input = facilitiesOptions.parse(raw);
+        return this.db.transaction().execute(async (tx) => {
+            const actor = await this.access.campus(tx, user, school);
+            await this.ordinary(tx, user, school);
+            const manager = await this.access.manages(tx, user, school), pattern = `%${input.search.replace(/[\\%_]/g, '\\$&')}%`, offset = (input.page - 1) * 25;
+            let sourceAssignment = false;
+            if (input.repair_id) {
+                const repair = await this.repair(tx, school, input.repair_id), permitted = await this.readable(tx, user, repair);
+                sourceAssignment = repair.state !== 'closed' && (permitted.actor.person_id === repair.coordinator_person_id || permitted.manager);
+                if (!sourceAssignment)
+                    throw new ForbiddenException('Only this repair coordinator can choose its next responsible person.');
+            }
+            const canChoosePeople = manager || sourceAssignment;
+            const people = canChoosePeople ? (await sql `SELECT id,first_name,last_name,revision FROM school_people WHERE school_id=${school}::uuid AND retired_at IS NULL AND(concat_ws(' ',first_name,last_name) ILIKE ${pattern} OR id=${input.person_id ?? null}::uuid) ORDER BY first_name,last_name,id LIMIT 25 OFFSET ${offset}`.execute(tx)).rows : [];
+            if (canChoosePeople && input.person_id && !people.some(row => row.id === input.person_id)) {
+                const person = await this.person(tx, school, input.person_id), record = await tx.selectFrom('school_people').select('revision').where('school_id', '=', school).where('id', '=', person.id).executeTakeFirstOrThrow();
+                people.push({ id: person.id, first_name: person.label, last_name: '', revision: record.revision });
+            }
+            const mapped = [];
+            for (const person of people) {
+                let app = false, canManage = false;
+                try {
+                    const endpoint = await this.endpoint(tx, school, person.id, false, true);
+                    app = true;
+                    try {
+                        await institutionSchoolPermissionForUser(tx, endpoint.user_id, school, 'facilities.manage');
+                        canManage = true;
+                    }
+                    catch (error) {
+                        if (!(error instanceof ForbiddenException))
+                            throw error;
+                    }
+                }
+                catch (error) {
+                    if (!(error instanceof UnprocessableEntityException))
+                        throw error;
+                }
+                mapped.push({ id: person.id, label: personLabel(person.first_name, person.last_name), revision: person.revision, has_app_access: app, can_manage: canManage });
+            }
+            const places = (await sql `SELECT space.id,space.name AS label FROM campus_spaces space JOIN institution_campuses campus ON campus.id=space.campus_id AND campus.school_id=space.school_id WHERE space.school_id=${school}::uuid AND space.status='active' AND campus.status='active' AND(space.name ILIKE ${pattern} OR space.id=${input.space_id ?? null}::uuid) ORDER BY space.name,space.id LIMIT 25 OFFSET ${offset}`.execute(tx)).rows;
+            const holdings = (await sql `SELECT holding.id,holding.name AS label,holding.asset_tag,campus_asset_is_published(holding.school_id,holding.campus_id,holding.id) AS map_status_supported FROM campus_resource_holdings holding JOIN campus_resource_types type ON type.id=holding.resource_type_id AND type.school_id=holding.school_id JOIN institution_campuses campus ON campus.id=holding.campus_id AND campus.school_id=holding.school_id WHERE holding.school_id=${school}::uuid AND type.tracking_mode='individual' AND type.is_active AND holding.state<>'retired' AND campus.status='active' AND(holding.name ILIKE ${pattern} OR holding.asset_tag ILIKE ${pattern} OR holding.id=${input.holding_id ?? null}::uuid) ORDER BY holding.name,holding.asset_tag,holding.id LIMIT 25 OFFSET ${offset}`.execute(tx)).rows;
+            if (input.holding_id || input.space_id)
+                await this.validateLocation(tx, school, { holding_id: input.holding_id ?? null, space_id: input.space_id ?? null });
+            const selectedHolding = input.holding_id ? (await sql `SELECT item.id,item.name AS label,item.asset_tag,campus_asset_is_published(item.school_id,item.campus_id,item.id) AS map_status_supported FROM campus_resource_holdings item WHERE item.school_id=${school}::uuid AND item.id=${input.holding_id}::uuid`.execute(tx)).rows[0] ?? null : null;
+            const selectedPlace = input.space_id ? (await tx.selectFrom('campus_spaces').select(['id', 'name as label']).where('school_id', '=', school).where('id', '=', input.space_id).executeTakeFirst()) ?? null : null;
+            return { actor: { person_id: actor.person_id, label: actor.label }, people: mapped, places, holdings, selected: { holding: selectedHolding, place: selectedPlace }, settings: await this.settingsIn(tx, user, school), pagination: { page: input.page, page_size: 25, people_has_more: people.length >= 25, places_has_more: places.length === 25, holdings_has_more: holdings.length === 25 }, can_manage: manager };
+        });
+    }
+    async workspace(user, school, raw = {}) {
+        const input = facilitiesList.parse(raw);
+        return this.db.transaction().execute(async (tx) => {
+            const actor = await this.access.campus(tx, user, school), workOnly = await facilitiesWorkOnly(tx, school, user.id), manager = await this.access.manages(tx, user, school), participant = sql `facilities_person_can_read(${school}::uuid,id,${actor.person_id}::uuid,${executionNow()}::timestamptz)`, scope = manager && input.view === 'all' ? sql `(${participant}) OR state<>'closed' AND NOT facilities_repair_coordination_available(${school}::uuid,id)` : participant;
+            const state = input.state === 'all' ? sql `true` : input.state === 'closed' ? sql `state='closed'` : sql `state<>'closed'`, pattern = `%${input.search.replace(/[\\%_]/g, '\\$&')}%`;
+            const search = sql `CASE WHEN facilities_person_internal_participant(${school}::uuid,id,${actor.person_id}::uuid) THEN problem ILIKE ${pattern}
+   WHEN ${participant} THEN EXISTS(SELECT 1 FROM facilities_external_assignments access WHERE access.id=external_assignment_id AND access.instructions ILIKE ${pattern})
+   ELSE 'Repair responsibility needs review' ILIKE ${pattern} END`;
+            const rows = (await sql `SELECT * FROM facilities_repairs WHERE school_id=${school}::uuid AND(${scope}) AND(${state}) AND(${search}) ORDER BY updated_at DESC,id LIMIT 10 OFFSET ${(input.page - 1) * 10}`.execute(tx)).rows;
+            const counts = (await sql `SELECT count(*) FILTER(WHERE ${state} AND ${search})::int AS total,count(*) FILTER(WHERE state<>'closed')::int AS open,count(*) FILTER(WHERE state='awaiting_verification')::int AS awaiting_verification,count(*) FILTER(WHERE state='closed')::int AS closed FROM facilities_repairs WHERE school_id=${school}::uuid AND(${scope})`.execute(tx)).rows[0];
+            const summaries = await this.summaries(tx, rows);
+            const visible = [];
+            for (const [index, summary] of summaries.entries()) {
+                const row = rows[index], external = await this.external(tx, row);
+                if (this.internalParticipant(row, actor.person_id, external))
+                    visible.push(summary);
+                else if (external?.person_id === actor.person_id && this.externalCurrent(external))
+                    visible.push({ ...summary, title: external.instructions.split('\n')[0].slice(0, 160), location_note: '', asset_impact: null, reporter: { id: '', label: 'Campus person' }, recorder: { id: '', label: 'Campus person' }, verifier: { id: '', label: 'Campus check' }, external_view: true });
+                else
+                    visible.push({ ...summary, title: 'Repair responsibility needs review', location_note: '', asset_impact: null, place: null, item: null, reporter: { id: '', label: 'Campus person' }, recorder: { id: '', label: 'Campus person' }, recovery_only: true });
+            }
+            return { view: input.view, repairs: visible, can_report: !workOnly, can_manage: manager, settings: workOnly ? { configured: false, can_manage: false, revision: 0, handler_person_id: null, handler: null, verifier_mode: 'reporter', verifier_person_id: null, verifier: null, emergency_contact: '' } : await this.settingsIn(tx, user, school), totals: { open: counts.open, awaiting_verification: counts.awaiting_verification, closed: counts.closed }, pagination: { page: input.page, page_size: 10, total: counts.total } };
+        });
+    }
+    async validateLocation(tx, school, input) {
+        if (input.space_id) {
+            const place = await tx.selectFrom('campus_spaces as place').innerJoin('institution_campuses as campus', 'campus.id', 'place.campus_id').select('place.id').where('place.school_id', '=', school).where('place.id', '=', input.space_id).where('place.status', '=', 'active').where('campus.status', '=', 'active').forShare('place').executeTakeFirst();
+            if (!place)
+                throw new UnprocessableEntityException('Choose a current place from this campus.');
+        }
+        if (input.holding_id) {
+            const item = await tx.selectFrom('campus_resource_holdings as item').innerJoin('campus_resource_types as type', join => join.onRef('type.id', '=', 'item.resource_type_id').onRef('type.school_id', '=', 'item.school_id')).innerJoin('institution_campuses as campus', join => join.onRef('campus.id', '=', 'item.campus_id').onRef('campus.school_id', '=', 'item.school_id')).select(['item.id', 'item.space_id', 'item.campus_id', 'type.tracking_mode']).where('item.school_id', '=', school).where('item.id', '=', input.holding_id).where('item.state', '!=', 'retired').where('type.is_active', '=', true).where('campus.status', '=', 'active').forShare('item').executeTakeFirst();
+            if (!item || item.tracking_mode !== 'individual')
+                throw new UnprocessableEntityException('Choose an individually identified current resource from this campus.');
+            if (input.space_id) {
+                const place = await tx.selectFrom('campus_spaces').select('campus_id').where('school_id', '=', school).where('id', '=', input.space_id).executeTakeFirstOrThrow();
+                if (place.campus_id !== item.campus_id || item.space_id && input.space_id !== item.space_id)
+                    throw new UnprocessableEntityException('The selected resource and place do not match. Use its actual place or describe the reported location.');
+            }
+            if (input.asset_impact) {
+                const result = (await sql `SELECT campus_asset_is_published(${school}::uuid,${item.campus_id}::uuid,${item.id}::uuid) AS valid`.execute(tx)).rows[0];
+                if (!result?.valid)
+                    throw new UnprocessableEntityException('Shared asset status is available only for a current item on the published campus map.');
+            }
+        }
+    }
+    async report(user, school, raw) {
+        const input = facilitiesReport.parse(raw);
+        return this.db.transaction().execute(async (tx) => {
+            const actor = await this.access.campus(tx, user, school);
+            await this.ordinary(tx, user, school);
+            await sql `SELECT pg_advisory_xact_lock(hashtextextended(${`facilities:${school}:${input.command_id}`},0))`.execute(tx);
+            const existing = await tx.selectFrom('facilities_repairs').selectAll().where('school_id', '=', school).where('id', '=', input.command_id).executeTakeFirst(), rule = existing ? await tx.selectFrom('facilities_intake_rules').selectAll().where('school_id', '=', school).where('id', '=', existing.rule_id).executeTakeFirstOrThrow() : await this.currentRule(tx, school);
+            if (!rule)
+                throw new UnprocessableEntityException('Choose a responsible repair handler before reporting.');
+            const reporter = input.reporter_person_id ?? actor.person_id;
+            if (reporter !== actor.person_id)
+                await this.access.manager(tx, user, school);
+            const prepared = await this.model.prepare(tx, user, actor, { id: input.command_id, school_id: school, revision: existing?.revision ?? 0, rule_id: rule.id }, 'reported', input, 'facilities.report', { reporter_person_id: reporter, recorder_person_id: actor.person_id, assisted: reporter !== actor.person_id, rule_id: rule.id });
+            if (prepared.replay) {
+                if (!existing)
+                    throw new ConflictException('The accepted repair source is unavailable.');
+                return this.detailIn(tx, user, existing);
+            }
+            await this.validateLocation(tx, school, input);
+            await this.person(tx, school, reporter);
+            const recipient = await this.endpoint(tx, school, rule.handler_person_id), verifier = rule.verifier_mode === 'handler' ? rule.handler_person_id : rule.verifier_mode === 'named' ? rule.verifier_person_id : reporter;
+            // Passive reporters remain valid. Their exact verification route stays visibly
+            // unresolved until an authorized explicit verifier replacement, never guessed.
+            if (rule.verifier_mode !== 'reporter')
+                await this.endpoint(tx, school, verifier);
+            const at = executionNow();
+            const repair = await tx.insertInto('facilities_repairs').values({ id: input.command_id, school_id: school, rule_id: rule.id, problem: input.problem, space_id: input.space_id, holding_id: input.holding_id, location_note: input.location_note, asset_impact: input.asset_impact ?? null, reporter_person_id: reporter, recorder_person_id: actor.person_id, coordinator_person_id: rule.handler_person_id, handler_person_id: rule.handler_person_id, verifier_person_id: verifier, urgent: input.urgent, state: 'reported', wait_reason: null, expected_finish_at: null, created_at: at, updated_at: at }).returningAll().executeTakeFirstOrThrow();
+            const receipt = await this.receipt(tx, user, repair, actor.person_id, prepared.prepared.command_id, 'reported', '');
+            await this.model.finish(tx, user, repair, receipt, prepared.prepared, 'facilities.report', recipient, await this.audience(tx, repair));
+            await retainOperatingDestination(tx, user, school, 'facilities', facilitiesHref(repair.id), { source: 'accepted_facilities_report', onlyPending: true });
+            return this.detailIn(tx, user, await this.repair(tx, school, repair.id));
+        });
+    }
+    receipt(tx, user, repair, person, command, action, note, previousHandler = null, previousVerifier = null, previousCoordinator = null, reopenKind = null) { return tx.insertInto('facilities_repair_receipts').values({ id: randomUUID(), school_id: repair.school_id, repair_id: repair.id, revision: repair.revision, command_id: command, action, reopen_kind: reopenKind, actor_person_id: person, actor_user_id: user.id, note, state: repair.state, wait_reason: repair.wait_reason, expected_finish_at: repair.expected_finish_at, handler_person_id: repair.handler_person_id, previous_handler_person_id: previousHandler, verifier_person_id: repair.verifier_person_id, previous_verifier_person_id: previousVerifier, coordinator_person_id: repair.coordinator_person_id, previous_coordinator_person_id: previousCoordinator, external_assignment_id: repair.external_assignment_id, recorded_at: repair.updated_at }).returningAll().executeTakeFirstOrThrow(); }
+    async externalCoordinator(tx, user, repair) {
+        const permission = await this.readable(tx, user, repair);
+        const pending = permission.external?.status === 'granted' && permission.external.ends_at > executionNow() && repair.handler_person_id !== permission.external.person_id && repair.state !== 'awaiting_verification';
+        if (permission.actor.person_id !== repair.coordinator_person_id && !(permission.manager && (!pending && !await this.routeReady(tx, repair) || !await this.endpointAvailable(tx, repair.school_id, repair.coordinator_person_id))))
+            throw new ForbiddenException('Only this repair coordinator can share or end technician access.');
+        await this.ordinary(tx, user, repair.school_id);
+        return permission;
+    }
+    externalCommitment(access) {
+        return { person_id: access.person_id.toLowerCase(), person_revision: access.person_revision, starts_ms: access.starts_at.getTime(), ends_ms: access.ends_at.getTime(), instructions_hash: createHash('sha256').update(access.instructions).digest('hex'), shared_photo_ids: access.shared_photo_ids.map(id => id.toLowerCase()), status: access.status, previous_assignment_id: access.previous_assignment_id };
+    }
+    async grantExternal(user, school, id, raw) {
+        const input = facilitiesExternalGrant.parse(raw);
+        return this.db.transaction().execute(async (tx) => {
+            let repair = await this.repair(tx, school, id, true);
+            const permission = await this.externalCoordinator(tx, user, repair), at = executionNow(), starts = input.starts_at ? new Date(input.starts_at) : at, ends = new Date(input.ends_at), scope = this.externalCommitment({ person_id: input.person_id, person_revision: input.expected_person_revision, starts_at: starts, ends_at: ends, instructions: input.instructions, shared_photo_ids: input.shared_photo_ids, status: 'granted', previous_assignment_id: repair.external_assignment_id }), prepared = await this.model.prepare(tx, user, permission.actor, repair, 'external_shared', input, 'facilities.coordinate', { coordinator_person_id: repair.coordinator_person_id, person_id: input.person_id, external_scope: scope });
+            if (prepared.replay)
+                return this.detailIn(tx, user, repair);
+            if (['closed', 'awaiting_verification'].includes(repair.state))
+                throw new UnprocessableEntityException('Continue or check the current repair before inviting further work.');
+            const person = (await sql `SELECT id,revision FROM school_people WHERE school_id=${school}::uuid AND id=${input.person_id}::uuid AND retired_at IS NULL FOR SHARE`.execute(tx)).rows[0];
+            if (!person || person.revision !== input.expected_person_revision)
+                throw new ConflictException('This person changed. Refresh the exact selection before sharing work.');
+            if ([repair.coordinator_person_id, repair.verifier_person_id].includes(person.id))
+                throw new UnprocessableEntityException('Choose a technician separate from the campus coordinator and verifier.');
+            const old = permission.external;
+            if (old?.person_id === repair.handler_person_id)
+                throw new UnprocessableEntityException(old.status === 'granted' ? 'End the current technician assignment before inviting again.' : 'Choose a campus handler before sending another technician invitation.');
+            if (repair.handler_person_id === person.id)
+                throw new UnprocessableEntityException('Use the existing campus handler, or choose a different technician.');
+            if (ends <= starts || ends <= at)
+                throw new UnprocessableEntityException('Choose an access end after its start and the current time.');
+            if (ends.getTime() - starts.getTime() > 31_536_000_000)
+                throw new UnprocessableEntityException('Choose a technician access window up to one year.');
+            if (input.shared_photo_ids.length) {
+                const photos = await tx.selectFrom('facilities_repair_photos').select('id').where('school_id', '=', school).where('repair_id', '=', id).where('id', 'in', input.shared_photo_ids).execute();
+                if (photos.length !== input.shared_photo_ids.length)
+                    throw new UnprocessableEntityException('Share only selected photos from this repair.');
+            }
+            await tx.insertInto('facilities_external_assignments').values({ id: input.command_id, school_id: school, repair_id: id, source_revision: repair.revision + 1, person_id: person.id, person_revision: person.revision, starts_at: starts, ends_at: ends, instructions: input.instructions, shared_photo_ids: input.shared_photo_ids, status: 'granted', previous_assignment_id: repair.external_assignment_id, actor_person_id: permission.actor.person_id, actor_user_id: user.id, command_id: prepared.prepared.command_id, recorded_at: at }).execute();
+            const previous = repair.coordination_receipt;
+            repair = await tx.updateTable('facilities_repairs').set({ external_assignment_id: input.command_id, revision: repair.revision + 1, updated_at: at }).where('school_id', '=', school).where('id', '=', id).returningAll().executeTakeFirstOrThrow();
+            const receipt = await this.receipt(tx, user, repair, permission.actor.person_id, prepared.prepared.command_id, 'external_shared', 'Technician access shared.');
+            await this.model.finish(tx, user, repair, receipt, prepared.prepared, 'facilities.coordinate', await this.nextRecipient(tx, repair), await this.audience(tx, repair), previous);
+            return this.detailIn(tx, user, await this.repair(tx, school, id));
+        });
+    }
+    async activateExternal(user, school, id, assignmentId, raw) {
+        z.uuid().parse(assignmentId);
+        const input = facilitiesCommand.strict().parse(raw);
+        return this.db.transaction().execute(async (tx) => {
+            let repair = await this.repair(tx, school, id, true);
+            const permission = await this.readable(tx, user, repair), external = permission.external;
+            if (!external || external.id !== assignmentId || external.person_id !== permission.actor.person_id || !this.externalCurrent(external))
+                throw new ForbiddenException('This exact technician access is no longer current.');
+            const prepared = await this.model.prepare(tx, user, permission.actor, repair, 'external_ready', { ...input, assignment_id: assignmentId }, 'facilities.handle', { external_assignment_id: external.id, person_id: external.person_id }, external.ends_at.toISOString());
+            if (prepared.replay)
+                return this.detailIn(tx, user, repair);
+            if (['closed', 'awaiting_verification'].includes(repair.state) || repair.handler_person_id === external.person_id)
+                throw new UnprocessableEntityException('Continue the current job instead of activating it again.');
+            const recipient = await this.endpoint(tx, school, external.person_id, false, true), previous = repair.coordination_receipt, old = repair.handler_person_id;
+            repair = await tx.updateTable('facilities_repairs').set({ handler_person_id: external.person_id, state: 'reported', wait_reason: null, expected_finish_at: null, revision: repair.revision + 1, updated_at: executionNow() }).where('school_id', '=', school).where('id', '=', id).returningAll().executeTakeFirstOrThrow();
+            const receipt = await this.receipt(tx, user, repair, permission.actor.person_id, prepared.prepared.command_id, 'external_ready', 'Technician opened the explicitly shared job.', old);
+            await this.model.finish(tx, user, repair, receipt, prepared.prepared, 'facilities.handle', recipient, await this.audience(tx, repair), previous);
+            return this.detailIn(tx, user, await this.repair(tx, school, id));
+        });
+    }
+    async endExternal(user, school, id, assignmentId, raw) {
+        z.uuid().parse(assignmentId);
+        const input = facilitiesExternalEnd.parse(raw);
+        return this.db.transaction().execute(async (tx) => {
+            let repair = await this.repair(tx, school, id, true);
+            const permission = await this.externalCoordinator(tx, user, repair), scope = permission.external ? this.externalCommitment({ ...permission.external, status: 'ended', previous_assignment_id: permission.external.id }) : null, prepared = await this.model.prepare(tx, user, permission.actor, repair, 'external_ended', { ...input, assignment_id: assignmentId }, 'facilities.coordinate', { coordinator_person_id: repair.coordinator_person_id, assignment_id: assignmentId, external_scope: scope });
+            if (prepared.replay)
+                return this.detailIn(tx, user, repair);
+            const external = permission.external;
+            if (!external || external.id !== assignmentId || external.status !== 'granted')
+                throw new ConflictException('This technician access already changed. Refresh the repair.');
+            const at = executionNow(), previous = repair.coordination_receipt, recover = repair.handler_person_id === external.person_id && !['closed', 'awaiting_verification'].includes(repair.state), old = repair.handler_person_id;
+            await tx.insertInto('facilities_external_assignments').values({ ...external, id: input.command_id, source_revision: repair.revision + 1, status: 'ended', previous_assignment_id: external.id, actor_person_id: permission.actor.person_id, actor_user_id: user.id, command_id: prepared.prepared.command_id, recorded_at: at }).execute();
+            repair = await tx.updateTable('facilities_repairs').set({ external_assignment_id: input.command_id, ...(recover ? { handler_person_id: repair.coordinator_person_id, state: 'reported', wait_reason: null, expected_finish_at: null } : {}), revision: repair.revision + 1, updated_at: at }).where('school_id', '=', school).where('id', '=', id).returningAll().executeTakeFirstOrThrow();
+            const receipt = await this.receipt(tx, user, repair, permission.actor.person_id, prepared.prepared.command_id, 'external_ended', input.note, recover ? old : null);
+            await this.model.finish(tx, user, repair, receipt, prepared.prepared, 'facilities.coordinate', await this.nextRecipient(tx, repair), await this.audience(tx, repair, true), previous);
+            return this.detailIn(tx, user, await this.repair(tx, school, id));
+        });
+    }
+    async act(user, school, id, raw) {
+        const input = facilitiesAction.parse(raw);
+        return this.db.transaction().execute(async (tx) => {
+            let repair = await this.repair(tx, school, id, true);
+            const permission = await this.readable(tx, user, repair), actor = permission.actor, handler = actor.person_id === repair.handler_person_id, verifier = actor.person_id === repair.verifier_person_id, reporter = actor.person_id === repair.reporter_person_id, coordinator = actor.person_id === repair.coordinator_person_id;
+            const currentRouteReady = await this.routeReady(tx, repair), recovery = permission.manager && (!currentRouteReady || !await this.endpointAvailable(tx, school, repair.coordinator_person_id));
+            if (input.action === 'assign' && !coordinator && !recovery || ['accept', 'update', 'complete'].includes(input.action) && !handler || input.action === 'verify' && !verifier || input.action === 'reopen' && !verifier && !reporter)
+                throw new ForbiddenException('Only the current exact responsible participant can perform this repair action.');
+            const action = { accept: 'accepted', assign: 'assigned', update: 'updated', complete: 'completed', verify: 'verified', reopen: 'reopened' }[input.action], capability = input.action === 'verify' ? 'facilities.verify' : input.action === 'reopen' ? 'facilities.report' : input.action === 'assign' ? coordinator ? 'facilities.coordinate' : 'facilities.manage' : 'facilities.handle';
+            const prepared = await this.model.prepare(tx, user, actor, repair, action, input, capability, { reporter_person_id: repair.reporter_person_id, coordinator_person_id: repair.coordinator_person_id, handler_person_id: repair.handler_person_id, verifier_person_id: repair.verifier_person_id, permission: permission.manager ? 'facilities.manage' : null, external_assignment_id: permission.external?.id ?? null }, permission.external && (permission.external_only || permission.external.person_id === actor.person_id && ['accept', 'update', 'complete'].includes(input.action)) ? permission.external.ends_at.toISOString() : null);
+            if (prepared.replay)
+                return this.detailIn(tx, user, repair);
+            const previous = repair.coordination_receipt, patch = { revision: repair.revision + 1, updated_at: executionNow() }, oldHandler = repair.handler_person_id, oldVerifier = repair.verifier_person_id, oldCoordinator = repair.coordinator_person_id;
+            if (input.action === 'accept') {
+                if (repair.state !== 'reported')
+                    throw new UnprocessableEntityException('Only reported work can be accepted.');
+                patch.state = 'accepted';
+            }
+            if (input.action === 'assign') {
+                if (repair.state === 'closed')
+                    throw new UnprocessableEntityException('Reopen the repair before assigning further work.');
+                if (permission.external?.status === 'granted' && input.handler_person_id)
+                    throw new UnprocessableEntityException('End technician access before changing its handler.');
+                if (input.handler_person_id && permission.external?.person_id === input.handler_person_id)
+                    throw new UnprocessableEntityException('Choose a campus handler, then send a fresh technician invitation for external work.');
+                if (permission.external && [input.coordinator_person_id, input.verifier_person_id].includes(permission.external.person_id))
+                    throw new UnprocessableEntityException('The technician cannot become this repair coordinator or verifier.');
+                if (input.coordinator_person_id) {
+                    if (input.coordinator_person_id === repair.coordinator_person_id && currentRouteReady && await this.endpointAvailable(tx, school, repair.coordinator_person_id))
+                        throw new UnprocessableEntityException('Choose a different coordinator.');
+                    await this.person(tx, school, input.coordinator_person_id);
+                    await this.endpoint(tx, school, input.coordinator_person_id);
+                    patch.coordinator_person_id = input.coordinator_person_id;
+                }
+                else if (input.verifier_person_id) {
+                    if (input.verifier_person_id === repair.verifier_person_id && currentRouteReady)
+                        throw new UnprocessableEntityException('Choose a different verifier.');
+                    await this.person(tx, school, input.verifier_person_id);
+                    await this.endpoint(tx, school, input.verifier_person_id);
+                    patch.verifier_person_id = input.verifier_person_id;
+                }
+                else {
+                    if (input.handler_person_id === repair.handler_person_id && currentRouteReady)
+                        throw new UnprocessableEntityException('Choose a different responsible person, or continue the current work.');
+                    await this.person(tx, school, input.handler_person_id);
+                    await this.endpoint(tx, school, input.handler_person_id);
+                    patch.handler_person_id = input.handler_person_id;
+                    patch.state = 'reported';
+                    patch.wait_reason = null;
+                    patch.expected_finish_at = null;
+                }
+            }
+            if (['accept', 'update', 'complete', 'verify'].includes(input.action) && !currentRouteReady)
+                throw new UnprocessableEntityException('This repair handoff needs an explicit reassignment before work can continue.');
+            if (input.action === 'update' || input.action === 'complete') {
+                if (!['accepted', 'in_progress', 'waiting'].includes(repair.state))
+                    throw new UnprocessableEntityException('Accept the repair before recording work or completion.');
+                if (input.action === 'update') {
+                    patch.state = input.status;
+                    patch.wait_reason = input.wait_reason;
+                    if (input.expected_finish_at !== undefined) {
+                        const finish = input.expected_finish_at ? new Date(input.expected_finish_at) : null;
+                        if (finish && finish < executionNow())
+                            throw new UnprocessableEntityException('Choose a future expected finish, or leave it unknown.');
+                        patch.expected_finish_at = finish;
+                    }
+                }
+                else {
+                    patch.state = 'awaiting_verification';
+                    patch.wait_reason = null;
+                }
+            }
+            if (input.action === 'verify') {
+                if (repair.state !== 'awaiting_verification')
+                    throw new UnprocessableEntityException('Only work reported complete is ready to verify.');
+                patch.state = 'closed';
+                patch.wait_reason = null;
+            }
+            if (input.action === 'reopen') {
+                if (!['awaiting_verification', 'closed'].includes(repair.state))
+                    throw new UnprocessableEntityException('Continue the existing open work instead of reopening it.');
+                patch.state = 'reported';
+                patch.wait_reason = null;
+                patch.expected_finish_at = null;
+            }
+            repair = await tx.updateTable('facilities_repairs').set(patch).where('school_id', '=', school).where('id', '=', id).where('revision', '=', repair.revision).returningAll().executeTakeFirstOrThrow();
+            const receipt = await this.receipt(tx, user, repair, actor.person_id, prepared.prepared.command_id, action, input.note, input.action === 'assign' && input.handler_person_id ? oldHandler : null, input.action === 'assign' && input.verifier_person_id ? oldVerifier : null, input.action === 'assign' && input.coordinator_person_id ? oldCoordinator : null, input.action === 'reopen' ? input.reopen_kind ?? null : null);
+            await this.model.finish(tx, user, repair, receipt, prepared.prepared, capability, await this.nextRecipient(tx, repair), await this.audience(tx, repair), previous);
+            repair = await this.repair(tx, school, id);
+            return this.participants(repair).includes(actor.person_id) ? this.detailIn(tx, user, repair) : this.limitedDetail(tx, repair, false);
+        });
+    }
+    async addPhoto(user, school, id, raw, upload) {
+        const input = facilitiesCommand.strict().parse(raw), metadata = repairPhotoMetadata(upload);
+        return this.db.transaction().execute(async (tx) => {
+            let repair = await this.repair(tx, school, id, true);
+            const permission = await this.readable(tx, user, repair);
+            if (!permission.participant)
+                throw new ForbiddenException('Only a participant in this repair can add its photo evidence.');
+            if (permission.external_only && repair.handler_person_id !== permission.actor.person_id)
+                throw new ForbiddenException('Accept this shared job before adding its work evidence.');
+            const prepared = await this.model.prepare(tx, user, permission.actor, repair, 'photo_added', { ...input, ...metadata }, 'facilities.report', { participant_person_id: permission.actor.person_id, external_assignment_id: permission.external?.id ?? null }, permission.external_only ? permission.external.ends_at.toISOString() : null);
+            if (prepared.replay)
+                return this.detailIn(tx, user, repair);
+            if (repair.state === 'closed')
+                throw new UnprocessableEntityException('Reopen this repair before adding new evidence.');
+            const count = await tx.selectFrom('facilities_repair_photos').select(({ fn }) => fn.countAll().as('count')).where('school_id', '=', school).where('repair_id', '=', id).executeTakeFirstOrThrow();
+            if (Number(count.count) >= 20)
+                throw new UnprocessableEntityException('This repair already has twenty photos. Keep further details in its progress notes.');
+            const previous = repair.coordination_receipt, retainedRouteReady = await this.routeReady(tx, repair);
+            repair = await tx.updateTable('facilities_repairs').set({ revision: repair.revision + 1, updated_at: executionNow() }).where('school_id', '=', school).where('id', '=', id).returningAll().executeTakeFirstOrThrow();
+            await this.receipt(tx, user, repair, permission.actor.person_id, prepared.prepared.command_id, 'photo_added', '');
+            await this.artifacts.put(school, id, input.command_id, upload.data, metadata.content_type);
+            await tx.insertInto('facilities_repair_photos').values({ id: input.command_id, school_id: school, repair_id: id, receipt_revision: repair.revision, file_name: metadata.original_name, content_type: metadata.content_type, size: metadata.size_bytes, sha256: metadata.sha256, created_by_person_id: permission.actor.person_id, created_at: repair.updated_at }).execute();
+            const receipt = await tx.selectFrom('facilities_repair_receipts').selectAll().where('school_id', '=', school).where('repair_id', '=', id).where('revision', '=', repair.revision).executeTakeFirstOrThrow();
+            await this.model.finish(tx, user, repair, receipt, prepared.prepared, 'facilities.report', retainedRouteReady ? await this.nextRecipient(tx, repair) : null, await this.audience(tx, repair), previous);
+            return this.detailIn(tx, user, await this.repair(tx, school, id));
+        });
+    }
+    async photo(user, school, id, photoId) { const metadata = await this.db.transaction().execute(async (tx) => { const repair = await this.repair(tx, school, id), permission = await this.readable(tx, user, repair); if (!permission.participant)
+        throw new ForbiddenException('Repair recovery does not grant access to private photo evidence.'); const photo = await tx.selectFrom('facilities_repair_photos').selectAll().where('school_id', '=', school).where('repair_id', '=', id).where('id', '=', photoId).executeTakeFirst(); if (!photo || permission.external_only && !permission.external.shared_photo_ids.includes(photoId) && photo.created_by_person_id !== permission.actor.person_id)
+        throw new NotFoundException('This repair photo is unavailable.'); return photo; }); return this.artifacts.read(school, id, photoId, metadata.content_type, metadata.file_name, metadata.size, metadata.sha256); }
+    async confirmation(user, school, id, commandId, settings = false) {
+        return this.db.transaction().execute(async (tx) => {
+            const actor = await this.access.campus(tx, user, school);
+            if (settings)
+                await this.access.manager(tx, user, school);
+            const receipt = await this.model.retained(tx, user, school, commandId);
+            if (!receipt)
+                return { state: 'not_found' };
+            if (receipt.actor_agent_id !== actor.agent_id || receipt.target.domain !== 'facilities' || receipt.target.domain_id !== id)
+                throw new ConflictException('This confirmation belongs to different repair work.');
+            if (receipt.state === 'pending')
+                return { state: 'pending' };
+            if (receipt.receipt.terminal_state !== 'accepted')
+                return { state: 'not_accepted' };
+            const repair = settings ? undefined : await tx.selectFrom('facilities_repairs').selectAll().where('school_id', '=', school).where('id', '=', id).executeTakeFirst();
+            const external = repair ? await this.external(tx, repair) : undefined, transferred = Boolean(repair && !this.internalParticipant(repair, actor.person_id, external) && !(external?.person_id === actor.person_id && this.externalCurrent(external)));
+            return { state: 'accepted', result: { ...receipt.receipt.metadata, ...(transferred ? { access_transferred: true } : {}) } };
+        });
+    }
+    mapSignals(user, school, campus, holdingIds) {
+        const input = z.object({ campus: z.uuid(), ids: z.array(z.uuid()).max(2000) }).parse({ campus, ids: holdingIds });
+        return this.db.transaction().execute(async (tx) => {
+            const actor = await this.access.campus(tx, user, school);
+            await this.ordinary(tx, user, school);
+            const place = await tx.selectFrom('institution_campuses').select('id').where('school_id', '=', school).where('id', '=', input.campus).where('status', '=', 'active').executeTakeFirst();
+            if (!place)
+                throw new NotFoundException('Choose a current campus in this institution.');
+            return readFacilitiesMapSignals(tx, school, campus, input.ids, actor.person_id);
+        });
+    }
+    async discovery(user, school) { try {
+        return await this.db.transaction().execute(async (tx) => { const actor = await this.access.campus(tx, user, school), manager = await this.access.manages(tx, user, school); const own = await tx.selectFrom('facilities_repairs').select('id').where('school_id', '=', school).where(sql `facilities_person_can_read(${school}::uuid,id,${actor.person_id}::uuid,${executionNow()}::timestamptz)`).executeTakeFirst(); return { can_manage: manager, can_report: !await facilitiesWorkOnly(tx, school, user.id), has_repairs: Boolean(own) }; });
+    }
+    catch (error) {
+        if (error instanceof ForbiddenException)
+            return { can_manage: false, can_report: false, has_repairs: false };
+        throw error;
+    } }
+    async work(user, school, scope = {}) {
+        try {
+            return await this.db.transaction().execute(async (tx) => {
+                const actor = await this.access.campus(tx, user, school), manager = await this.access.manages(tx, user, school), campusId = scope.campus_id ? z.uuid().parse(scope.campus_id) : null;
+                if (campusId) {
+                    const campus = await tx.selectFrom('institution_campuses').select('id').where('school_id', '=', school).where('id', '=', campusId).where('status', '=', 'active').executeTakeFirst();
+                    if (!campus)
+                        throw new NotFoundException('Choose a current campus in this institution.');
+                }
+                // Apply location scope inside the owner before composing or bounding work.
+                // The report's exact place takes precedence; otherwise use its exact current
+                // holding. Explicitly unlocated reports stay unplaced, never guessed by name.
+                const rows = await tx.selectFrom('facilities_repairs').selectAll().where('school_id', '=', school).where('state', '!=', 'closed')
+                    .where(sql `(${campusId}::uuid IS NULL OR (
+     facilities_repairs.space_id IS NOT NULL AND EXISTS(SELECT 1 FROM campus_spaces place JOIN institution_campuses campus ON campus.id=place.campus_id AND campus.school_id=place.school_id
+      WHERE place.school_id=${school}::uuid AND place.id=facilities_repairs.space_id AND place.campus_id=${campusId}::uuid AND place.status='active' AND campus.status='active')
+     OR facilities_repairs.space_id IS NULL AND facilities_repairs.holding_id IS NOT NULL AND EXISTS(SELECT 1 FROM campus_resource_holdings item
+      JOIN campus_resource_types type ON type.id=item.resource_type_id AND type.school_id=item.school_id JOIN institution_campuses campus ON campus.id=item.campus_id AND campus.school_id=item.school_id
+      WHERE item.school_id=${school}::uuid AND item.id=facilities_repairs.holding_id AND item.campus_id=${campusId}::uuid AND item.state<>'retired' AND type.is_active AND type.tracking_mode='individual' AND campus.status='active')
+     OR facilities_repairs.space_id IS NULL AND facilities_repairs.holding_id IS NULL))`)
+                    .where(eb => eb.or([sql `facilities_person_can_read(${school}::uuid,id,${actor.person_id}::uuid,${executionNow()}::timestamptz)`, ...(manager ? [sql `NOT facilities_repair_coordination_available(${school}::uuid,id)`] : [])])).orderBy('updated_at').execute();
+                const needs_me = [], waiting = [];
+                const externals = rows.length ? await tx.selectFrom('facilities_external_assignments').selectAll().where('school_id', '=', school).where('id', 'in', rows.flatMap(row => row.external_assignment_id ? [row.external_assignment_id] : []).length ? rows.flatMap(row => row.external_assignment_id ? [row.external_assignment_id] : []) : ['00000000-0000-0000-0000-000000000000']).execute() : [];
+                const personIds = [...new Set([...rows.flatMap(repair => [repair.state === 'awaiting_verification' ? repair.verifier_person_id : repair.handler_person_id, repair.coordinator_person_id]), ...externals.map(row => row.person_id)])], persons = personIds.length ? await tx.selectFrom('school_people').select(['id', 'first_name', 'last_name']).where('school_id', '=', school).where('id', 'in', personIds).execute() : [];
+                const endpoints = new Map();
+                const recipientFor = (person) => { let result = endpoints.get(person); if (!result) {
+                    result = this.endpoint(tx, school, person, false, true).catch((error) => { if (error instanceof UnprocessableEntityException || error instanceof ForbiddenException)
+                        return null; throw error; });
+                    endpoints.set(person, result);
+                } return result; };
+                for (const repair of rows) {
+                    const retained = repair.coordination_receipt, external = externals.find(row => row.id === repair.external_assignment_id), verifying = repair.state === 'awaiting_verification', pending = !verifying && external?.status === 'granted' && repair.handler_person_id !== external.person_id && external.ends_at > executionNow(), shared = external?.person_id === actor.person_id && this.externalCurrent(external), internal = this.internalParticipant(repair, actor.person_id, external), personId = verifying ? repair.verifier_person_id : pending ? external.person_id : repair.handler_person_id, recipient = await recipientFor(personId), person = persons.find(row => row.id === personId);
+                    const trace = retained.message_id ? await this.model.coordination.findExactTrace(tx, { school_id: school, source_domain: 'facilities', source_record_id: repair.id, event_type: retained.event_type, source_revision: retained.source_revision, message_id: retained.message_id }) : null;
+                    const validWorker = verifying || !external || external.person_id !== repair.handler_person_id || this.externalCurrent(external), ready = !pending && validWorker && Boolean(recipient && retained.recipient_user_id === recipient.user_id && trace?.message_open), activation = Boolean(pending && shared && external.starts_at <= executionNow()), owned = activation || ready && recipient?.person_id === actor.person_id;
+                    const coordinatorAvailable = await recipientFor(repair.coordinator_person_id), participant = internal || shared, recovery = (!pending && !ready || !coordinatorAvailable) && (manager || actor.person_id === repair.coordinator_person_id);
+                    if (!owned && !participant && !recovery)
+                        continue;
+                    const record = { id: `facilities:${repair.id}`, repair_id: repair.id, revision: repair.revision, title: verifying ? 'Check completed repair' : pending ? 'Technician assignment' : 'Continue repair', state: recovery ? 'needs_reassignment' : owned ? 'review_needed' : 'waiting_for_review', href: facilitiesHref(repair.id), created_at: iso(repair.created_at), due_at: null, message_id: retained.message_id ?? null, owner: { user_id: recipient?.user_id ?? null, label: personLabel(person.first_name, person.last_name) }, action: recovery ? 'recover' : verifying ? 'verify' : activation || repair.state === 'reported' ? 'accept' : 'work' };
+                    if (owned || recovery)
+                        needs_me.push(record);
+                    else
+                        waiting.push(record);
+                }
+                return { needs_me, waiting };
+            });
+        }
+        catch (error) {
+            if (error instanceof ForbiddenException)
+                return { needs_me: [], waiting: [] };
+            throw error;
+        }
+    }
+};
+FacilitiesService = __decorate([
+    Injectable(),
+    __metadata("design:paramtypes", [DatabaseService, FacilitiesAccess, FacilitiesModel, FacilitiesArtifactStore])
+], FacilitiesService);
+export { FacilitiesService };
+//# sourceMappingURL=facilities.service.js.map

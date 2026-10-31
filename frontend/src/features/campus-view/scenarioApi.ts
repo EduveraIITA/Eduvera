@@ -52,6 +52,7 @@ export interface CampusScenarioMetric {
 export interface CampusScenarioRun {
   id: string;
   status: CampusScenarioStatus;
+  scenario_kind: "intervention" | "baseline_snapshot";
   created_at: string;
   snapshot_at: string;
   expires_at: string;
@@ -62,12 +63,45 @@ export interface CampusScenarioRun {
     target_label: string;
     starts_at: string;
     ends_at: string;
-  };
+  } | null;
   assumptions: string[];
   unsupported_domains: string[];
   metrics: CampusScenarioMetric[];
   progress: number;
   failure_reason: string | null;
+  execution_environment: {
+    mode: "simulation";
+    namespace_id: string;
+    run_id: string;
+    virtual_clock: { now: string; time_zone: string };
+    source_snapshot_at: string;
+    expires_at: string;
+  };
+  projection_capabilities: {
+    application_parity?: boolean;
+    supported: string[];
+    unsupported: string[];
+  };
+  run_local_counterpart_coverage: {
+    scope: "captured_active_model_core_agents";
+    source_agent_count: number;
+    counterpart_count: number;
+    coverage: "complete" | "partial";
+    counterparts_by_kind: {
+      human: number;
+      team: number;
+      device: number;
+      integration: number;
+      software: number;
+    };
+    readiness: {
+      modelled: number;
+      passive: number;
+      unsupported: number;
+    };
+    behaviour_parity: false;
+    explanation: string;
+  };
   side_effect_policy: {
     mode: "sink_only";
     production_writes: false;
@@ -80,7 +114,14 @@ export interface CampusScenarioRun {
     space_revision_max: number | null;
     agent_revision_max: number | null;
     coverage_evidence_revision: string | null;
-    counts: { sessions: number; spaces: number; teachers: number; enrolments: number };
+    counts: {
+      sessions: number;
+      spaces: number;
+      teachers: number;
+      agents: number;
+      agent_kinds: { human: number; team: number; device: number; integration: number; software: number };
+      enrolments: number;
+    };
     captured_at: string;
     consistency: "repeatable_read_transaction";
   };
@@ -107,7 +148,12 @@ export interface CampusScenarioResponse {
   run: CampusScenarioRun;
 }
 
-export interface CreateCampusScenarioInput {
+export type CreateCampusScenarioInput = {
+  kind: "baseline_snapshot";
+  campus_id?: string;
+  horizon_days: number;
+} | {
+  kind?: "intervention";
   campus_id?: string;
   horizon_days: number;
   intervention: {
@@ -116,7 +162,7 @@ export interface CreateCampusScenarioInput {
     starts_at: string;
     ends_at: string;
   };
-}
+};
 
 function root(schoolId: string) {
   return `/api/v1/schools/${encodeURIComponent(schoolId)}/campus-view/scenarios`;

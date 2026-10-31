@@ -1,3 +1,4 @@
+import { applicationNow } from "../simulation/applicationTime";
 import { useMutation } from "@tanstack/react-query";
 import { CheckCircle2, ChevronDown, Phone, Send, TriangleAlert } from "lucide-react";
 import { useRef, useState } from "react";
@@ -17,10 +18,10 @@ export function NoticeRecipientRow({ notice, recipient, onSaved, defaultOpen = f
   const responseKey = useRef(noticeCommandKey()); const deliveryKey = useRef(noticeCommandKey());
   const response = useMutation({ mutationFn: () => recordAssistedNoticeResponse(notice.id, {
     recipient_id: recipient.id, expected_revision: recipient.revision, response_value: notice.response_mode === "choice" ? choice : undefined,
-    response_note: note.trim(), channel, observed_at: new Date().toISOString(),
+    response_note: note.trim(), channel, observed_at: applicationNow().toISOString(),
   }, responseKey.current), onSuccess: async () => { await onSaved(); } });
   const delivery = useMutation({ mutationFn: () => recordNoticeDelivery(notice.id, {
-    recipient_id: recipient.id, channel, status: "delivered", note: note.trim(), attempted_at: new Date().toISOString(),
+    recipient_id: recipient.id, channel, status: "delivered", note: note.trim(), attempted_at: applicationNow().toISOString(),
   }, deliveryKey.current), onSuccess: async () => { await onSaved(); } });
   const latest = recipient.deliveries[0];
   const overdue = !recipient.responded_at && notice.response_mode !== "information" && Boolean(notice.due_at && new Date(notice.due_at).getTime() < renderedAt);

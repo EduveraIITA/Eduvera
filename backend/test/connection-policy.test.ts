@@ -1,6 +1,8 @@
 import { afterEach, describe, expect, it } from "vitest";
 import { loadConfig } from "../src/config.js";
-import { assertPostgreSqlConnectionPolicy, postgresClientConnectionConfig } from "../src/database/connection-policy.js";
+import { Client } from "pg";
+import { assertPostgreSqlConnectionPolicy, postgresClientConnectionConfig, postgresLibpqConnectionEnvironment } from "../src/database/connection-policy.js";
+import { assertDistinctSimulationDatabase } from "../src/database/simulation-snapshot-store.js";
 
 const originalEnvironment = { ...process.env };
 
@@ -12,6 +14,49 @@ afterEach(() => {
 });
 
 describe("PostgreSQL connection policy", () => {
+  it("binds node-postgres and libpq to the same explicit Cloud SQL connector socket", () => {
+    const value = "postgresql://dt_role:p%40ss%3A%2F@localhost/thatcampus_dt?host=%2Fcloudsql%2Feduera-511111%3Aasia-south1%3Aeduera-db";
+    for (const purpose of ["application", "events", "migrations", "simulation"] as const) {
+      const options = { name: "DATABASE_URL", purpose, requireRemoteTls: true };
+      const client = new Client(postgresClientConnectionConfig(value, options)); // Parse only; never connect.
+      const environment = postgresLibpqConnectionEnvironment(value, options);
+      expect(environment).toMatchObject({ PGHOST: client.host, PGPORT: String(client.port),
+        PGUSER: client.user, PGDATABASE: client.database, PGPASSWORD: "p@ss:/", PGSSLMODE: "disable" });
+      expect(environment.PGHOST).toBe("/cloudsql/eduera-511111:asia-south1:eduera-db");
+    }
+  });
+
+  it.each([
+    "host=db.example.com", "host=%2Ftmp%2Fpostgres", "host=%2Fcloudsql%2F..%2Fprivate",
+    "host=%2Fcloudsql%2Feduera-511111%3Aasia-south1%3Aeduera-db&host=elsewhere",
+    "hostaddr=203.0.113.1", "service=production", "servicefile=%2Fprivate%2Fservice",
+    "port=6543", "dbname=other", "database=other", "user=other", "password=other",
+    "sslmode=require&sslmode=disable",
+  ])("rejects a hidden connection-target/identity override: %s", query => {
+    expect(() => assertPostgreSqlConnectionPolicy(`postgresql://role:fixture@localhost/dt?${query}`,
+      { name: "DATABASE_URL", purpose: "application", requireRemoteTls: true })).toThrow(/override|repeat/);
+  });
+
+  it("keeps Cloud SQL sockets loopback-only and identifies same-store aliases without conflating separate databases", () => {
+    const host = "host=%2Fcloudsql%2Feduera-511111%3Aasia-south1%3Aeduera-db";
+    for (const authority of ["db.example.com", "localhost:6543"]) expect(() => assertPostgreSqlConnectionPolicy(
+      `postgresql://role:fixture@${authority}/dt?${host}`, { name: "DATABASE_URL", purpose: "simulation", requireRemoteTls: true },
+    )).toThrow(/Cloud SQL connector socket/);
+    expect(() => assertDistinctSimulationDatabase(`postgresql://live:fixture@localhost/dt?${host}`,
+      `postgresql://worlds:other@127.0.0.1:5432/dt?${host}`)).toThrow(/separate from Live/);
+    expect(() => assertDistinctSimulationDatabase(`postgresql://live:fixture@localhost/thatcampus_dt?${host}`,
+      `postgresql://worlds:other@localhost/thatcampus_dt_simulation?${host}`)).not.toThrow();
+  });
+
+  it("retains explicit loopback targets and remote certificate-verifying TLS for libpq", () => {
+    const options = { name: "DATABASE_URL", purpose: "application" as const, requireRemoteTls: true };
+    expect(postgresLibpqConnectionEnvironment("postgresql://role:fixture@[::1]:5433/local_test", options))
+      .toMatchObject({ PGHOST: "::1", PGPORT: "5433", PGDATABASE: "local_test", PGSSLMODE: "disable" });
+    expect(postgresLibpqConnectionEnvironment("postgresql://role:fixture@db.example.com/dt?sslmode=verify-full&sslrootcert=%2Fcerts%2Froot.pem", options))
+      .toMatchObject({ PGHOST: "db.example.com", PGSSLMODE: "verify-full", PGSSLROOTCERT: "/certs/root.pem" });
+    expect(() => postgresLibpqConnectionEnvironment("postgresql://role:fixture@db.example.com/dt", options)).toThrow(/sslmode/);
+  });
+
   it("allows transaction pooling for application queries", () => {
     expect(() => assertPostgreSqlConnectionPolicy(
       "postgresql://app:secret@aws-0-region.pooler.supabase.com:6543/postgres?sslmode=require",
@@ -19,7 +64,7 @@ describe("PostgreSQL connection policy", () => {
     )).not.toThrow();
   });
 
-  it("rejects transaction pooling for events and migrations", () => {
+  it("rejects transaction pooling for events, migrations, and Simulation", () => {
     const url = "postgresql://app:secret@aws-0-region.pooler.supabase.com:6543/postgres?sslmode=require";
     expect(() => assertPostgreSqlConnectionPolicy(url, {
       name: "EVENT_DATABASE_URL",
@@ -31,6 +76,19 @@ describe("PostgreSQL connection policy", () => {
       purpose: "migrations",
       requireRemoteTls: true,
     })).toThrow(/persistent session/);
+    expect(() => assertPostgreSqlConnectionPolicy(url, {
+      name: "CAMPUS_SIMULATION_DATABASE_URL",
+      purpose: "simulation",
+      requireRemoteTls: true,
+    })).toThrow(/Simulation snapshot provisioning and advisory locks require a persistent session/);
+    expect(() => assertPostgreSqlConnectionPolicy(
+      "postgresql://simulation:secret@db.example.com:5432/postgres?sslmode=require&pgbouncer=true",
+      {
+        name: "CAMPUS_SIMULATION_DATABASE_URL",
+        purpose: "simulation",
+        requireRemoteTls: true,
+      },
+    )).toThrow(/cannot use transaction pooling/);
   });
 
   it("maps sslmode=require to encrypted node-postgres TLS without certificate verification", () => {
@@ -135,6 +193,27 @@ describe("managed deployment configuration", () => {
       EVENT_BROKER_CONNECT_TIMEOUT_MS: 7000,
       EVENT_CLEANUP_BATCH_SIZE: 250,
     });
+  });
+
+  it("requires persistent-session Simulation storage", () => {
+    setProductionEnvironment();
+    process.env.CAMPUS_SIMULATION_DATABASE_URL =
+      "postgresql://simulation:secret@pool.example.com:6543/simulation?sslmode=require";
+    expect(() => loadConfig()).toThrow(
+      /CAMPUS_SIMULATION_DATABASE_URL cannot use transaction pooling.*persistent session/,
+    );
+
+    process.env.CAMPUS_SIMULATION_DATABASE_URL =
+      "postgresql://simulation:secret@db.example.com:5432/simulation?sslmode=verify-full";
+    expect(loadConfig().CAMPUS_SIMULATION_DATABASE_URL).toBe(process.env.CAMPUS_SIMULATION_DATABASE_URL);
+  });
+
+  it("accepts an explicit absolute snapshot tool, not a relative command or shell fragment", () => {
+    setProductionEnvironment();
+    process.env.SIMULATION_PG_DUMP_PATH = "/opt/postgresql17/bin/pg_dump";
+    expect(loadConfig().SIMULATION_PG_DUMP_PATH).toBe(process.env.SIMULATION_PG_DUMP_PATH);
+    process.env.SIMULATION_PG_DUMP_PATH = "pg_dump --schema-only";
+    expect(() => loadConfig()).toThrow(/absolute executable path/u);
   });
 
   it("requires a persistent event URL and secure cookies", () => {

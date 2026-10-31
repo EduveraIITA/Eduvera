@@ -5,6 +5,7 @@ import {MemoryRouter} from "react-router-dom";
 import {afterEach,beforeEach,describe,expect,it,vi} from "vitest";
 import {getPrincipalInsights,type PrincipalInsights} from "./api";
 import {InsightContent,PrincipalInsightsDashboard} from "./PrincipalInsightsDashboard";
+import {ExecutionEnvironmentProvider} from "../simulation/ExecutionEnvironmentContext";
 vi.mock("./api",()=>({getPrincipalInsights:vi.fn()}));
 vi.mock("../auth/AuthContext",()=>({useOptionalAuth:()=>({status:"authenticated",user:{id:"admin",active_school_id:"school-1"},memberships:[{role:"admin",school_id:"school-1"}]})}));
 export const fixture:PrincipalInsights={
@@ -20,27 +21,27 @@ export const fixture:PrincipalInsights={
 let client:QueryClient;
 beforeEach(()=>{client=new QueryClient({defaultOptions:{queries:{retry:false}}});vi.mocked(getPrincipalInsights).mockResolvedValue(fixture);HTMLDialogElement.prototype.showModal=function(){this.setAttribute("open","");};HTMLDialogElement.prototype.close=function(){this.removeAttribute("open");};});
 afterEach(()=>{cleanup();client.clear();vi.clearAllMocks();});
-function mount(){return render(<QueryClientProvider client={client}><MemoryRouter><PrincipalInsightsDashboard date="2026-10-07"/></MemoryRouter></QueryClientProvider>);}
+function mount(){return render(<ExecutionEnvironmentProvider environment={{mode:"live",namespaceId:"live:school-1"}}><QueryClientProvider client={client}><MemoryRouter><PrincipalInsightsDashboard date="2026-10-07"/></MemoryRouter></QueryClientProvider></ExecutionEnvironmentProvider>);}
 describe("principal insights",()=>{
   it("keeps Overview compact with summary cards and a dated link to full insights",async()=>{
-    render(<QueryClientProvider client={client}><MemoryRouter initialEntries={["/principal?date=2026-10-07&insight_class=old-class&insight_days=56"]}><PrincipalInsightsDashboard date="2026-10-07" summaryOnly/></MemoryRouter></QueryClientProvider>);
+    render(<ExecutionEnvironmentProvider environment={{mode:"live",namespaceId:"live:school-1"}}><QueryClientProvider client={client}><MemoryRouter initialEntries={["/principal?date=2026-10-07&insight_class=old-class&insight_days=56"]}><PrincipalInsightsDashboard date="2026-10-07" summaryOnly/></MemoryRouter></QueryClientProvider></ExecutionEnvironmentProvider>);
     await screen.findByText("90.0%",{selector:"strong"});
     expect(getPrincipalInsights).toHaveBeenCalledWith("school-1","2026-10-07",28,"",50);
     expect(screen.queryByLabelText("Review window")).not.toBeInTheDocument();
     expect(screen.queryByRole("heading",{name:"Attendance over time"})).not.toBeInTheDocument();
     expect(screen.queryByText("Fee collection overview")).not.toBeInTheDocument();
-    expect(screen.getByRole("link",{name:/View all insights/})).toHaveAttribute("href","/principal/insights?date=2026-10-07");
-    expect(screen.getByRole("link",{name:/class-day has three/})).toHaveAttribute("href","/principal/insights?date=2026-10-07#principal-deadlines");
-    expect(screen.getByRole("link",{name:/period needs teacher coverage/})).toHaveAttribute("href","/principal/timetable");
+    expect(screen.getByRole("link",{name:/View all insights/})).toHaveAttribute("href","/areas/insights?date=2026-10-07&scope=institution");
+    expect(screen.getByRole("link",{name:/class-day has three/})).toHaveAttribute("href","/areas/insights?date=2026-10-07&scope=institution#principal-deadlines");
+    expect(screen.getByRole("link",{name:/period needs teacher coverage/})).toHaveAttribute("href","/areas/timetable/planning");
     await userEvent.click(screen.getByRole("button",{name:/Students to check in with/}));
     expect(screen.getByRole("dialog")).toHaveTextContent("Anaya Test");
   });
   it("groups full insights and preserves filters when opening deadline pressure",async()=>{
-    render(<QueryClientProvider client={client}><MemoryRouter initialEntries={["/principal/insights?date=2026-10-07&insight_days=14"]}><PrincipalInsightsDashboard date="2026-10-07"/></MemoryRouter></QueryClientProvider>);
+    render(<ExecutionEnvironmentProvider environment={{mode:"live",namespaceId:"live:school-1"}}><QueryClientProvider client={client}><MemoryRouter initialEntries={["/areas/insights?date=2026-10-07&insight_days=14&scope=institution"]}><PrincipalInsightsDashboard date="2026-10-07"/></MemoryRouter></QueryClientProvider></ExecutionEnvironmentProvider>);
     await screen.findByRole("heading",{name:"Attendance & learning"});
     expect(screen.getByRole("heading",{name:"Operations"})).toBeInTheDocument();
     expect(screen.getByRole("heading",{name:"Finance"})).toBeInTheDocument();
-    expect(screen.getByRole("link",{name:/class-day has three/})).toHaveAttribute("href","/principal/insights?date=2026-10-07&insight_days=14#principal-deadlines");
+    expect(screen.getByRole("link",{name:/class-day has three/})).toHaveAttribute("href","/areas/insights?date=2026-10-07&insight_days=14&scope=institution#principal-deadlines");
   });
   it("loads in the active institution and changes filters without discarding the selected date",async()=>{
     mount();await screen.findByText("90.0%",{selector:"strong"});expect(getPrincipalInsights).toHaveBeenCalledWith("school-1","2026-10-07",28,"",50);
@@ -49,7 +50,7 @@ describe("principal insights",()=>{
   });
   it("explains evidence, opens source links and dismisses the dialog",async()=>{
     mount();await userEvent.click(await screen.findByRole("button",{name:/Students to check in with/}));
-    const dialog=screen.getByRole("dialog");expect(dialog).toHaveTextContent("Anaya Test");expect(dialog).toHaveTextContent("10 percentage-point");expect(screen.getByRole("link",{name:"Review class register"})).toHaveAttribute("href","/principal/attendance?class_section_id=class-7&date=2026-10-07");
+    const dialog=screen.getByRole("dialog");expect(dialog).toHaveTextContent("Anaya Test");expect(dialog).toHaveTextContent("10 percentage-point");expect(screen.getByRole("link",{name:"Review class register"})).toHaveAttribute("href","/areas/attendance/registers?class_section_id=class-7&date=2026-10-07");
     fireEvent(dialog,new Event("cancel",{bubbles:true}));expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
   });
   it("shows missing records and published-assessment participation explicitly",async()=>{

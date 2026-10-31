@@ -1,5 +1,17 @@
 import { useCallback, useContext, useEffect, useRef } from "react";
 import { UNSAFE_NavigationContext } from "react-router-dom";
+import { previousPortalLocation } from "./portalHistory";
+
+/** Only the app bar's already-validated, observed previous entry is a POP intent. */
+export interface GuardedPopIntent {
+  kind: "pop";
+  fromIndex: number;
+  toIndex: number;
+  fromHref: string;
+  toHref: string;
+}
+
+export type UnsavedChangesNavigationGuard = (intent?: GuardedPopIntent) => boolean;
 
 function historyIndex(state: unknown) {
   if (!state || typeof state !== "object") return null;
@@ -23,9 +35,20 @@ export function useUnsavedChangesGuard(when: boolean, message: string) {
   const currentHistoryIndex = useRef<number | null>(null);
   const allowNativeUnload = useRef(false);
 
-  const confirmNavigation = useCallback(
-    () => !when || window.confirm(message),
-    [message, when],
+  const confirmNavigation: UnsavedChangesNavigationGuard = useCallback(
+    (intent?: GuardedPopIntent) => {
+      if (!when) return true;
+      // A validated app-bar Back is the same operation as browser Back. Let the
+      // capture-phase POP listener ask once at the actual transition instead of
+      // pre-authorizing a later event. A cancelled/no-op action leaves no bypass.
+      if (browserHistory && intent?.kind === "pop"
+        && intent.fromIndex === historyIndex(window.history.state)
+        && intent.fromIndex > 0 && intent.toIndex === intent.fromIndex - 1
+        && intent.fromHref === `${window.location.pathname}${window.location.search}${window.location.hash}`
+        && intent.toHref === previousPortalLocation(intent.fromIndex)) return true;
+      return window.confirm(message);
+    },
+    [browserHistory, message, when],
   );
 
   useEffect(() => {
@@ -91,6 +114,10 @@ export function useUnsavedChangesGuard(when: boolean, message: string) {
       }
       if (window.confirm(message)) return;
 
+      // Stop React Router's normal POP listener before it can unmount this
+      // editor. The restoration event is allowed through at the original entry.
+      event.stopImmediatePropagation();
+
       const delta = previousIndex !== null && nextIndex !== null
         ? nextIndex - previousIndex
         : -1;
@@ -99,8 +126,8 @@ export function useUnsavedChangesGuard(when: boolean, message: string) {
       window.history.go(delta === 0 ? 1 : -delta);
     };
 
-    window.addEventListener("popstate", guardPop);
-    return () => window.removeEventListener("popstate", guardPop);
+    window.addEventListener("popstate", guardPop, true);
+    return () => window.removeEventListener("popstate", guardPop, true);
   }, [browserHistory, message, when]);
 
   return confirmNavigation;

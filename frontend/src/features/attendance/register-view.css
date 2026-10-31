@@ -1,0 +1,104 @@
+.attendance-register-view {
+  display: grid;
+  gap: 12px;
+  width: 100%;
+  min-width: 0;
+  max-width: 1040px;
+  margin-inline: auto;
+  padding-bottom: 24px;
+}
+.attendance-register-view button { font: inherit; cursor: pointer; }
+.attendance-register-view button:disabled { opacity: .5; cursor: not-allowed; }
+.attendance-register-view :is(button, a, input, select, textarea, summary):focus-visible {
+  outline: 2px solid var(--thatcampus-action);
+  outline-offset: 3px;
+}
+.attendance-register-view__header {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: start;
+  gap: 4px 12px;
+  min-width: 0;
+}
+.attendance-register-view__identity { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 12px; min-width: 0; }
+.attendance-register-view__identity h2 { margin: 0; color: var(--thatcampus-ink); font-size: 22px; line-height: 1.3; letter-spacing: -.025em; overflow-wrap: anywhere; }
+.attendance-register-view__state { color: var(--thatcampus-ink-secondary); font-size: 14px; line-height: 1.5; }
+.attendance-register-view__context { grid-column: 1 / -1; color: var(--thatcampus-ink-secondary); font-size: 14px; line-height: 1.5; overflow-wrap: anywhere; }
+.attendance-register-view__context :is(p, dl) { margin: 0; }
+.attendance-register-view__history > button,
+.attendance-register-action {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  min-height: 44px;
+  max-width: 100%;
+  padding: 8px 12px;
+  border: 1px solid transparent;
+  border-radius: var(--thatcampus-radius-control);
+  background: var(--thatcampus-surface-soft);
+  color: var(--thatcampus-ink);
+  box-shadow: var(--thatcampus-shadow-control);
+  font-size: 14px;
+  font-weight: 600;
+  line-height: 1.4;
+  text-decoration: none;
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
+.attendance-register-action--primary { background: var(--thatcampus-action); color: var(--thatcampus-on-action); }
+.attendance-register-action--text { background: transparent; color: var(--thatcampus-action); box-shadow: none; }
+.attendance-register-view__history > button:active:not(:disabled),
+.attendance-register-action:active:not(:disabled) { box-shadow: var(--thatcampus-shadow-control-pressed); }
+.attendance-register-action--text:active:not(:disabled) { box-shadow: none; }
+.attendance-register-view__progress { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 4px 8px; color: var(--thatcampus-ink-secondary); font-size: 14px; line-height: 1.5; }
+.attendance-register-view__progress-actions { display: flex; flex-wrap: wrap; align-items: center; justify-content: flex-end; gap: 4px; margin-left: auto; }
+.attendance-register-view__tools { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center; gap: 8px; min-width: 0; }
+.attendance-register-view__tools > label { display: flex; align-items: center; width: 100%; min-width: 0; }
+.attendance-register-view__tools input,
+.attendance-register-view__tools select { width: 100%; min-width: 0; min-height: 48px; padding: 10px 12px; border: 1px solid var(--thatcampus-border); border-radius: var(--thatcampus-radius-control); background: var(--thatcampus-surface); color: var(--thatcampus-ink); font: inherit; font-size: 16px; }
+.attendance-register-view__tools > select { width: auto; max-width: 150px; }
+.attendance-register-view__tools > .roll-call-search { gap: 8px; padding-inline: 12px; border: 1px solid var(--thatcampus-border); border-radius: var(--thatcampus-radius-control); background: var(--thatcampus-surface); color: var(--thatcampus-ink-secondary); }
+.attendance-register-view__tools > .roll-call-search input { border: 0; padding-inline: 0; }
+.attendance-register-view__tools > .roll-call-search:focus-within { outline: 2px solid var(--thatcampus-action); outline-offset: 3px; }
+.attendance-register-view__roster { display: grid; gap: 12px; min-width: 0; }
+.attendance-register-options { min-width: 0; padding-block: 4px; border-block: 1px solid var(--thatcampus-border); }
+.attendance-register-options > summary { min-height: 44px; padding-block: 12px; color: var(--thatcampus-ink); font-size: 14px; font-weight: 600; cursor: pointer; }
+.attendance-register-options > :not(summary) { margin-block: 12px; }
+.attendance-register-management { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+.attendance-register-view__footer {
+  position: sticky;
+  bottom: 16px;
+  z-index: 2;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  box-sizing: border-box;
+  width: 100%;
+  min-width: 0;
+  padding: 8px max(var(--thatcampus-row-inset), env(safe-area-inset-right, 0px)) 8px max(var(--thatcampus-row-inset), env(safe-area-inset-left, 0px));
+  border: 0;
+  border-radius: var(--thatcampus-radius-card);
+  background: var(--thatcampus-surface-row);
+  box-shadow: var(--thatcampus-shadow-card);
+}
+.attendance-register-view__save-state { min-width: 0; color: var(--thatcampus-ink-secondary); font-size: 14px; line-height: 1.4; overflow-wrap: anywhere; }
+.attendance-register-view__footer-actions { display: flex; flex-wrap: wrap; align-items: center; justify-content: flex-end; gap: 8px; min-width: 0; }
+.attendance-register-view__footer-actions > :is(button, a) { min-width: 0; max-width: 100%; min-height: 44px; padding: 10px 12px; }
+@media (max-width: 680px) {
+  .attendance-register-view__footer { bottom: calc(72px + env(safe-area-inset-bottom, 0px)); }
+  .attendance-register-view__footer-actions { flex-shrink: 1; max-width: 75%; }
+  .attendance-register-view__tools > select { max-width: 140px; }
+}
+@media (max-width: 380px) {
+  .attendance-register-view__footer:has(.attendance-register-view__footer-actions > :nth-child(2)) { display: grid; grid-template-columns: minmax(0, 1fr); gap: 4px; }
+  .attendance-register-view__footer:has(.attendance-register-view__footer-actions > :nth-child(2)) .attendance-register-view__footer-actions { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); width: 100%; max-width: none; }
+  .attendance-register-view__footer-actions > :is(button, a) { width: 100%; }
+}
+@media (forced-colors: active) {
+  .attendance-register-view__footer, .attendance-register-action, .attendance-register-view__history > button { border: 1px solid ButtonText; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .attendance-register-view * { scroll-behavior: auto !important; transition: none !important; }
+}

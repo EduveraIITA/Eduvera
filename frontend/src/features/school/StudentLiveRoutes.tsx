@@ -1,6 +1,6 @@
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useMemo, useState } from "react";
-import { Navigate,useNavigate,useSearchParams } from "react-router-dom";
+import { Navigate,useLocation,useNavigate,useSearchParams } from "react-router-dom";
 import { useProFeatures } from '../auth/useProFeatures';
 import { useOptionalAuth } from "../auth/AuthContext";
 import { schoolDateToday, shiftSchoolDate } from "../../lib/schoolTime";
@@ -45,8 +45,9 @@ function useRefreshSchoolData() {
   return () => queryClient.invalidateQueries({ queryKey: ["school"] });
 }
 
-function StudentAttendanceExperience({ openCopilot = false }: { openCopilot?: boolean }) {
+function StudentAttendanceExperience({ openCopilot = false, embedded = false }: { openCopilot?: boolean; embedded?: boolean }) {
   const navigate = useNavigate();
+  const [workspaceParams, setWorkspaceParams] = useSearchParams();
   const pro=useProFeatures();
   const query = useQuery({
     queryKey: ["school", "student", "attendance"],
@@ -57,14 +58,52 @@ function StudentAttendanceExperience({ openCopilot = false }: { openCopilot?: bo
   return (
     <StudentAttendancePage
       data={adaptStudentAttendance(query.data)}
+      embedded={embedded}
       proFeaturesEnabled={pro.enabled}
       onAskCopilot={(question) => askAttendanceCopilot({ question })}
       initialCopilotOpen={openCopilot}
-      onCopilotClose={openCopilot ? () => navigate("/student/attendance", { replace: true }) : undefined}
+      onCopilotClose={openCopilot ? () => {
+        if (!embedded) {
+          void navigate("/student/attendance", { replace: true });
+          return;
+        }
+        const next = new URLSearchParams(workspaceParams);
+        next.delete("view");
+        setWorkspaceParams(next, { replace: true });
+      } : undefined}
       activeNav={openCopilot ? "copilot" : "attendance"}
-      onApplyMedicalExcuse={() => navigate("/student/leave/new")}
+      onApplyMedicalExcuse={() => {
+        if (!embedded) {
+          void navigate("/student/leave/new");
+          return;
+        }
+        const next = new URLSearchParams(workspaceParams);
+        next.set("view", "apply");
+        void navigate(`/areas/attendance/leave?${next}`);
+      }}
+      onViewEligibility={() => {
+        if (!embedded) {
+          void navigate("/student/attendance/eligibility");
+          return;
+        }
+        const next = new URLSearchParams(workspaceParams);
+        next.set("view", "eligibility");
+        void navigate(`/areas/attendance/records?${next}`);
+      }}
     />
   );
+}
+
+function StudentAttendanceLegacyRedirect({ view }: { readonly view?: "copilot" | "eligibility" }) {
+  const location = useLocation();
+  const next = new URLSearchParams(location.search);
+  next.set("scope", "self");
+  if (view) next.set("view", view);
+  return <Navigate replace to={{
+    pathname: "/areas/attendance/records",
+    search: next.toString(),
+    hash: location.hash,
+  }} />;
 }
 
 export function StudentHomeRoute() {
@@ -106,19 +145,17 @@ export function StudentDiaryRoute() {
   );
 }
 
-export function StudentAttendanceRoute() {
-  return <StudentAttendanceExperience />;
+export function StudentAttendanceRoute({ embedded = false, openCopilot = false }: { readonly embedded?: boolean; readonly openCopilot?: boolean } = {}) {
+  return <StudentAttendanceExperience embedded={embedded} openCopilot={openCopilot} />;
 }
 
 export function StudentCopilotRoute() {
-  const pro=useProFeatures();
-  if(pro.isPending)return <ScreenLoading/>;
-  if(!pro.enabled)return <Navigate to="/student/attendance" replace/>;
-  return <StudentAttendanceExperience openCopilot />;
+  return <StudentAttendanceLegacyRedirect view="copilot" />;
 }
 
-export function StudentEligibilityRoute() {
+function StudentEligibilityExperience({ embedded }: { readonly embedded: boolean }) {
   const navigate = useNavigate();
+  const [workspaceParams] = useSearchParams();
   const pro=useProFeatures();
   const refresh = useRefreshSchoolData();
   const query = useQuery({
@@ -141,14 +178,31 @@ export function StudentEligibilityRoute() {
     <StudentEligibilityPage
       data={adaptStudentEligibility(query.data)}
       proFeaturesEnabled={pro.enabled}
+      embedded={embedded}
       onAskCopilot={(question) => askAttendanceCopilot({ question })}
-      onViewTimetable={() => navigate("/student/timetable")}
+      onViewTimetable={() => {
+        if (!embedded) {
+          void navigate("/student/timetable");
+          return;
+        }
+        const next = new URLSearchParams(workspaceParams);
+        next.delete("view");
+        void navigate(`/areas/timetable/schedule?${next}`);
+      }}
       onSubmitDocument={submitDocument}
     />
   );
 }
 
-export function StudentLeaveNewRoute() {
+export function StudentEligibilityRoute({ embedded = false }: { readonly embedded?: boolean } = {}) {
+  return embedded
+    ? <StudentEligibilityExperience embedded />
+    : <StudentAttendanceLegacyRedirect view="eligibility" />;
+}
+
+export function StudentLeaveNewRoute({ embedded = false }: { readonly embedded?: boolean } = {}) {
+  const navigate = useNavigate();
+  const [workspaceParams] = useSearchParams();
   const refresh = useRefreshSchoolData();
   const query = useQuery({
     queryKey: ["school", "student", "leave", "apply"],
@@ -180,8 +234,11 @@ export function StudentLeaveNewRoute() {
       }),
     );
   };
+  const statusParams = new URLSearchParams(workspaceParams);
+  statusParams.delete("view");
   return (
     <StudentLeaveNewPage
+      embedded={embedded}
       context={{
         studentName: response.student.user.display_name,
         className: response.student.current_enrollment.class_name,
@@ -201,11 +258,14 @@ export function StudentLeaveNewRoute() {
       }}
       onSubmit={submit}
       onSaveDraft={saveDraft}
+      onOpenStatus={embedded ? () => navigate(`/areas/attendance/leave?${statusParams}`) : undefined}
     />
   );
 }
 
-export function StudentLeaveStatusRoute() {
+export function StudentLeaveStatusRoute({ embedded = false }: { readonly embedded?: boolean } = {}) {
+  const navigate = useNavigate();
+  const [workspaceParams] = useSearchParams();
   const refresh = useRefreshSchoolData();
   const query = useQuery({
     queryKey: ["school", "student", "leave", "status"],
@@ -214,9 +274,16 @@ export function StudentLeaveStatusRoute() {
   if (query.isPending) return <ScreenLoading />;
   if (query.isError || !query.data) return <LiveRouteError error={query.error} onRetry={query.refetch} />;
   const response = query.data;
+  const applyParams = new URLSearchParams(workspaceParams);
+  applyParams.set("view", "apply");
+  const eligibilityParams = new URLSearchParams(workspaceParams);
+  eligibilityParams.set("view", "eligibility");
   return (
     <StudentLeaveStatusPage
       data={adaptStudentLeaveStatus(response)}
+      embedded={embedded}
+      onApplyLeave={embedded ? () => navigate(`/areas/attendance/leave?${applyParams}`) : undefined}
+      onViewEligibility={embedded ? () => navigate(`/areas/attendance/records?${eligibilityParams}`) : undefined}
       onViewPrescription={(documentUrl) => window.open(documentUrl, "_blank", "noopener,noreferrer")}
       onWithdraw={async (requestId) => {
         await performLeaveAction(requestId, "withdraw", "Withdrawn by student.");

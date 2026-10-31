@@ -19,6 +19,7 @@ import {
 import { useMemo } from "react";
 import { Link, useLocation, useSearchParams } from "react-router-dom";
 import { OperationsShell } from "../../pages/operations/OperationsShell";
+import { ProductIcon, type ProductIconName } from "../../components/ProductIcon";
 import { ParentShell } from "../../pages/parent/ParentShell";
 import { portalReturnState } from "../navigation/portalReturnState";
 import {
@@ -49,6 +50,8 @@ const stackMeta: Array<{ id: RequestPriority; title: string }> = [
   { id: "high", title: "Next" },
   { id: "normal", title: "Later" },
 ];
+
+const categoryProductIcon: Record<RequestCategory, ProductIconName> = { attendance: "attendance", academics: "learning", events: "calendar", leave: "calendar", staffing: "people", transport: "gate", finance: "finance", governance: "policies", communication: "messages", care: "care" };
 
 function isRequestCategory(value: string | null): value is RequestCategory {
   return value !== null && Object.prototype.hasOwnProperty.call(categoryMeta, value);
@@ -82,7 +85,7 @@ function RequestRow({ item, timezone, returnTo, portal }: { item: RequestInboxIt
   const href = actionHref(item, portal);
   return (
     <Link className={`request-row request-row--${item.priority}`} to={href} state={portalReturnState(returnTo, href)}>
-      <span className="request-row__icon" aria-hidden="true"><Icon size={19} /></span>
+      <span className="request-row__icon" aria-hidden="true">{item.priority === "urgent" ? <Icon size={22} /> : <ProductIcon name={categoryProductIcon[item.category]} size={28} />}</span>
       <span className="request-row__body">
         <span className="request-row__eyebrow">
           <b>{item.status_label}</b>
@@ -111,6 +114,7 @@ export function RequestInboxView({ data }: { data: RequestInboxResponse }) {
   const returnTo = `${location.pathname}${location.search}${location.hash}`;
   const setCategory = (nextCategory: RequestCategory | "all") => {
     const next = new URLSearchParams(params);
+    next.delete("request_page");
     if (nextCategory === "all") next.delete("category");
     else next.set("category", nextCategory);
     setParams(next, { replace: true });
@@ -119,6 +123,18 @@ export function RequestInboxView({ data }: { data: RequestInboxResponse }) {
     .filter((entry): entry is [RequestCategory, number] => Boolean(entry[1]))
     .sort((left, right) => categoryMeta[left[0]].label.localeCompare(categoryMeta[right[0]].label)), [data.summary.categories]);
   const visible = category === "all" ? data.items : data.items.filter((item) => item.category === category);
+  const pageSize = 20;
+  const pageCount = Math.max(1, Math.ceil(visible.length / pageSize));
+  const requestedPage = Number(params.get("request_page") ?? 1);
+  const page = Number.isFinite(requestedPage) ? Math.min(pageCount, Math.max(1, Math.floor(requestedPage))) : 1;
+  const ordered = stackMeta.flatMap((stack) => visible.filter((item) => item.priority === stack.id));
+  const pageItems = ordered.slice((page - 1) * pageSize, page * pageSize);
+  const setPage = (nextPage: number) => {
+    const next = new URLSearchParams(params);
+    if (nextPage === 1) next.delete("request_page");
+    else next.set("request_page", String(nextPage));
+    setParams(next);
+  };
   return <div className="requests-page">
     {categories.length > 1 ? <div className="request-filters" role="group" aria-label="Filter requests by category">
       <button type="button" aria-pressed={category === "all"} onClick={() => setCategory("all")}>All <span>{data.summary.total}</span></button>
@@ -127,7 +143,7 @@ export function RequestInboxView({ data }: { data: RequestInboxResponse }) {
 
     {visible.length ? <div className="request-stacks">
       {stackMeta.map((stack) => {
-        const items = visible.filter((item) => item.priority === stack.id);
+        const items = pageItems.filter((item) => item.priority === stack.id);
         if (!items.length) return null;
         return <section className={`request-stack request-stack--${stack.id}`} key={stack.id} aria-labelledby={`request-stack-${stack.id}`}>
           <header><h2 id={`request-stack-${stack.id}`}>{stack.title}</h2><span aria-label={`${items.length} ${items.length === 1 ? "item" : "items"}`}>{items.length}</span></header>
@@ -135,6 +151,7 @@ export function RequestInboxView({ data }: { data: RequestInboxResponse }) {
         </section>;
       })}
     </div> : <section className="requests-empty" role="status"><BookOpenCheck size={28} aria-hidden="true" /><h2>Nothing needs your attention</h2><p>{category === "all" ? "New requests will appear here when you need to respond." : `There are no ${categoryMeta[category].label.toLowerCase()} requests right now.`}</p></section>}
+    {pageCount > 1 ? <nav className="request-pagination" aria-label="Request pages"><button type="button" disabled={page === 1} onClick={() => setPage(page - 1)}>Previous</button><span>Page {page} of {pageCount} · {visible.length} requests</span><button type="button" disabled={page === pageCount} onClick={() => setPage(page + 1)}>Next</button></nav> : null}
   </div>;
 }
 

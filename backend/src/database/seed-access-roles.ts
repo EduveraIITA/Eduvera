@@ -23,8 +23,9 @@ export async function seedAccessRolesDemo(pool:Pool,demoMode:boolean) {
     const assignmentId=demoId("access-assignment-attendance-reviewer");
     if(!(await client.query("SELECT 1 FROM staff_responsibility_assignments WHERE id=$1",[assignmentId])).rows.length) {
       const candidate=(await client.query(`SELECT p.id AS profile_id,c.id AS class_id,t.starts_on,t.ends_on,
-        concat_ws(' ',p.first_name,p.last_name) AS staff_name,concat('Class ',c.grade,c.section) AS class_name
+        concat_ws(' ',person.first_name,person.last_name) AS staff_name,concat('Class ',c.grade,c.section) AS class_name
         FROM staff_profiles p JOIN users u ON u.id=p.user_id AND u.username='anil.sharma' AND u.is_active
+        JOIN school_people person ON person.school_id=p.school_id AND person.id=p.person_id
         JOIN school_memberships m ON m.school_id=p.school_id AND m.user_id=p.user_id AND m.role='staff' AND m.is_active
         JOIN class_sections c ON c.school_id=p.school_id JOIN academic_terms t ON t.school_id=c.school_id AND t.academic_year=c.academic_year
         WHERE p.school_id=$1 AND p.status='active' AND current_date BETWEEN t.starts_on AND t.ends_on
@@ -39,8 +40,9 @@ export async function seedAccessRolesDemo(pool:Pool,demoMode:boolean) {
           [school.id,school.admin_id,assignmentId,JSON.stringify({role_id:role.id,scope_id:candidate.class_id})]);
       }
     }
-    const binding=(await client.query(`SELECT b.role_name,b.scope_label,concat_ws(' ',p.first_name,p.last_name) AS staff_name
-      FROM staff_role_bindings b JOIN staff_profiles p ON p.school_id=b.school_id AND p.user_id=b.user_id WHERE b.source_id=$1`,[assignmentId])).rows[0];
+    const binding=(await client.query(`SELECT b.role_name,b.scope_label,concat_ws(' ',person.first_name,person.last_name) AS staff_name
+      FROM staff_role_bindings b JOIN staff_profiles p ON p.school_id=b.school_id AND p.user_id=b.user_id
+      JOIN school_people person ON person.school_id=p.school_id AND person.id=p.person_id WHERE b.source_id=$1`,[assignmentId])).rows[0];
     await client.query("COMMIT");
     return {school_id:school.id,role_id:role.id,example:binding??null};
   } catch(error) {await client.query("ROLLBACK");throw error;} finally {client.release();}

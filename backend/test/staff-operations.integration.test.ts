@@ -3,12 +3,13 @@ import { randomUUID } from "node:crypto";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { Pool } from "pg";
 import { hashPassword } from "../src/auth/password.js";
+import { requireIsolatedTestDatabaseUrl } from "./test-database.js";
 
 const isolated = process.env.TEST_DATABASE_ISOLATED === "true";
 const suite = isolated ? describe : describe.skip;
 
 suite("staff onboarding and leave against disposable PostgreSQL", () => {
-  const pool = new Pool({ connectionString: process.env.DATABASE_URL, max: 2 });
+  const pool = new Pool({ connectionString: requireIsolatedTestDatabaseUrl(process.env.DATABASE_URL), max: 2 });
   const port = 8031;
   const base = `http://127.0.0.1:${port}`;
   const suffix = randomUUID();
@@ -28,6 +29,7 @@ suite("staff onboarding and leave against disposable PostgreSQL", () => {
   let teacherId: string;
   let principalAgentId: string;
   let authorityRuleId: string;
+  let authoritySourceId: string;
   let behaviourId: string;
   let sectionId: string;
   let profileId: string;
@@ -46,6 +48,21 @@ suite("staff onboarding and leave against disposable PostgreSQL", () => {
     return { status: response.status, data: await response.json() as any };
   }
   const staffPath = (path: string) => `schools/${schoolId}/staff/${path}/`;
+  const reviewRoutingPath = () => staffPath("leave-review-routing");
+  async function confirmReviewRouting() {
+    const workspace = await request(adminCookies, reviewRoutingPath());
+    expect(workspace.status, JSON.stringify(workspace.data)).toBe(200);
+    expect(workspace.data).toMatchObject({ state: "needs_configuration", can_configure: true });
+    const input = { command_id: randomUUID(), expected: workspace.data.expected, confirmed: true };
+    const confirmed = await request(adminCookies, reviewRoutingPath(), input);
+    expect(confirmed.status).toBe(201);
+    expect(confirmed.data).toEqual({ confirmed: true, replayed: false });
+    const route = (await pool.query(`SELECT behaviour_version_id FROM campus_model_coordination_configurations
+      WHERE school_id=$1 AND source_domain='staff_operations'
+      ORDER BY effective_from DESC,source_revision DESC LIMIT 1`, [schoolId])).rows[0];
+    behaviourId = route.behaviour_version_id;
+    return input;
+  }
 
   beforeAll(async () => {
     const admin = await pool.query("INSERT INTO users(username,email,password_hash,first_name,last_name,role) VALUES($1,$2,$3,'Meera','Kapoor','admin') RETURNING id", [`admin.${suffix}`, adminEmail, await hashPassword(password)]);
@@ -59,6 +76,9 @@ suite("staff onboarding and leave against disposable PostgreSQL", () => {
     schoolId = school.rows[0].id;
     await pool.query("INSERT INTO school_memberships(user_id,school_id,role) VALUES($1,$5,'admin'),($2,$5,'staff'),($3,$5,'staff'),($4,$5,'admin')", [admin.rows[0].id, teacherId, replacement.rows[0].id, otherAdminId, schoolId]);
 
+    // A later deadline case changes this institution from Kolkata to UTC. The
+    // Principal's appointment predates both local calendar dates; the test must
+    // not accidentally revoke authority during the midnight offset window.
     const authority = (await pool.query(`WITH person AS (
         INSERT INTO school_people(school_id,first_name,last_name,contact_email)
         VALUES($1,'Meera','Kapoor',$3) RETURNING id
@@ -67,7 +87,7 @@ suite("staff onboarding and leave against disposable PostgreSQL", () => {
           school_id,code,title,source_kind,reference,provision,evidence_reference,
           verification_state,effective_from,verified_by,verified_at,created_by
         ) VALUES($1,'staff_leave_test_authority','Staff leave test authority','appointment_order',
-          'TEST-PRINCIPAL','Staff leave decisions','test:principal','verified',current_date,$2,now(),$2)
+          'TEST-PRINCIPAL','Staff leave decisions','test:principal','verified',current_date-1,$2,now(),$2)
         RETURNING id
       ), office AS (
         INSERT INTO institution_governance_offices(
@@ -78,7 +98,7 @@ suite("staff onboarding and leave against disposable PostgreSQL", () => {
         INSERT INTO institution_governance_appointments(
           school_id,office_id,person_id,linked_user_id,appointment_kind,starts_on,status,
           authority_source_id,evidence_reference,created_by
-        ) SELECT $1,office.id,person.id,$2,'appointed',current_date,'active',source.id,
+        ) SELECT $1,office.id,person.id,$2,'appointed',current_date-1,'active',source.id,
           'test:principal',$2 FROM office,person,source RETURNING id,person_id
       ), decision_rule AS (
         INSERT INTO institution_decision_matter_rules(
@@ -88,7 +108,7 @@ suite("staff onboarding and leave against disposable PostgreSQL", () => {
         ) SELECT $1,'staff_leave_decision','Staff leave decision','people',
           'The current Principal decides.','Staff Operations records the decision.',
           'individual',office.id,ARRAY[source.id]::uuid[],'Current officeholder only.',
-          ARRAY['staff_profile','starts_on','ends_on']::text[],'confirmed',current_date,$2
+          ARRAY['staff_profile','starts_on','ends_on']::text[],'confirmed',current_date-1,$2
           FROM office,source RETURNING id
       ) SELECT person.id AS person_id,source.id AS source_id,office.id AS office_id,
           appointment.id AS appointment_id,decision_rule.id AS rule_id
@@ -98,40 +118,20 @@ suite("staff onboarding and leave against disposable PostgreSQL", () => {
       ) VALUES($1,'human',$2,'Meera Kapoor','active') RETURNING id`, [schoolId, authority.person_id])).rows[0];
     principalAgentId = principalAgent.id;
     authorityRuleId = authority.rule_id;
+    authoritySourceId = authority.source_id;
     await pool.query(`INSERT INTO campus_model_agent_endpoints(
         school_id,agent_id,endpoint_kind,provider,user_id,status,effective_from,
         source_domain,source_record_id,source_revision,linked_by_user_id
       ) VALUES($1,$2,'account','thatcampus',$3,'active',now()-interval '1 minute',
         'governance',$4,1,$3)`, [schoolId, principalAgent.id, adminId, authority.appointment_id]);
-    await pool.query(`INSERT INTO campus_model_agent_authorities(
-        school_id,agent_id,capability,effective_from,grant_source,grant_reference_id,
-        approved_by,operating_rule_version_ref
-      ) VALUES($1,$2,'staff_leave:decide',now()-interval '1 minute',
-        'governance_decision_rule',$3,$4,'staff_leave_decision:test')`, [schoolId, principalAgent.id, authority.rule_id, adminId]);
-    const behaviour = (await pool.query(`INSERT INTO campus_model_behaviour_versions(
-        school_id,behaviour_key,version,status,effective_from,configuration,
-        configuration_schema_version,created_by_agent_id,approved_by_agent_id,approved_at
-      ) VALUES($1,'staff_leave_decision_routing',1,'approved',now()-interval '1 minute',
-        $2::jsonb,1,$3,$3,now()-interval '1 minute') RETURNING id`, [
-      schoolId,
-      JSON.stringify({ matter_code: "staff_leave_decision", selector_key: "leave_decision_owner" }),
-      principalAgent.id,
-    ])).rows[0];
-    behaviourId = behaviour.id;
-    await pool.query(`INSERT INTO campus_model_event_subscriptions(
-        school_id,behaviour_version_id,subscription_key,source_domain,event_type,
-        reaction_kind,message_kind,message_schema_version,recipient_selector,
-        response_due_after_seconds,expires_after_seconds,max_attempts,retry_after_seconds,priority
-      ) VALUES($1,$2,'staff_leave_submitted_to_decision_owner','staff_operations',
-        'staff.leave.submitted','staff_leave_decision_review','request',1,$3::jsonb,
-        172800,604800,3,3600,7)`, [schoolId, behaviour.id, JSON.stringify({
-      mode: "explicit_authorized_agents",
-      selector_key: "leave_decision_owner",
-      required_capability: "staff_leave:decide",
-      scope_mode: "institution",
-      min_recipients: 1,
-      max_recipients: 1,
-    })]);
+    // This synthetic principal has an explicit accepted person/account binding,
+    // so a normal-member label does not invalidate their canonical identity.
+    // The separate governance appointment remains the decision-authority source.
+    await pool.query(`INSERT INTO school_invitations(school_id,email,role,token_hash,created_by,
+      expires_at,accepted_at,source,person_id,accepted_by_user_id)
+      VALUES($1,$2,'member',$3,$4,now()+interval '1 day',now(),'school',$5,$4)`,
+    [schoolId, adminEmail, randomUUID(), adminId, authority.person_id]);
+    await pool.query("UPDATE school_people SET account_user_id=$2 WHERE school_id=$1 AND id=$3", [schoolId, adminId, authority.person_id]);
     const term = await pool.query("INSERT INTO academic_terms(school_id,academic_year,name,starts_on,ends_on,is_active) VALUES($1,'2030-31','Term 1','2030-04-01','2031-03-31',true) RETURNING id", [schoolId]);
     const section = await pool.query("INSERT INTO class_sections(school_id,academic_year,grade,section) VALUES($1,'2030-31','7','A') RETURNING id", [schoolId]); sectionId=section.rows[0].id;
     const subject = await pool.query("INSERT INTO subjects(school_id,code,name,short_name) VALUES($1,'MAT','Mathematics','Maths') RETURNING id", [schoolId]);
@@ -148,17 +148,23 @@ suite("staff onboarding and leave against disposable PostgreSQL", () => {
 
   afterAll(async () => { server?.kill("SIGTERM"); await pool.end(); });
 
-  it("onboards an existing teacher without creating a second account", async () => {
+  it("onboards an existing account only after exact-person invitation acceptance without creating another account", async () => {
     const created = await request(adminCookies, staffPath("profiles"), { first_name: "Kavita", last_name: "Mehta", email: teacherEmail, phone: "+91 9000000000", staff_code: "T-001", staff_kind: "teaching", designation: "Mathematics teacher", department: "Secondary", employment_type: "full_time", joined_on: "2030-04-01" });
     expect(created.status).toBe(201);
-    expect(created.data.invitation).toBeNull();
-    expect(created.data.profile.user_id).toBe(teacherId);
+    expect(created.data.invitation).not.toBeNull();
+    expect(created.data.profile.user_id).toBeNull();
     profileId = created.data.profile.id;
     const replacement = await request(adminCookies, staffPath("profiles"), { first_name: "Rohan", last_name: "Sen", email: replacementEmail, phone: "+91 9000000001", staff_code: "T-002", staff_kind: "teaching", designation: "Science teacher", department: "Secondary", employment_type: "full_time", joined_on: "2030-04-01" });
     expect(replacement.status).toBe(201);
     replacementProfileId = replacement.data.profile.id;
+    await request(teacherCookies,'auth/csrf/');
+    expect((await request(teacherCookies,'invitations/accept/',{token:created.data.invitation.token,email:teacherEmail,password,first_name:'Kavita',last_name:'Mehta'})).status).toBe(200);
+    await request(replacementCookies,'auth/csrf/');
+    expect((await request(replacementCookies,'invitations/accept/',{token:replacement.data.invitation.token,email:replacementEmail,password,first_name:'Rohan',last_name:'Sen'})).status).toBe(200);
+    expect((await pool.query('SELECT user_id FROM staff_profiles WHERE id=$1',[profileId])).rows[0].user_id).toBe(teacherId);
+    expect((await pool.query('SELECT count(*)::int n FROM users WHERE lower(email)=$1',[teacherEmail])).rows[0].n).toBe(1);
     const profileEvents = await pool.query(
-      "SELECT aggregate_id,event_type,payload,notification_payload FROM event_outbox WHERE aggregate_id=ANY($1::uuid[]) ORDER BY created_at",
+      "SELECT aggregate_id,event_type,payload,notification_payload FROM event_outbox WHERE aggregate_id=ANY($1::uuid[]) AND event_type='staff.access.updated' ORDER BY created_at",
       [[profileId, replacementProfileId]],
     );
     expect(profileEvents.rows).toHaveLength(2);
@@ -170,9 +176,17 @@ suite("staff onboarding and leave against disposable PostgreSQL", () => {
         payload: expect.objectContaining({ action: "profile_created", refresh: expect.arrayContaining(["staff-operations", "principal.home"]) }),
       }),
     ]));
-    await pool.query("UPDATE staff_profiles SET status='active' WHERE id IN ($1,$2)", [profileId, replacementProfileId]);
+    // Complete actual required onboarding through the normal owning API. The
+    // exact accepted invitation links the Core endpoint only at activation.
+    for(const id of [profileId,replacementProfileId]) {
+      const items=(await pool.query('SELECT id FROM staff_onboarding_items WHERE staff_profile_id=$1 AND required AND completed_at IS NULL ORDER BY item_key',[id])).rows;
+      for(const item of items) {
+        const revision=(await pool.query('SELECT revision FROM staff_profiles WHERE id=$1',[id])).rows[0].revision;
+        expect((await request(adminCookies,staffPath(`profiles/${id}/onboarding`),{item_id:item.id,completed:true,note:'Verified isolated fixture',expected_revision:revision},'PATCH')).status).toBe(200);
+      }
+    }
     const workspace = await request(adminCookies, staffPath("workspace"));
-    expect(workspace.data.profiles).toContainEqual(expect.objectContaining({ id: profileId, onboarding_total: 5, onboarding_complete: 1 }));
+    expect(workspace.data.profiles).toContainEqual(expect.objectContaining({ id: profileId, onboarding_total: 5, onboarding_complete: 5 }));
   });
 
   it("configures school leave policy and enforces role boundaries", async () => {
@@ -192,6 +206,75 @@ suite("staff onboarding and leave against disposable PostgreSQL", () => {
     const workspace = await request(teacherCookies, staffPath("workspace"));
     expect(workspace.status).toBe(200);
     expect(workspace.data).toMatchObject({ mode: "staff", profile: { id: profileId } });
+  });
+
+  it("enables review delivery only through the current holder and reconfirms changed authority without creating powers", async () => {
+    const initial = await request(adminCookies, reviewRoutingPath());
+    expect(initial.status).toBe(200);
+    expect(initial.data).toMatchObject({ state: "needs_configuration", can_configure: true, reviewer: { user_id: adminId } });
+    const untouchedAuthority = (await pool.query(`SELECT rule.id,rule.revision,rule.decision_office_id,
+      appointment.id AS appointment_id,appointment.revision AS appointment_revision,appointment.person_id,
+      source.id AS source_id,source.revision AS source_revision
+      FROM institution_decision_matter_rules rule
+      JOIN institution_governance_appointments appointment ON appointment.office_id=rule.decision_office_id
+      JOIN institution_authority_sources source ON source.id=ANY(rule.authority_source_ids)
+      WHERE rule.school_id=$1 AND rule.id=$2`, [schoolId, authorityRuleId])).rows;
+    const material = { command_id: randomUUID(), expected: initial.data.expected, confirmed: true };
+    expect((await request(otherAdminCookies, reviewRoutingPath(), material)).status).toBe(403);
+    expect((await request(teacherCookies, reviewRoutingPath(), material)).status).toBe(403);
+    expect((await request(adminCookies, reviewRoutingPath(), {
+      ...material, expected: { ...material.expected, rule: { ...material.expected.rule, revision: material.expected.rule.revision + 1 } },
+    })).status).toBe(409);
+    expect((await pool.query("SELECT count(*)::int total FROM campus_model_coordination_configurations WHERE school_id=$1", [schoolId])).rows[0].total).toBe(0);
+
+    const confirmed = await confirmReviewRouting();
+    expect((await request(adminCookies, reviewRoutingPath(), confirmed)).data).toEqual({ confirmed: true, replayed: true });
+    expect((await request(adminCookies, reviewRoutingPath(), {
+      ...confirmed, expected: { ...confirmed.expected, person: { ...confirmed.expected.person, revision: confirmed.expected.person.revision + 1 } },
+    })).status).toBe(409);
+    expect((await request(adminCookies, reviewRoutingPath())).data).toMatchObject({ state: "ready", can_configure: false });
+    expect((await pool.query(`SELECT rule.id,rule.revision,rule.decision_office_id,
+      appointment.id AS appointment_id,appointment.revision AS appointment_revision,appointment.person_id,
+      source.id AS source_id,source.revision AS source_revision
+      FROM institution_decision_matter_rules rule
+      JOIN institution_governance_appointments appointment ON appointment.office_id=rule.decision_office_id
+      JOIN institution_authority_sources source ON source.id=ANY(rule.authority_source_ids)
+      WHERE rule.school_id=$1 AND rule.id=$2`, [schoolId, authorityRuleId])).rows).toEqual(untouchedAuthority);
+    const first = (await pool.query(`SELECT configuration.id,configuration.configuration_key,configuration.source_revision,
+      configuration.snapshot,approval.state AS approval_state,activation.state AS activation_state,
+      activation.causation_id,approval.id AS approval_id,subscription.response_due_after_seconds,
+      subscription.expires_after_seconds,subscription.retry_after_seconds
+      FROM campus_model_coordination_configurations configuration
+      JOIN campus_model_commands approval ON approval.id=configuration.approval_command_id
+      JOIN campus_model_commands activation ON activation.id=configuration.activation_command_id
+      JOIN campus_model_event_subscriptions subscription ON subscription.id=configuration.subscription_id
+      WHERE configuration.school_id=$1 AND configuration.behaviour_version_id=$2`, [schoolId, behaviourId])).rows[0];
+    expect(first).toMatchObject({ configuration_key: "staff_leave_review", source_revision: 1,
+      approval_state: "accepted", activation_state: "accepted", causation_id: first.approval_id,
+      response_due_after_seconds: null, expires_after_seconds: null, retry_after_seconds: null,
+      snapshot: { behaviour_configuration: { reviewer_user_id: adminId, authority_basis: confirmed.expected } } });
+
+    // A changed evidence revision is not silently accepted just because the
+    // same person remains the legitimate holder of this decision office.
+    await pool.query("UPDATE institution_authority_sources SET reference=reference || ':reviewed' WHERE school_id=$1 AND id=$2", [schoolId, authoritySourceId]);
+    expect((await request(adminCookies, reviewRoutingPath())).data).toMatchObject({ state: "needs_configuration", can_configure: true });
+    expect((await request(adminCookies, reviewRoutingPath(), { ...confirmed, command_id: randomUUID() })).status).toBe(409);
+
+    // Appointment authority, rather than an admin/staff membership label, makes
+    // this holder eligible to confirm their own exact delivery route.
+    await pool.query("UPDATE school_memberships SET role='member' WHERE school_id=$1 AND user_id=$2 AND role='admin'", [schoolId, adminId]);
+    try {
+      await confirmReviewRouting();
+      expect((await request(adminCookies, reviewRoutingPath())).data).toMatchObject({ state: "ready", can_configure: false });
+    } finally {
+      await pool.query("UPDATE school_memberships SET role='admin' WHERE school_id=$1 AND user_id=$2 AND role='member'", [schoolId, adminId]);
+    }
+    expect((await pool.query(`SELECT revoked_at IS NOT NULL AS revoked FROM campus_model_agent_authorities
+      WHERE school_id=$1 AND grant_source='approved_coordination_policy' AND grant_reference_id=$2`, [schoolId, first.id])).rows)
+      .toEqual([{ revoked: true }]);
+    expect((await pool.query(`SELECT configuration_key,source_revision FROM campus_model_coordination_configurations
+      WHERE school_id=$1 AND source_domain='staff_operations' ORDER BY source_revision`, [schoolId])).rows)
+      .toEqual([{ configuration_key: "staff_leave_review", source_revision: 1 }, { configuration_key: "staff_leave_review", source_revision: 2 }]);
   });
 
   it("projects the actual date and pending acceptance for each separately scheduled trip", async () => {
@@ -300,12 +383,7 @@ suite("staff onboarding and leave against disposable PostgreSQL", () => {
     expect(blockedByRevocation.status).toBe(409);
     expect((await pool.query("SELECT status,revision FROM staff_leave_requests WHERE id=$1", [requestId])).rows[0])
       .toMatchObject({ status: "submitted", revision: leave.data.revision });
-    await pool.query(`INSERT INTO campus_model_agent_authorities(
-        school_id,agent_id,capability,effective_from,grant_source,grant_reference_id,
-        approved_by,operating_rule_version_ref
-      ) VALUES($1,$2,'staff_leave:decide',now(),
-        'governance_decision_rule',$3,$4,'staff_leave_decision:test:replacement')`,
-    [schoolId, principalAgentId, authorityRuleId, adminId]);
+    await confirmReviewRouting();
     const approved = await request(adminCookies, staffPath(`leave-requests/${requestId}/decision`), decisionInput);
     expect(approved.status).toBe(201);
     expect(approved.data).toMatchObject({ status: "approved", affected_periods: 1 });
@@ -740,8 +818,8 @@ suite("staff onboarding and leave against disposable PostgreSQL", () => {
       (profile: { id: string }) => profile.id === replacementProfileId,
     );
     const replacementOnboardingItem = adminView.data.onboarding_items.find(
-      (item: { staff_profile_id: string; completed_at: string | null }) =>
-        item.staff_profile_id === replacementProfileId && item.completed_at === null,
+      (item: { staff_profile_id: string; item_key:string; required:boolean; completed_at: string | null }) =>
+        item.staff_profile_id === replacementProfileId && item.required && item.item_key!=='account_access' && item.completed_at !== null,
     );
     const eligibilityChanged = await request(
       adminCookies,
@@ -796,7 +874,7 @@ suite("staff onboarding and leave against disposable PostgreSQL", () => {
     const event = await pool.query("SELECT notification_payload FROM event_outbox WHERE aggregate_id=$1 AND event_type='staff.access.updated' ORDER BY created_at DESC LIMIT 1",[created.data.id]);
     expect(event.rows[0]?.notification_payload).toMatchObject({
       attention_source_kind:"responsibility_revocation", attention_source_revision:revoked.data.revision,
-      staff_link:`/teacher/responsibilities?assignment=${created.data.id}&assignment_revision=${revoked.data.revision}`,
+      staff_link:`/areas/responsibilities/mine?assignment=${created.data.id}&assignment_revision=${revoked.data.revision}`,
     });
 
     const futureEffective = (await pool.query(`SELECT teacher_user_id,coverage_status,
@@ -880,7 +958,7 @@ suite("staff onboarding and leave against disposable PostgreSQL", () => {
     const viewer=await request(adminCookies,staffPath("access-roles"),{name:"Register reviewer",context_kind:"class",permissions:["attendance.view"]});
     expect(viewer.status).toBe(201);
     const native=(await pool.query(`INSERT INTO class_section_staff_assignments(school_id,class_section_id,user_id,role,valid_from,assigned_by)
-      VALUES($1,$2,$3,'class_teacher',current_date,$4) RETURNING id`,[schoolId,sectionId,teacherId,adminId])).rows[0];
+      VALUES($1,$2,$3,'class_teacher',campus_permission_date($1),$4) RETURNING id`,[schoolId,sectionId,teacherId,adminId])).rows[0];
     const workspace=await request(adminCookies,staffPath("workspace"));
     const binding=workspace.data.role_assignments.find((item:{source_id:string;source_kind:string})=>item.source_id===native.id && item.source_kind==="class_assignment");
     expect(binding).toMatchObject({scope_id:sectionId,context_kind:"class",revision:1});

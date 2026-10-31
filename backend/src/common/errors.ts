@@ -8,6 +8,7 @@ import {
 import type { FastifyReply } from "fastify";
 import { ZodError } from "zod";
 import type { RequestWithContext } from "./request.js";
+import { SimulationCapacityException } from "../simulation/simulation-resource-policy.js";
 
 @Catch()
 export class ApiExceptionFilter implements ExceptionFilter {
@@ -19,6 +20,7 @@ export class ApiExceptionFilter implements ExceptionFilter {
     let code = "internal_error";
     let detail = "The request could not be completed.";
     let fields: unknown;
+    let capacity: { resource: string; limit: number } | undefined;
 
     if (exception instanceof ZodError) {
       status = HttpStatus.BAD_REQUEST;
@@ -37,6 +39,13 @@ export class ApiExceptionFilter implements ExceptionFilter {
         else if (Array.isArray(message)) detail = message.join(" ");
         if (payload.fields) fields = payload.fields;
         if (typeof payload.code === "string") code = payload.code;
+        // Only the native, bounded Simulation admission exception may expose
+        // these public recovery hints. Never forward arbitrary exception data.
+        if (exception instanceof SimulationCapacityException
+          && ["worlds", "running_runs", "storage", "pinned_runs"].includes(String(payload.resource))
+          && typeof payload.limit === "number" && Number.isSafeInteger(payload.limit) && payload.limit > 0) {
+          capacity = { resource: String(payload.resource), limit: payload.limit };
+        }
       }
     } else if (exception instanceof Error) {
       request.log.error({ err: exception, requestId: request.requestId }, "Unhandled request error");
@@ -48,6 +57,7 @@ export class ApiExceptionFilter implements ExceptionFilter {
         code,
         detail,
         ...(fields ? { fields } : {}),
+        ...capacity,
         request_id: request.requestId,
       },
     });

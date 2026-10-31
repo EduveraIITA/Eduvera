@@ -1,5 +1,12 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { getAttendanceContinuityWorkspace, saveAttendanceContinuityBatch } from "./api";
+import {
+  getAttendanceContinuityWorkspace,
+  getAttendanceRegister,
+  getAssignedClass,
+  getAssignedClasses,
+  getResponsibilityAttendanceWorkspace,
+  saveAttendanceContinuityBatch,
+} from "./api";
 
 const apiFetchMock = vi.hoisted(() => vi.fn());
 vi.mock("../../lib/api", () => ({ apiFetch: apiFetchMock }));
@@ -54,6 +61,49 @@ describe("attendance continuity API", () => {
 
     expect(apiFetchMock).toHaveBeenCalledWith(
       "/api/v1/screens/principal/attendance/continuity/?date=2026-10-13&case_id=case-51",
+    );
+  });
+
+  it("loads canonical registers and coordination through the neutral responsibility API", async () => {
+    apiFetchMock.mockResolvedValue({});
+
+    await getResponsibilityAttendanceWorkspace("registers", "2026-10-13");
+    await getResponsibilityAttendanceWorkspace("coordination", "2026-10-14", "case-52");
+
+    expect(apiFetchMock).toHaveBeenNthCalledWith(
+      1,
+      "/api/v1/attendance/workspace?surface=registers&date=2026-10-13",
+    );
+    expect(apiFetchMock).toHaveBeenNthCalledWith(
+      2,
+      "/api/v1/attendance/workspace?surface=coordination&date=2026-10-14&case_id=case-52",
+    );
+    expect(apiFetchMock.mock.calls.flat().join(" ")).not.toMatch(/teacher\/home|principal\/home/);
+  });
+
+  it("opens a daily register through the neutral Attendance resource path", async () => {
+    apiFetchMock.mockResolvedValue({});
+
+    await getAttendanceRegister("class/6A", "2026-10-19");
+
+    expect(apiFetchMock).toHaveBeenCalledWith(
+      "/api/v1/attendance-registers/class%2F6A/?date=2026-10-19",
+    );
+  });
+
+  it("loads assigned classes and one roster through neutral People resources", async () => {
+    apiFetchMock.mockResolvedValue({});
+
+    await getAssignedClasses("2026-10-19");
+    await getAssignedClass("class/6A", "2026-10-19");
+
+    expect(apiFetchMock).toHaveBeenNthCalledWith(
+      1,
+      "/api/v1/areas/people/classes/?date=2026-10-19",
+    );
+    expect(apiFetchMock).toHaveBeenNthCalledWith(
+      2,
+      "/api/v1/areas/people/classes/class%2F6A/?date=2026-10-19",
     );
   });
 });

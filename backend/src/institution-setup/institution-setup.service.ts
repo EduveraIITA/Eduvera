@@ -1,5 +1,6 @@
-import { BadRequestException, ConflictException, ForbiddenException, Inject, Injectable, NotFoundException } from "@nestjs/common";
-import { randomUUID } from "node:crypto";
+import { executionNow } from "../campus-model-core/execution-time.runtime.js";
+import { BadRequestException, ConflictException, ForbiddenException, Inject, Injectable, NotFoundException, Optional, UnprocessableEntityException } from "@nestjs/common";
+import { createHash, randomUUID } from "node:crypto";
 import type { FastifyRequest } from "fastify";
 import { sql, type Transaction } from "kysely";
 import { z } from "zod";
@@ -7,9 +8,16 @@ import { AuditService } from "../common/audit.service.js";
 import type { AuthUser } from "../common/request.js";
 import { CAMPUS_MODEL_CORE_PORT, type CampusModelCorePort } from "../campus-model-core/campus-model-core.port.js";
 import { OBSERVATION_SOURCE_REGISTRY_PORT, type ObservationSourceRegistryPort } from "../campus-model-core/observation-source-registry.port.js";
-import type { CampusModelEntitySnapshot, CampusModelRelationshipSnapshot } from "../campus-model-core/contracts.js";
+import { DOMAIN_COMMAND_GATEWAY_PORT, type DomainCommandGatewayPort, type PreparedDomainCommand } from "../campus-model-core/domain-command-gateway.port.js";
+import { HUMAN_AGENT_IDENTITY_PORT, type HumanAgentIdentityPort } from "../campus-model-core/human-agent-identity.port.js";
+import { acceptedChangeProjectionHash } from "../campus-model-core/accepted-change-command.binding.js";
+import type { AcceptedCampusModelChange, CampusModelEntitySnapshot, CampusModelRelationshipSnapshot } from "../campus-model-core/contracts.js";
 import { DatabaseService } from "../database/database.service.js";
 import type { Database } from "../database/types.js";
+import { DOMAIN_COMMAND_RECEIPT_READ_PORT, type DomainCommandReceiptReadPort } from "../campus-model-core/domain-command-receipt-read.port.js";
+import { institutionSchoolPermission } from "../roles/authorization.js";
+import { lockCampusSpaceUse } from "../common/campus-space-use.js";
+import { lendingItemInput,lendingItemPayloadHash,lendingCopyIds,lendingCopyTags,type LendingItemInput } from './lending-item.contracts.js';
 
 type Db = DatabaseService | Transaction<Database>;
 type Request = FastifyRequest & { requestId?: string };
@@ -21,6 +29,14 @@ interface ModelChange {
   expectedRevision?: number | null;
   resultingRevision?: number | null;
   safeContext?: Record<string, unknown>;
+}
+interface SetupEventInput {
+  schoolId: string; actorId: string; action: string; targetType: string; targetId: string;
+  metadata?: Record<string, unknown>; auditMetadata?: Record<string, unknown>; requestId?: string | undefined;
+  model: ModelChange; eventId?: string; prepared?: PreparedDomainCommand; commandKey?: string;
+  outcomeCode?: string;
+  authorityEvidence?: string[];
+  outcomeMetadata?: Record<string,unknown>;
 }
 const uuid = z.string().uuid();
 const text = (max: number) => z.string().trim().max(max).default("");
@@ -37,12 +53,14 @@ const campusUpdate = z.object({ ...campusFields, expected_revision: z.number().i
 const spaceFields = {
   campus_id: uuid, parent_space_id: uuid.nullable().default(null), name: z.string().trim().min(2).max(160),
   code: z.string().trim().toUpperCase().regex(/^[A-Z0-9][A-Z0-9_-]{0,39}$/),
-  kind: z.enum(["building", "wing", "floor", "classroom", "laboratory", "library", "office", "auditorium", "sports_area", "workshop", "staff_room", "gate", "outdoor_area", "virtual", "other"]),
+  kind: z.enum(["hostel", "residential_room", "building", "wing", "floor", "classroom", "laboratory", "library", "office", "auditorium", "sports_area", "workshop", "staff_room", "gate", "outdoor_area", "virtual", "other"]),
   capacity: z.number().int().positive().max(100000).nullable().default(null),
   is_accessible: z.boolean().default(false), is_bookable: z.boolean().default(true),
   status: z.enum(["active", "inactive"]).default("active"),
 };
 const spaceCreate = z.object(spaceFields).strict();
+const quickSpaceCreate = z.object({ ...spaceFields, campus_id: uuid.optional(),
+  create_campus_if_missing: z.literal(true), idempotency_key: uuid }).strict();
 const spaceUpdate = z.object({ ...spaceFields, expected_revision: z.number().int().positive() }).strict();
 const typeFields = {
   code: z.string().trim().toUpperCase().regex(/^[A-Z0-9][A-Z0-9_-]{0,39}$/), name: z.string().trim().min(2).max(120),
@@ -77,6 +95,9 @@ export class InstitutionSetupService {
     private readonly audit: AuditService,
     @Inject(CAMPUS_MODEL_CORE_PORT) private readonly campusModel: CampusModelCorePort,
     @Inject(OBSERVATION_SOURCE_REGISTRY_PORT) private readonly observationSources: ObservationSourceRegistryPort,
+    @Inject(DOMAIN_COMMAND_GATEWAY_PORT) private readonly commands: DomainCommandGatewayPort,
+    @Inject(HUMAN_AGENT_IDENTITY_PORT) private readonly identities: HumanAgentIdentityPort,
+    @Optional() @Inject(DOMAIN_COMMAND_RECEIPT_READ_PORT) private readonly commandReceipts?: DomainCommandReceiptReadPort,
   ) {}
 
   private async requireAdmin(user: AuthUser, schoolId: string, db: Db = this.db) {
@@ -92,42 +113,37 @@ export class InstitutionSetupService {
     const row = await db.selectFrom("campus_spaces").selectAll().where("school_id", "=", schoolId).where("campus_id", "=", campusId).where("id", "=", id).executeTakeFirst();
     if (!row) throw new NotFoundException("Space not found in the selected campus."); return row;
   }
-  private async setupEvent(db: Transaction<Database>, input: { schoolId: string; actorId: string; action: string; targetType: string; targetId: string; metadata?: Record<string, unknown>; requestId?: string | undefined; model: ModelChange }) {
-    await db.insertInto("institution_setup_audits").values({ school_id: input.schoolId, actor_id: input.actorId, action: input.action, target_type: input.targetType, target_id: input.targetId, metadata: input.metadata ?? {} }).execute();
+  private acceptedChange(input: SetupEventInput, eventId: string): AcceptedCampusModelChange {
+    return {
+      ...(input.prepared ? { prepared_command_id: input.prepared.command_id, prepared_request_hash: input.prepared.request_hash } : {}),
+      school_id: input.schoolId, actor_user_id: input.actorId, command_type: input.action,
+      target: input.model.target, idempotency_key: input.commandKey ?? `campus-model:${eventId}`,
+      correlation_id: input.requestId ?? randomUUID(), causation_id: null,
+      expected_revision: input.model.expectedRevision ?? null, authority_evidence: input.authorityEvidence ?? ["active_institution_administrator"],
+      operating_rule_version_ref: null, source_domain: "campus_topology", safe_context: input.model.safeContext ?? {},
+      entities: input.model.entities, relationships: input.model.relationships ?? [],
+      outcome: { code: input.outcomeCode ?? input.action, explanation: "The institution setup change was accepted.",
+        resulting_revision: input.model.resultingRevision ?? null, metadata: input.outcomeMetadata ?? {} }, domain_event_id: eventId,
+    };
+  }
+  private async setupEvent(db: Transaction<Database>, input: SetupEventInput) {
+    await db.insertInto("institution_setup_audits").values({ school_id: input.schoolId, actor_id: input.actorId, action: input.action, target_type: input.targetType, target_id: input.targetId, metadata: { ...input.metadata, ...input.auditMetadata } }).execute();
     const audience = await db.selectFrom("school_memberships").select("user_id").where("school_id", "=", input.schoolId).where("role", "=", "admin").where("is_active", "=", true).execute();
-    const event = await db.insertInto("event_outbox").values({ school_id: input.schoolId, event_type: "institution.setup.updated", aggregate_type: input.targetType, aggregate_id: input.targetId,
+    const event = await db.insertInto("event_outbox").values({ ...(input.eventId ? { id: input.eventId } : {}), school_id: input.schoolId, event_type: "institution.setup.updated", aggregate_type: input.targetType, aggregate_id: input.targetId,
       audience_user_ids: audience.map((item) => item.user_id), payload: { refresh: ["principal.administration"], action: input.action, ...input.metadata },
       idempotency_key: `institution-setup:${input.requestId ?? randomUUID()}:${input.action}:${input.targetId}` }).returning("id").executeTakeFirstOrThrow();
-    await this.campusModel.recordAcceptedChange(db, {
-      school_id: input.schoolId,
-      actor_user_id: input.actorId,
-      command_type: input.action,
-      target: input.model.target,
-      idempotency_key: `campus-model:${event.id}`,
-      correlation_id: randomUUID(),
-      causation_id: null,
-      expected_revision: input.model.expectedRevision ?? null,
-      authority_evidence: ["active_institution_administrator"],
-      operating_rule_version_ref: null,
-      source_domain: "campus_topology",
-      safe_context: input.model.safeContext ?? {},
-      entities: input.model.entities,
-      relationships: input.model.relationships ?? [],
-      outcome: {
-        code: input.action,
-        explanation: "The institution setup change was accepted.",
-        resulting_revision: input.model.resultingRevision ?? null,
-        metadata: {},
-      },
-      domain_event_id: event.id,
-    });
+    await this.campusModel.recordAcceptedChange(db, this.acceptedChange(input, event.id));
   }
 
   private entity(input: CampusModelEntitySnapshot): CampusModelEntitySnapshot { return input; }
   private ref(domain: string, domainId: string): ModelRef { return { domain, domain_id: domainId }; }
   private relationship(input: CampusModelRelationshipSnapshot): CampusModelRelationshipSnapshot { return input; }
-  private time(value: Date | string | null | undefined = new Date()): string {
-    return new Date(value ?? Date.now()).toISOString();
+  private time(value: Date | string | null | undefined = executionNow()): string {
+    return new Date(value ?? executionNow().getTime()).toISOString();
+  }
+  private async placementInstant(db: Db, date: string, timezone: string): Promise<string> {
+    const boundary = (await sql<{ instant: Date }>`SELECT ${date}::date::timestamp AT TIME ZONE ${timezone} AS instant`.execute(db)).rows[0]!;
+    return boundary.instant.toISOString();
   }
   private institutionEntity(row: { id: string; name: string }) {
     return this.entity({ kind: "institution", domain: "institutions", domain_id: row.id, label: row.name, lifecycle_state: "active", source_revision: 1, metadata: {} });
@@ -185,16 +201,26 @@ export class InstitutionSetupService {
       sql<any>`SELECT section.id,section.grade,section.section,section.academic_year,section.revision AS class_revision,
           placement.id AS placement_id,placement.campus_id,placement.home_space_id,placement.revision AS placement_revision,
           placement.effective_from,placement.effective_until,space.name AS home_space_name
-        FROM class_sections section LEFT JOIN class_campus_placements placement ON placement.class_section_id=section.id
-          AND placement.is_primary AND placement.effective_from<=current_date AND (placement.effective_until IS NULL OR placement.effective_until>=current_date)
+        FROM class_sections section LEFT JOIN LATERAL (
+          SELECT placement.* FROM class_campus_placements placement JOIN institution_campuses campus ON campus.id=placement.campus_id AND campus.school_id=placement.school_id
+          WHERE placement.class_section_id=section.id AND placement.school_id=section.school_id AND placement.is_primary
+            AND placement.effective_from<=(${executionNow()}::timestamptz AT TIME ZONE campus.timezone)::date
+            AND (placement.effective_until IS NULL OR placement.effective_until>=(${executionNow()}::timestamptz AT TIME ZONE campus.timezone)::date)
+          ORDER BY placement.effective_from DESC,placement.id LIMIT 1
+        ) placement ON true
         LEFT JOIN campus_spaces space ON space.id=placement.home_space_id
         WHERE section.school_id=${schoolId}::uuid ORDER BY section.grade,section.section`.execute(this.db).then((result) => result.rows),
-      sql<any>`SELECT profile.id,profile.first_name,profile.last_name,profile.staff_code,profile.designation,profile.status,
+      sql<any>`SELECT profile.id,person.first_name,person.last_name,profile.staff_code,profile.designation,profile.status,
           assignment.id AS assignment_id,assignment.campus_id,assignment.revision AS assignment_revision,
           assignment.effective_from,assignment.effective_until
-        FROM staff_profiles profile LEFT JOIN staff_campus_assignments assignment ON assignment.staff_profile_id=profile.id
-          AND assignment.is_primary AND assignment.effective_from<=current_date AND (assignment.effective_until IS NULL OR assignment.effective_until>=current_date)
-        WHERE profile.school_id=${schoolId}::uuid ORDER BY profile.first_name,profile.last_name`.execute(this.db).then((result) => result.rows),
+        FROM staff_profiles profile JOIN school_people person ON person.id=profile.person_id AND person.school_id=profile.school_id LEFT JOIN LATERAL (
+          SELECT assignment.* FROM staff_campus_assignments assignment JOIN institution_campuses campus ON campus.id=assignment.campus_id AND campus.school_id=assignment.school_id
+          WHERE assignment.staff_profile_id=profile.id AND assignment.school_id=profile.school_id AND assignment.is_primary
+            AND assignment.effective_from<=(${executionNow()}::timestamptz AT TIME ZONE campus.timezone)::date
+            AND (assignment.effective_until IS NULL OR assignment.effective_until>=(${executionNow()}::timestamptz AT TIME ZONE campus.timezone)::date)
+          ORDER BY assignment.effective_from DESC,assignment.id LIMIT 1
+        ) assignment ON true
+        WHERE profile.school_id=${schoolId}::uuid ORDER BY person.first_name,person.last_name`.execute(this.db).then((result) => result.rows),
       this.db.selectFrom("institution_setup_audits").selectAll().where("school_id", "=", schoolId).orderBy("created_at", "desc").limit(20).execute(),
       this.campusModel.recentActivity(schoolId),
       this.campusModel.operationalSignals(schoolId),
@@ -275,11 +301,11 @@ export class InstitutionSetupService {
   }
   async updateCampus(user: AuthUser, schoolId: string, campusId: string, body: unknown, request: Request) {
     const data = campusUpdate.parse(body);
-    const row = await this.db.transaction().execute(async (db) => { await this.requireAdmin(user, schoolId, db); const current = await this.campus(schoolId, campusId, db);
+    const row = await this.db.transaction().execute(async (db) => { await this.requireAdmin(user, schoolId, db); await lockCampusSpaceUse(db,schoolId); const current = await this.campus(schoolId, campusId, db);
       const institution = await db.selectFrom("schools").select(["id", "name"]).where("id", "=", schoolId).executeTakeFirstOrThrow();
       const parent = data.parent_campus_id ? await this.campus(schoolId, data.parent_campus_id, db) : null;
       if (current.is_primary && (!data.is_primary || data.status === "inactive")) throw new ConflictException("Choose another primary campus before changing this one.");
-      if (data.status === "inactive") { const usage = (await sql<{ used: boolean }>`SELECT EXISTS(SELECT 1 FROM class_campus_placements WHERE campus_id=${campusId}::uuid AND (effective_until IS NULL OR effective_until>=current_date) UNION ALL SELECT 1 FROM staff_campus_assignments WHERE campus_id=${campusId}::uuid AND (effective_until IS NULL OR effective_until>=current_date) UNION ALL SELECT 1 FROM campus_resource_holdings WHERE campus_id=${campusId}::uuid AND state<>'retired') AS used`.execute(db)).rows[0]?.used; if (usage) throw new ConflictException("Move current classes, staff and resources before inactivating this campus."); }
+      if (data.status === "inactive") { const usage = (await sql<{ used: boolean }>`SELECT EXISTS(SELECT 1 FROM class_campus_placements WHERE campus_id=${campusId}::uuid AND (effective_until IS NULL OR effective_until>=(${executionNow()}::timestamptz AT TIME ZONE ${current.timezone})::date) UNION ALL SELECT 1 FROM staff_campus_assignments WHERE campus_id=${campusId}::uuid AND (effective_until IS NULL OR effective_until>=(${executionNow()}::timestamptz AT TIME ZONE ${current.timezone})::date) UNION ALL SELECT 1 FROM campus_resource_holdings WHERE campus_id=${campusId}::uuid AND state<>'retired') AS used`.execute(db)).rows[0]?.used; if (usage) throw new ConflictException("Move current classes, staff and resources before inactivating this campus."); }
       if (data.is_primary && !current.is_primary) await db.updateTable("institution_campuses").set({ is_primary: false, updated_by: user.id }).where("school_id", "=", schoolId).where("is_primary", "=", true).execute();
       const { expected_revision, ...values } = data; const updated = await db.updateTable("institution_campuses").set({ ...values, updated_by: user.id }).where("id", "=", campusId).where("school_id", "=", schoolId).where("revision", "=", expected_revision).returningAll().executeTakeFirst();
       if (!updated) throw new ConflictException("Campus details changed. Refresh and review the latest version.");
@@ -291,11 +317,98 @@ export class InstitutionSetupService {
     await this.externalAudit("institution.setup.campus.updated", request, user, schoolId, "institution_campus", campusId); return row;
   }
 
-  async createSpace(user: AuthUser, schoolId: string, body: unknown, request: Request) { return this.saveSpace(user, schoolId, null, body, request); }
+  async createSpace(user: AuthUser, schoolId: string, body: unknown, request: Request) {
+    if (body && typeof body === "object" && "create_campus_if_missing" in body) return this.quickCreateSpace(user, schoolId, body, request);
+    return this.saveSpace(user, schoolId, null, body, request);
+  }
+  /** The same canonical place command, with an explicit first-campus convenience. Nothing is created on signup or skip. */
+  private async quickCreateSpace(user: AuthUser, schoolId: string, body: unknown, request: Request) {
+    const outcome = await this.db.transaction().execute(db => this.createSpaceInTransaction(db, user, schoolId, body, request)).catch((error: unknown) => {
+      // A legacy setup writer may race this command without taking the school lock.
+      if (error && typeof error === "object" && "code" in error && error.code === "23505"
+        && "constraint" in error && error.constraint === "campus_spaces_campus_id_code_key") {
+        throw new ConflictException({ code: "campus_place_code_conflict", message: "A place with this code already exists on this campus. Choose the existing place or use another code." });
+      }
+      throw error;
+    });
+    if (!outcome.replayed) await this.externalAudit("institution.setup.space.created", request, user, schoolId, "campus_space", String(outcome.row.id));
+    return outcome.row;
+  }
+  /** Transaction seam for the reviewed scene batch. This remains the native place command and audit writer. */
+  async createSpaceInTransaction(db: Transaction<Database>, user: AuthUser, schoolId: string, body: unknown, request: Request) {
+    const data = quickSpaceCreate.parse(body);
+    const requestHash = createHash("sha256").update(JSON.stringify(data)).digest("hex");
+    const institution = await this.lockPlaceCreationContext(db, user, schoolId);
+    const retained = (await sql<{ metadata: { request_hash: string; result: Record<string, unknown> } }>`SELECT metadata FROM institution_setup_audits
+      WHERE school_id=${schoolId}::uuid AND actor_id=${user.id}::uuid AND action='space.created'
+        AND metadata->>'idempotency_key'=${data.idempotency_key} LIMIT 1`.execute(db)).rows[0];
+    if (retained) {
+      if (retained.metadata.request_hash !== requestHash) throw new ConflictException("This place save key belongs to different details. Review the place and try again.");
+      return { row: retained.metadata.result, replayed: true };
+    }
+    const activeCampuses = await db.selectFrom("institution_campuses").selectAll().where("school_id", "=", schoolId).where("status", "=", "active").orderBy("is_primary", "desc").orderBy("id").execute();
+    if (!data.campus_id && activeCampuses.length > 1) throw new BadRequestException("Choose which campus contains this place.");
+    const existingCampus = data.campus_id ? await this.campus(schoolId, data.campus_id, db) : activeCampuses[0];
+    if (existingCampus && existingCampus.status !== "active") throw new BadRequestException("Choose an active campus for this place.");
+    const now = executionNow().toISOString();
+    const campusId = existingCampus?.id ?? randomUUID();
+    const campus = existingCampus ?? { id: campusId, name: institution.name, status: "active" as const, revision: 1 };
+    const parent = data.parent_space_id ? await this.space(schoolId, campusId, data.parent_space_id, db) : null;
+    const duplicate = await db.selectFrom("campus_spaces").select("id").where("school_id", "=", schoolId).where("campus_id", "=", campusId).where("code", "=", data.code).executeTakeFirst();
+    if (duplicate) throw new ConflictException({ code: "campus_place_code_conflict", message: "A place with this code already exists on this campus. Choose the existing place or use another code." });
+    const id = randomUUID(); const eventId = randomUUID(); const correlationId = request.requestId ?? randomUUID();
+    const space = { id, name: data.name, kind: data.kind, status: data.status, revision: 1 };
+    const spaceRef = this.ref("campus_topology", id); const campusRef = this.ref("campus_topology", campusId);
+    const commandKey = `campus-place:${user.id}:${data.idempotency_key}`;
+    const model: ModelChange = { target: spaceRef,
+      entities: [this.spaceEntity(space), this.campusEntity(campus), ...(parent ? [this.spaceEntity(parent)] : []), ...(!existingCampus ? [this.institutionEntity(institution)] : [])],
+      relationships: [this.setRelationship({ type: "part_of", source: spaceRef, target: parent ? this.ref("campus_topology", parent.id) : campusRef,
+        effectiveFrom: now, sourceRecordId: id, sourceRevision: 1 }), ...(!existingCampus ? [this.setRelationship({ type: "part_of", source: campusRef,
+        target: this.ref("institutions", institution.id), effectiveFrom: now, sourceRecordId: campusId, sourceRevision: 1 })] : [])],
+      expectedRevision: 0, resultingRevision: 1, safeContext: { space_kind: data.kind, campus_id: campusId, created_first_campus: !existingCampus },
+    };
+    const eventInput: SetupEventInput = { schoolId, actorId: user.id, action: "space.created", targetType: "campus_space", targetId: id,
+      metadata: { name: data.name, campus_id: campusId, created_first_campus: !existingCampus }, requestId: correlationId, model, eventId, commandKey, outcomeCode: "space_created" };
+    const prepared = await this.commands.prepareDomainCommand(db, {
+      school_id: schoolId, actor_user_id: user.id, command_type: "space.created", handler_key: "campus_topology.space.create", handler_version: 1,
+      source_domain: "campus_topology", target: this.spaceEntity(space), current_revision: 0, expected_revision: 0,
+      capability: "campus_topology:manage", purpose: "create_canonical_campus_place", requested_at: now, correlation_id: correlationId,
+      causation_id: null, idempotency_key: commandKey, operating_rule_version_ref: null, configuration_refs: [],
+      authority_attestation: { evaluator_domain: "campus_topology", decision: "allowed", reason_codes: ["active_institution_administrator"],
+        authority_source_refs: [{ school_id: schoolId, membership: "active_admin" }], operating_rule_refs: [], valid_until: null },
+      safe_context: { ...model.safeContext, accepted_change_hash: acceptedChangeProjectionHash(this.acceptedChange(eventInput, eventId)) },
+    });
+    if (prepared.status !== "ready") throw new ConflictException("This place command has completed without its retained result. Refresh the campus places.");
+    if (!existingCampus) {
+      const primary = await db.selectFrom("institution_campuses").select("id").where("school_id", "=", schoolId).where("is_primary", "=", true).executeTakeFirst();
+      if (primary) throw new ConflictException("The primary campus is inactive. Reactivate it or choose an active campus before adding a place.");
+      const mainCode = await db.selectFrom("institution_campuses").select("id").where("school_id", "=", schoolId).where("code", "=", "MAIN").executeTakeFirst();
+      await db.insertInto("institution_campuses").values({ id: campusId, school_id: schoolId, name: institution.name,
+        code: mainCode ? `MAIN-${campusId.slice(0, 8).toUpperCase()}` : "MAIN", campus_type: "main", status: "active", is_primary: true,
+        timezone: institution.timezone, created_by: user.id, updated_by: user.id, created_at: new Date(now), updated_at: new Date(now) }).execute();
+    }
+    const saved = await db.insertInto("campus_spaces").values({ id, school_id: schoolId, campus_id: campusId, parent_space_id: data.parent_space_id,
+      name: data.name, code: data.code, kind: data.kind, capacity: data.capacity, is_accessible: data.is_accessible, is_bookable: data.is_bookable,
+      status: data.status, created_by: user.id, updated_by: user.id, attributes: {}, created_at: new Date(now), updated_at: new Date(now) }).returningAll().executeTakeFirstOrThrow();
+    const row = JSON.parse(JSON.stringify(saved)) as Record<string, unknown>;
+    await this.setupEvent(db, { ...eventInput, prepared, auditMetadata: { idempotency_key: data.idempotency_key, request_hash: requestHash, result: row } });
+    return { row, replayed: false };
+  }
+  /** Shared lock order for individual and reviewed-batch place commands. No authority is supplied by the caller. */
+  async lockPlaceCreationContext(db: Transaction<Database>, user: AuthUser, schoolId: string) {
+    await this.requireAdmin(user, schoolId, db);
+    if (!user.is_active || user.active_school_id !== schoolId) throw new ForbiddenException("Select this institution before creating a place.");
+    const actor = await this.identities.resolveAccountEndpoint(db, { school_id: schoolId, user_id: user.id, at: executionNow().toISOString() });
+    if (!actor.acting) throw new ForbiddenException("An active campus person identity is required to create a place.");
+    await lockCampusSpaceUse(db, schoolId);
+    // Serialize place creators while remaining compatible with the school FK
+    // KEY SHARE locks taken by an ordinary scene command holding its scene lock.
+    return db.selectFrom("schools").select(["id", "name", "timezone"]).where("id", "=", schoolId).forNoKeyUpdate().executeTakeFirstOrThrow();
+  }
   async updateSpace(user: AuthUser, schoolId: string, id: string, body: unknown, request: Request) { return this.saveSpace(user, schoolId, id, body, request); }
   private async saveSpace(user: AuthUser, schoolId: string, id: string | null, body: unknown, request: Request) {
     const data = id ? spaceUpdate.parse(body) : spaceCreate.parse(body);
-    const row = await this.db.transaction().execute(async (db) => { await this.requireAdmin(user, schoolId, db);
+    const row = await this.db.transaction().execute(async (db) => { await this.requireAdmin(user, schoolId, db); await lockCampusSpaceUse(db,schoolId);
       const campus = await this.campus(schoolId, data.campus_id, db);
       const parent = data.parent_space_id ? await this.space(schoolId, data.campus_id, data.parent_space_id, db) : null;
       if (id && data.parent_space_id === id) throw new ConflictException("A space cannot contain itself.");
@@ -317,7 +430,7 @@ export class InstitutionSetupService {
     const data = id ? typeUpdate.parse(body) : typeCreate.parse(body);
     const expected: number | undefined = "expected_revision" in data ? Number(data.expected_revision) : undefined;
     const values = { code: data.code, name: data.name, category: data.category, tracking_mode: data.tracking_mode, unit_label: data.unit_label, is_active: data.is_active };
-    const row = await this.db.transaction().execute(async (db) => { await this.requireAdmin(user, schoolId, db);
+    const row = await this.db.transaction().execute(async (db) => { await this.requireAdmin(user, schoolId, db); await lockCampusSpaceUse(db,schoolId);
       const institution = await db.selectFrom("schools").select(["id", "name"]).where("id", "=", schoolId).executeTakeFirstOrThrow();
       const saved = id ? await db.updateTable("campus_resource_types").set({ ...values, updated_by: user.id }).where("id", "=", id).where("school_id", "=", schoolId).where("revision", "=", expected!).returningAll().executeTakeFirst()
         : await db.insertInto("campus_resource_types").values({ school_id: schoolId, ...values, created_by: user.id, updated_by: user.id }).returningAll().executeTakeFirst();
@@ -330,12 +443,77 @@ export class InstitutionSetupService {
   }
 
   async createAsset(user: AuthUser, schoolId: string, body: unknown, request: Request) { return this.saveHolding(user, schoolId, null, body, request); }
+  /** One user decision, one transaction, one ordinary owning command per copy. */
+  async createLendingItem(user: AuthUser, schoolId: string, body: {
+    command_id: string; name: string; asset_tag?: string; campus_id: string; resource_type_id?: string;quantity?:number;
+  }, request: Request) {
+    const input=lendingItemInput.parse(body),ids=lendingCopyIds(input.command_id,input.quantity),tags=lendingCopyTags(input);
+    if(!this.commandReceipts)throw new ConflictException('Reviewed resource creation is unavailable.');
+    return this.db.transaction().execute(async db=>{
+      if(user.active_school_id!==schoolId)throw new ForbiddenException('Choose this campus before adding an item.');
+      await institutionSchoolPermission(db,user,schoolId,'resources.manage',true);
+      const actor=await this.identities.resolveAccountEndpoint(db,{school_id:schoolId,user_id:user.id,at:executionNow().toISOString()});
+      if(!actor.acting)throw new ForbiddenException('Current canonical app access is required before adding an item.');
+      // This existing topology lock also serializes exact concurrent retries.
+      // The retained check must happen after waiting for an earlier transaction.
+      await sql`SELECT pg_advisory_xact_lock(hashtextextended(${`lending-type:${schoolId}`},0))`.execute(db);
+      const key=`lending-item:${user.id}:${input.command_id}`,payloadHash=lendingItemPayloadHash(input);
+      const retained=await this.commandReceipts!.readDomainCommandReceipt(db,{school_id:schoolId,actor_user_id:user.id,source_domain:'campus_topology',handler_key:'campus_topology.lending_item',handler_version:1,idempotency_key:key});
+      if(retained){
+        if(retained.actor_agent_id!==actor.agent_id||retained.target.domain!=='campus_topology'||retained.target.kind!=='resource'||retained.target.domain_id!==input.command_id||retained.safe_context.payload_hash!==payloadHash)throw new ConflictException('This item command belongs to different details.');
+        if(retained.state!=='completed'||retained.receipt.terminal_state!=='accepted')throw new ConflictException('This exact item is awaiting confirmation. Refresh before sending another item.');
+        const recorded=retained.receipt.metadata.created_item_ids;
+        const acceptedIds=recorded===undefined&&input.quantity===1?[input.command_id]:z.array(uuid).min(1).max(100).parse(recorded);
+        if(JSON.stringify(acceptedIds)!==JSON.stringify(ids))throw new ConflictException('This item batch has different retained copy identities.');
+        for(const id of ids.slice(1)){
+          const child=await this.commandReceipts!.readDomainCommandReceipt(db,{school_id:schoolId,actor_user_id:user.id,source_domain:'campus_topology',handler_key:'campus_topology.lending_item',handler_version:1,idempotency_key:`lending-item:${user.id}:${id}`});
+          if(!child||child.state!=='completed'||child.receipt.terminal_state!=='accepted'||child.actor_agent_id!==actor.agent_id||child.target.domain!=='campus_topology'||child.target.kind!=='resource'||child.target.domain_id!==id||child.safe_context.payload_hash!==payloadHash||child.safe_context.batch_command_id!==input.command_id)
+            throw new ConflictException('This exact batch’s retained copy evidence is unavailable.');
+        }
+        const rows=await db.selectFrom('campus_resource_holdings').selectAll().where('school_id','=',schoolId).where('id','in',ids).execute();
+        const ordered=ids.map(id=>rows.find(row=>row.id===id));
+        if(ordered.some(row=>!row))throw new ConflictException('An accepted copy is unavailable. Review the retained batch before retrying.');
+        return {id:input.command_id,quantity:input.quantity,created_items:ordered.map(row=>row!)};
+      }
+      const campus=await db.selectFrom('institution_campuses').selectAll().where('school_id','=',schoolId).where('id','=',input.campus_id).forShare().executeTakeFirst();
+      if(!campus||campus.status!=='active')throw new UnprocessableEntityException('Choose an active existing campus.');
+      const kind=input.resource_type_id?await db.selectFrom('campus_resource_types').selectAll().where('school_id','=',schoolId).where('id','=',input.resource_type_id).executeTakeFirst():await db.selectFrom('campus_resource_types').selectAll().where('school_id','=',schoolId).where('code','=','LENDING-ITEMS').executeTakeFirst();
+      if(input.resource_type_id&&!kind)throw new UnprocessableEntityException('Choose a resource type from this campus.');
+      if(kind&&(!kind.is_active||kind.tracking_mode!=='individual'))throw new UnprocessableEntityException('Choose an active individually tracked resource type.');
+      const plannedKind=kind??{id:randomUUID(),name:'Individually tracked items',category:'other',is_active:true,revision:1};
+      const created=[];
+      for(const [index,id] of ids.entries())created.push(await this.createLendingCopy(db,user,schoolId,input,{id,tag:tags[index]!,index,ids,payloadHash},campus,plannedKind,!kind&&index===0,request));
+      return {id:input.command_id,quantity:input.quantity,created_items:created};
+    }).catch((error:unknown)=>{
+      if(error&&typeof error==='object'&&'code' in error&&error.code==='23505'&&'constraint' in error&&error.constraint==='campus_resource_holdings_asset_tag_idx')
+        throw new UnprocessableEntityException('This asset tag already identifies an existing copy. Choose that item or correct the tag.');
+      throw error;
+    });
+  }
+  private async createLendingCopy(db:Transaction<Database>,user:AuthUser,schoolId:string,input:LendingItemInput,
+    copy:{id:string;tag:string;index:number;ids:string[];payloadHash:string},campus:{id:string;name:string;status:'active'|'inactive';revision:number},
+    kind:{id:string;name:string;category:string;is_active:boolean;revision:number},createType:boolean,request:Request){
+    const now=executionNow().toISOString(),eventId=randomUUID(),correlationId=request.requestId??input.command_id,key=`lending-item:${user.id}:${copy.id}`;
+    const holding={id:copy.id,name:input.name,state:'available' as const,revision:1},target=this.ref('campus_topology',copy.id);
+    const model:ModelChange={target,entities:[this.holdingEntity(holding),this.resourceTypeEntity(kind),this.campusEntity(campus)],relationships:[
+      this.setRelationship({type:'instance_of',source:target,target:this.ref('campus_topology',kind.id),effectiveFrom:now,sourceRecordId:copy.id,sourceRevision:1}),
+      this.setRelationship({type:'located_in',source:target,target:this.ref('campus_topology',campus.id),effectiveFrom:now,sourceRecordId:copy.id,sourceRevision:1})],expectedRevision:0,resultingRevision:1,
+      safeContext:{payload_hash:copy.payloadHash,campus_id:campus.id,batch_command_id:input.command_id,batch_quantity:input.quantity,copy_index:copy.index+1,asset_tag:copy.tag,...(copy.index===0?{created_item_ids:copy.ids}:{})}};
+    const eventInput:SetupEventInput={schoolId,actorId:user.id,action:'resource.created',targetType:'campus_resource_holding',targetId:copy.id,
+      requestId:correlationId,eventId,commandKey:key,outcomeCode:'resource_created',authorityEvidence:['current_resources_management_permission'],model,
+      outcomeMetadata:copy.index===0?{quantity:input.quantity,created_item_ids:copy.ids}:{batch_command_id:input.command_id,copy_index:copy.index+1}};
+    const prepared=await this.commands.prepareDomainCommand(db,{school_id:schoolId,actor_user_id:user.id,command_type:'resource.created',handler_key:'campus_topology.lending_item',handler_version:1,source_domain:'campus_topology',target:this.holdingEntity(holding),current_revision:0,expected_revision:0,capability:'campus_topology:manage',purpose:'create_exact_lending_resource',requested_at:now,correlation_id:correlationId,causation_id:null,idempotency_key:key,operating_rule_version_ref:null,configuration_refs:[],authority_attestation:{evaluator_domain:'campus_topology',decision:'allowed',reason_codes:['current_resources_management_permission','explicit_named_item_and_campus'],authority_source_refs:[{permission:'resources.manage',campus_id:campus.id}],operating_rule_refs:[],valid_until:null},safe_context:{...model.safeContext,accepted_change_hash:acceptedChangeProjectionHash(this.acceptedChange(eventInput,eventId))}});
+    if(prepared.status!=='ready')throw new ConflictException('Refresh this exact item batch before retrying.');
+    if(createType)await db.insertInto('campus_resource_types').values({id:kind.id,school_id:schoolId,code:'LENDING-ITEMS',name:kind.name,category:'other',tracking_mode:'individual',unit_label:'items',created_by:user.id,updated_by:user.id,created_at:new Date(now),updated_at:new Date(now)}).execute();
+    const saved=await db.insertInto('campus_resource_holdings').values({id:copy.id,school_id:schoolId,campus_id:campus.id,space_id:null,resource_type_id:kind.id,name:input.name,quantity:1,asset_tag:copy.tag,state:'available',notes:'',created_by:user.id,updated_by:user.id}).returningAll().executeTakeFirstOrThrow();
+    await this.setupEvent(db,{...eventInput,prepared});return saved;
+  }
   async updateAsset(user: AuthUser, schoolId: string, id: string, body: unknown, request: Request) { return this.saveHolding(user, schoolId, id, body, request); }
   private async saveHolding(user: AuthUser, schoolId: string, id: string | null, body: unknown, request: Request) {
     const data = id ? holdingUpdate.parse(body) : holdingCreate.parse(body);
     const expected: number | undefined = "expected_revision" in data ? Number(data.expected_revision) : undefined;
     const values = { campus_id: data.campus_id, space_id: data.space_id, resource_type_id: data.resource_type_id, name: data.name, quantity: data.quantity, asset_tag: data.asset_tag, state: data.state, notes: data.notes };
-    const row = await this.db.transaction().execute(async (db) => { await this.requireAdmin(user, schoolId, db);
+    const row = await this.db.transaction().execute(async (db) => { await this.requireAdmin(user, schoolId, db); await lockCampusSpaceUse(db,schoolId);
       const campus = await this.campus(schoolId, data.campus_id, db);
       const space = data.space_id ? await this.space(schoolId, data.campus_id, data.space_id, db) : null;
       const kind = await db.selectFrom("campus_resource_types").selectAll().where("id", "=", data.resource_type_id).where("school_id", "=", schoolId).executeTakeFirst(); if (!kind) throw new NotFoundException("Resource type not found in this institution.");
@@ -368,7 +546,7 @@ export class InstitutionSetupService {
       const saved = await db.insertInto("class_campus_placements").values({ school_id: schoolId, class_section_id: classId, campus_id: data.campus_id, home_space_id: data.home_space_id ?? null, is_primary: true, effective_from: data.effective_from, effective_until: null, assigned_by: user.id }).returningAll().executeTakeFirstOrThrow();
       const classRef = this.ref("academic_structure", section.id);
       const campusRef = this.ref("campus_topology", campus.id);
-      const effectiveFrom = this.time(`${data.effective_from}T00:00:00.000Z`);
+      const effectiveFrom = await this.placementInstant(db, data.effective_from, campus.timezone);
       const relationships = [
         this.setRelationship({ type: "located_in", source: classRef, target: campusRef, effectiveFrom, sourceRecordId: saved.id, sourceRevision: saved.revision }),
         space
@@ -382,7 +560,7 @@ export class InstitutionSetupService {
   async placeStaff(user: AuthUser, schoolId: string, staffId: string, body: unknown, request: Request) {
     const data = staffPlacement.parse(body); const row = await this.db.transaction().execute(async (db) => { await this.requireAdmin(user, schoolId, db);
       const campus = await this.campus(schoolId, data.campus_id, db);
-      const profile = await db.selectFrom("staff_profiles").select(["id", "first_name", "last_name", "status", "revision"]).where("id", "=", staffId).where("school_id", "=", schoolId).executeTakeFirst(); if (!profile) throw new NotFoundException("Staff member not found in this institution.");
+      const profile = await db.selectFrom("staff_profiles as profile").innerJoin("school_people as person", join => join.onRef("person.id","=","profile.person_id").onRef("person.school_id","=","profile.school_id")).select(["profile.id", "person.first_name", "person.last_name", "profile.status", "profile.revision"]).where("profile.id", "=", staffId).where("profile.school_id", "=", schoolId).executeTakeFirst(); if (!profile) throw new NotFoundException("Staff member not found in this institution.");
       const current = await db.selectFrom("staff_campus_assignments").selectAll().where("staff_profile_id", "=", staffId).where("is_primary", "=", true).where("effective_from", "<=", data.effective_from).where((eb) => eb.or([eb("effective_until", "is", null), eb("effective_until", ">=", data.effective_from)])).forUpdate().executeTakeFirst();
       if ((current?.revision ?? null) !== data.expected_current_revision) throw new ConflictException("Staff campus assignment changed. Refresh and review the latest version.");
       if (current && current.effective_from >= data.effective_from) throw new ConflictException("Choose a date after the current assignment began.");
@@ -391,7 +569,7 @@ export class InstitutionSetupService {
       const staffRef = this.ref("people", profile.id);
       const campusRef = this.ref("campus_topology", campus.id);
       await this.setupEvent(db, { schoolId, actorId: user.id, action: "staff.placement.updated", targetType: "staff_profile", targetId: staffId, metadata: { campus_id: data.campus_id, effective_from: data.effective_from }, requestId: request.requestId,
-        model: { target: staffRef, entities: [this.staffEntity(profile), this.campusEntity(campus)], relationships: [this.setRelationship({ type: "assigned_to", source: staffRef, target: campusRef, effectiveFrom: this.time(`${data.effective_from}T00:00:00.000Z`), sourceRecordId: saved.id, sourceRevision: saved.revision })], expectedRevision: data.expected_current_revision, resultingRevision: saved.revision, safeContext: { campus_id: data.campus_id, effective_from: data.effective_from } } }); return saved; });
+        model: { target: staffRef, entities: [this.staffEntity(profile), this.campusEntity(campus)], relationships: [this.setRelationship({ type: "assigned_to", source: staffRef, target: campusRef, effectiveFrom: await this.placementInstant(db, data.effective_from, campus.timezone), sourceRecordId: saved.id, sourceRevision: saved.revision })], expectedRevision: data.expected_current_revision, resultingRevision: saved.revision, safeContext: { campus_id: data.campus_id, effective_from: data.effective_from } } }); return saved; });
     await this.externalAudit("institution.setup.staff_placement.updated", request, user, schoolId, "staff_profile", staffId); return row;
   }
 }

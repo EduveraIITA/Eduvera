@@ -1,0 +1,21 @@
+import { cleanup, render } from "@testing-library/react";
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import { afterEach, expect, it, vi } from "vitest";
+import { ApplicationExecutionEnvironmentProvider } from "./ApplicationExecutionEnvironment";
+import { LIVE_EXECUTION_ENVIRONMENT } from "./executionEnvironment";
+import { executionRequest, executionRequestIdentity } from "../../lib/executionRequestScope";
+const actor = vi.hoisted(() => ({ id: "administrator-one" }));
+vi.mock("../auth/AuthContext", () => ({ useOptionalAuth: () => ({ user: { id: actor.id }, executionEnvironment: LIVE_EXECUTION_ENVIRONMENT }) }));
+afterEach(cleanup);
+it("changes the retry epoch and rejects a late response when the account changes within one campus", () => {
+  const client = new QueryClient();
+  const tree = () => <QueryClientProvider client={client}><ApplicationExecutionEnvironmentProvider confirmedEnvironment={LIVE_EXECUTION_ENVIRONMENT}><p>Same campus</p></ApplicationExecutionEnvironmentProvider></QueryClientProvider>;
+  const view = render(tree());
+  const before = executionRequestIdentity();
+  const pending = executionRequest("/api/v1/schools/school-1/academic-reports/policies/");
+  actor.id = "administrator-two";
+  view.rerender(tree());
+  expect(executionRequestIdentity()).not.toBe(before);
+  expect(() => pending.assertCurrent()).toThrow(/environment changed/);
+  pending.finish();
+});

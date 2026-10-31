@@ -84,7 +84,7 @@ clone lineage are compatibility details, not additional product concepts.
   cannot activate those modules. Unsupported historical tasks remain historical work, not access.
 
 The server-only projection is not granted to PostgREST's anon/authenticated roles. Its
-PostgreSQL-14-compatible ownership follows the application tables. This does not claim the
+PostgreSQL17 ownership follows the application tables. This does not claim the
 separate non-owner-runtime/RLS deployment gate has been completed.
 
 ## Authorization contract
@@ -126,3 +126,19 @@ staff-profile links; mobile layout and keyboard dismissal.
 
 The implementation plan records actual results. Local tests are not proof of a production
 deployment, legal compliance, physical device acceptance, or completion of every blueprint domain.
+
+## Retained assignment foundation and boundaries
+
+Scoped assignment evidence remains effective-dated and audited: offered work needs
+the exact person's acceptance where its owning domain requires it; decline and
+revocation retain a reason, and ended work grants no current access. Native class,
+event, assessment and journey staffing remains with those modules and is projected
+into the profile rather than duplicated. Temporary coverage follows the
+[leave and coverage contract](STAFF_LEAVE_REVIEW_CONTINUITY.md#native-leave-coverage-lifecycle).
+
+The retired fixed responsibility catalogue, duty-to-role eligibility matrix and
+portal-selection model are not additional authorization gates. Descriptive
+positions, institutional offices, technical roles and actual assignments remain
+different facts. Restricted care, independent assessment review, publication,
+physical handover and institutional decisions require their own current evidence;
+a free-text duty or custom permission bundle cannot manufacture those powers.

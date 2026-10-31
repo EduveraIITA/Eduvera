@@ -28,6 +28,7 @@ describe("principal school pulse", () => {
   it("labels periods and counted evidence separately from the selected home date", async () => {
     mount();
     const attendance = await screen.findByRole("link", { name: "Explore term attendance" });
+    expect(attendance.querySelector('[data-product-icon="attendance"]')).toHaveAttribute("aria-hidden", "true");
     expect(attendance).toHaveTextContent("75%");
     expect(attendance).toHaveTextContent("4.5 of 6 recorded student-days attended");
     expect(attendance).toHaveTextContent("Through 8 Oct · unrecorded days excluded");

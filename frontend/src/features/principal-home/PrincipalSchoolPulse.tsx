@@ -1,4 +1,5 @@
 import { ChevronRight } from "lucide-react";
+import { ProductIcon } from "../../components/ProductIcon";
 import { Link } from "react-router-dom";
 import { AttendanceTrend, numberLabel, percentageLabel, shortDate } from "../analytics/AnalyticsCharts";
 import { money } from "../principal-insights/InsightCharts";
@@ -24,27 +25,27 @@ export function PrincipalSchoolPulse({ queries }: { queries: ReturnType<typeof u
     {analytics.isError ? <div className="principal-home__group principal-home__notice" role="alert"><span>Attendance trends and results couldn’t load.</span><button type="button" onClick={() => void analytics.refetch()}>Retry school pulse</button></div> : null}
     <div className="principal-home__pulse-grid">
       {attendance ? <Link className="principal-home__metric principal-home__metric--attendance" to="/principal/insights/attendance?period=term" aria-label="Explore term attendance">
-        <header><h3>Recorded attendance</h3><ChevronRight size={16} aria-hidden="true" /></header>
+        <header><h3><ProductIcon name="attendance" size={24} />Recorded attendance</h3><ChevronRight size={16} aria-hidden="true" /></header>
         <div className="principal-home__metric-value"><strong>{attendance.percentage === null ? "Not recorded" : percentageLabel(attendance.percentage)}</strong><span>This term</span></div>
         <AttendanceTrend attendance={attendance} monthly compact />
         <p>{numberLabel(attendance.attended)} of {numberLabel(attendance.denominator)} recorded student-days attended</p>
         <small>Through {shortDate(academic.range.to)} · unrecorded days excluded</small>
       </Link> : academic ? <p className="principal-home__notice">Attendance trends are unavailable in this scope.</p> : null}
       {results ? <Link className="principal-home__metric" to="/principal/insights/results?period=term" aria-label="Explore published result averages">
-        <header><h3>Published results</h3><ChevronRight size={16} aria-hidden="true" /></header>
+        <header><h3><ProductIcon name="learning" size={24} />Published results</h3><ChevronRight size={16} aria-hidden="true" /></header>
         <div className="principal-home__metric-value"><strong>{results.overall.average === null ? "No scores" : percentageLabel(results.overall.average)}</strong></div>
         <p>{numberLabel(results.overall.scored)} scored results</p>
         <small>Term average · through {shortDate(academic.range.to)}</small>
       </Link> : academic ? <p className="principal-home__notice">Published results are unavailable in this scope.</p> : null}
       {operations ? <Link className="principal-home__metric" to="/principal/insights/operations" aria-label="Explore next seven days of teaching coverage">
-        <header><h3>Teacher coverage</h3><ChevronRight size={16} aria-hidden="true" /></header>
+        <header><h3><ProductIcon name="timetable" size={24} />Teacher coverage</h3><ChevronRight size={16} aria-hidden="true" /></header>
         <div className="principal-home__metric-value"><strong>{planned ? percentageLabel(assigned / planned * 100) : "No periods"}</strong></div>
         <p>{assigned} of {planned} periods assigned</p>
         <small>7 days from {shortDate(operations.operational_date)}</small>
         {unassigned ? <span className="principal-home__metric-warning">{unassigned} still unassigned</span> : null}
       </Link> : null}
       {operations ? <Link className="principal-home__metric principal-home__metric--fees" to="/principal/insights/finance" aria-label="Explore outstanding fee balances">
-        <header><h3>Fees outstanding</h3><ChevronRight size={16} aria-hidden="true" /></header>
+        <header><h3><ProductIcon name="fees" size={24} />Fees outstanding</h3><ChevronRight size={16} aria-hidden="true" /></header>
         <div className="principal-home__metric-value"><strong>{money(outstanding)}</strong>{overdue > 0 ? <span className="principal-home__metric-warning">{money(overdue)} overdue</span> : null}</div>
         <small>{due > 0 ? `Of ${money(due)} due by ${shortDate(operations.operational_date)}` : `No fees due as of ${shortDate(operations.operational_date)}`} · future instalments excluded</small>
       </Link> : review.isPending ? <p className="principal-home__notice">Loading coverage and fees…</p> : review.isError ? <p className="principal-home__notice">Coverage and fee balances are unavailable.</p> : null}

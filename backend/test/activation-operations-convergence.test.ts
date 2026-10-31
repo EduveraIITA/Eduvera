@@ -2,31 +2,18 @@ import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { describe, expect, it } from "vitest";
 
-const activation = readFileSync(new URL("../src/institution-activation/institution-activation.service.ts", import.meta.url), "utf8");
 const operations = readFileSync(new URL("../src/operations/operations.service.ts", import.meta.url), "utf8");
+const operationsController = readFileSync(new URL("../src/operations/operations.controller.ts", import.meta.url), "utf8");
+const peopleController = readFileSync(new URL("../src/people/people.controller.ts", import.meta.url), "utf8");
 const membershipAuthorization = readFileSync(resolve(process.cwd(), "migrations/110_membership_access_event_authorization.sql"), "utf8");
 
-describe("activation and legacy administration projection convergence", () => {
-  it("retains quick-start catalogue and timetable events in the owning transaction", () => {
-    expect(activation).toContain('eventType: "administration.updated"');
-    expect(activation).toContain('eventType: "timetable.updated"');
-    expect(activation).toContain('idempotencyKey: `activation:term:');
-    expect(activation).toContain('idempotencyKey: `activation:class:');
-    expect(activation).toContain('idempotencyKey: `activation:subject:');
-    expect(activation).toContain('idempotencyKey: `activation:timetable:');
-    expect(activation).toContain('"institution-activation"');
-    expect(activation.indexOf("await this.enqueueUpdate(db")).toBeGreaterThan(activation.indexOf("this.db.transaction().execute"));
-  });
-
-  it.each([
-    "student_created",
-    "student_updated",
-    "students_imported",
-    "guardian_linked",
-    "student_enrolled",
-    "term_rollover_completed",
-  ])("emits a people event for %s", (action) => {
-    expect(operations).toContain(`action: "${action}"`);
+describe("legacy administration projection convergence", () => {
+  // Actual creation/update/import/enrollment/rollover events and the guardian
+  // accepted command/outbox/replay are verified by operations.integration.test.
+  it("keeps guardian attachment on its owning People route rather than an account-coupled Operations creator", () => {
+    expect(operations).not.toContain("async guardian(");
+    expect(operationsController).not.toContain('@Post("schools/:schoolId/guardians/")');
+    expect(peopleController).toContain('@Post("guardian-links")');
   });
 
   it("sends membership access changes to the affected account and permits its self-scoped revocation signal", () => {

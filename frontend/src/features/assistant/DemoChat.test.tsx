@@ -55,7 +55,7 @@ describe('connected compact assistant',()=>{
     state.awaiting=true;state.runs=[{...run('Review this action'),action:{id:'a',title:'Send message',status:'pending',input:{basis_id:'e',body:{body:'Hello'}},labels:{},href:'/teacher/messages',expires_at:new Date().toISOString(),receipt:null}}];
     render(<MemoryRouter><Harness/></MemoryRouter>);open();
     expect(screen.getByText('Review needed')).toBeVisible();
-    expect(screen.getByRole('link',{name:/Send message/})).toHaveAttribute('href','/teacher/assistant');
+    expect(screen.getByRole('link',{name:/Send message/})).toHaveAttribute('href','/areas/assistant/conversation');
     expect(screen.getByText(/Nothing has changed/)).toBeVisible();
     expect(screen.queryByText('Review this action')).not.toBeInTheDocument();
     expect(screen.queryByRole('button',{name:'Confirm'})).not.toBeInTheDocument();

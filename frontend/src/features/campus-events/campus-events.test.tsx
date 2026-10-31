@@ -94,7 +94,50 @@ const catalog: EventCatalogResponse = {
   ],
   staff: [],
   subjects: [],
+  places: [{ id: "room-a", name: "Lecture Room A103", campus_id: "campus-a", campus_name: "Aaranya Campus" }],
 };
+
+describe("canonical event map locations", () => {
+  it("preserves an explicit event location and separate session location through an unchanged save", async () => {
+    const base = eventFixture(), onSave = vi.fn().mockResolvedValue(undefined);
+    const event = eventFixture({ space_id: "room-a", sessions: [{ ...base.sessions[0]!, space_id: "room-b", use_event_space: false }] });
+    render(<MemoryRouter><EventEditorPage catalog={catalog} event={event} onSave={onSave} /></MemoryRouter>);
+    await userEvent.click(screen.getAllByRole("button", { name: "Save draft" })[0]!);
+    await waitFor(() => expect(onSave).toHaveBeenCalledOnce());
+    expect(onSave.mock.calls[0]![0]).toMatchObject({ space_id: "room-a", sessions: [{ space_id: "room-b", use_event_space: false }] });
+  });
+
+  it("clears a selected session location when its venue is edited, even if the old text is typed back", async () => {
+    const base = eventFixture(), onSave = vi.fn().mockResolvedValue(undefined);
+    const event = eventFixture({ space_id: "room-a", sessions: [{ ...base.sessions[0]!, space_id: "room-b", use_event_space: false }] });
+    render(<MemoryRouter><EventEditorPage catalog={catalog} event={event} onSave={onSave} /></MemoryRouter>);
+    const venues = screen.getAllByLabelText("Venue"), sessionVenue = venues[1]!;
+    await userEvent.clear(sessionVenue); await userEvent.type(sessionVenue, "Other venue");
+    await userEvent.clear(sessionVenue); await userEvent.type(sessionVenue, base.sessions[0]!.venue);
+    await userEvent.click(screen.getAllByRole("button", { name: "Save draft" })[0]!);
+    await waitFor(() => expect(onSave).toHaveBeenCalledOnce());
+    expect(onSave.mock.calls[0]![0]).toMatchObject({ space_id: "room-a", sessions: [{ space_id: null, use_event_space: false }] });
+  });
+
+  it("keeps legacy sessions unmapped instead of silently inheriting a newly located event", async () => {
+    const onSave = vi.fn().mockResolvedValue(undefined);
+    render(<MemoryRouter><EventEditorPage catalog={catalog} event={eventFixture({ space_id: "room-a" })} onSave={onSave} /></MemoryRouter>);
+    await userEvent.click(screen.getAllByRole("button", { name: "Save draft" })[0]!);
+    await waitFor(() => expect(onSave).toHaveBeenCalledOnce());
+    expect(onSave.mock.calls[0]![0]).toMatchObject({ space_id: "room-a", sessions: [{ space_id: null, use_event_space: false }] });
+  });
+
+  it("clears the class-test place when the venue changes, retaining explicit session inheritance", async () => {
+    const base = eventFixture(), onSave = vi.fn().mockResolvedValue(undefined);
+    const event = eventFixture({ event_type: "class_test", subject_id: "math", space_id: "room-a", sessions: [{ ...base.sessions[0]!, space_id: null, use_event_space: true }] });
+    render(<MemoryRouter><ClassTestEditorPage catalog={{ ...catalog, subjects: [{ id: "math", name: "Mathematics", short_name: "Math", class_section_ids: ["class-7a"] }] }} event={event} onSave={onSave} /></MemoryRouter>);
+    const venue = screen.getByLabelText("Venue");
+    await userEvent.clear(venue); await userEvent.type(venue, "External examination centre");
+    await userEvent.click(screen.getAllByRole("button", { name: "Save draft" })[0]!);
+    await waitFor(() => expect(onSave).toHaveBeenCalledOnce());
+    expect(onSave.mock.calls[0]![0]).toMatchObject({ space_id: null, sessions: [{ space_id: null, use_event_space: true }] });
+  });
+});
 
 describe("campus event family workflows", () => {
   it.each(["rsvp", "consent", "payment", "checklist"] as const)(
@@ -150,6 +193,22 @@ describe("campus event family workflows", () => {
     expect(screen.getByTestId("parent-shell")).toHaveAttribute("data-active", "events");
     await userEvent.setup().click(screen.getByRole("button", { name: "Load more events" }));
     expect(onLoadMore).toHaveBeenCalledOnce();
+  });
+
+  it("renders relationship-scoped events in the neutral workspace and preserves scope in detail links", () => {
+    render(<MemoryRouter><FamilyEventListPage
+      audience="parent"
+      workspace={{ basePath: "/areas/events/calendar", relationship: "dependent", studentId: "student-1", relationshipLabel: "Aarav Sharma" }}
+      events={[eventFixture()]}
+    /></MemoryRouter>);
+
+    expect(screen.getByTestId("operations-shell")).toHaveAttribute("data-active", "areas");
+    expect(screen.queryByTestId("parent-shell")).not.toBeInTheDocument();
+    expect(screen.getByText("Aarav Sharma")).toBeVisible();
+    expect(screen.getByRole("link", { name: /Science museum visit/ })).toHaveAttribute(
+      "href",
+      "/areas/events/calendar/event-1?scope=dependent&student_id=student-1",
+    );
   });
 
   it("shows the real event fee before invoicing and supports consent withdrawal", async () => {
@@ -364,10 +423,10 @@ describe("campus event planning", () => {
   it("shows exact outstanding actions even when Upcoming is empty", () => {
     render(<MemoryRouter><OperationsEventListPage portal="principal" events={[]} view="upcoming" onViewChange={vi.fn()} attentionItems={[{
       id: "attention-1", source_kind: "event_session_register", source_id: "session-1", module: "events", state: "exception", signals: ["exception"], priority: "urgent",
-      title: "Picnic return register", status_label: "Awaiting checkout", subject_label: null, href: "/principal/events/event-1/sessions/session-1/register", created_at: null, due_at: null,
+      title: "Picnic return register", status_label: "Awaiting checkout", subject_label: null, href: "/areas/events/manage/event-1/sessions/session-1/attendance", created_at: null, due_at: null,
     }]}/></MemoryRouter>);
     expect(screen.getByRole("heading", { name: "No upcoming events" })).toBeVisible();
-    expect(screen.getByRole("link", { name: /Picnic return register/ })).toHaveAttribute("href", "/principal/events/event-1/sessions/session-1/register");
+    expect(screen.getByRole("link", { name: /Picnic return register/ })).toHaveAttribute("href", "/areas/events/manage/event-1/sessions/session-1/attendance");
   });
   it("does not manufacture an attention section for historical events", () => {
     render(<MemoryRouter><OperationsEventListPage portal="principal" events={[]} view="past" onViewChange={vi.fn()}/></MemoryRouter>);
@@ -394,7 +453,19 @@ describe("campus event planning", () => {
     expect(within(row).getByText("City Science Museum")).toBeVisible();
     expect(within(row).getByText("1 open register")).toBeVisible();
     expect(screen.queryByText("View details")).not.toBeInTheDocument();
-    expect(screen.getByRole("link",{name:"Plan class test"})).toHaveAttribute("href","/teacher/assessments?create=class-test");
+    expect(screen.getByRole("link",{name:"Plan class test"})).toHaveAttribute("href","/areas/assessments/assigned?create=class-test");
+  });
+
+  it("uses the neutral assigned surface for event and assessment actions", () => {
+    render(<MemoryRouter><OperationsEventListPage
+      workspace={{ basePath: "/areas/events/assigned", kind: "assigned" }}
+      events={[eventFixture()]}
+      view="upcoming"
+      onViewChange={vi.fn()}
+    /></MemoryRouter>);
+
+    expect(screen.getByRole("link", { name: "Open Science museum visit" })).toHaveAttribute("href", "/areas/events/assigned/event-1");
+    expect(screen.getByRole("link", { name: "Plan class test" })).toHaveAttribute("href", "/areas/assessments/assigned?create=class-test");
   });
 
   it("preserves a non-default list view through event drill-down and creation", () => {
@@ -467,6 +538,23 @@ describe("campus event planning", () => {
     await user.type(within(dialog).getByLabelText("Notice shown to families"), "The visit is cancelled because transport is unavailable.");
     await user.click(within(dialog).getByRole("button", { name: "Cancel event" }));
     expect(onCancel).toHaveBeenCalledWith("Transport vendor breach", "The visit is cancelled because transport is unavailable.");
+  });
+
+  it("keeps edit, section and register navigation inside the neutral management surface", async () => {
+    const base = eventFixture();
+    const event = eventFixture({
+      permissions: { ...base.permissions, can_edit: true, can_take_attendance: true },
+    });
+    render(<MemoryRouter><OperationsEventDetailPage
+      workspace={{ basePath: "/areas/events/manage", kind: "manage" }}
+      schoolId="school-1"
+      event={event}
+    /></MemoryRouter>);
+
+    await userEvent.setup().click(screen.getByLabelText("Event actions"));
+    expect(screen.getByRole("link", { name: "Edit draft" })).toHaveAttribute("href", "/areas/events/manage/event-1/edit");
+    expect(screen.getByRole("link", { name: "Open register" })).toHaveAttribute("href", "/areas/events/manage/event-1/sessions/session-1/attendance");
+    expect(screen.getByRole("link", { name: /Participants/ })).toHaveAttribute("href", "/areas/events/manage/event-1?view=participants");
   });
 
   it("focuses the signed-in staff member's exact event duty from Requests", async () => {
@@ -678,8 +766,13 @@ describe("event attendance register", () => {
     const user = userEvent.setup();
     render(<MemoryRouter><EventRegisterPage portal="teacher" register={register} onSave={vi.fn()} onLock={onLock} onReopen={vi.fn()} onHistory={vi.fn().mockResolvedValue({ event: register.event, session: { id: register.session.id, title: register.session.title }, items: [] })} /></MemoryRouter>);
 
-    expect(screen.getByLabelText("1 of 1 attendance decisions recorded")).toHaveTextContent("All decisions recorded");
-    expect(screen.getByRole("heading", { name: "Participants" })).toBeVisible();
+    expect(screen.getByText("1 of 1 recorded")).toBeVisible();
+    expect(screen.getByRole("region", { name: "Participants" })).toBeVisible();
+    expect(screen.getByText("Register complete")).toBeVisible();
+    const participant = screen.getByRole("article", { name: "Aarav Sharma" });
+    expect(within(participant).getByText("CIS-071")).toBeVisible();
+    expect(within(participant).getByText("Mandatory")).toBeVisible();
+    expect(within(participant).getByLabelText("Observed at for Aarav Sharma")).toBeInTheDocument();
     expect(screen.queryByText("Review every attendance decision")).not.toBeInTheDocument();
     expect(screen.queryByRole("heading", { name: "Finalize register" })).not.toBeInTheDocument();
 
@@ -733,6 +826,25 @@ describe("event attendance register", () => {
     render(<MemoryRouter><EventRegisterPage portal="teacher" register={optionalRegister} onSave={vi.fn()} onLock={vi.fn()} onReopen={vi.fn()} onHistory={vi.fn().mockResolvedValue({ event: optionalRegister.event, session: { id: optionalRegister.session.id, title: optionalRegister.session.title }, items: [] })} /></MemoryRouter>);
 
     expect(screen.getByLabelText("Attendance status for Aarav Sharma")).toHaveTextContent("No-show");
+  });
+
+  it("uses optional shared search and filters without discarding a participant decision", async () => {
+    const people: EventRegisterResponse = { ...register,
+      rows: [{ ...register.rows[0]!, attendance_status: "not_recorded", record_revision: 0 }, { ...register.rows[0]!, student_id: "student-2", student_name: "Riddhi Kaur", admission_number: "CIS-072", attendance_status: "not_recorded", record_revision: 0 }],
+    };
+    const onSave = vi.fn();
+    render(<MemoryRouter><EventRegisterPage portal="teacher" register={people} onSave={onSave} onLock={vi.fn()} onReopen={vi.fn()} onHistory={vi.fn()} /></MemoryRouter>);
+    expect(screen.queryByRole("searchbox")).not.toBeInTheDocument();
+    await userEvent.setup().click(screen.getByRole("button", { name: "Find & filter" }));
+    fireEvent.change(screen.getByRole("combobox", { name: "Filter participants" }), { target: { value: "pending" } });
+    fireEvent.change(screen.getByRole("searchbox", { name: "Search student or admission number" }), { target: { value: "CIS-072" } });
+    expect(screen.queryByRole("article", { name: "Aarav Sharma" })).not.toBeInTheDocument();
+    fireEvent.change(screen.getByLabelText("Attendance status for Riddhi Kaur"), { target: { value: "excused" } });
+    expect(screen.queryByRole("article", { name: "Riddhi Kaur" })).not.toBeInTheDocument();
+    await userEvent.setup().click(screen.getByRole("button", { name: "Find & filter" }));
+    expect(screen.queryByRole("searchbox")).not.toBeInTheDocument();
+    expect(screen.getByLabelText("Attendance status for Riddhi Kaur")).toHaveValue("excused");
+    expect(onSave).not.toHaveBeenCalled();
   });
 
   it("captures the physical observation time independently from request receipt", async () => {

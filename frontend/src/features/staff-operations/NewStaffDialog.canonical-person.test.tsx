@@ -1,0 +1,21 @@
+import { cleanup,render,screen,waitFor } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
+import { afterEach,expect,it,vi } from 'vitest';
+import { NewStaffDialog } from './StaffOperationsPage';
+import { createStaffProfile } from './api';
+vi.mock('./api',async original=>({...await original<typeof import('./api')>(),createStaffProfile:vi.fn()}));
+afterEach(()=>{cleanup();vi.clearAllMocks();});
+it('attaches work to the reviewed exact person without asking for another name or contact authority',async()=>{
+  const onSaved=vi.fn().mockResolvedValue(undefined);
+  vi.mocked(createStaffProfile).mockResolvedValue({profile:{id:'work'} as never,invitation:null});
+  render(<NewStaffDialog schoolId="school" person={{id:'person',revision:4,label:'Canonical campus name'}} onClose={vi.fn()} onSaved={onSaved}/>);
+  expect(screen.getByText('Canonical campus name')).toBeVisible();
+  expect(screen.queryByLabelText(/First name|Last name|Email|Phone/)).not.toBeInTheDocument();
+  await userEvent.type(screen.getByLabelText('Staff code'),'EX-01');
+  await userEvent.type(screen.getByLabelText('Position'),'Campus operator');
+  await userEvent.click(screen.getByRole('button',{name:'Save work profile'}));
+  await waitFor(()=>expect(onSaved).toHaveBeenCalledOnce());
+  const input=vi.mocked(createStaffProfile).mock.calls[0]![1];
+  expect(input).toMatchObject({person:{id:'person',expected_revision:4},staff_code:'EX-01',designation:'Campus operator'});
+  for(const key of ['first_name','last_name','email','phone'])expect(input).not.toHaveProperty(key);
+});

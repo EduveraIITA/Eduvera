@@ -53,7 +53,7 @@ function attendanceStatus(studentId, ratios) {
 }
 
 export class DevelopmentActionRunner {
-  constructor({ sessions, setup, behavior, startedAt, routine, actorSession, onActivity }) {
+  constructor({ sessions, setup, behavior, startedAt, routine, actorSession, onActivity, runId = "development" }) {
     this.sessions = sessions;
     this.setup = setup;
     this.behavior = behavior;
@@ -63,9 +63,11 @@ export class DevelopmentActionRunner {
     this.completed = new Set();
     this.reactionFirstSeen = new Map();
     this.reactionFailureReported = new Set();
+    this.reactionRejected = new Set();
     this.lastReactionPollAt = 0;
     this.inFlight = false;
     this.noticeId = null;
+    this.runId = runId;
     this.date = null;
     this.scope = null;
     this.updateRoutine(routine, this.startedAt);
@@ -79,12 +81,24 @@ export class DevelopmentActionRunner {
       this.noticeId = null;
       this.reactionFirstSeen.clear();
       this.reactionFailureReported.clear();
+      this.reactionRejected.clear();
       this.lastReactionPollAt = 0;
     }
     this.date = nextDate;
-    this.scope = `${this.behavior.version}:${this.setup.school.id}:${this.date}`;
+    this.scope = `${this.behavior.version}:${this.setup.school.id}:${this.runId}:${this.date}`;
     this.routine = routine;
-    this.scheduledActions = this.behavior.actions.map((action) => ({
+    const expandedActions = this.behavior.actions.flatMap((action) => {
+      if (action.period_selector !== "each_lesson") return [action];
+      const periods = [...new Set(routine.phases
+        .filter((phase) => phase.mode === "lesson" && Number.isInteger(phase.period_number))
+        .map((phase) => phase.period_number))];
+      return periods.map((periodNumber) => ({
+        ...action,
+        id: `${action.id}:period-${periodNumber}`,
+        period_number: periodNumber,
+      }));
+    });
+    this.scheduledActions = expandedActions.map((action) => ({
       action,
       due_at: actionDueAt(action, routine),
     }));
@@ -176,6 +190,7 @@ export class DevelopmentActionRunner {
       for (const assignment of detail.exam_operation.invigilators ?? []) {
         if (assignment.status !== "offered") continue;
         const key = `${reaction.id}:${assignment.id}:${assignment.revision}`;
+        if (this.reactionRejected.has(key)) continue;
         const firstSeenAt = this.reactionFirstSeen.get(key) ?? new Date(now).getTime();
         this.reactionFirstSeen.set(key, firstSeenAt);
         if (new Date(now).getTime() - firstSeenAt < Number(reaction.delay_seconds) * 1_000) continue;
@@ -193,21 +208,46 @@ export class DevelopmentActionRunner {
         const actorDetail = await session.request(detailPath);
         const current = actorDetail?.exam_operation?.viewer_assignment;
         if (!current || current.id !== assignment.id || current.status !== "offered") continue;
-        await session.request(`${detailPath}sitting/invigilators/${encodeURIComponent(current.id)}/response/`, {
-          method: "POST",
-          body: {
-            command_id: deterministicUuid(`${schoolId}:${reaction.id}:${current.id}:${current.revision}:${reaction.decision}`),
-            expected_revision: current.revision,
-            decision: reaction.decision,
-            note: reaction.note,
-          },
-        });
+        try {
+          await session.request(`${detailPath}sitting/invigilators/${encodeURIComponent(current.id)}/response/`, {
+            method: "POST",
+            body: {
+              command_id: deterministicUuid(`${schoolId}:${reaction.id}:${current.id}:${current.revision}:${reaction.decision}`),
+              expected_revision: current.revision,
+              decision: reaction.decision,
+              note: reaction.note,
+            },
+          });
+        } catch (error) {
+          const status = Number(error?.status ?? 0);
+          if (status < 400 || status >= 500) throw error;
+          this.reactionRejected.add(key);
+          const failureKey = `${key}:${safeMessage(error)}`;
+          if (!this.reactionFailureReported.has(failureKey)) {
+            this.reactionFailureReported.add(failureKey);
+            this.onActivity(activity({
+              action: reaction,
+              kind: "issue",
+              title: `${assignment.name}'s invigilation offer needs reissue`,
+              detail: `${safeMessage(error)} The stale offer was left unchanged and does not block later valid offers.`,
+              state: "issue",
+              target_path: `/areas/assessments/manage?assessment=${encodeURIComponent(assessment.id)}`,
+            }));
+          }
+          continue;
+        }
+        const reflectedDetail = await this.sessions.admin.request(detailPath);
+        const reflected = (reflectedDetail?.exam_operation?.invigilators ?? [])
+          .find((item) => item.id === current.id);
+        if (!reflected || reflected.status !== reaction.decision) {
+          throw new Error("The invigilation response did not converge in the administrator's assessment workspace.");
+        }
         return activity({
           action: reaction,
           kind: "assessment",
           title: `${assignment.name} accepted the invigilation duty`,
           detail: "The synthetic staff agent received the routed Requests item and responded through the same assessment command and authority checks used by a real staff member.",
-          target_path: `/teacher/assessments?assessment=${encodeURIComponent(assessment.id)}`,
+          target_path: `/areas/assessments/assigned?assessment=${encodeURIComponent(assessment.id)}`,
         });
       }
     }
@@ -237,19 +277,25 @@ export class DevelopmentActionRunner {
         ...(recipient.student_id ? { student_id: recipient.student_id } : {}),
       },
     });
-    await this.sessions.staff.request(`/api/v1/chat/conversations/${encodeURIComponent(conversation.id)}/messages/`, {
+    const body = `Development rehearsal: today's Cambridge class update is ready for ${recipient.name}.`;
+    const sent = await this.sessions.staff.request(`/api/v1/chat/conversations/${encodeURIComponent(conversation.id)}/messages/`, {
       method: "POST",
       body: {
-        body: `Development rehearsal: today's Cambridge class update is ready for ${recipient.name}.`,
+        body,
         client_id: deterministicUuid(`${this.scope}:${actionDefinition.id}:message`),
       },
     });
+    const reflected = await this.sessions.staff.request(`/api/v1/chat/conversations/${encodeURIComponent(conversation.id)}/messages/`);
+    const reflectedMessage = (reflected?.results ?? []).find((item) => item.id === sent?.id);
+    if (!reflectedMessage || reflectedMessage.body !== body || reflectedMessage.is_mine !== true) {
+      throw new Error("The message command did not converge in the teacher's conversation timeline.");
+    }
     return activity({
       action: actionDefinition,
       kind: "message",
       title: `Demo teacher messaged ${recipient.name}`,
       detail: "Recorded through the normal school conversation API; the regular chat screen receives its live event.",
-      target_path: `/teacher/messages?conversation=${encodeURIComponent(conversation.id)}`,
+      target_path: `/areas/messages/conversations?conversation=${encodeURIComponent(conversation.id)}`,
     });
   }
 
@@ -276,13 +322,20 @@ export class DevelopmentActionRunner {
         idempotency_key: deterministicUuid(`${this.scope}:${actionDefinition.id}:publish`),
       },
     });
+    const reflected = await this.sessions.admin.request(`/api/v1/notices/${encodeURIComponent(published.id)}?portal=principal`);
+    if (
+      reflected?.status !== "published"
+      || Number(reflected?.metrics?.recipients) !== Number(published.recipient_count)
+    ) {
+      throw new Error("The published notice did not converge in the principal's notice workspace.");
+    }
     this.noticeId = published.id;
     return activity({
       action: actionDefinition,
       kind: "notice",
       title: "Demo principal published an acknowledgement",
       detail: `${published.recipient_count ?? 0} fixture recipients were resolved by the real notice domain.`,
-      target_path: `/principal/notices/${published.id}`,
+      target_path: `/areas/messages/updates/${published.id}`,
     });
   }
 
@@ -292,11 +345,26 @@ export class DevelopmentActionRunner {
     const notice = list?.results?.find((item) => item.id === this.noticeId)
       ?? list?.results?.find((item) => item.title === expectedTitle);
     if (!notice) throw new Error("The demo guardian has no matching acknowledgement notice.");
+    if (notice.responded_at) {
+      const reflected = await this.sessions.admin.request(`/api/v1/notices/${encodeURIComponent(notice.id)}?portal=principal`);
+      const recipient = (reflected?.recipients ?? []).find((item) => item.id === notice.recipient_id);
+      if (!recipient?.responded_at || Number(reflected?.metrics?.responded) < 1) {
+        throw new Error("The retained family response did not converge in the principal's notice workspace.");
+      }
+      return activity({
+        action: actionDefinition,
+        kind: "notice",
+        title: "Demo family acknowledgement already recorded",
+        detail: "The existing fixture response remains visible in the principal notice screen; no duplicate response was created.",
+        state: "expected",
+        target_path: `/areas/messages/updates/${notice.id}`,
+      });
+    }
     const opened = await this.sessions.parent.request(`/api/v1/notices/${encodeURIComponent(notice.id)}/open`, {
       method: "POST",
       body: { ...(notice.student_id ? { student_id: notice.student_id } : {}) },
     });
-    await this.sessions.parent.request(`/api/v1/notices/${encodeURIComponent(notice.id)}/respond`, {
+    const response = await this.sessions.parent.request(`/api/v1/notices/${encodeURIComponent(notice.id)}/respond`, {
       method: "POST",
       body: {
         expected_revision: opened.revision,
@@ -305,12 +373,17 @@ export class DevelopmentActionRunner {
         ...(notice.student_id ? { student_id: notice.student_id } : {}),
       },
     });
+    const reflected = await this.sessions.admin.request(`/api/v1/notices/${encodeURIComponent(notice.id)}?portal=principal`);
+    const recipient = (reflected?.recipients ?? []).find((item) => item.id === response?.recipient_id);
+    if (!recipient?.responded_at || Number(reflected?.metrics?.responded) < 1) {
+      throw new Error("The family response did not converge in the principal's notice workspace.");
+    }
     return activity({
       action: actionDefinition,
       kind: "notice",
       title: "Demo family acknowledged the campus update",
       detail: "The principal notice screen now reflects a response recorded through the normal family workflow.",
-      target_path: `/principal/notices/${notice.id}`,
+      target_path: `/areas/messages/updates/${notice.id}`,
     });
   }
 
@@ -325,7 +398,7 @@ export class DevelopmentActionRunner {
       title: "Attendance rehearsal skipped by configuration",
       detail: "Academic attendance is disabled in the institution's effective Operating rule.",
       state: "expected",
-      target_path: `/principal/attendance?date=${today}`,
+      target_path: `/areas/attendance/coordination?date=${today}`,
     });
   }
 
@@ -353,73 +426,83 @@ export class DevelopmentActionRunner {
         title: "Attendance rehearsal skipped safely",
         detail: "No open scheduled subject register with an identified assigned teacher exists in this active timetable period.",
         state: "expected",
-        target_path: `/principal/attendance?date=${today}`,
+        target_path: `/areas/attendance/coordination?date=${today}`,
       });
     }
-    let screen = null;
-    let actor = null;
-    let selected = null;
+    const submitted = [];
+    const failures = [];
     for (const candidate of candidates) {
-      const currentActor = await this.actorSession({
-        username: candidate.scheduled_teacher_username,
-        userId: candidate.scheduled_teacher_id,
-        schoolId: this.setup.school.id,
-      });
-      const current = await currentActor.request(`/api/v1/attendance-model/sessions/${encodeURIComponent(candidate.session_id)}`);
-      const untouched = (current?.roster ?? []).every((student) => !student.status);
-      if (
-        current?.availability?.can_mark === true
-        && current?.register?.state === "draft"
-        && current?.register?.finalization_source !== "manual"
-        && untouched
-        && current.roster.length
-      ) {
-        screen = current;
-        actor = currentActor;
-        selected = candidate;
-        break;
+      try {
+        const actor = await this.actorSession({
+          username: candidate.scheduled_teacher_username,
+          userId: candidate.scheduled_teacher_id,
+          schoolId: this.setup.school.id,
+        });
+        const screen = await actor.request(`/api/v1/attendance-model/sessions/${encodeURIComponent(candidate.session_id)}`);
+        const untouched = (screen?.roster ?? []).every((student) => !student.status);
+        if (
+          screen?.availability?.can_mark !== true
+          || screen?.register?.state !== "draft"
+          || screen?.register?.finalization_source === "manual"
+          || !untouched
+          || !screen.roster.length
+        ) continue;
+        const records = screen.roster.map((student) => ({
+          student_id: student.id,
+          status: attendanceStatus(student.id, this.behavior.attendance_ratios),
+          remarks: "",
+        }));
+        await actor.request(`/api/v1/attendance-model/sessions/${encodeURIComponent(candidate.session_id)}/submit`, {
+          method: "POST",
+          headers: { "idempotency-key": `campus-lab-session-${today}-${candidate.session_id}` },
+          body: {
+            expected_revision: Number(screen.register.revision ?? 0),
+            reason: "Development-only Cambridge fixture rehearsal.",
+            records,
+          },
+        });
+        submitted.push({ candidate, screen, records });
+      } catch (error) {
+        failures.push(`${candidate.assigned_teachers?.[0] ?? "Assigned teacher"}: ${safeMessage(error)}`);
       }
     }
-    if (!screen || !actor || !selected) {
+    if (!submitted.length && failures.length) throw new Error(failures.join("; "));
+    if (!submitted.length) {
       return activity({
         action: actionDefinition,
         kind: "attendance",
         title: "Attendance rehearsal left existing work unchanged",
         detail: "Scheduled subject registers were closed, already contained decisions, or required a human workflow.",
         state: "expected",
-        target_path: `/principal/attendance?date=${today}`,
+        target_path: `/areas/attendance/coordination?date=${today}`,
       });
     }
-    const records = screen.roster.map((student) => ({
-      student_id: student.id,
-      status: attendanceStatus(student.id, this.behavior.attendance_ratios),
-      remarks: "",
-    }));
-    await actor.request(`/api/v1/attendance-model/sessions/${encodeURIComponent(selected.session_id)}/submit`, {
-      method: "POST",
-      headers: { "idempotency-key": `campus-lab-session-${today}-${selected.session_id}` },
-      body: {
-        expected_revision: Number(screen.register.revision ?? 0),
-        reason: "Development-only Cambridge fixture rehearsal.",
-        records,
-      },
-    });
     const reflectedWorkspace = await this.sessions.admin.request(`/api/v1/attendance-model/workspace?date=${encodeURIComponent(today)}`);
-    const reflected = (reflectedWorkspace?.registers ?? []).find((item) => item.session_id === selected.session_id);
-    if (
-      !reflected
-      || !["submitted", "locked"].includes(reflected.submission_status)
-      || Number(reflected.marked_count) !== records.length
-      || Number(reflected.student_count) !== records.length
-    ) {
-      throw new Error("The scheduled attendance command did not converge in the operator's authoritative register workspace.");
+    for (const result of submitted) {
+      const reflected = (reflectedWorkspace?.registers ?? []).find((item) => item.session_id === result.candidate.session_id);
+      if (
+        !reflected
+        || !["submitted", "locked"].includes(reflected.submission_status)
+        || Number(reflected.marked_count) !== result.records.length
+        || Number(reflected.student_count) !== result.records.length
+      ) {
+        throw new Error("A scheduled attendance command did not converge in the operator's authoritative register workspace.");
+      }
     }
+    const first = submitted[0];
+    const totalRecords = submitted.reduce((sum, result) => sum + result.records.length, 0);
+    const partial = failures.length > 0;
     return activity({
       action: actionDefinition,
       kind: "attendance",
-      title: `${selected.assigned_teachers?.[0] ?? "Assigned teacher"} submitted ${screen.class.name} · ${screen.session.subject_name} attendance`,
-      detail: `${records.length} dummy student decisions were recorded in the same scheduled subject register shown to campus operators.`,
-      target_path: `/principal/attendance?session_id=${selected.session_id}&date=${today}`,
+      title: submitted.length === 1
+        ? `${first.candidate.assigned_teachers?.[0] ?? "Assigned teacher"} submitted ${first.screen.class.name} · ${first.screen.session.subject_name} attendance`
+        : `${submitted.length} assigned teachers submitted Period ${actionDefinition.period_number} attendance`,
+      detail: `${totalRecords} dummy student decisions were recorded across ${submitted.length} scheduled subject register${submitted.length === 1 ? "" : "s"}.${partial ? ` ${failures.length} register${failures.length === 1 ? "" : "s"} still need review.` : ""}`,
+      state: partial ? "issue" : "recorded",
+      target_path: submitted.length === 1
+        ? `/areas/attendance/coordination?session_id=${first.candidate.session_id}&date=${today}`
+        : `/areas/attendance/coordination?date=${today}`,
     });
   }
 
@@ -434,7 +517,7 @@ export class DevelopmentActionRunner {
         title: "Attendance rehearsal skipped safely",
         detail: "No current-day unsubmitted daily register is assigned and open for the configured demo teacher.",
         state: "expected",
-        target_path: `/principal/attendance?date=${today}`,
+        target_path: `/areas/attendance/coordination?date=${today}`,
       });
     }
     let screen = null;
@@ -459,7 +542,7 @@ export class DevelopmentActionRunner {
         title: "Attendance rehearsal left existing work unchanged",
         detail: "Daily registers were closed, already contained decisions, or required a human workflow.",
         state: "expected",
-        target_path: `/principal/attendance?date=${today}`,
+        target_path: `/areas/attendance/coordination?date=${today}`,
       });
     }
     const records = screen.roster.map((student) => ({
@@ -478,12 +561,19 @@ export class DevelopmentActionRunner {
         records,
       },
     });
+    const reflected = await this.sessions.staff.request(`/api/v1/screens/teacher/attendance/?class_section_id=${encodeURIComponent(screen.class.id)}&date=${encodeURIComponent(today)}`);
+    if (
+      !["submitted", "locked"].includes(reflected?.register?.state)
+      || (reflected?.roster ?? []).filter((student) => student.status).length !== records.length
+    ) {
+      throw new Error("The daily attendance command did not converge in the teacher's authoritative register screen.");
+    }
     return activity({
       action: actionDefinition,
       kind: "attendance",
       title: `Demo teacher submitted ${screen.class.name} daily attendance`,
       detail: `${records.length} dummy student decisions were recorded in the configured daily class register.`,
-      target_path: `/principal/attendance?class_section_id=${screen.class.id}&date=${today}`,
+      target_path: `/areas/attendance/coordination?class_section_id=${screen.class.id}&date=${today}`,
     });
   }
 }

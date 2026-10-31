@@ -89,14 +89,22 @@ export function assignmentDetail(item: RoleAssignment, history = false) {
 }
 
 export function assignmentLink(assignment: RoleAssignment, portal: "principal" | "teacher") {
-  if (assignment.context_kind === "event") return `/${portal}/events/${assignment.scope_id}`;
-  if (assignment.context_kind === "assessment") return `/${portal}/assessments?assessment=${assignment.scope_id}`;
-  if (assignment.context_kind === "trip") return portal === "principal" ? "/principal/departure" : "/teacher/transport";
+  if (assignment.context_kind === "event") {
+    const surface = portal === "principal" ? "manage" : "assigned";
+    return `/areas/events/${surface}/${encodeURIComponent(assignment.scope_id)}`;
+  }
+  if (assignment.context_kind === "assessment") {
+    const surface = portal === "principal" ? "manage" : "assigned";
+    return `/areas/assessments/${surface}?assessment=${encodeURIComponent(assignment.scope_id)}`;
+  }
+  if (assignment.context_kind === "trip") return portal === "principal" ? "/areas/departure/manage" : "/areas/departure/operate";
   if (assignment.context_kind === "class") {
-    if (assignment.permissions.includes("attendance.view")) return `/${portal}/attendance?class_section_id=${assignment.scope_id}`;
-    if (assignment.permissions.includes("reports.comment")) return `/${portal}/report-cards`;
-    if (assignment.permissions.includes("events.view")) return `/${portal}/events`;
-    if (assignment.permissions.includes("timetable.view")) return `/${portal}/timetable`;
+    if (assignment.permissions.includes("attendance.view")) return `/areas/attendance/registers?class_section_id=${encodeURIComponent(assignment.scope_id)}`;
+    if (assignment.permissions.includes("reports.comment")) return "/areas/reports/remarks";
+    if (assignment.permissions.includes("events.view")) {
+      return portal === "principal" ? "/areas/events/manage" : "/areas/events/assigned";
+    }
+    if (assignment.permissions.includes("timetable.view")) return "/areas/timetable/schedule";
   }
   return null;
 }

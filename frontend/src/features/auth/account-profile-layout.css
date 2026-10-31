@@ -1,0 +1,83 @@
+.account-profile-page .account-profile-identity {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+  max-width: 720px;
+  margin: 0 auto 1.5rem;
+  padding: 1rem;
+  border-radius: var(--thatcampus-radius-feature);
+  background: var(--thatcampus-surface-row);
+  box-shadow: var(--thatcampus-shadow-card);
+}
+
+.account-profile-identity__avatar {
+  display: grid;
+  width: 3.5rem;
+  height: 3.5rem;
+  flex: 0 0 3.5rem;
+  place-items: center;
+  overflow: hidden;
+  border-radius: var(--thatcampus-radius-row);
+  background: var(--thatcampus-icon-mint);
+  color: var(--thatcampus-logo-green);
+  font-size: 1.125rem;
+  font-weight: 650;
+}
+
+.account-profile-identity__avatar img { width: 100%; height: 100%; object-fit: cover; }
+.account-profile-identity > div { display: grid; min-width: 0; gap: .25rem; overflow-wrap: anywhere; }
+.account-profile-identity strong { font-size: 1.125rem; line-height: 1.4; color: var(--thatcampus-ink); }
+.account-profile-identity__label,
+.account-profile-identity__email { font-size: .875rem; line-height: 1.5; color: var(--thatcampus-ink-secondary); }
+
+.account-profile-page .account-profile-appearance,
+.account-profile-page > .account-profile-group {
+  max-width: 720px;
+  margin: 0 auto 1rem;
+  padding: 1rem;
+  border: 0;
+  border-radius: var(--thatcampus-radius-card);
+  background: var(--thatcampus-surface-row);
+}
+
+.account-profile-appearance .appearance-control { width: 100%; margin: 0; }
+.account-profile-appearance .appearance-control legend { font-size: 1.125rem; }
+.account-profile-appearance .appearance-control > p { margin: .5rem 0 1rem; }
+.account-profile-page > .account-profile-group .account-profile-row { min-height: 0; padding: 0 0 1rem; }
+.account-profile-page > .account-profile-group .account-profile-explainer { padding: 0; }
+.account-profile-page > .account-profile-group .account-memory__state { padding: .75rem 0 0; }
+.account-profile-page .account-profile-security {
+  margin-top: 1rem;
+  padding: 1rem;
+  border: 0;
+  border-radius: var(--thatcampus-radius-row);
+  background: var(--thatcampus-surface-row);
+  box-shadow: var(--thatcampus-shadow-card);
+}
+.account-profile-page .account-profile-switch { background-color: var(--thatcampus-ink-muted); }
+.account-profile-page .account-profile-switch > span { background: var(--thatcampus-surface); }
+.account-profile-page .account-profile-switch[aria-checked="true"] { background-color: var(--thatcampus-action); }
+.account-profile-page .account-profile-switch[aria-checked="true"] > span { background: var(--thatcampus-on-action); }
+
+.account-name__heading { display: flex; align-items: flex-start; justify-content: space-between; gap: 1rem; }
+.account-name__heading > div { min-width: 0; }
+.account-name h2 { margin: 0; font-size: 1.125rem; line-height: 1.4; }
+.account-name__heading p, .account-name form > small { margin: .25rem 0 0; color: var(--thatcampus-ink-secondary); font-size: .875rem; line-height: 1.5; }
+.account-name__heading > button { flex: 0 0 auto; margin: 0; }
+.account-name form { display: grid; gap: .5rem; margin-top: 1rem; }
+.account-name label { color: var(--thatcampus-ink); font-size: .875rem; font-weight: 600; }
+.account-name input { box-sizing: border-box; width: 100%; min-width: 0; min-height: 48px; padding: .75rem 1rem; border: 1px solid var(--thatcampus-border); border-radius: var(--thatcampus-radius-control); color: var(--thatcampus-ink); background: var(--thatcampus-surface); font: inherit; }
+.account-name input:focus-visible { outline: 2px solid var(--thatcampus-action); outline-offset: 2px; }
+.account-name__actions { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: .75rem; }
+.account-name__actions > button { margin: .5rem 0 0; }
+.account-name__status { margin: .75rem 0 0; color: var(--thatcampus-positive); font-size: .875rem; }
+.account-name__error { color: var(--thatcampus-danger); font-size: .875rem; }
+.account-name__error p { margin: .5rem 0; }
+.account-name__error button { min-height: 44px; padding: 0; border: 0; color: var(--thatcampus-action); background: transparent; font: inherit; text-decoration: underline; }
+
+@media (forced-colors: active) {
+  .account-profile-page .account-profile-identity,
+  .account-profile-page .account-profile-appearance,
+  .account-profile-page > .account-profile-group,
+  .account-profile-page .account-profile-security { outline: 1px solid CanvasText; }
+}

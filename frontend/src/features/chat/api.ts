@@ -19,6 +19,7 @@ export interface ChatConversation {
   participant_role: "member" | "moderator";
   member_count: number;
   can_post: boolean;
+  posting_restriction?: string;
 }
 
 export type ChatGroupType = "student_group" | "parent_group" | "activity" | "staff" | "child_support" | "announcement";
@@ -34,7 +35,7 @@ export interface ChatPolicy {
   communication_start: string;
   communication_end: string;
   retention_days: number;
-  privacy_notice_version: string;
+  timezone: string;
   revision: number;
   can_manage: boolean;
 }
@@ -171,15 +172,19 @@ export function getChatConversations() {
   return apiFetch<{ results: ChatConversation[] }>("/api/v1/chat/conversations/");
 }
 
+export function getChatConversationDirectory(input: { search?: string; cursor?: string; studentId?: string }) {
+  return apiFetch<{ results: ChatConversation[]; has_more: boolean; next_cursor: string | null }>(withQuery("/api/v1/chat/conversations/", { pagination: "cursor", q: input.search, cursor: input.cursor, student_id: input.studentId }));
+}
+
 export function getChatConversation(conversationId: string, studentId?: string) {
   return apiFetch<ChatConversation>(
     withQuery(`/api/v1/chat/conversations/${conversationId}/`, { student_id: studentId }),
   );
 }
 
-export function getChatRecipients(studentId?: string) {
+export function getChatRecipients(studentId?: string, purpose: "direct" | "group" = "direct") {
   return apiFetch<{ results: ChatRecipient[] }>(
-    withQuery("/api/v1/chat/recipients/", { student_id: studentId }),
+    withQuery("/api/v1/chat/recipients/", { student_id: studentId, purpose }),
   );
 }
 
@@ -190,10 +195,13 @@ export function createChatConversation(recipientId: string, schoolId: string, st
   });
 }
 
-export function getChatMessages(conversationId: string, before?: string) {
-  return apiFetch<{ results: ChatMessage[]; has_more: boolean }>(
-    withQuery(`/api/v1/chat/conversations/${conversationId}/messages/`, { before }),
-  );
+export interface ChatMessagePage { results: ChatMessage[]; has_more: boolean; next_cursor?: string | null; boundary_cursor?: string | null; reached_through?: boolean }
+
+/** New callers use the opaque stable cursor. The backend retains `before` for
+ * older clients; this UI never reconstructs a cursor from rounded timestamps. */
+export function getChatMessages(conversationId: string, cursor?: string, options?: { throughCursor?: string; signal?: AbortSignal }) {
+  const path = withQuery(`/api/v1/chat/conversations/${conversationId}/messages/`, { cursor, through_cursor: options?.throughCursor });
+  return options?.signal ? apiFetch<ChatMessagePage>(path, { signal: options.signal }) : apiFetch<ChatMessagePage>(path);
 }
 
 export function sendChatMessage(
@@ -234,10 +242,6 @@ export function createChatGroup(input: { title: string; group_type: ChatGroupTyp
   return apiFetch<{ id: string }>("/api/v1/chat/groups/", { method: "POST", body: JSON.stringify(input) });
 }
 export function getChatPolicy() { return apiFetch<ChatPolicy>("/api/v1/chat/policy/"); }
-export function updateChatPolicy(input: Partial<Omit<ChatPolicy, "school_id" | "can_manage" | "privacy_notice_version" | "revision">> & { expected_revision?: number }) {
-  return apiFetch<ChatPolicy>("/api/v1/chat/policy/", { method: "PATCH", body: JSON.stringify(input) });
-}
-
 export function editChatMessage(conversationId: string, messageId: string, body: string) {
   return apiFetch<{ id: string; edited: boolean }>(`/api/v1/chat/conversations/${conversationId}/messages/${messageId}/`, {
     method: "PATCH", body: JSON.stringify({ body }),

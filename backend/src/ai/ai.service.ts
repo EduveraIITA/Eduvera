@@ -40,10 +40,12 @@ export class AiService {
       threshold,
       assumption: "Each projected absence is treated as one additional marked school day; the official timetable may differ.",
     };
+    const relationshipScope = student.user_id === user.id ? "self" : "dependent";
+    const attendanceUrl = `/areas/attendance/records?scope=${relationshipScope}&student_id=${encodeURIComponent(student.id)}`;
     const sources = [
-      { id: `attendance-term:${enrollment.term_id}:${student.id}`, label: `Daily attendance · ${enrollment.term_name}`, url: "/student/attendance" },
-      { id: `attendance-policy:${policy?.id ?? enrollment.term_id}`, label: policy?.name ?? "Term attendance requirement", url: "/student/attendance/policy" },
-      ...subjects.map((item) => ({ id: `subject-attendance:${item.id}`, label: `${item.subject.name} attendance`, url: `/student/attendance/subjects/${item.subject.id}` })),
+      { id: `attendance-term:${enrollment.term_id}:${student.id}`, label: `Daily attendance · ${enrollment.term_name}`, url: attendanceUrl },
+      { id: `attendance-policy:${policy?.id ?? enrollment.term_id}`, label: policy?.name ?? "Term attendance requirement", url: `${attendanceUrl}&view=eligibility` },
+      ...subjects.map((item) => ({ id: `subject-attendance:${item.id}`, label: `${item.subject.name} attendance`, url: `${attendanceUrl}&subject_id=${encodeURIComponent(item.subject.id)}` })),
     ];
     const context = {
       attendance_summary: summary,

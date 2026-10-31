@@ -1,0 +1,31 @@
+.campus-layer-choice { min-width: 0; max-width: 100%; }
+.campus-layer-choice select { min-height: 44px; max-width: 100%; width: auto; min-width: 0; padding: 10px 12px; border: 1px solid var(--thatcampus-border); border-radius: var(--thatcampus-radius-control); color: var(--thatcampus-ink); background: var(--thatcampus-surface); font: inherit; font-size: 14px; }
+.campus-layer-message { margin: 0; color: var(--thatcampus-ink-secondary); font-size: 14px; line-height: 1.5; overflow-wrap: anywhere; }
+.campus-layer-message button { min-height: 44px; margin-left: 8px; padding: 8px; background: transparent; color: var(--thatcampus-action); font: inherit; }
+.campus-layer-records { min-width: 0; color: var(--thatcampus-ink); }
+.campus-layer-records > summary, .campus-asset-status summary { min-height: 44px; align-content: center; cursor: pointer; font-size: 14px; font-weight: 600; }
+.campus-layer-records > p, .campus-asset-status p { margin: 0; color: var(--thatcampus-ink-secondary); font-size: 14px; line-height: 1.5; overflow-wrap: anywhere; }
+.campus-layer-records ul { list-style: none; display: grid; margin: 8px 0; padding: 0; }
+.campus-layer-records li { min-width: 0; border-bottom: 1px solid var(--thatcampus-border); }
+.campus-layer-records li > a { display: flex; align-items: center; justify-content: space-between; gap: 12px; min-height: 44px; padding: 12px 0; color: var(--thatcampus-ink); text-decoration: none; }
+.campus-layer-records li span, .campus-asset-repair-link span { display: grid; gap: 4px; min-width: 0; }
+.campus-layer-records li strong { overflow-wrap: anywhere; font-size: 14px; }
+.campus-layer-records small, .campus-asset-repair-link small { color: var(--thatcampus-ink-secondary); font-size: 12px; line-height: 1.5; overflow-wrap: anywhere; }
+.campus-layer-records svg, .campus-asset-repair-link svg { flex: 0 0 auto; }
+.campus-layer-records nav { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; }
+.campus-asset-status { display: grid; gap: 12px; min-width: 0; border-top: 1px solid var(--thatcampus-border); padding-top: 12px; }
+.campus-asset-status h3 { margin: 0; font-size: 16px; }
+.campus-asset-status dl { display: grid; gap: 12px; margin: 0; }
+.campus-asset-status dl > div { display: grid; gap: 4px; min-width: 0; }
+.campus-asset-status dt { color: var(--thatcampus-ink-secondary); font-size: 12px; }
+.campus-asset-status dd { margin: 0; font-size: 14px; font-weight: 600; overflow-wrap: anywhere; }
+.campus-asset-actions { display: flex; flex-wrap: wrap; gap: 8px 16px; align-items: center; }
+.campus-asset-repair-link { display: flex; align-items: center; gap: 8px; min-height: 44px; color: var(--thatcampus-action); font-size: 14px; text-decoration: none; }
+.campus-layer-choice select:focus-visible, .campus-layer-records :is(summary, a, button):focus-visible, .campus-asset-status :is(summary, a):focus-visible { outline: 3px solid var(--thatcampus-action); outline-offset: 3px; }
+.scene-evidence-marker[data-tone="fault"] .scene-evidence-marker__background { fill: var(--thatcampus-danger-soft); stroke: var(--thatcampus-danger); }
+.scene-evidence-marker[data-tone="fault"] :is(.scene-evidence-marker__symbol, .scene-evidence-marker__count) { color: var(--thatcampus-danger); stroke: var(--thatcampus-danger); }
+.scene-evidence-marker[data-tone="fault"] .scene-evidence-marker__count { fill: var(--thatcampus-danger); stroke: none; }
+.scene-evidence-marker[data-tone="attention"] .scene-evidence-marker__background { fill: var(--thatcampus-warning-soft); stroke: var(--thatcampus-warning); }
+.scene-evidence-marker[data-tone="attention"] .scene-evidence-marker__symbol { stroke: var(--thatcampus-warning); }
+@media (min-width: 768px) { .campus-asset-status dl { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+@media (forced-colors: active) { .scene-evidence-marker[data-tone] .scene-evidence-marker__background { fill: Canvas; stroke: CanvasText; } .scene-evidence-marker[data-tone] :is(.scene-evidence-marker__symbol, .scene-evidence-marker__count) { stroke: CanvasText; fill: CanvasText; } }

@@ -1,6 +1,5 @@
-import { MoreContent } from "../../features/more/MorePage";
-import { StudentShell } from "./StudentShell";
+import { Navigate } from "react-router-dom";
 
 export function StudentModulesPage() {
-  return <StudentShell activeNav="launcher" pageTitle="More"><MoreContent portal="student" /></StudentShell>;
+  return <Navigate to="/more" replace />;
 }

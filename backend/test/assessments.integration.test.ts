@@ -10,6 +10,8 @@ import type { AuthUser } from "../src/common/request.js";
 import { DatabaseService } from "../src/database/database.service.js";
 import { SchoolEventService } from "../src/school/school-event.service.js";
 import { requireIsolatedTestDatabaseUrl } from "./test-database.js";
+import { ownedParticipationTestServices } from './owned-participation.test-support.js';
+import { linkFixtureStaffIdentity } from './fixture-human-identity.test-support.js';
 
 const isolated=process.env.TEST_DATABASE_ISOLATED==="true";
 const databaseUrl=isolated?requireIsolatedTestDatabaseUrl(process.env.DATABASE_URL):"postgresql://invalid.invalid/unused";
@@ -25,7 +27,10 @@ suite("offline assessment and result lifecycle",()=>{
   beforeAll(async()=>{
     database=new DatabaseService();const events=new SchoolEventService(database);const bridge=new AssessmentModelBridgeService({recordAcceptedChange:vi.fn().mockResolvedValue({})} as unknown as CampusModelCorePort);
     const invigilationOffers={publishOffer:vi.fn().mockResolvedValue({}),cancelOpenOffer:vi.fn().mockResolvedValue(null),retainedResponseCommand:vi.fn().mockResolvedValue(null),currentResponseBinding:vi.fn().mockImplementation((_transaction,input)=>Promise.resolve({binding_id:randomUUID(),message_id:randomUUID(),correlation_id:randomUUID(),source_assignment_revision:input.assignment_revision,selected_user_id:input.selected_user_id,behaviour_version_id:randomUUID(),subscription_id:randomUUID(),response_due_at:new Date(Date.now()+3_600_000).toISOString(),expires_at:new Date(Date.now()+7_200_000).toISOString()})),recordResponse:vi.fn().mockResolvedValue({})} as unknown as AssessmentInvigilationOfferBridgeService;
-    examOperations=new ExamOperationsService(database,events,bridge,invigilationOffers);service=new AssessmentsService(database,events,examOperations);const suffix=randomUUID();
+    Object.assign(invigilationOffers,{invitationStatus:vi.fn().mockResolvedValue({state:'current',can_respond:true,message:'Current invitation',recovery:null,setup_href:'/areas/assessments/manage'})});
+    const participation=ownedParticipationTestServices(database);
+    examOperations=new ExamOperationsService(database,events,bridge,invigilationOffers,participation.bridge,participation.authorities,
+      participation.core,participation.core,participation.footprints,participation.planning);service=new AssessmentsService(database,events,examOperations,participation.core,participation.core);const suffix=randomUUID();
     await pool.query(`INSERT INTO institution_capability_packs(code,label,description,institution_kinds,cohort_label,learner_label,default_subject_names,requires_staff)
       VALUES('india_school_core','Indian school core','Test capability pack',ARRAY['school'],'Class','Student',ARRAY['English'],true) ON CONFLICT DO NOTHING`);
     const users=(await pool.query(`INSERT INTO users(username,email,password_hash,first_name,last_name,role) VALUES
@@ -36,6 +41,8 @@ suite("offline assessment and result lifecycle",()=>{
     const mappedUsers=users.map(user);
     admin=mappedUsers[0]!;examiner=mappedUsers[1]!;moderator=mappedUsers[2]!;guardian=mappedUsers[3]!;
     await pool.query("INSERT INTO school_memberships(user_id,school_id,role) VALUES($1,$5,'admin'),($2,$5,'staff'),($3,$5,'staff'),($4,$5,'guardian')",[admin.id,examiner.id,moderator.id,guardian.id,schoolId]);
+    for(const person of [admin,examiner,moderator]) await linkFixtureStaffIdentity(database,
+      {school_id:schoolId,user_id:person.id,owner_user_id:admin.id,teaching:person.id!==admin.id});
     const assessmentProfile=(await pool.query("INSERT INTO school_custom_roles(school_id,name,description,created_by) VALUES($1,'Assessment staff','Eligible for examiner and moderation assignments',$2) RETURNING id",[schoolId,admin.id])).rows[0].id;
     await pool.query(`INSERT INTO school_custom_role_duties(school_id,role_id,responsibility_type_id)
       SELECT $1,$2,id FROM staff_responsibility_types WHERE school_id=$1 AND code IN ('internal_examiner','exam_in_charge')`,[schoolId,assessmentProfile]);
@@ -52,42 +59,24 @@ suite("offline assessment and result lifecycle",()=>{
     await pool.query("INSERT INTO enrollments(student_id,class_section_id,term_id,roll_number,enrolled_on) VALUES($1,$2,$3,1,$4)",[studentId,classId,termId,day(yesterday)]);
     const campusId=(await pool.query("INSERT INTO institution_campuses(school_id,name,code,campus_type,is_primary,created_by,updated_by) VALUES($1,'Main campus','MAIN','main',true,$2,$2) RETURNING id",[schoolId,admin.id])).rows[0].id;
     spaceId=(await pool.query("INSERT INTO campus_spaces(school_id,campus_id,name,code,kind,capacity,created_by,updated_by) VALUES($1,$2,'Exam hall','EXAM-HALL','auditorium',50,$3,$3) RETURNING id",[schoolId,campusId,admin.id])).rows[0].id;
-    const parentId=(await pool.query("INSERT INTO parents(user_id,phone) VALUES($1,'9000000000') RETURNING id",[guardian.id])).rows[0].id;
+    const parentId=(await pool.query("INSERT INTO parents(user_id) VALUES($1) RETURNING id",[guardian.id])).rows[0].id;
     const guardianPerson=(await pool.query("INSERT INTO school_people(school_id,first_name,last_name) VALUES($1,'Guardian','One') RETURNING id",[schoolId])).rows[0].id;
     await pool.query("INSERT INTO guardian_school_profiles(school_id,guardian_id,person_id) VALUES($1,$2,$3)",[schoolId,parentId,guardianPerson]);
     await pool.query("INSERT INTO guardian_relationships(school_id,guardian_id,student_id,relationship,is_primary) VALUES($1,$2,$3,'guardian',true)",[schoolId,parentId,studentId]);
   });
 
   afterAll(async()=>{
-    if(schoolId){
-      const userIds=[admin?.id,examiner?.id,moderator?.id,guardian?.id].filter(Boolean);
-      await pool.query("DELETE FROM notifications WHERE recipient_id=ANY($1::uuid[])",[userIds]);
-      await pool.query("DELETE FROM event_outbox WHERE school_id=$1",[schoolId]);
-      for(const table of ["assessment_operation_audits","assessment_sitting_incidents","assessment_candidate_attendance","assessment_sitting_candidates","assessment_sitting_invigilators","assessment_sittings"]){
-        await pool.query(`DELETE FROM ${table} WHERE school_id=$1`,[schoolId]);
-      }
-      for(const table of ["assessment_publication_results","assessment_publications","assessment_evidence","assessment_result_revisions","assessment_results","assessment_staff_assignments","assessment_audits","assessments","assessment_cycles"]){
-        await pool.query(`DELETE FROM ${table} WHERE school_id=$1`,[schoolId]);
-      }
-      await pool.query("DELETE FROM guardian_relationships WHERE school_id=$1",[schoolId]);
-      await pool.query("DELETE FROM guardian_school_profiles WHERE school_id=$1",[schoolId]);
-      await pool.query("DELETE FROM enrollments WHERE student_id IN(SELECT id FROM students WHERE school_id=$1)",[schoolId]);
-      await pool.query("DELETE FROM students WHERE school_id=$1",[schoolId]);
-      await pool.query("DELETE FROM class_section_staff_assignments WHERE school_id=$1",[schoolId]);
-      await pool.query("DELETE FROM parents WHERE user_id=ANY($1::uuid[])",[userIds]);
-      await pool.query("DELETE FROM school_people WHERE school_id=$1",[schoolId]);
-      await pool.query("DELETE FROM school_custom_role_assignments WHERE school_id=$1",[schoolId]);
-      await pool.query("DELETE FROM school_custom_roles WHERE school_id=$1",[schoolId]);
-      await pool.query("DELETE FROM school_memberships WHERE school_id=$1",[schoolId]);
-      await pool.query("DELETE FROM campus_spaces WHERE school_id=$1",[schoolId]);
-      await pool.query("DELETE FROM institution_campuses WHERE school_id=$1",[schoolId]);
-      await pool.query("DELETE FROM subjects WHERE school_id=$1",[schoolId]);
-      await pool.query("DELETE FROM class_sections WHERE school_id=$1",[schoolId]);
-      await pool.query("DELETE FROM academic_terms WHERE school_id=$1",[schoolId]);
-      await pool.query("DELETE FROM schools WHERE id=$1",[schoolId]);
-      await pool.query("DELETE FROM users WHERE id=ANY($1::uuid[])",[userIds]);
-    }
+    // Unique disposable fixtures retain their accepted shared command and
+    // decision history. Never bypass append-only records/read projections.
     await database?.destroy();await pool.end();
+  });
+
+  it("rejects a class from another academic year before creating an assessment",async()=>{
+    const now=new Date();
+    const cycle=await service.createCycle(admin,schoolId,{term_id:termId,name:"Cohort boundary",code:"COHORT",starts_on:day(now),ends_on:day(new Date(now.getTime()+86400000))});
+    const future=(await pool.query("INSERT INTO class_sections(school_id,academic_year,grade,section) VALUES($1,'next','7','A') RETURNING id",[schoolId])).rows[0];
+    await expect(service.createAssessment(admin,schoolId,{cycle_id:cycle.id,class_section_id:future.id,subject_id:subjectId,title:"Cohort boundary check",assessment_kind:"assignment",maximum_marks:20,examiner_user_id:examiner.id,moderator_user_id:moderator.id})).rejects.toThrow(/academic year/);
+    expect((await pool.query("SELECT count(*)::int AS n FROM assessments WHERE school_id=$1 AND title='Cohort boundary check'",[schoolId])).rows[0].n).toBe(0);
   });
 
   it("keeps teacher-planned class tests inside assigned assessment scope and principal review",async()=>{

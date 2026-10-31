@@ -1,3 +1,4 @@
+import { executionNow } from "../campus-model-core/execution-time.runtime.js";
 import { BadRequestException, ConflictException, ForbiddenException, Injectable, NotFoundException } from "@nestjs/common";
 import { randomBytes } from "node:crypto";
 import { sql, type Kysely, type Transaction } from "kysely";
@@ -21,7 +22,7 @@ const roleInput = z.object({
 export async function accessRoleCatalogue(db: Db, schoolId: string) {
   return (await sql<any>`SELECT r.*,r.capability_permissions AS permissions,
     (SELECT count(*)::int FROM staff_role_bindings b WHERE b.school_id=r.school_id AND b.role_id=r.id
-      AND b.status IN ('active','offered') AND (b.ends_on IS NULL OR b.ends_on>=current_date)) AS assignment_count
+      AND b.status IN ('active','offered') AND (b.ends_on IS NULL OR b.ends_on>=campus_permission_date(${schoolId}::uuid))) AS assignment_count
     FROM staff_responsibility_types r WHERE r.school_id=${schoolId}::uuid
       AND r.context_kind IN ('institution','class','event','assessment','trip')
       AND cardinality(r.capability_permissions)>0
@@ -35,8 +36,8 @@ export async function staffRoleAssignments(db: Db, schoolId: string, userId?: st
     t.direction AS trip_direction,t.state AS trip_state,
     t.collector_assignment_status AS trip_assignment_status,
     (t.backup_collector_user_id=b.user_id AND t.assigned_collector_user_id IS DISTINCT FROM b.user_id) AS trip_is_backup,
-    CASE WHEN b.status='active' AND b.ends_on<current_date THEN 'expired'
-      WHEN b.status='active' AND b.starts_on>current_date THEN 'scheduled'
+    CASE WHEN b.status='active' AND b.ends_on<campus_permission_date(${schoolId}::uuid) THEN 'expired'
+      WHEN b.status='active' AND b.starts_on>campus_permission_date(${schoolId}::uuid) THEN 'scheduled'
       WHEN NOT b.role_active THEN 'disabled' ELSE b.status END AS display_status
     FROM staff_role_bindings b JOIN staff_profiles p ON p.school_id=b.school_id AND p.user_id=b.user_id
     LEFT JOIN subjects s ON s.id=b.subject_id
@@ -85,7 +86,7 @@ export class AccessRolesService {
         if (current.context_kind !== input.context_kind) throw new BadRequestException("Create a new role to change its scope.");
         const assignments = (await sql<{ user_id: string }>`SELECT user_id FROM staff_role_bindings
           WHERE school_id=${schoolId}::uuid AND role_id=${roleId}::uuid AND status IN ('active','offered')
-            AND (ends_on IS NULL OR ends_on>=current_date)`.execute(db)).rows;
+            AND (ends_on IS NULL OR ends_on>=campus_permission_date(${schoolId}::uuid))`.execute(db)).rows;
         if (current.revision !== input.expected_revision || assignments.length !== input.expected_assignment_count) {
           throw new ConflictException("This role or its assignments changed. Refresh and review the impact before saving.");
         }
@@ -182,7 +183,7 @@ export class AccessRolesService {
         if (!slot || (slot.role==="examiner" && role.capability_permissions.includes("assessments.moderate")) || (slot.role==="moderator" && role.capability_permissions.includes("assessments.mark"))) throw new BadRequestException("Keep examiner and reviewer access separate.");
         await sql`UPDATE assessment_staff_assignments SET access_role_id=${role.id}::uuid WHERE school_id=${schoolId}::uuid AND assessment_id=${input.source_id}::uuid AND user_id=${input.user_id}::uuid`.execute(db);
       }
-      await this.audit(db,user,schoolId,input.source_id,"staff.assignment.role_changed",{revision:Date.now(),before:current.role_id,after:role.id,source_kind:input.source_kind},[input.user_id]);
+      await this.audit(db,user,schoolId,input.source_id,"staff.assignment.role_changed",{revision:executionNow().getTime(),before:current.role_id,after:role.id,source_kind:input.source_kind},[input.user_id]);
       return {updated:true};
     });
   }

@@ -19,10 +19,21 @@ const data: ScheduleScreen = {
 const rehearsal: TimetableRehearsalIndicator = {
   label: "Simulated school day", status: "running", referenceDate: "2026-10-14",
   simulatedAt: "2026-10-14T09:10:00+05:30", phaseLabel: "Period 1", phaseMode: "lesson",
-  nextChangeAt: null, activeSlotIds: ["slot-1"], timeZone: "Asia/Kolkata", campusPath: "/principal/campus",
+  nextChangeAt: null, activeSlotIds: ["slot-1"], timeZone: "Asia/Kolkata", campusPath: "/more/virtual-campus",
 };
 
 describe("unified planner projections", () => {
+  it("uses selected-world theme values without changing a lesson's dates or identity", () => {
+    const period = effectivePeriodsForDate(data, "2026-10-14")[0]!;
+    expect(periodEvents([period], "2026-10-14", false)[0]).toMatchObject({
+      id: "period:slot-1:2026-10-14", start: "2026-10-14T09:00", end: "2026-10-14T09:45",
+      color: "var(--thatcampus-brand-soft)", contrastColor: "var(--thatcampus-ink)",
+      editable: false,
+    });
+    expect(periodEvents([period], "2026-10-14", true)[0]).toMatchObject({
+      color: "var(--thatcampus-brand-soft)", contrastColor: "var(--thatcampus-ink)", editable: false,
+    });
+  });
   it("keeps a stable Monday-first week around the selected date", () => {
     expect(plannerDates("2026-10-14", "week")).toEqual(["2026-10-12", "2026-10-13", "2026-10-14", "2026-10-15", "2026-10-16", "2026-10-17", "2026-10-18"]);
   });

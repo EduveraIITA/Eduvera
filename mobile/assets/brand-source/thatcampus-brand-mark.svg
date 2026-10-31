@@ -1,0 +1,12 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="448 192 640 640" role="img" aria-label="ThatCampus">
+  <style>
+    @media (forced-colors: active) { path { fill: CanvasText; } }
+  </style>
+
+  <title>ThatCampus — black feathers and yellow dot</title>
+  <!-- Static version of the original Assistant artwork for reduced motion. -->
+  <path d="M565 410 C589 410 605 419 619 438 L685 524 C695 538 694 551 688 562 C677 579 664 583 647 574 L533 505 C507 489 501 462 515 436 C524 419 543 410 565 410 Z" fill="#090909"/>
+  <path d="M768 273 C799 273 823 297 823 326 C823 335 820 352 818 365 L794 490 C790 508 782 517 768 517 C752 517 743 504 740 489 L716 365 C714 354 713 337 713 326 C713 297 737 273 768 273 Z" fill="#090909"/>
+  <path d="M971 410 C947 410 931 419 917 438 L851 524 C841 538 842 551 848 562 C859 579 872 583 889 574 L1003 505 C1029 489 1035 462 1021 436 C1012 419 993 410 971 410 Z" fill="#090909"/>
+  <circle cx="768" cy="657" r="83" fill="#fec106"/>
+</svg>

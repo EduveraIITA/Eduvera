@@ -1,11 +1,15 @@
+import { executionNow } from "../campus-model-core/execution-time.runtime.js";
 import { BadRequestException, ConflictException, ForbiddenException, Injectable, NotFoundException } from "@nestjs/common";
-import { createHash } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import { sql, type Kysely, type Transaction } from "kysely";
 import { z } from "zod";
 import type { AuthenticatedRequest, AuthUser } from "../common/request.js";
 import { DatabaseService } from "../database/database.service.js";
 import type { Database } from "../database/types.js";
 import { SchoolEventService } from "../school/school-event.service.js";
+import { findAcademicAttendanceDecision } from "../attendance/participation-continuity.js";
+import { FollowupModelBridgeService, followupCoordinationSummary, type FollowupModelReceipt } from "./followup-model-bridge.service.js";
+import type { PreparedDomainCommand } from "../campus-model-core/domain-command-gateway.port.js";
 
 type Db = Kysely<Database> | Transaction<Database>;
 const contextSchema = z.enum(["staff", "guardian"]);
@@ -19,14 +23,15 @@ const entrySchema = z.object({ context: contextSchema, kind: z.enum(["guardian_r
   expected_revision: z.number().int().positive(), idempotency_key: z.string().uuid() }).strict();
 export { createSchema, entrySchema };
 interface Followup {
-  id: string; school_id: string; student_id: string; attendance_record_id: string; attendance_date: string;
+  id: string; school_id: string; student_id: string; attendance_record_id: string | null; participation_entry_id: string | null; attendance_date: string;
   source_revision: number; question: string; owner_user_id: string; due_at: Date; state: string; revision: number;
   outcome: string | null; resolved_at: Date | null; created_at: Date; updated_at: Date;
 }
 
 @Injectable()
 export class CoordinationService {
-  constructor(private readonly db: DatabaseService, private readonly events: SchoolEventService) {}
+  constructor(private readonly db: DatabaseService, private readonly events: SchoolEventService,
+    private readonly model: FollowupModelBridgeService) {}
 
   async list(user: AuthUser, query: Record<string, string>) {
     const input = z.object({ context: contextSchema, student_id: z.string().uuid().optional(),
@@ -91,20 +96,22 @@ export class CoordinationService {
     const canResolve = context === "staff" && (row.owner_user_id === user.id || Boolean(await this.db.selectFrom("school_memberships")
       .select("id").where("school_id", "=", row.school_id).where("user_id", "=", user.id)
       .where("role", "=", "admin").where("is_active", "=", true).executeTakeFirst()));
-    return { ...row, entries, guardians, can_resolve: canResolve };
+    const receipt = (await sql<{ model_receipt: FollowupModelReceipt | null }>`SELECT model_receipt FROM coordination_commands
+      WHERE followup_id=${row.id}::uuid AND result_revision=${row.revision} ORDER BY created_at DESC LIMIT 1`.execute(this.db)).rows[0]?.model_receipt ?? null;
+    return { ...row, entries, guardians, can_resolve: canResolve, coordination: followupCoordinationSummary(receipt) };
   }
 
   private async priorCommand(db: Db, actor: string, key: string, hash: string) {
     await sql`SELECT pg_advisory_xact_lock(hashtextextended(${`coordination:${actor}:${key}`},0))`.execute(db);
-    const prior = (await sql<{ request_hash: string; followup_id: string; result_revision: number }>`SELECT * FROM coordination_commands
+    const prior = (await sql<{ request_hash: string; followup_id: string; result_revision: number; model_receipt: FollowupModelReceipt | null }>`SELECT * FROM coordination_commands
       WHERE actor_id=${actor}::uuid AND idempotency_key=${key}::uuid`.execute(db)).rows[0];
     if (prior && prior.request_hash !== hash) throw new ConflictException("This operation ID was already used with different details.");
-    return prior ? { id: prior.followup_id, revision: prior.result_revision } : null;
+    return prior ? { id: prior.followup_id, revision: prior.result_revision, coordination: followupCoordinationSummary(prior.model_receipt) } : null;
   }
 
-  private async commitEvent(db: Db, row: Followup, req: AuthenticatedRequest, key: string, hash: string, kind: string) {
-    await sql`INSERT INTO coordination_commands(actor_id,idempotency_key,request_hash,followup_id,result_revision)
-      VALUES(${req.authUser.id}::uuid,${key}::uuid,${hash},${row.id}::uuid,${row.revision})`.execute(db);
+  private async commitEvent(db: Transaction<Database>, row: Followup, req: AuthenticatedRequest, key: string, hash: string, kind: string,
+    prepared: PreparedDomainCommand, previous: FollowupModelReceipt | null, responseRecipient: string | null = null,
+    channel = "app", observedAt: string | null = null) {
     await db.insertInto("audit_events").values({ action: `coordination.followup.${kind}`, actor_id: req.authUser.id,
       school_id: row.school_id, target_type: "attendance_followup", target_id: row.id, request_id: req.requestId,
       ip_hash: null, metadata: { revision: row.revision, state: row.state } }).execute();
@@ -119,7 +126,20 @@ export class CoordinationService {
         revision: row.revision,
         refresh: ["coordination", "parent.home", "teacher.home", "principal.home", "notifications"],
       } });
-    return { id: row.id, revision: row.revision };
+    const outbox = await db.insertInto("event_outbox").values({ school_id: row.school_id, event_type: `coordination.followup.${kind}`,
+      aggregate_type: "attendance_followup", aggregate_id: row.id, audience_user_ids: [], payload: { followup_id: row.id, revision: row.revision, state: row.state },
+      idempotency_key: `followup-typed:${row.id}:${row.revision}` }).returning("id").executeTakeFirstOrThrow();
+    const recipients = kind === "opened" ? (await sql<{ user_id: string }>`SELECT DISTINCT parent.user_id FROM guardian_relationships relationship
+      JOIN parents parent ON parent.id=relationship.guardian_id JOIN users account ON account.id=parent.user_id
+      WHERE relationship.student_id=${row.student_id}::uuid AND account.is_active
+        AND coordination_actor_authorized(${row.school_id}::uuid,${row.student_id}::uuid,parent.user_id,'guardian')`.execute(db)).rows.map(item => item.user_id)
+      : row.state !== "resolved" && (await sql<{ allowed: boolean }>`SELECT coordination_actor_authorized(${row.school_id}::uuid,${row.student_id}::uuid,${row.owner_user_id}::uuid,'staff') AS allowed`.execute(db)).rows[0]?.allowed
+        ? [row.owner_user_id] : [];
+    const receipt = await this.model.accepted(db, req, row, prepared, { action: kind, key, outbox_id: outbox.id, previous,
+      recipient_user_ids: recipients, response_recipient_user_id: responseRecipient, channel, observed_at: observedAt });
+    await sql`INSERT INTO coordination_commands(actor_id,idempotency_key,request_hash,followup_id,result_revision,model_receipt)
+      VALUES(${req.authUser.id}::uuid,${key}::uuid,${hash},${row.id}::uuid,${row.revision},${JSON.stringify(receipt)}::jsonb)`.execute(db);
+    return { id: row.id, revision: row.revision, coordination: followupCoordinationSummary(receipt) };
   }
 
   async create(req: AuthenticatedRequest, body: unknown) {
@@ -130,17 +150,21 @@ export class CoordinationService {
       const prior = await this.priorCommand(db, req.authUser.id, input.idempotency_key, hash);
       if (prior) return prior;
       const due = new Date(input.due_at);
-      if (due.getTime() <= Date.now() || due.getTime() > Date.now() + 30 * 86400000) throw new BadRequestException("Choose a response deadline within the next 30 days.");
-      const record = await db.selectFrom("attendance_records").selectAll().where("student_id", "=", input.student_id)
-        .where("date", "=", input.attendance_date).forUpdate().executeTakeFirst();
-      if (!record || !["absent", "late", "half_day"].includes(record.status)) throw new BadRequestException("A follow-up needs a recorded absence, late arrival, or half day. An unmarked register is not absence.");
-      const duplicate = (await sql`SELECT id FROM attendance_followups WHERE attendance_record_id=${record.id}::uuid AND state<>'resolved'`.execute(db)).rows[0];
+      if (due.getTime() <= executionNow().getTime() || due.getTime() > executionNow().getTime() + 30 * 86400000) throw new BadRequestException("Choose a response deadline within the next 30 days.");
+      const record = await findAcademicAttendanceDecision(db, { school_id: student.school_id, student_id: input.student_id, date: input.attendance_date });
+      if (!record?.status || !["absent", "late", "half_day"].includes(record.status)) throw new BadRequestException("A follow-up needs a recorded absence, late arrival, or half day. An unmarked register is not absence.");
+      const duplicate = (await sql`SELECT id FROM attendance_followups WHERE school_id=${student.school_id}::uuid
+        AND (attendance_record_id=${record.id}::uuid OR participation_entry_id=${record.id}::uuid) AND state<>'resolved'`.execute(db)).rows[0];
       if (duplicate) throw new ConflictException("An open follow-up already exists for this attendance record.");
-      const row = (await sql<Followup>`INSERT INTO attendance_followups(school_id,student_id,attendance_record_id,attendance_date,source_revision,question,owner_user_id,due_at)
-        VALUES(${student.school_id}::uuid,${student.id}::uuid,${record.id}::uuid,${record.date}::date,${record.revision},${input.question},${req.authUser.id}::uuid,${due}) RETURNING *`.execute(db)).rows[0]!;
+      const id = randomUUID();
+      const prepared = await this.model.prepare(db, req, { id, school_id: student.school_id, student_id: student.id,
+        owner_user_id: req.authUser.id, revision: 0, state: "open" }, input.idempotency_key, hash, "opened", "staff", null);
+      const row = (await sql<Followup>`INSERT INTO attendance_followups(id,school_id,student_id,attendance_record_id,participation_entry_id,attendance_date,source_revision,question,owner_user_id,due_at)
+        VALUES(${id}::uuid,${student.school_id}::uuid,${student.id}::uuid,${record.store === "legacy" ? record.id : null}::uuid,
+          ${record.store === "participation" ? record.id : null}::uuid,${record.date}::date,${record.revision},${input.question},${req.authUser.id}::uuid,${due}) RETURNING *`.execute(db)).rows[0]!;
       await sql`INSERT INTO attendance_followup_entries(followup_id,revision,actor_id,kind,channel,body,observed_at)
         VALUES(${row.id}::uuid,1,${req.authUser.id}::uuid,'opened','app',${input.question},now())`.execute(db);
-      return this.commitEvent(db, row, req, input.idempotency_key, hash, "opened");
+      return this.commitEvent(db, row, req, input.idempotency_key, hash, "opened", prepared, null);
     });
   }
 
@@ -158,8 +182,10 @@ export class CoordinationService {
       if (prior) return prior;
       if (row.revision !== input.expected_revision) throw new ConflictException("This follow-up has changed. Refresh before submitting.");
       if (row.state === "resolved") throw new ConflictException("This follow-up is already resolved.");
+      const previous = (await sql<{ model_receipt: FollowupModelReceipt | null }>`SELECT model_receipt FROM coordination_commands
+        WHERE followup_id=${row.id}::uuid AND result_revision=${row.revision} ORDER BY created_at DESC LIMIT 1`.execute(db)).rows[0]?.model_receipt ?? null;
       let guardianId: string | null = null;
-      let observedAt = new Date();
+      let observedAt = executionNow();
       if (input.kind === "guardian_reply") {
         guardianId = (await db.selectFrom("parents").select("id").where("user_id", "=", req.authUser.id).executeTakeFirstOrThrow()).id;
       } else if (input.kind === "assisted_reply") {
@@ -170,7 +196,7 @@ export class CoordinationService {
         observedAt = new Date(input.observed_at);
         const clockSkewToleranceMs = 5000;
         if (
-          observedAt.getTime() > Date.now() + clockSkewToleranceMs ||
+          observedAt.getTime() > executionNow().getTime() + clockSkewToleranceMs ||
           observedAt.getTime() < new Date(row.created_at).getTime() - clockSkewToleranceMs
         )
           throw new BadRequestException("Response time must fall between opening this follow-up and now.");
@@ -179,17 +205,22 @@ export class CoordinationService {
         const ownerOrAdmin = row.owner_user_id === req.authUser.id || Boolean(await db.selectFrom("school_memberships").select("id").where("school_id", "=", row.school_id)
           .where("user_id", "=", req.authUser.id).where("role", "=", "admin").where("is_active", "=", true).executeTakeFirst());
         if (!ownerOrAdmin) throw new ForbiddenException("The responsible teacher or school administrator must resolve this follow-up.");
-        const attendance = await db.selectFrom("attendance_records").select(["revision", "status"]).where("id", "=", row.attendance_record_id).forShare().executeTakeFirstOrThrow();
-        if (input.outcome === "record_corrected" && attendance.revision <= row.source_revision) throw new ConflictException("Correct the attendance register first, then record this outcome.");
+        const attendance = await findAcademicAttendanceDecision(db, { school_id: row.school_id, student_id: row.student_id,
+          date: row.attendance_date, record_id: row.participation_entry_id ?? row.attendance_record_id });
+        if (input.outcome === "record_corrected" && (!attendance || attendance.revision <= row.source_revision)) throw new ConflictException("Correct the attendance register first, then record this outcome.");
         if (input.outcome === "absence_explained" && row.state !== "in_review") throw new ConflictException("Record a guardian response before marking the absence explained.");
       }
+      const prepared = await this.model.prepare(db, req, row, input.idempotency_key, hash, input.kind, input.context, previous);
       const resolved = input.kind === "resolved";
       const updated = (await sql<Followup>`UPDATE attendance_followups SET state=${resolved ? "resolved" : "in_review"},revision=revision+1,updated_at=now(),
-        outcome=${resolved ? input.outcome! : null},resolved_at=${resolved ? new Date() : null},resolved_by=${resolved ? req.authUser.id : null}::uuid
+        outcome=${resolved ? input.outcome! : null},resolved_at=${resolved ? executionNow() : null},resolved_by=${resolved ? req.authUser.id : null}::uuid
         WHERE id=${id}::uuid RETURNING *`.execute(db)).rows[0]!;
       await sql`INSERT INTO attendance_followup_entries(followup_id,revision,actor_id,kind,channel,guardian_id,body,observed_at)
         VALUES(${id}::uuid,${updated.revision},${req.authUser.id}::uuid,${input.kind},${input.channel},${guardianId}::uuid,${input.body},${observedAt})`.execute(db);
-      return this.commitEvent(db, updated, req, input.idempotency_key, hash, input.kind);
+      const responseRecipient = input.kind === "resolved" ? req.authUser.id : guardianId
+        ? (await db.selectFrom("parents").select("user_id").where("id", "=", guardianId).executeTakeFirst())?.user_id ?? null : null;
+      return this.commitEvent(db, updated, req, input.idempotency_key, hash, input.kind, prepared, previous, responseRecipient,
+        input.channel, observedAt.toISOString());
     });
   }
 }

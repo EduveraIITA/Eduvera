@@ -30,6 +30,20 @@ const data: RequestInboxResponse = {
 afterEach(cleanup);
 
 describe("RequestInboxView", () => {
+  it("uses finite pages while keeping urgent work first and resetting paging for a category", async () => {
+    const user = userEvent.setup();
+    const items = [...Array.from({ length: 20 }, (_, index) => item(`normal-${index}`, "normal", "governance", `Policy ${index}`)), item("priority", "urgent", "transport", "Urgent pickup review")];
+    const pagedData: RequestInboxResponse = { ...data, items, summary: { total: 21, urgent: 1, high: 0, normal: 20, categories: { governance: 20, transport: 1 } } };
+    render(<MemoryRouter><RequestInboxView data={pagedData} /><LocationProbe /></MemoryRouter>);
+    expect(screen.getByText("Urgent pickup review")).toBeVisible();
+    expect(screen.queryByText("Policy 19")).not.toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "Next", exact: true }));
+    expect(screen.getByText("Policy 19")).toBeVisible();
+    expect(screen.getByText("Page 2 of 2 · 21 requests")).toBeVisible();
+    await user.click(screen.getByRole("button", { name: "Transport 1" }));
+    expect(screen.getByText("Urgent pickup review")).toBeVisible();
+    expect(screen.getByTestId("location")).not.toHaveTextContent("request_page");
+  });
   it("shows a semantic priority stack with clear workflow links", () => {
     render(<MemoryRouter><RequestInboxView data={data} /></MemoryRouter>);
     expect(screen.getByRole("heading", { name: "Urgent" })).toBeInTheDocument();
@@ -93,7 +107,7 @@ describe("RequestInboxView", () => {
       source_id: "10000000-0000-4000-a000-000000000001",
       status_label: "Invigilation response needed",
       action_label: "Review duty",
-      href: "/teacher/assessments?assessment=20000000-0000-4000-a000-000000000002",
+      href: "/areas/assessments/assigned?assessment=20000000-0000-4000-a000-000000000002",
       subject_label: "Mathematics",
     };
     const teacherData: RequestInboxResponse = {
@@ -106,7 +120,7 @@ describe("RequestInboxView", () => {
     render(<MemoryRouter><RequestInboxView data={teacherData} /></MemoryRouter>);
 
     const link = screen.getByRole("link", { name: /Mathematics mid-term/ });
-    expect(link).toHaveAttribute("href", "/teacher/assessments?assessment=20000000-0000-4000-a000-000000000002");
+    expect(link).toHaveAttribute("href", "/areas/assessments/assigned?assessment=20000000-0000-4000-a000-000000000002");
     expect(screen.getByText("Invigilation response needed")).toBeVisible();
     expect(screen.getByText("Review duty")).toBeVisible();
   });

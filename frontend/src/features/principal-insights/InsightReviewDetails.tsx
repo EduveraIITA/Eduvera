@@ -15,9 +15,9 @@ export function FollowupInsights({ data }: { data: PrincipalInsights }) {
       <ul className="insight-records">{data.followups.details.map(item => <li key={item.id}>
         <div><strong>{item.student_name}</strong>{item.overdue ? <span className="analytics-warning">Overdue</span> : null}</div>
         <p>{item.state === "in_review" ? "School review" : "Awaiting reply"} · Owner: {item.owner}</p>
-        <Link className="analytics-module-link" to={`/principal/attendance?class_section_id=${item.class_id}&date=${item.attendance_date}`}>Open source register</Link>
+        <Link className="analytics-module-link" to={`/areas/attendance/registers?class_section_id=${item.class_id}&date=${item.attendance_date}`}>Open source register</Link>
       </li>)}</ul>
-      <Link className="analytics-module-link" to={`/principal/followups?date=${data.period.end}`}>Open follow-up conversations</Link>
+      <Link className="analytics-module-link" to={`/areas/attendance/coordination?date=${data.period.end}`}>Open follow-up conversations</Link>
     </section>
   </div>;
 }
@@ -31,6 +31,6 @@ export function LearningReview({ data }: { data: PrincipalInsights }) {
     {assessments.length ? <ComparisonBars label="Results below the review threshold" rows={assessments.map(item => ({ id: item.id, name: `${item.class_name} · ${item.subject}`, value: item.below / item.assessed * 100, detail: `${item.below} of ${item.assessed} scored results below ${data.threshold}% · ${item.title}`, tone: "warning" }))} /> : <p className="analytics-empty">No scored, published assessments in this window.</p>}
     <p className="analytics-note">Review threshold, not a pass/fail policy or topic mastery. A learner may appear in several assessments. Unlike the results average, this window uses publication dates, not assessment dates.</p>
     <details className="analytics-details"><summary>Assessment participation</summary><ul className="insight-records">{data.learning.map(item => <li key={item.id}><strong>{item.title}</strong><p>{item.class_name} · {item.assessed} of {item.roster} scored</p><p>Published {shortDate(item.published_at)}</p></li>)}</ul></details>
-    <Link className="analytics-module-link" to="/principal/assessments">Open assessments</Link>
+    <Link className="analytics-module-link" to="/areas/assessments/manage">Open assessments</Link>
   </section>;
 }

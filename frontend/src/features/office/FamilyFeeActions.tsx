@@ -1,6 +1,7 @@
 import { RazorpayPayment } from "./RazorpayPayment";
 import { useRef, useState, type FormEvent } from "react";
 import { parseRupees, rupees, submitFeeReview, type FeePaymentSettings, type FeeReview, type Invoice } from "./api";
+import { FeeCorrectionHistory } from "./FeeCorrectionHistory";
 
 export function FamilyFeeActions({ schoolId, invoice, settings, reviews, onSaved, expanded = false, onlinePayments = false, hideBreakdown = false, initialQuestion = false }: { schoolId: string; invoice: Invoice; settings?: FeePaymentSettings; reviews: FeeReview[]; onSaved: () => Promise<unknown>; expanded?: boolean; onlinePayments?: boolean; hideBreakdown?: boolean; initialQuestion?: boolean }) {
   const [mode, setMode] = useState<"closed" | "review" | "pay" | "charge">(initialQuestion ? "charge" : expanded ? "review" : "closed");
@@ -29,6 +30,7 @@ export function FamilyFeeActions({ schoolId, invoice, settings, reviews, onSaved
     finally { inFlight.current = false; setBusy(false); }
   }
   return <div className="office-family-fee-actions">
+    <FeeCorrectionHistory invoice={invoice} />
     {success ? <p role="status" className="office-notice">{success}</p> : null}
     {mode === "closed" ? <button className="office-secondary" type="button" onClick={() => open("review")}>Review fee{invoice.balance_paise > 0 ? " & pay" : ""}</button> : <section className="office-fee-detail" aria-label={`Review ${invoice.reference}`}>
       {!hideBreakdown ? <h3>Review your fee</h3> : null}

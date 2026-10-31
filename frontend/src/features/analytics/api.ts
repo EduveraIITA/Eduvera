@@ -1,8 +1,13 @@
 import { apiFetch } from "../../lib/api";
-import type { Portal } from "../auth/AuthContext";
 import type { ApiStudent } from "../school/api";
 
 export type AnalyticsPeriod = "term" | "30" | "90";
+/**
+ * Transitional analytics transport scope. The current analytics endpoint still
+ * carries these audience literals in its URL. They describe the requested read
+ * model only; frontend code must not treat them as authorization or account roles.
+ */
+export type AnalyticsAudience = "principal" | "teacher" | "parent" | "student";
 export interface AttendanceMetric {
   present: number; late: number; half_day: number; absent: number; excused: number;
   recorded: number; denominator: number; attended: number; percentage: number | null;
@@ -18,7 +23,7 @@ export interface RegisterSubmission {
   classes: Array<{ id: string; name: string; expected: number; submitted: number; locked: number; outstanding: number; percentage: number | null; latest_unsubmitted: string | null }>;
 }
 export interface AnalyticsOverview {
-  portal: Portal; generated_at: string; student: ApiStudent | null;
+  portal: AnalyticsAudience; generated_at: string; student: ApiStudent | null;
   term: { id: string; name: string; starts_on: string; ends_on: string; attendance_threshold: number };
   range: { period: AnalyticsPeriod; from: string; to: string; capped: boolean };
   scope_label: string;
@@ -40,9 +45,9 @@ export interface AnalyticsOverview {
   } | null;
 }
 
-export function getAnalytics(schoolId: string, portal: Portal, period: AnalyticsPeriod, studentId?: string, classId?: string) {
+export function getAnalytics(schoolId: string, audience: AnalyticsAudience, period: AnalyticsPeriod, studentId?: string, classId?: string) {
   const params = new URLSearchParams({ period });
   if (studentId) params.set("student_id", studentId);
   if (classId) params.set("class_id", classId);
-  return apiFetch<AnalyticsOverview>(`/api/v1/schools/${encodeURIComponent(schoolId)}/analytics/${portal}/?${params}`);
+  return apiFetch<AnalyticsOverview>(`/api/v1/schools/${encodeURIComponent(schoolId)}/analytics/${audience}/?${params}`);
 }

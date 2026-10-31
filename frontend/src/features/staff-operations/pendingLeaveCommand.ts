@@ -6,13 +6,14 @@ import {
   pendingCommandMaterialHash,
 } from "../../lib/pendingCommand";
 
-export type StaffLeaveCommandOperation = "submit" | "decide" | "withdraw";
+export type StaffLeaveCommandOperation = "submit" | "decide" | "withdraw" | "reroute" | "configure-routing";
 
 export interface StaffLeaveCommandScope {
   schoolId: string;
   actorId: string;
   operation: StaffLeaveCommandOperation;
   targetId: string;
+  worldKey?: string;
 }
 
 export interface PendingStaffLeaveCommand {
@@ -25,7 +26,7 @@ const PREFIX = "thatcampus:staff-leave-command:v1";
 function commandScope(scope: StaffLeaveCommandScope) {
   return {
     storageNamespace: PREFIX,
-    institutionId: scope.schoolId,
+    institutionId: scope.worldKey && scope.worldKey !== "live" ? `${scope.schoolId}:${scope.worldKey}` : scope.schoolId,
     actorId: scope.actorId,
     operation: scope.operation,
     targetId: scope.targetId,

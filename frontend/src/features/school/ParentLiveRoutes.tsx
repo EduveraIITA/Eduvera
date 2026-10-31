@@ -138,7 +138,7 @@ export function ParentHomeRoute() {
   );
 }
 
-export function ParentAttendanceRoute() {
+export function ParentAttendanceRoute({ embedded = false }: { readonly embedded?: boolean } = {}) {
   const { searchParams, studentId, selectStudent } = useSelectedStudent();
   const navigate = useNavigate();
   const focusDate = searchParams.get("date") ?? undefined;
@@ -163,16 +163,23 @@ export function ParentAttendanceRoute() {
     <ParentAttendancePage
       key={query.data.student.id}
       data={adaptParentAttendance(query.data, focusDate)}
+      embedded={embedded}
       {...(exactRecord ? { focusDate: exactRecord.date } : {})}
       onSelectChild={selectStudent}
-      onRequestLeave={() => navigate(studentId ? `/parent/leave?tab=apply&student_id=${encodeURIComponent(studentId)}` : "/parent/leave?tab=apply")}
+      onRequestLeave={() => {
+        const next = new URLSearchParams(searchParams);
+        next.set("scope", "dependent");
+        next.set("tab", "apply");
+        if (studentId) next.set("student_id", studentId);
+        void navigate(`/areas/attendance/leave?${next}`);
+      }}
       onMessageTeacher={contactAction(teacher)}
     />
     </>
   );
 }
 
-export function ParentLeaveRoute() {
+export function ParentLeaveRoute({ embedded = false }: { readonly embedded?: boolean } = {}) {
   const { searchParams, studentId, selectStudent } = useSelectedStudent();
   const leaveId = searchParams.get("leave_id") ?? undefined;
   const authorityChangeId = searchParams.get("authority_change_id");
@@ -212,6 +219,7 @@ export function ParentLeaveRoute() {
     <ParentLeavePage
       key={`${response.student.id}-${response.request?.id ?? "empty"}`}
       data={adaptParentLeave(response)}
+      embedded={embedded}
       focusRequestId={leaveId}
       {...(exactAuthority ? { authorityUpdate: { enabled: exactAuthority.enabled, effective: exactAuthority.effective, validFrom: exactAuthority.valid_from, validUntil: exactAuthority.valid_until } } : {})}
       onSelectChild={selectStudent}

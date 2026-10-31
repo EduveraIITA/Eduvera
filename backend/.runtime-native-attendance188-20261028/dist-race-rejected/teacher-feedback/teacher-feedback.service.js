@@ -1,0 +1,239 @@
+var __decorate = (this && this.__decorate) || function (decorators, target, key, desc) {
+    var c = arguments.length, r = c < 3 ? target : desc === null ? desc = Object.getOwnPropertyDescriptor(target, key) : desc, d;
+    if (typeof Reflect === "object" && typeof Reflect.decorate === "function") r = Reflect.decorate(decorators, target, key, desc);
+    else for (var i = decorators.length - 1; i >= 0; i--) if (d = decorators[i]) r = (c < 3 ? d(r) : c > 3 ? d(target, key, r) : d(target, key)) || r;
+    return c > 3 && r && Object.defineProperty(target, key, r), r;
+};
+var __metadata = (this && this.__metadata) || function (k, v) {
+    if (typeof Reflect === "object" && typeof Reflect.metadata === "function") return Reflect.metadata(k, v);
+};
+import { executionNow } from "../campus-model-core/execution-time.runtime.js";
+import { BadRequestException, ConflictException, ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
+import { sql } from 'kysely';
+import { z } from 'zod';
+import { config } from '../config.js';
+import { DatabaseService } from '../database/database.service.js';
+import { SchoolEventService } from '../school/school-event.service.js';
+import { campaignInput, DEFAULT_PARAMETERS, responseInput, feedbackReleasePolicy, summarizeRatings, validRatingKeys } from './feedback-rules.js';
+const projection = sql `c.id,c.school_id,c.teacher_user_id,c.class_section_id,c.title,c.audience,c.parameters,c.closes_at,c.closed_at,
+  u.first_name||' '||u.last_name AS teacher_name,cs.grade||cs.section AS class_name,
+  (c.closed_at IS NOT NULL OR c.closes_at<=now()) AS is_closed`;
+let TeacherFeedbackService = class TeacherFeedbackService {
+    db;
+    events;
+    constructor(db, events) {
+        this.db = db;
+        this.events = events;
+    }
+    async member(db, user, school, admin = false) {
+        if (!z.uuid().safeParse(school).success)
+            throw new BadRequestException('Invalid institution.');
+        if (!user.is_active || (user.active_school_id && user.active_school_id !== school))
+            throw new ForbiddenException('Select the correct institution.');
+        const member = await db.selectFrom('school_memberships as m').innerJoin('users as u', 'u.id', 'm.user_id')
+            .select('m.role').where('m.school_id', '=', school).where('m.user_id', '=', user.id).where('m.is_active', '=', true).where('u.is_active', '=', true).execute();
+        if (!member.length || (admin && !member.some(m => m.role === 'admin')))
+            throw new ForbiddenException('Principal administrator access is required.');
+    }
+    async campaign(db, school, id, lock = false) {
+        if (!z.uuid().safeParse(id).success)
+            throw new BadRequestException('Invalid feedback request.');
+        const row = (await sql `SELECT ${projection} FROM teacher_feedback_campaigns c
+      JOIN users u ON u.id=c.teacher_user_id JOIN class_sections cs ON cs.id=c.class_section_id
+      WHERE c.school_id=${school}::uuid AND c.id=${id}::uuid ${lock ? sql `FOR UPDATE OF c` : sql ``}`.execute(db)).rows[0];
+        if (!row)
+            throw new NotFoundException('Feedback request not found.');
+        return row;
+    }
+    eligible(user) {
+        // Re-evaluate current enrollment, term and guardian relationship on every read and submission.
+        return sql `c.teacher_user_id<>${user.id}::uuid AND EXISTS (
+      SELECT 1 FROM enrollments e JOIN students s ON s.id=e.student_id AND s.school_id=c.school_id
+      JOIN academic_terms term ON term.id=e.term_id AND term.school_id=c.school_id
+      JOIN schools school ON school.id=c.school_id
+      WHERE e.class_section_id=c.class_section_id AND e.is_active
+        AND (now() AT TIME ZONE school.timezone)::date BETWEEN GREATEST(e.enrolled_on,term.starts_on) AND term.ends_on
+        AND ((c.audience='students' AND s.user_id=${user.id}::uuid) OR (c.audience='parents' AND EXISTS (
+          SELECT 1 FROM guardian_relationships gr JOIN parents p ON p.id=gr.guardian_id
+          WHERE gr.student_id=s.id AND p.user_id=${user.id}::uuid))))`;
+    }
+    async audit(db, user, school, id, action) {
+        await sql `INSERT INTO teacher_feedback_audits(school_id,campaign_id,actor_id,action) VALUES(${school}::uuid,${id}::uuid,${user.id}::uuid,${action})`.execute(db);
+    }
+    async administratorIds(db, school) {
+        return (await sql `SELECT DISTINCT membership.user_id
+      FROM school_memberships membership JOIN users account ON account.id=membership.user_id AND account.is_active
+      WHERE membership.school_id=${school}::uuid AND membership.role='admin' AND membership.is_active`.execute(db)).rows.map(row => row.user_id);
+    }
+    async pendingRespondentIds(db, school, id) {
+        return (await sql `SELECT DISTINCT candidate.user_id FROM (
+      SELECT student.user_id
+      FROM teacher_feedback_campaigns campaign
+      JOIN schools school ON school.id=campaign.school_id
+      JOIN enrollments enrollment ON enrollment.class_section_id=campaign.class_section_id AND enrollment.is_active
+      JOIN academic_terms term ON term.id=enrollment.term_id AND term.school_id=campaign.school_id
+      JOIN students student ON student.id=enrollment.student_id AND student.school_id=campaign.school_id
+      JOIN users account ON account.id=student.user_id AND account.is_active
+      JOIN school_memberships membership ON membership.school_id=campaign.school_id AND membership.user_id=student.user_id
+        AND membership.role='student' AND membership.is_active
+      WHERE campaign.school_id=${school}::uuid AND campaign.id=${id}::uuid AND campaign.audience='students'
+        AND campaign.teacher_user_id<>student.user_id
+        AND (now() AT TIME ZONE school.timezone)::date BETWEEN GREATEST(enrollment.enrolled_on,term.starts_on) AND term.ends_on
+        AND NOT EXISTS(SELECT 1 FROM teacher_feedback_responses response
+          WHERE response.campaign_id=campaign.id AND response.respondent_user_id=student.user_id)
+      UNION ALL
+      SELECT parent.user_id
+      FROM teacher_feedback_campaigns campaign
+      JOIN schools school ON school.id=campaign.school_id
+      JOIN enrollments enrollment ON enrollment.class_section_id=campaign.class_section_id AND enrollment.is_active
+      JOIN academic_terms term ON term.id=enrollment.term_id AND term.school_id=campaign.school_id
+      JOIN students student ON student.id=enrollment.student_id AND student.school_id=campaign.school_id
+      JOIN guardian_relationships relationship ON relationship.school_id=campaign.school_id AND relationship.student_id=student.id
+      JOIN parents parent ON parent.id=relationship.guardian_id
+      JOIN users account ON account.id=parent.user_id AND account.is_active
+      JOIN school_memberships membership ON membership.school_id=campaign.school_id AND membership.user_id=parent.user_id
+        AND membership.role='guardian' AND membership.is_active
+      WHERE campaign.school_id=${school}::uuid AND campaign.id=${id}::uuid AND campaign.audience='parents'
+        AND campaign.teacher_user_id<>parent.user_id
+        AND (now() AT TIME ZONE school.timezone)::date BETWEEN GREATEST(enrollment.enrolled_on,term.starts_on) AND term.ends_on
+        AND NOT EXISTS(SELECT 1 FROM teacher_feedback_responses response
+          WHERE response.campaign_id=campaign.id AND response.respondent_user_id=parent.user_id)
+    ) candidate`.execute(db)).rows.map(row => row.user_id);
+    }
+    async emit(db, school, id, changeKind, audience, key) {
+        await this.events.enqueueUserEvent(db, {
+            schoolId: school, eventType: 'teacher_feedback.updated', aggregateType: 'teacher_feedback_campaign', aggregateId: id,
+            audienceUserIds: audience, idempotencyKey: key, payload: { campaign_id: id, change_kind: changeKind,
+                refresh: ['attention', 'requests', 'teacher-feedback', 'parent.home', 'student.home', 'principal.home'] },
+        });
+    }
+    async workspace(user, school) {
+        await this.member(this.db, user, school, true);
+        const teachers = (await sql `SELECT DISTINCT u.id,u.first_name||' '||u.last_name AS name FROM users u
+      JOIN school_memberships m ON m.user_id=u.id WHERE m.school_id=${school}::uuid AND m.is_active AND u.is_active AND m.role IN ('staff','admin') ORDER BY name`.execute(this.db)).rows;
+        const classes = await this.db.selectFrom('class_sections').select(['id', 'grade', 'section', 'academic_year']).where('school_id', '=', school).orderBy('grade').orderBy('section').execute();
+        const campaigns = (await sql `SELECT ${projection},(SELECT count(*)::int FROM teacher_feedback_responses r WHERE r.campaign_id=c.id) AS response_count
+      FROM teacher_feedback_campaigns c JOIN users u ON u.id=c.teacher_user_id JOIN class_sections cs ON cs.id=c.class_section_id
+      WHERE c.school_id=${school}::uuid ORDER BY c.created_at DESC LIMIT 100`.execute(this.db)).rows;
+        return { teachers, classes, campaigns, default_parameters: DEFAULT_PARAMETERS };
+    }
+    async create(user, school, body) {
+        const parsed = campaignInput.safeParse(body);
+        if (!parsed.success)
+            throw new BadRequestException('Choose a teacher, class, audience, deadline and 1–10 distinct parameters.');
+        const data = parsed.data, deadline = new Date(data.closes_at).getTime();
+        if (deadline <= executionNow().getTime() || deadline > executionNow().getTime() + 90 * 86400000)
+            throw new BadRequestException('Choose a future deadline within 90 days.');
+        return this.db.transaction().execute(async (db) => {
+            await this.member(db, user, school, true);
+            const teacher = await db.selectFrom('school_memberships as m').innerJoin('users as u', 'u.id', 'm.user_id').select('u.id')
+                .where('m.school_id', '=', school).where('m.user_id', '=', data.teacher_user_id).where('m.role', 'in', ['staff', 'admin']).where('m.is_active', '=', true).where('u.is_active', '=', true).executeTakeFirst();
+            const classroom = await db.selectFrom('class_sections').select('id').where('id', '=', data.class_section_id).where('school_id', '=', school).executeTakeFirst();
+            if (!teacher || !classroom)
+                throw new BadRequestException('Teacher and class must belong to this institution.');
+            const row = (await sql `INSERT INTO teacher_feedback_campaigns(school_id,teacher_user_id,class_section_id,title,audience,parameters,closes_at,created_by)
+        VALUES(${school}::uuid,${data.teacher_user_id}::uuid,${data.class_section_id}::uuid,${data.title},${data.audience},${JSON.stringify(data.parameters)}::jsonb,${data.closes_at}::timestamptz,${user.id}::uuid) RETURNING id`.execute(db)).rows[0];
+            await this.audit(db, user, school, row.id, 'created');
+            await this.emit(db, school, row.id, 'campaign_created', [...await this.administratorIds(db, school), ...await this.pendingRespondentIds(db, school, row.id)], `teacher-feedback:${row.id}:campaign-created`);
+            return { id: row.id };
+        });
+    }
+    async close(user, school, id) {
+        return this.db.transaction().execute(async (db) => {
+            await this.member(db, user, school, true);
+            const campaign = await this.campaign(db, school, id, true);
+            if (!campaign.is_closed) {
+                await sql `UPDATE teacher_feedback_campaigns SET closed_at=clock_timestamp() WHERE id=${id}::uuid AND school_id=${school}::uuid`.execute(db);
+                await this.audit(db, user, school, id, 'closed');
+                await this.emit(db, school, id, 'campaign_closed', [...await this.administratorIds(db, school), ...await this.pendingRespondentIds(db, school, id)], `teacher-feedback:${id}:campaign-closed`);
+            }
+            return { id, closed: true };
+        });
+    }
+    async results(user, school, id) {
+        return this.db.transaction().execute(async (db) => {
+            await this.member(db, user, school, true);
+            const campaign = await this.campaign(db, school, id, true);
+            const activity = (await sql `SELECT
+      to_char(r.submitted_at AT TIME ZONE s.timezone,'YYYY-MM-DD') AS date,count(*)::int AS count
+      FROM teacher_feedback_responses r JOIN schools s ON s.id=r.school_id
+      WHERE r.school_id=${school}::uuid AND r.campaign_id=${id}::uuid GROUP BY 1 ORDER BY 1`.execute(db)).rows;
+            const count = activity.reduce((sum, day) => sum + day.count, 0);
+            const schoolRecord = await db.selectFrom('schools').select('code').where('id', '=', school).executeTakeFirstOrThrow();
+            const policy = feedbackReleasePolicy(config().DEMO_MODE, user, schoolRecord.code);
+            // Closed, immutable cohorts prevent successive dashboard reads from revealing an individual's vote.
+            if ((!campaign.is_closed && !policy.demo_preview) || count < policy.minimum_responses)
+                return { campaign, response_count: count, available: false, parameters: [], activity, history: [], ...policy };
+            const rows = (await sql `SELECT ratings FROM teacher_feedback_responses WHERE school_id=${school}::uuid AND campaign_id=${id}::uuid`.execute(db)).rows;
+            const parameters = summarizeRatings(campaign.parameters, rows.map(r => r.ratings), policy.minimum_responses);
+            // Compare only the same teacher, class, audience and exact question set. Every
+            // parameter must independently pass suppression; a hidden answer never feeds a trend.
+            const history = campaign.is_closed && parameters.every(p => p.counts !== null) ? await this.history(db, school, id, policy.minimum_responses) : [];
+            return { campaign, response_count: count, available: true, parameters, activity, history, ...policy };
+        });
+    }
+    async history(db, school, id, minimum) {
+        return (await sql `
+      WITH current_request AS (
+        SELECT * FROM teacher_feedback_campaigns WHERE school_id=${school}::uuid AND id=${id}::uuid
+      ), rounds AS (
+        SELECT c.id,c.parameters,LEAST(c.closed_at,c.closes_at) AS ended
+        FROM teacher_feedback_campaigns c CROSS JOIN current_request current
+        WHERE c.school_id=${school}::uuid AND c.teacher_user_id=current.teacher_user_id
+          AND c.class_section_id=current.class_section_id AND c.audience=current.audience
+          AND c.parameters @> current.parameters AND current.parameters @> c.parameters
+          AND (c.closed_at IS NOT NULL OR c.closes_at<=now())
+          AND LEAST(c.closed_at,c.closes_at)<=LEAST(current.closed_at,current.closes_at)
+        ORDER BY ended DESC,c.id DESC LIMIT 6
+      ), counts AS (
+        SELECT c.id,c.ended,jsonb_array_length(c.parameters) AS parameter_count,q.parameter,
+          count(*)::int AS responses,
+          count(*) FILTER(WHERE r.ratings->>q.parameter IN ('low','okay','high'))::int AS rated,
+          count(*) FILTER(WHERE r.ratings->>q.parameter='high')::int AS high
+        FROM rounds c JOIN teacher_feedback_responses r ON r.campaign_id=c.id AND r.school_id=${school}::uuid
+        CROSS JOIN LATERAL jsonb_array_elements_text(c.parameters) AS q(parameter)
+        GROUP BY c.id,c.ended,c.parameters,q.parameter
+      ) SELECT id,to_char(ended AT TIME ZONE 'UTC','YYYY-MM-DD"T"HH24:MI:SS.MS"Z"') AS closed_at,max(responses)::int AS response_count,
+        sum(rated)::int AS rated_count,round(100.0*sum(high)/sum(rated),1)::float8 AS high_percent
+      FROM counts GROUP BY id,ended HAVING min(rated)>=${minimum} AND count(*)=max(parameter_count)
+      ORDER BY ended,id`.execute(db)).rows;
+    }
+    async pending(user, school) {
+        await this.member(this.db, user, school);
+        const campaigns = (await sql `SELECT ${projection},EXISTS(SELECT 1 FROM teacher_feedback_responses r WHERE r.campaign_id=c.id AND r.respondent_user_id=${user.id}::uuid) AS submitted
+      FROM teacher_feedback_campaigns c JOIN users u ON u.id=c.teacher_user_id JOIN class_sections cs ON cs.id=c.class_section_id
+      WHERE c.school_id=${school}::uuid AND c.closed_at IS NULL AND c.closes_at>now() AND ${this.eligible(user)} ORDER BY c.closes_at,c.id`.execute(this.db)).rows;
+        return { campaigns };
+    }
+    async submit(user, school, id, body) {
+        const parsed = responseInput.safeParse(body);
+        if (!parsed.success)
+            throw new BadRequestException('Choose Low, Okay, High or Not sure for each parameter.');
+        return this.db.transaction().execute(async (db) => {
+            await this.member(db, user, school);
+            const campaign = await this.campaign(db, school, id, true);
+            const eligible = (await sql `SELECT c.id FROM teacher_feedback_campaigns c WHERE c.id=${id}::uuid AND c.school_id=${school}::uuid AND ${this.eligible(user)}`.execute(db)).rows[0];
+            if (!eligible)
+                throw new ForbiddenException('This feedback request is not assigned to you.');
+            // clock_timestamp is checked after acquiring the lock, including requests waiting across a deadline.
+            const open = (await sql `SELECT closed_at IS NULL AND closes_at>clock_timestamp() AS open FROM teacher_feedback_campaigns WHERE id=${id}::uuid`.execute(db)).rows[0].open;
+            if (!open)
+                throw new ConflictException('This feedback request has closed.');
+            if (!validRatingKeys(campaign.parameters, parsed.data.ratings))
+                throw new BadRequestException('Answer every parameter, using Not sure when needed.');
+            const inserted = (await sql `INSERT INTO teacher_feedback_responses(school_id,campaign_id,respondent_user_id,ratings)
+        VALUES(${school}::uuid,${id}::uuid,${user.id}::uuid,${JSON.stringify(parsed.data.ratings)}::jsonb) ON CONFLICT(campaign_id,respondent_user_id) DO NOTHING RETURNING id`.execute(db)).rows[0];
+            if (!inserted)
+                throw new ConflictException('You already submitted feedback for this request.');
+            await this.audit(db, user, school, id, 'submitted');
+            await this.emit(db, school, id, 'response_submitted', [...await this.administratorIds(db, school), user.id], `teacher-feedback:${id}:response:${inserted.id}`);
+            return { submitted: true };
+        });
+    }
+};
+TeacherFeedbackService = __decorate([
+    Injectable(),
+    __metadata("design:paramtypes", [DatabaseService, SchoolEventService])
+], TeacherFeedbackService);
+export { TeacherFeedbackService };
+//# sourceMappingURL=teacher-feedback.service.js.map

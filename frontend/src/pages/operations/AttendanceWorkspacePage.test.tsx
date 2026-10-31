@@ -60,6 +60,45 @@ function attentionResponse(items: AttentionItem[]): AttentionResponse {
   };
 }
 describe("attendance class workspace", () => {
+  it.each([
+    ["QA Product", "QP"],
+    ["QA Refresh", "QR"],
+    ["UpperElementary", "UP"],
+  ])("keeps the %s group badge compact while retaining the full accessible group name", (grade, monogram) => {
+    show("teacher", [row({ grade, section: "", class_name: `Class ${grade}`, student_count: 1, room_number: "" })]);
+    const card = screen.getByRole("article");
+    expect(within(card).getByRole("heading", { name: `Class ${grade}` })).toBeVisible();
+    const badge = card.querySelector(".attendance-class-card__monogram");
+    expect(badge).toHaveTextContent(monogram);
+    expect(badge).toHaveAttribute("aria-hidden", "true");
+    expect(within(card).getByText("1 student", { exact: true })).toBeVisible();
+    expect(within(card).queryByText("1 students", { exact: true })).not.toBeInTheDocument();
+    expect(within(card).getByRole("progressbar", { name: `Class ${grade} student marked` })).toBeVisible();
+  });
+
+  it("preserves short class labels and plural student counts", () => {
+    show("teacher", [row({ grade: "12", section: "A", class_name: "Class 12A", student_count: 2, room_number: "" })]);
+    const card = screen.getByRole("article");
+    expect(card.querySelector(".attendance-class-card__monogram")).toHaveTextContent("12A");
+    expect(within(card).getByText("2 students", { exact: true })).toBeVisible();
+  });
+
+  it("uses explicit responsibility—not a persona—to create canonical register links", () => {
+    render(<MemoryRouter><AttendanceWorkspacePage
+      responsibility="record"
+      embedded
+      classes={[sessionRow()]}
+      date="2026-09-18"
+      onDateChange={vi.fn()}
+    /></MemoryRouter>);
+
+    expect(screen.getByRole("link", { name: /Take attendance for Mathematics/ })).toHaveAttribute(
+      "href",
+      "/areas/attendance/registers?session_id=session-7a-maths&date=2026-09-18",
+    );
+    expect(screen.queryByText(/teacher portal|principal portal/i)).not.toBeInTheDocument();
+  });
+
   it("keeps a non-required register read-only and never offers attendance capture", () => {
     const change = show("teacher", [row({ periods_today: 0, instructional: false, can_mark: false, availability_reason: "No scheduled lesson." })]);
     expect(screen.getByText(/No lesson on this day/)).toBeVisible();

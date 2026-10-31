@@ -10,6 +10,7 @@ const pool=new Pool({connectionString:databaseUrl,max:3});
 const base='http://127.0.0.1:8138';
 let api:ChildProcess;let model:Server;let modelPort:number;let modelRequests:Record<string,any>[]=[];
 let followupNotification:string;
+let attendanceDate:string;
 const pause=(ms:number)=>new Promise(resolve=>setTimeout(resolve,ms));
 class Session {
   cookies=new Map<string,string>();
@@ -35,6 +36,20 @@ async function notification(session:Session){
   return id;
 }
 beforeAll(async()=>{
+  // Attendance commands require a real scheduled school date, including on weekends.
+  const scheduled=await pool.query(`
+    SELECT day::date::text AS date FROM schools school
+    JOIN students student ON student.school_id=school.id AND student.admission_number='CIS-2023-071'
+    JOIN enrollments enrollment ON enrollment.student_id=student.id AND enrollment.is_active
+    JOIN academic_terms term ON term.id=enrollment.term_id
+    CROSS JOIN LATERAL generate_series(
+      greatest(term.starts_on,(now() AT TIME ZONE school.timezone)::date-14),
+      least(term.ends_on,(now() AT TIME ZONE school.timezone)::date),interval '1 day') day
+    WHERE EXISTS(SELECT 1 FROM effective_school_schedule(school.id,day::date) slot
+      WHERE slot.class_section_id=enrollment.class_section_id AND NOT slot.cancelled)
+    ORDER BY day DESC LIMIT 1`);
+  attendanceDate=scheduled.rows[0]?.date;
+  if(!attendanceDate)throw new Error('Agent fixture needs a scheduled attendance date');
   // Only this suite's runs in the strictly guarded disposable database.
   await pool.query("UPDATE users SET pro_features_enabled=true WHERE username IN ('aarav.student','pooja.parent','kavita.staff','meera.principal')");
   await pool.query("DELETE FROM notifications WHERE title='Agent test notification'");
@@ -47,7 +62,7 @@ beforeAll(async()=>{
     const conversation=JSON.stringify(body.messages);
     const last=body.messages.findLast((message:any)=>message.role==='tool');
     let message:Record<string,unknown>;
-    const call=(name:string,args:unknown)=>({content:'',tool_calls:[{function:{name,arguments:args}}]});
+    const call=(name:string,args:unknown)=>({content:'',tool_calls:[{function:{name,arguments:['record_student_attendance','class_registers'].includes(name)?{...(args as Record<string,unknown>),date:attendanceDate}:args}}]});
     if(question.startsWith('Create durable conversation memory'))message={content:'The user prefers concise, evidence-linked answers. A prior proposal was dismissed and nothing changed.'};
     else if(question==='Please remember that I always prefer concise answers with the important evidence first.')message=!last
       ?call('manage_user_memory',{changes:[{operation:'remember',category:'communication_preference',topic:'response_length',value:'Concise answers with the important evidence first.',evidence_quote:'I always prefer concise answers with the important evidence first'}]})
@@ -168,34 +183,34 @@ describe('agent end-to-end guarded execution',()=>{
   });
   it('reproduces lookup then pronoun attendance without asking for an internal ID',async()=>{
     const admin=new Session();await admin.login('admin');
-    const target=await admin.request('/api/v1/teacher/attendance/student?student=CIS-2023-071');
+    const target=await admin.request(`/api/v1/teacher/attendance/student?student=CIS-2023-071&date=${attendanceDate}`);
     const desired=target.selected.student.status==='present'?'absent':'present';
     const first=await run(admin,'Check about aarav sharma','principal');
     expect(first.run.status).toBe('completed');expect(first.run.evidence[0].capability).toBe('find_students');
     modelRequests=[];
-    const second=await run(admin,`Can you mark him ${desired} today? Correction reason: Isolated pronoun-resolution verification.`,'principal',first.thread);
+    const second=await run(admin,`Can you mark him ${desired} on ${attendanceDate}? Correction reason: Isolated pronoun-resolution verification.`,'principal',first.thread);
     expect(second.run.status).toBe('confirmation');expect(second.run.action.capability).toBe('record_student_attendance');
     expect(second.run.action.preview).toMatchObject({student:'Aarav Sharma',class_name:'Class 7A',previous_status:target.selected.student.status??'Not marked',status:desired});
     expect(second.run.action.href).toContain('student_id=');
     expect(JSON.stringify(modelRequests)).toContain('App-provided record references');
     expect(JSON.stringify(modelRequests)).toContain(second.run.action.input.body.student_id);
     await admin.request(`/api/v1/agent/threads/${first.thread}/actions/${second.run.action.id}`,{decision:'reject'});
-    const check=await admin.request('/api/v1/teacher/attendance/student?student=CIS-2023-071');
+    const check=await admin.request(`/api/v1/teacher/attendance/student?student=CIS-2023-071&date=${attendanceDate}`);
     expect(check.selected.student.status).toBe(target.selected.student.status);
   });
   it('preserves conversational goals but not rejected proposal arguments; leaves tool choice to the model',async()=>{
     const admin=new Session();await admin.login('admin');
-    const ananya=await admin.request('/api/v1/teacher/attendance/student?student=Ananya%20Iyer');
+    const ananya=await admin.request(`/api/v1/teacher/attendance/student?student=Ananya%20Iyer&date=${attendanceDate}`);
     const setupStatus=ananya.selected.student.status==='absent'?'present':'absent';
-    const setup=await run(admin,`Mark Ananya Iyer ${setupStatus} today. Correction reason: cross-turn isolation setup`,'principal');
+    const setup=await run(admin,`Mark Ananya Iyer ${setupStatus} on ${attendanceDate}. Correction reason: cross-turn isolation setup`,'principal');
     expect(setup.run.status).toBe('confirmation');expect(setup.run.action.preview.student).toBe('Ananya Iyer');
     await admin.request(`/api/v1/agent/threads/${setup.thread}/actions/${setup.run.action.id}`,{decision:'reject'});
     expect((await pool.query('SELECT status FROM agent_runs WHERE id=$1',[setup.runId])).rows[0].status).toBe('completed');
 
-    const aarav=await admin.request('/api/v1/teacher/attendance/student?student=Aarav%20Sharma');
+    const aarav=await admin.request(`/api/v1/teacher/attendance/student?student=Aarav%20Sharma&date=${attendanceDate}`);
     const desired=aarav.selected.student.status==='present'?'absent':'present';
     const beforeRequest=modelRequests.length;
-    const corrected=await run(admin,`Change Aarav Sharma attendance to ${desired} today. Accidentally marked the previous status.`,'principal',setup.thread);
+    const corrected=await run(admin,`Change Aarav Sharma attendance to ${desired} on ${attendanceDate}. Accidentally marked the previous status.`,'principal',setup.thread);
     expect(corrected.run.status).toBe('confirmation');expect(corrected.run.action).toMatchObject({capability:'record_student_attendance',title:'Record one student’s attendance'});
     expect(corrected.run.action.preview).toMatchObject({student:'Aarav Sharma',status:desired,reason:'Accidentally marked the previous status'});
     expect(corrected.run.action.input.body.student_id).toBe(aarav.selected.student.id);
@@ -217,7 +232,7 @@ describe('agent end-to-end guarded execution',()=>{
   });
   it('records just one learner, preserves every other row and does not submit the register',async()=>{
     const admin=new Session();await admin.login('admin');
-    const lookup=await admin.request('/api/v1/teacher/attendance/student?student=Ananya%20Iyer');
+    const lookup=await admin.request(`/api/v1/teacher/attendance/student?student=Ananya%20Iyer&date=${attendanceDate}`);
     expect(lookup.matches).toHaveLength(1);
     const path=`/api/v1/screens/teacher/attendance?class_section_id=${lookup.selected.class.id}&date=${lookup.date}`;
     const before=await admin.request(path);
@@ -233,8 +248,18 @@ describe('agent end-to-end guarded execution',()=>{
     expect(after.roster.find((row:any)=>row.id===target).status).toBe(desired);
     expect(after.roster.filter((row:any)=>row.id!==target)).toEqual(before.roster.filter((row:any)=>row.id!==target));
     expect(after.register.revision).toBe(before.register.revision+1);
-    const trace=await pool.query("SELECT count(*)::int n FROM audit_events WHERE action='attendance.student.recorded' AND request_id=$1",[decision.receipt.request_id]);
-    expect(trace.rows[0].n).toBe(1);
+    const trace=await pool.query(`SELECT accepted.operation,revision.new_status,person.student_id,command.state,outcome.status
+      FROM activity_attendance_commands accepted
+      JOIN activity_attendance_entry_revisions revision ON revision.register_id=accepted.register_id
+        AND revision.register_revision=accepted.register_revision AND revision.request_id=accepted.request_id
+      JOIN activity_attendance_academic_roster person ON person.register_id=revision.register_id AND person.person_id=revision.person_id
+      JOIN campus_model_commands command ON command.correlation_id=accepted.request_id AND command.source_domain='attendance'
+        AND command.command_type='attendance.participation.marks'
+      JOIN campus_model_command_outcomes outcome ON outcome.command_id=command.id AND outcome.resulting_revision=accepted.register_revision
+      JOIN campus_model_events event ON event.source_outbox_event_id=outcome.domain_event_id AND event.correlation_id=accepted.request_id
+        AND event.source_record_id=accepted.register_id::text AND event.source_revision=accepted.register_revision
+      WHERE accepted.request_id=$1`,[decision.receipt.request_id]);
+    expect(trace.rows).toEqual([{operation:'marks',new_status:desired,student_id:target,state:'accepted',status:'accepted'}]);
   });
   it('asks for a distinguishing detail instead of choosing an ambiguous learner',async()=>{
     const admin=new Session();await admin.login('admin');
@@ -245,7 +270,7 @@ describe('agent end-to-end guarded execution',()=>{
   });
   it('requires a correction reason, preserves omitted remarks and replays a single-student key exactly once',async()=>{
     const admin=new Session();await admin.login('admin');
-    const lookup=await admin.request('/api/v1/teacher/attendance/student?student=Ananya%20Iyer');
+    const lookup=await admin.request(`/api/v1/teacher/attendance/student?student=Ananya%20Iyer&date=${attendanceDate}`);
     const selected=lookup.selected;const target=selected.student.id;
     const before=await pool.query('SELECT id,status,remarks,revision FROM attendance_records WHERE student_id=$1 AND date=$2',[target,lookup.date]);
     const input={class_section_id:selected.class.id,student_id:target,date:lookup.date,expected_revision:selected.register.revision,status:selected.student.status==='present'?'absent':'present'};
@@ -256,30 +281,51 @@ describe('agent end-to-end guarded execution',()=>{
     const first=await admin.raw('/api/v1/teacher/attendance/student',command,true,headers);expect(first.status).toBe(200);
     const saved=await first.json();const replay=await admin.raw('/api/v1/teacher/attendance/student',command,true,headers);
     expect(replay.status).toBe(200);expect(await replay.json()).toEqual(saved);
-    const after=await admin.request('/api/v1/teacher/attendance/student?student=Ananya%20Iyer');
+    const after=await admin.request(`/api/v1/teacher/attendance/student?student=Ananya%20Iyer&date=${attendanceDate}`);
     expect(after.selected.student.remarks).toBe(selected.student.remarks);
     expect(after.selected.register.revision).toBe(selected.register.revision+1);
     expect((await admin.raw('/api/v1/teacher/attendance/student',{...command,status:'late'},true,headers)).status).toBe(409);
     expect((await admin.raw('/api/v1/teacher/attendance/student',command,true,{'Idempotency-Key':randomUUID()})).status).toBe(409);
   });
   it('invalidates a single-student preview when the register changes before confirmation',async()=>{
-    const admin=new Session();await admin.login('admin');const lookup=await admin.request('/api/v1/teacher/attendance/student?student=Ananya%20Iyer');
+    const admin=new Session();await admin.login('admin');const lookup=await admin.request(`/api/v1/teacher/attendance/student?student=Ananya%20Iyer&date=${attendanceDate}`);
     const desired=lookup.selected.student.status==='present'?'absent':'present';
     const proposed=await run(admin,`Record one student Ananya Iyer ${desired} with reason Explicit isolated test correction`,'principal');
     expect(proposed.run.status).toBe('confirmation');
-    await pool.query('UPDATE attendance_registers SET revision=revision+1 WHERE id=$1',[lookup.selected.register.id]);
+    const screen=await admin.request(`/api/v1/screens/teacher/attendance?class_section_id=${lookup.selected.class.id}&date=${attendanceDate}`);
+    const other=screen.roster.find((row:any)=>row.id!==lookup.selected.student.id);
+    expect(other).toBeTruthy();
+    const changed=await admin.raw('/api/v1/teacher/attendance/student',{
+      class_section_id:lookup.selected.class.id,student_id:other.id,date:attendanceDate,expected_revision:screen.register.revision,
+      status:other.status==='present'?'absent':'present',reason:'Explicit isolated concurrent attendance correction',
+    },true,{'Idempotency-Key':randomUUID()});
+    expect(changed.status).toBe(200);
     const decision=await admin.request(`/api/v1/agent/threads/${proposed.thread}/actions/${proposed.run.action.id}`,{decision:'confirm'});
     expect(decision.status).toBe('stale');
-    expect((await admin.request('/api/v1/teacher/attendance/student?student=Ananya%20Iyer')).selected.student.status).toBe(lookup.selected.student.status);
+    expect((await admin.request(`/api/v1/teacher/attendance/student?student=Ananya%20Iyer&date=${attendanceDate}`)).selected.student.status).toBe(lookup.selected.student.status);
   });
   it('rejects a locked register or a student outside the selected roster on the domain API',async()=>{
-    const admin=new Session();await admin.login('admin');const lookup=await admin.request('/api/v1/teacher/attendance/student?student=Ananya%20Iyer');
+    const admin=new Session();await admin.login('admin');const lookup=await admin.request(`/api/v1/teacher/attendance/student?student=Ananya%20Iyer&date=${attendanceDate}`);
     const selected=lookup.selected;
     const input={class_section_id:selected.class.id,student_id:selected.student.id,date:lookup.date,expected_revision:selected.register.revision,status:'late',reason:'Explicit isolated test correction'};
     expect((await admin.raw('/api/v1/teacher/attendance/student',{...input,student_id:randomUUID()},true,{'Idempotency-Key':randomUUID()})).status).toBe(400);
-    await pool.query("UPDATE attendance_registers SET state='locked' WHERE id=$1",[selected.register.id]);
-    try{expect((await admin.raw('/api/v1/teacher/attendance/student',input,true,{'Idempotency-Key':randomUUID()})).status).toBe(403);}
-    finally{await pool.query('UPDATE attendance_registers SET state=$1 WHERE id=$2',[selected.register.state,selected.register.id]);}
+    const screen=await admin.request(`/api/v1/screens/teacher/attendance?class_section_id=${selected.class.id}&date=${attendanceDate}`);
+    const submitted=await admin.raw('/api/v1/teacher/attendance/bulk',{
+      class_section_id:selected.class.id,date:attendanceDate,expected_revision:screen.register.revision,
+      records:screen.roster.map((row:any)=>({student_id:row.id,status:row.status??'present',remarks:row.remarks})),
+      reason:'Explicit isolated fixture observations before accepted register locking',
+    },true,{'Idempotency-Key':randomUUID()});
+    expect(submitted.status).toBe(200);
+    const lockPath=`/api/v1/attendance-registers/${selected.class.id}/lock/?date=${attendanceDate}`;
+    expect((await admin.raw(lockPath,{},true,{'Idempotency-Key':randomUUID()})).status).toBe(200);
+    try{
+      const locked=await admin.request(`/api/v1/teacher/attendance/student?student=Ananya%20Iyer&date=${attendanceDate}`);
+      expect(locked.selected.register.state).toBe('locked');
+      expect((await admin.raw('/api/v1/teacher/attendance/student',{...input,expected_revision:locked.selected.register.revision},true,{'Idempotency-Key':randomUUID()})).status).toBe(403);
+    }finally{
+      expect((await admin.raw(lockPath,{reason:'Isolated locked-register boundary verified; reopen for further synthetic test observations.'},true,
+        {'Idempotency-Key':randomUUID()},'DELETE')).status).toBe(200);
+    }
   });
   it('never presents a model-only completion claim as a saved action',async()=>{
     const admin=new Session();await admin.login('admin');const result=await run(admin,'Test false completion','principal');
@@ -456,13 +502,32 @@ describe('agent end-to-end guarded execution',()=>{
     expect((await pool.query('SELECT read_at FROM notifications WHERE id=$1',[target])).rows[0].read_at).toBeNull();
   });
   it('records a supplied attendance observation despite newly issued offline snapshot timestamps',async()=>{
-    const session=new Session();await session.login('admin');const result=await run(session,'Record explicit test attendance: I observed all learners in the first open class present.','principal');
-    expect(result.run.status).toBe('confirmation');
-    const decision=await session.request(`/api/v1/agent/threads/${result.thread}/actions/${result.run.action.id}`,{decision:'confirm'});
-    expect(decision.status).toBe('succeeded');
-    expect(decision.receipt.href).toContain('/principal/attendance?class_section_id=');
-    const input=result.run.action.input.body;const register=await session.request(`/api/v1/screens/teacher/attendance?class_section_id=${input.class_section_id}&date=${input.date}`);
-    expect(register.roster.find((item:any)=>item.id===input.records[0].student_id).status).toBe('present');
+    // Class discovery is responsibility-composed, not an administrator portal.
+    // Exercise the ordinary assigned teacher and explicitly grant only AI use
+    // when the fixture has not configured it; never broaden class authority.
+    const session=new Session();await session.login('staff');const me=await session.request('/api/v1/auth/session/');
+    const admin=new Session();await admin.login('admin');let grant:string|undefined;
+    const status=await session.raw('/api/v1/agent/status?portal=teacher');
+    if(status.status===403){
+      const today=(await pool.query("SELECT campus_permission_date($1)::text AS today",[me.user.active_school_id])).rows[0].today;
+      grant=(await admin.request(`/api/v1/schools/${me.user.active_school_id}/roles/members/${me.user.id}/exceptions`,{
+        permission:'ai.use',reason:'Isolated attendance observation verification',scope_kind:'institution',valid_from:today,valid_until:today,
+      })).id;
+    }else expect(status.status).toBe(200);
+    try{
+      const result=await run(session,'Record explicit test attendance: I observed all learners in the first open class present.','teacher');
+      expect(result.run.status,result.run.answer).toBe('confirmation');
+      const decision=await session.request(`/api/v1/agent/threads/${result.thread}/actions/${result.run.action.id}`,{decision:'confirm'});
+      expect(decision.status).toBe('succeeded');
+      const input=result.run.action.input.body;
+      expect(decision.receipt.href).toContain(`class_section_id=${input.class_section_id}`);
+      const register=await session.request(`/api/v1/screens/teacher/attendance?class_section_id=${input.class_section_id}&date=${input.date}`);
+      expect(register.roster.find((item:any)=>item.id===input.records[0].student_id).status).toBe('present');
+    }finally{
+      if(grant)await admin.request(`/api/v1/schools/${me.user.active_school_id}/roles/exceptions/${grant}/revoke`,{
+        expected_revision:1,reason:'Isolated attendance observation verification completed',
+      });
+    }
   });
   it('respects the staff AI gate and can operate after a scoped administrator grant',async()=>{
     const teacher=new Session();await teacher.login('staff');const me=await teacher.request('/api/v1/auth/session/');

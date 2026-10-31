@@ -1,8 +1,10 @@
+import { executionNow } from "../campus-model-core/execution-time.runtime.js";
 import { ConflictException, Inject, Injectable } from "@nestjs/common";
 import { sql, type Transaction } from "kysely";
 import type { Database } from "../database/types.js";
 import { TEMPORAL_CONTEXT_PORT, type TemporalContextPort } from "../campus-model-core/temporal-context.port.js";
 import { StaffCoverageOfferBridgeService } from "./staff-coverage-offer-bridge.service.js";
+import { staffLeaveResponsibilitySources, staffLeaveScheduleSources } from "./staff-leave-impact.query.js";
 
 export const STAFF_COVERAGE_RECONCILIATION_PORT = Symbol("STAFF_COVERAGE_RECONCILIATION_PORT");
 
@@ -242,7 +244,7 @@ export class StaffCoverageReconciliationService implements StaffCoverageReconcil
       WHERE school_id=${schoolId}::uuid AND idempotency_key=${idempotencyKey}
       FOR UPDATE`.execute(transaction)).rows[0];
     let retained = await findRetained();
-    const importedAt = retained?.imported_at ?? new Date().toISOString();
+    const importedAt = retained?.imported_at ?? executionNow().toISOString();
     if (!Number.isFinite(Date.parse(importedAt))) {
       throw new ConflictException("The retained cover import has an invalid recorded time.");
     }
@@ -523,38 +525,26 @@ export class StaffCoverageReconciliationService implements StaffCoverageReconcil
     transaction: Transaction<Database>,
     input: ApprovedLeaveCoverageInput,
   ) {
+    const window = { school_id: input.school_id, staff_profile_id: input.request.staff_profile_id,
+      teacher_user_id: input.absent_teacher_user_id, starts_on: input.request.starts_on, ends_on: input.request.ends_on, portion: input.request.portion };
     const scheduleTasks = await sql<{ id: string }>`INSERT INTO staff_coverage_tasks(
         school_id,leave_request_id,absent_staff_profile_id,source_schedule_id,class_section_id,subject_id,
         duty_date,period_number,starts_at,ends_at,title,location,handover_note)
       SELECT ${input.school_id}::uuid,${input.request.id}::uuid,
         ${input.request.staff_profile_id}::uuid,schedule.id,schedule.class_section_id,schedule.subject_id,
-        day::date,schedule.period_number,schedule.starts_at,schedule.ends_at,schedule.title,
+        schedule.duty_date,schedule.period_number,schedule.starts_at,schedule.ends_at,schedule.title,
         schedule.room,${input.request.handover_note}
-      FROM generate_series(${input.request.starts_on}::date,${input.request.ends_on}::date,interval '1 day') day
-      CROSS JOIN LATERAL planned_school_schedule_v2(${input.school_id}::uuid,day::date) schedule
-      WHERE schedule.teacher_user_id=${input.absent_teacher_user_id}::uuid
-        AND schedule.slot_type='class' AND NOT schedule.cancelled
-        AND (${input.request.portion}='full_day'
-          OR (${input.request.portion}='first_half' AND schedule.starts_at<time '12:00')
-          OR (${input.request.portion}='second_half' AND schedule.starts_at>=time '12:00'))
+      FROM (${staffLeaveScheduleSources(window)}) schedule
       ON CONFLICT DO NOTHING RETURNING id`.execute(transaction);
     const responsibilityTasks = await sql<{ id: string }>`INSERT INTO staff_coverage_tasks(
         school_id,leave_request_id,absent_staff_profile_id,responsibility_assignment_id,class_section_id,subject_id,
         duty_date,starts_at,ends_at,title,location,handover_note)
       SELECT assignment.school_id,${input.request.id}::uuid,assignment.staff_profile_id,
-        assignment.id,assignment.class_section_id,assignment.subject_id,assignment.starts_on,
+        assignment.id,assignment.class_section_id,assignment.subject_id,assignment.duty_date,
         assignment.starts_at,assignment.ends_at,
-        type.name||CASE WHEN assignment.scope_label='' THEN '' ELSE ' · '||assignment.scope_label END,
+        assignment.title,
         assignment.location,${input.request.handover_note}
-      FROM staff_responsibility_assignments assignment
-      JOIN staff_responsibility_types type ON type.id=assignment.responsibility_type_id
-      WHERE assignment.school_id=${input.school_id}::uuid
-        AND assignment.staff_profile_id=${input.request.staff_profile_id}::uuid
-        AND assignment.status='active' AND type.scope_kind IN ('event','scheduled_duty')
-        AND assignment.starts_on BETWEEN ${input.request.starts_on}::date AND ${input.request.ends_on}::date
-        AND (${input.request.portion}='full_day' OR assignment.starts_at IS NULL
-          OR (${input.request.portion}='first_half' AND assignment.starts_at<time '12:00')
-          OR (${input.request.portion}='second_half' AND assignment.starts_at>=time '12:00'))
+      FROM (${staffLeaveResponsibilitySources(window)}) assignment
       ON CONFLICT DO NOTHING RETURNING id`.execute(transaction);
     const ids = [...scheduleTasks.rows, ...responsibilityTasks.rows].map((row) => row.id);
     if (!ids.length) return ids;
@@ -650,8 +640,8 @@ export class StaffCoverageReconciliationService implements StaffCoverageReconcil
       const updated = await transaction.updateTable("staff_coverage_tasks").set({
         status: "cancelled",
         response_note: note,
-        resolved_at: new Date(),
-        updated_at: new Date(),
+        resolved_at: executionNow(),
+        updated_at: executionNow(),
       }).where("id", "=", evidence.coverage_task_id)
         .where("school_id", "=", input.school_id)
         .where("status", "=", "accepted")
@@ -710,7 +700,7 @@ export class StaffCoverageReconciliationService implements StaffCoverageReconcil
           kind: "general",
           title: "Cover duty changed",
           body: note,
-          staff_link: `/teacher/responsibilities?coverage=${updated.id}&coverage_revision=${updated.revision}`,
+          staff_link: `/areas/responsibilities/mine?coverage=${updated.id}&coverage_revision=${updated.revision}`,
           attention_eligible: false,
         } : null,
         payload,
@@ -744,7 +734,7 @@ export class StaffCoverageReconciliationService implements StaffCoverageReconcil
         source_version: evidence.source_version,
         original_teacher_user_id: evidence.original_teacher_user_id,
         replacement_teacher_user_id: evidence.replacement_teacher_user_id,
-        cancelled_at: new Date().toISOString(),
+        cancelled_at: executionNow().toISOString(),
         correlation_id: input.correlation_id,
       });
       if (model.projection_status === "source_mismatch") {

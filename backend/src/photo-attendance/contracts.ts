@@ -77,6 +77,13 @@ export interface VisionSession {
     };
     warnings: string[];
     elapsed_seconds: number;
+    provenance?: {
+      environment: "simulation";
+      decision_mode: "synthetic_manual_review";
+      biometric_matching_performed: false;
+      automatic_assignments_permitted: false;
+      source_media_retained: false;
+    };
   };
 }
 
@@ -99,6 +106,7 @@ export interface PhotoAttendanceAnalysis {
     elapsed_seconds: number;
   };
   warnings: string[];
+  provenance?: VisionSession["result"]["provenance"];
   students: Array<{
     student_id: string;
     name: string;

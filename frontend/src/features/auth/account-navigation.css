@@ -1,20 +1,20 @@
 .security-header > button {
   display: grid;
-  width: 42px;
-  height: 42px;
+  width: 44px;
+  height: 44px;
   flex: 0 0 auto;
   padding: 0;
   place-items: center;
-  border: 1px solid var(--thatcampus-line);
-  border-radius: var(--thatcampus-radius-control);
-  color: var(--thatcampus-brand);
-  background: #fff;
+  border: 0;
+  border-radius: 999px;
+  color: var(--thatcampus-ink);
+  background: var(--thatcampus-surface-strong);
   font: inherit;
-  font-size: 24px;
+  font-size: 1.5rem;
   cursor: pointer;
 }
 
 .security-header > button:focus-visible {
-  outline: 3px solid color-mix(in srgb, var(--thatcampus-brand) 25%, transparent);
-  outline-offset: 2px;
+  outline: 2px solid var(--thatcampus-brand);
+  outline-offset: 3px;
 }

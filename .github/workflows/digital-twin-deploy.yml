@@ -1,0 +1,138 @@
+name: Digital Twin deployment
+
+on:
+  push:
+    branches: [codex/campus-digital-twin]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+# Never interrupt a running migration or let two releases promote concurrently.
+concurrency:
+  group: digital-twin-app2-deploy
+  cancel-in-progress: false
+
+env:
+  EXPO_NO_GIT_STATUS: "1"
+  EXPO_NO_TELEMETRY: "1"
+  EXPO_NO_DOTENV: "1"
+  EXPO_PUBLIC_API_URL: https://app2.thatcampus.com
+  DT_WIF_PROVIDER: projects/367469594690/locations/global/workloadIdentityPools/github-dt/providers/github
+  DT_CLOUD_SQL_INSTANCE: eduera-511111:asia-south1:eduera-db
+
+jobs:
+  verify:
+    if: github.repository == 'EduveraIITA/Eduvera' && github.repository_id == '1361145323' && github.repository_owner_id == '328263463' && github.ref == 'refs/heads/codex/campus-digital-twin'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    services:
+      postgres:
+        image: postgres:17-bookworm
+        env:
+          POSTGRES_USER: thatcampus_dt_ci
+          POSTGRES_PASSWORD: disposable-dt-ci-only
+          POSTGRES_DB: thatcampus_dt_test
+        ports: [5432:5432]
+        options: >-
+          --health-cmd "pg_isready -U thatcampus_dt_ci -d thatcampus_dt_test"
+          --health-interval 5s --health-timeout 5s --health-retries 12
+    env:
+      DATABASE_URL: postgresql://thatcampus_dt_ci:disposable-dt-ci-only@127.0.0.1:5432/thatcampus_dt_test
+      MIGRATION_DATABASE_URL: postgresql://thatcampus_dt_ci:disposable-dt-ci-only@127.0.0.1:5432/thatcampus_dt_test
+      EVENT_DATABASE_URL: postgresql://thatcampus_dt_ci:disposable-dt-ci-only@127.0.0.1:5432/thatcampus_dt_test
+      COOKIE_SECRET: disposable-dt-ci-cookie-secret-at-least-32-characters
+      TEST_DATABASE_ISOLATED: "true"
+      AI_PROVIDER: mock
+      AGENT_PROVIDER: mock
+      TELEGRAM_BOT_ENABLED: "false"
+      INVITATION_EMAIL_ENABLED: "false"
+      RAZORPAY_ENABLED: "false"
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 24.16.0
+          cache: npm
+          cache-dependency-path: |
+            backend/package-lock.json
+            mobile/package-lock.json
+            packages/contracts/package-lock.json
+      - name: Install locked active applications
+        run: |
+          npm ci --prefix backend --prefer-offline --no-audit --no-fund
+          npm ci --prefix packages/contracts --prefer-offline --no-audit --no-fund
+          npm ci --prefix mobile --prefer-offline --no-audit --no-fund
+      - name: Strict source conformance, types and build
+        run: |
+          npm --prefix backend run simulation:conformance
+          npm --prefix backend run typecheck
+          npm --prefix backend run lint
+          npm exec --prefix backend -- tsc -p backend/tsconfig.build.json
+          npm --prefix mobile run typecheck
+      - name: Disposable database and relevant backend behavior
+        run: |
+          npm --prefix backend run db:migrate
+          npm --prefix backend run test:fast
+          cd backend
+          node --import tsx node_modules/vitest/vitest.mjs run test/native-auth.test.ts test/native-auth-session.integration.test.ts test/web-assets.test.ts test/simulation-conformance.test.ts
+      - name: Universal application and release guard tests
+        run: |
+          npm --prefix mobile test
+          node --test deploy/dt/*.test.mjs deploy/dt/edge/*.test.mjs
+      - name: Build the sole release web application
+        working-directory: mobile
+        run: |
+          npm run export:web -- --output-dir ../artifacts/dt-ci-web
+          mkdir -p ../artifacts/dt-ci-web/licenses
+          cp assets/fonts/FONT-LICENSE.txt ../artifacts/dt-ci-web/licenses/DejaVuSans-LICENSE.txt
+          node ../deploy/dt/verify-web-export.mjs ../artifacts/dt-ci-web https://app2.thatcampus.com
+
+  deploy:
+    needs: verify
+    if: github.repository == 'EduveraIITA/Eduvera' && github.repository_id == '1361145323' && github.repository_owner_id == '328263463' && github.ref == 'refs/heads/codex/campus-digital-twin'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 24.16.0
+          cache: npm
+          cache-dependency-path: mobile/package-lock.json
+      - name: Assert the exact isolated deployment target
+        run: node --input-type=module -e 'import {guard} from "./deploy/dt/release.mjs"; guard(process.env);'
+      - name: Prepare the installed WebAssembly identity
+        run: npm ci --prefix mobile --prefer-offline --no-audit --no-fund
+      - uses: google-github-actions/auth@7c6bc770dae815cd3e89ee6cdf493a5fab2cc093 # v3
+        id: google-auth
+        with:
+          workload_identity_provider: ${{ env.DT_WIF_PROVIDER }}
+          service_account: dt-deployer@eduera-511111.iam.gserviceaccount.com
+          project_id: eduera-511111
+          token_format: access_token
+          access_token_lifetime: 3600s
+      - uses: google-github-actions/setup-gcloud@aa5489c8933f4cc7a4f7d45035b3b1440c9c10db # v3.0.1
+        with:
+          project_id: eduera-511111
+      - name: Build, check, migrate once and promote the immutable candidate
+        env:
+          # Use the short-lived impersonated token for the long Cloud Build wait,
+          # rather than refreshing from an expired five-minute GitHub OIDC JWT.
+          CLOUDSDK_AUTH_ACCESS_TOKEN: ${{ steps.google-auth.outputs.access_token }}
+        run: node deploy/dt/release.mjs
+      - name: Retain the exact bounded release outcome
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: digital-twin-release-${{ github.run_id }}-${{ github.run_attempt }}
+          path: artifacts/dt-deploy/release.json
+          if-no-files-found: warn
+          retention-days: 30

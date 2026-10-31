@@ -8,7 +8,7 @@ const report:ChatReport={id:"report-1",message_id:"message-1",reported_by:"repor
 const queue:ChatReportQueue={results:[report,{...report,id:"report-2",sender_name:"Resolved sender",status:"resolved",resolution_note:"Reviewed with student",action_taken:"no_action"}],summary:{open:1,under_review:0,resolved:1,dismissed:0}};
 afterEach(cleanup);
 function Navigation(){const location=useLocation();const [,setParams]=useSearchParams();return <><output>{location.search}</output><button onClick={()=>setParams(current=>{current.delete('report');return current;})}>Return to reports</button></>;}
-function mount(search="",patch:Partial<React.ComponentProps<typeof ModerationDialog>>={}){const onUpdate=vi.fn();const onRefresh=vi.fn();const props={standalone:true,queue,reviewers:[],loading:false,pending:false,onUpdate,onRefresh,...patch};const view=render(<MemoryRouter initialEntries={['/principal/safeguarding?section=message_reports'+search]}><Navigation/><ModerationDialog {...props}/></MemoryRouter>);return {...view,onUpdate,onRefresh};}
+function mount(search="",patch:Partial<React.ComponentProps<typeof ModerationDialog>>={}){const onUpdate=vi.fn();const onRefresh=vi.fn();const props={standalone:true,queue,reviewers:[],loading:false,pending:false,onUpdate,onRefresh,...patch};const view=render(<MemoryRouter initialEntries={['/areas/care/concerns?section=message_reports'+search]}><Navigation/><ModerationDialog {...props}/></MemoryRouter>);return {...view,onUpdate,onRefresh};}
 
 describe("focused message reports",()=>{
   it("shows only the queue until a row opens a URL-backed report",()=>{

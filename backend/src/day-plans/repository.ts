@@ -7,6 +7,7 @@ import { sql } from "kysely";
 import type { AuthUser, AuthenticatedRequest } from "../common/request.js";
 import type { Plan, PlanDb, PlanPeriod, StoredPeriod } from "./contracts.js";
 import { uuid } from "./contracts.js";
+import { executionNow } from "../campus-model-core/execution-time.runtime.js";
 export async function authorize(
   db: PlanDb,
   user: AuthUser,
@@ -57,7 +58,7 @@ export async function dayContext(db: PlanDb, schoolId: string, date: string) {
       is_instructional: boolean | null;
       label: string | null;
       timezone: string;
-    }>`SELECT (clock_timestamp() AT TIME ZONE s.timezone)::date::text AS today,to_char(clock_timestamp() AT TIME ZONE s.timezone,'HH24:MI') AS local_time,s.timezone,c.is_instructional,c.label FROM schools s LEFT JOIN school_calendar_days c ON c.school_id=s.id AND c.date=${date}::date WHERE s.id=${schoolId}::uuid`.execute(
+    }>`SELECT (${executionNow()}::timestamptz AT TIME ZONE s.timezone)::date::text AS today,to_char(${executionNow()}::timestamptz AT TIME ZONE s.timezone,'HH24:MI') AS local_time,s.timezone,c.is_instructional,c.label FROM schools s LEFT JOIN school_calendar_days c ON c.school_id=s.id AND c.date=${date}::date WHERE s.id=${schoolId}::uuid`.execute(
       db,
     )
   ).rows[0];
@@ -85,6 +86,15 @@ export async function activeTeachers(
     );
   return new Map(rows.map((r) => [r.user_id, r.id]));
 }
+export async function validatePeriodSpaces(db: PlanDb, schoolId: string, rows: readonly { space_id?: string | null | undefined }[]) {
+  const spaceIds = [...new Set(rows.flatMap(period => period.space_id ? [period.space_id] : []))];
+  if (!spaceIds.length) return;
+  const current = (await sql<{ id: string }>`SELECT place.id FROM campus_spaces place
+    JOIN institution_campuses campus ON campus.id=place.campus_id AND campus.school_id=place.school_id
+    WHERE place.school_id=${schoolId}::uuid AND place.id=ANY(${spaceIds}::uuid[])
+      AND place.status='active' AND campus.status='active' FOR SHARE OF place,campus`.execute(db)).rows;
+  if (current.length !== spaceIds.length) throw new BadRequestException("Select a current campus place belonging to this institution.");
+}
 export async function insertPeriods(
   db: PlanDb,
   plan: Plan,
@@ -105,15 +115,19 @@ export async function insertPeriods(
   ).map((s) => s.id);
   if (rows.some((p) => p.subject_id && !subjects.includes(p.subject_id)))
     throw new BadRequestException("Select a subject belonging to this school.");
+  await validatePeriodSpaces(db, plan.school_id, rows);
   const data = rows.map((p) => ({
     ...p,
+    // Label-only clients explicitly leave the canonical destination unknown.
+    // Never preserve an obsolete ID or infer one from a typed room name.
+    space_id: p.space_id ?? null,
     teacher_membership_id: p.teacher_user_id
       ? teachers.get(p.teacher_user_id)
       : null,
   }));
-  await sql`INSERT INTO day_plan_periods(school_id,plan_id,version,period_number,starts_at,ends_at,title,slot_type,room,teacher_membership_id,cancelled,materials,subject_id)
-    SELECT ${plan.school_id}::uuid,${plan.id}::uuid,${version},p.period_number,p.starts_at::time,p.ends_at::time,p.title,p.slot_type,p.room,p.teacher_membership_id::uuid,p.cancelled,p.materials,p.subject_id::uuid
-    FROM jsonb_to_recordset(${JSON.stringify(data)}::jsonb) AS p(period_number smallint,starts_at text,ends_at text,title text,slot_type text,room text,teacher_membership_id text,cancelled boolean,materials text[],subject_id text)`.execute(
+  await sql`INSERT INTO day_plan_periods(school_id,plan_id,version,period_number,starts_at,ends_at,title,slot_type,room,teacher_membership_id,cancelled,materials,subject_id,space_id)
+    SELECT ${plan.school_id}::uuid,${plan.id}::uuid,${version},p.period_number,p.starts_at::time,p.ends_at::time,p.title,p.slot_type,p.room,p.teacher_membership_id::uuid,p.cancelled,p.materials,p.subject_id::uuid,p.space_id::uuid
+    FROM jsonb_to_recordset(${JSON.stringify(data)}::jsonb) AS p(period_number smallint,starts_at text,ends_at text,title text,slot_type text,room text,teacher_membership_id text,cancelled boolean,materials text[],subject_id text,space_id text)`.execute(
     db,
   );
 }

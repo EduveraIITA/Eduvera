@@ -12,7 +12,7 @@ describe("extended typed-attention destinations",()=>{
     [["features","campus-events","CampusEventRoutes.tsx"],"exactAttentionTarget ? <AttentionOpenAcknowledgement","staleAttentionTarget"],
     [["features","office","FamilyFeesPage.tsx"],"exactReview ? <AttentionOpenAcknowledgement","staleAttentionReview"],
     [["features","restricted-care","RestrictedCarePage.tsx"],"expectedRevision === item.revision ? <AttentionOpenAcknowledgement","has changed since the alert"],
-    [["features","governance","PolicyLibraryPage.tsx"],"exactPolicy ? <AttentionOpenAcknowledgement","no longer published to your role"],
+    [["features","governance","PolicyLibraryPage.tsx"],"exactPolicy ? <AttentionOpenAcknowledgement","no longer available with your current access"],
   ] as const)("gates acknowledgement in %s on an exact loaded record",(parts,gate,stale)=>{
     const text=source(...parts);
     expect(text).toContain(gate);

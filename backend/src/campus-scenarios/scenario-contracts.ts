@@ -67,12 +67,20 @@ export const scenarioPolicyConfigurationSchema = z.object({
   }),
 }).passthrough();
 
-export const createCampusScenarioSchema = z.object({
-  campus_id: z.string().uuid().optional(),
-  horizon_days: z.number().int().min(7).max(30),
-  intervention: interventionSchema,
-  behaviour_policy_version_id: z.string().uuid().optional(),
-}).strict();
+export const createCampusScenarioSchema = z.union([
+  z.object({
+    kind: z.literal("baseline_snapshot"),
+    campus_id: z.string().uuid().optional(),
+    horizon_days: z.number().int().min(7).max(30),
+  }).strict(),
+  z.object({
+    kind: z.literal("intervention").optional(),
+    campus_id: z.string().uuid().optional(),
+    horizon_days: z.number().int().min(7).max(30),
+    intervention: interventionSchema,
+    behaviour_policy_version_id: z.string().uuid().optional(),
+  }).strict(),
+]);
 
 export const campusScenarioTargetsQuerySchema = z.object({
   campus_id: z.string().uuid().optional(),
@@ -122,7 +130,7 @@ export interface CampusScenarioSnapshot {
   kind: "campus_operations_snapshot";
   version: 1;
   school_id: string;
-  campus_id: string;
+  campus_id: string | null;
   timezone: string;
   captured_at: string;
   horizon: { from: string; to: string };
@@ -132,7 +140,7 @@ export interface CampusScenarioSnapshot {
 
 export interface CampusScenarioRepositorySnapshot {
   snapshot: CampusScenarioSnapshot;
-  target: CampusScenarioTarget;
+  target: CampusScenarioTarget | null;
   configuration_snapshot: ScenarioConfigurationRef[];
   identities: ScenarioIdentityMapping[];
   source_revisions: Record<string, string>;
@@ -151,6 +159,14 @@ export interface CampusScenarioRepositorySnapshot {
     sessions: number;
     spaces: number;
     teachers: number;
+    agents: number;
+    agent_kinds: {
+      human: number;
+      team: number;
+      device: number;
+      integration: number;
+      software: number;
+    };
     enrolments: number;
   };
 }
@@ -172,16 +188,44 @@ export interface CampusScenarioMetricView {
 export interface CampusScenarioRunView {
   id: string;
   status: "queued" | "running" | "completed" | "failed";
+  scenario_kind: "intervention" | "baseline_snapshot";
   created_at: string;
   snapshot_at: string;
   expires_at: string;
   horizon_days: number;
-  intervention: CampusScenarioInterventionInput & { target_label: string };
+  intervention: (CampusScenarioInterventionInput & { target_label: string }) | null;
   assumptions: string[];
   unsupported_domains: string[];
   metrics: CampusScenarioMetricView[];
   progress: number;
   failure_reason: string | null;
+  execution_environment: {
+    mode: "simulation";
+    namespace_id: string;
+    run_id: string;
+    virtual_clock: { now: string; time_zone: string };
+    source_snapshot_at: string;
+    expires_at: string;
+  };
+  projection_capabilities: {
+    application_parity: false;
+    supported: Array<"campus_performance">;
+    unsupported: Array<"today" | "timetable" | "attendance" | "requests" | "notifications" | "campus_view">;
+  };
+  run_local_counterpart_coverage: {
+    scope: "captured_active_model_core_agents";
+    source_agent_count: number;
+    counterpart_count: number;
+    coverage: "complete" | "partial";
+    counterparts_by_kind: CampusScenarioRepositorySnapshot["counts"]["agent_kinds"];
+    readiness: {
+      modelled: number;
+      passive: number;
+      unsupported: number;
+    };
+    behaviour_parity: false;
+    explanation: string;
+  };
   side_effect_policy: {
     mode: "sink_only";
     production_writes: false;
@@ -203,6 +247,9 @@ export interface CampusScenarioRunView {
     deterministic_seed: string;
     executor: { id: string; version: string };
     ensemble_sample_count: number;
+    identity_manifest_hash: string;
+    identity_count: number;
+    configuration_ref_count: number;
   };
   stochastic_policy: ScenarioBehaviourPolicy | null;
 }

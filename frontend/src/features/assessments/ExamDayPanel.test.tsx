@@ -1,5 +1,7 @@
 import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { MemoryRouter } from "react-router-dom";
+import { ExecutionEnvironmentProvider } from "../simulation/ExecutionEnvironmentContext";
 import { ExamDayPanel } from "./ExamDayPanel";
 import { createExamIncident, respondToInvigilation, saveExamAttendance, type ExamOperation } from "./api";
 
@@ -33,6 +35,40 @@ afterEach(() => {
 });
 
 describe("exam-day panel", () => {
+  it("does not offer exam mutations in an ended simulation", () => {
+    render(<ExecutionEnvironmentProvider environment={{ mode: "simulation", namespaceId: "namespace-one", runId: "run-one", runStatus: "completed", virtualClock: { now: "2026-10-20T12:00:00Z", timeZone: "UTC" } }}><ExamDayPanel schoolId="school-1" assessmentId="assessment-1" operation={operation} viewerRole="admin" refresh={vi.fn()} /></ExecutionEnvironmentProvider>);
+    expect(screen.getByText(/examination record is read-only/)).toBeVisible();
+    expect(screen.queryByRole("button", { name: "Complete exam" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Save attendance" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Report incident" })).not.toBeInTheDocument();
+  });
+  it("does not offer an invalid response after the invitation policy changes", () => {
+    const assignment = { ...operation.invigilators[0]!, status: "offered" as const,
+      invitation_status: { state: "needs_reissue" as const, can_respond: false, message: "This invitation must be reissued under the current policy.", recovery: "save_arrangements" as const, setup_href: "/more/setup/institution/operating-rules?school=school-1&rule=examinations" } };
+    render(<ExamDayPanel schoolId="school-1" assessmentId="assessment-1" operation={{ ...operation, invigilators: [assignment], viewer_assignment: assignment }} viewerRole="invigilator" refresh={vi.fn()} />);
+    expect(screen.getByText(/must be reissued under the current policy/)).toBeVisible();
+    expect(screen.queryByRole("button", { name: "Accept duty" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Decline" })).not.toBeInTheDocument();
+    expect(screen.getByText(/Ask the exam coordinator/)).toBeVisible();
+    expect(respondToInvigilation).not.toHaveBeenCalled();
+  });
+  it("takes the administrator to the existing arrangements editor for explicit reissue", () => {
+    const edit = vi.fn();
+    const assignment = { ...operation.invigilators[0]!, status: "offered" as const,
+      invitation_status: { state: "needs_reissue" as const, can_respond: false, message: "This invitation needs a new offer.", recovery: "save_arrangements" as const, setup_href: "/more/setup/institution/operating-rules?school=school-1&rule=examinations" } };
+    render(<ExamDayPanel schoolId="school-1" assessmentId="assessment-1" operation={{ ...operation, invigilators: [assignment] }} viewerRole="admin" refresh={vi.fn()} onEditArrangements={edit} />);
+    fireEvent.click(screen.getByRole("button", { name: "Review and reissue invitations" }));
+    expect(edit).toHaveBeenCalledOnce();
+    expect(screen.getByText(/Each new invitation still needs/)).toBeVisible();
+    expect(respondToInvigilation).not.toHaveBeenCalled();
+  });
+  it("links missing approval to the canonical examination Operating rules", () => {
+    const href = "/more/setup/institution/operating-rules?school=school-1&rule=examinations";
+    const assignment = { ...operation.invigilators[0]!, status: "offered" as const,
+      invitation_status: { state: "unconfigured" as const, can_respond: false, message: "An administrator must approve invitation rules.", recovery: "configure_invitations" as const, setup_href: href } };
+    render(<MemoryRouter><ExamDayPanel schoolId="school-1" assessmentId="assessment-1" operation={{ ...operation, invigilators: [assignment] }} viewerRole="admin" refresh={vi.fn()} /></MemoryRouter>);
+    expect(screen.getByRole("link", { name: "Review invitation rules" })).toHaveAttribute("href", href);
+  });
   it("explains effective timetable conflicts before an administrator schedules the exam", () => {
     const planning: ExamOperation = {
       ...operation,
@@ -106,6 +142,9 @@ describe("exam-day panel", () => {
 
     const aarav = screen.getByRole("article", { name: "Aarav Sharma" });
     const zara = screen.getByRole("article", { name: "Zara Sinha" });
+    expect(within(aarav).getByText("CIS-001")).toBeVisible();
+    expect(within(aarav).getByText("Roll 01")).toBeVisible();
+    expect(within(aarav).getByLabelText("Attendance status for Aarav Sharma")).toHaveTextContent("Left early");
     expect(within(aarav).getByRole("button", { name: "Absent" })).toHaveAttribute("aria-pressed", "true");
     expect(within(zara).getByRole("button", { name: "Present" })).toHaveAttribute("aria-pressed", "false");
 
@@ -121,6 +160,20 @@ describe("exam-day panel", () => {
     expect(attendanceCall[3][0]).toMatchObject({ student_id: "student-2", status: "present", expected_revision: 1 });
     expect(typeof attendanceCall[3][0]?.observed_at).toBe("string");
     expect(refresh).toHaveBeenCalledOnce();
+  });
+
+  it("keeps candidate decisions when filtering the shared roster by status and identifier", () => {
+    render(<ExamDayPanel schoolId="school-1" assessmentId="assessment-1" operation={operation} viewerRole="admin" refresh={vi.fn()} />);
+    fireEvent.change(screen.getByRole("combobox", { name: "Filter candidates" }), { target: { value: "unrecorded" } });
+    expect(screen.queryByRole("article", { name: "Aarav Sharma" })).not.toBeInTheDocument();
+    const zara = screen.getByRole("article", { name: "Zara Sinha" });
+    fireEvent.click(within(zara).getByRole("button", { name: "Present" }));
+    expect(screen.queryByRole("article", { name: "Zara Sinha" })).not.toBeInTheDocument();
+    fireEvent.change(screen.getByRole("combobox", { name: "Filter candidates" }), { target: { value: "all" } });
+    fireEvent.change(screen.getByRole("searchbox", { name: "Search candidates" }), { target: { value: "CIS-002" } });
+    expect(screen.queryByRole("article", { name: "Aarav Sharma" })).not.toBeInTheDocument();
+    expect(within(screen.getByRole("article", { name: "Zara Sinha" })).getByRole("button", { name: "Present" })).toHaveAttribute("aria-pressed", "true");
+    expect(saveExamAttendance).not.toHaveBeenCalled();
   });
 
   it("records an incident through a labelled form without browser prompts", async () => {

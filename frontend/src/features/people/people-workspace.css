@@ -1,0 +1,20 @@
+.people-workspace{display:grid;gap:16px;width:min(100%,760px);margin:0 auto;padding:2px 0 28px;color:var(--thatcampus-ink)}
+.people-workspace__intro{padding:22px 20px;border:1px solid var(--thatcampus-border);border-radius:var(--thatcampus-radius-card);background:var(--thatcampus-surface);box-shadow:var(--thatcampus-shadow-card)}
+.people-workspace__intro>span,.people-workspace__copy small{color:var(--thatcampus-brand);font-size:11px;font-weight:800;letter-spacing:.08em;text-transform:uppercase}
+.people-workspace__intro h2{margin:6px 0 8px;font-size:clamp(24px,6vw,34px);line-height:1.08;letter-spacing:-.045em}
+.people-workspace__intro p{max-width:590px;margin:0;color:var(--thatcampus-ink-muted);font-size:15px;line-height:1.55}
+.people-workspace__list{display:grid;overflow:hidden;border:1px solid var(--thatcampus-border);border-radius:var(--thatcampus-radius-card);background:var(--thatcampus-surface);box-shadow:var(--thatcampus-shadow-card)}
+.people-workspace__list>a{display:grid;min-height:84px;padding:14px 16px;grid-template-columns:46px minmax(0,1fr) 20px;align-items:center;gap:13px;color:inherit;text-decoration:none}
+.people-workspace__list>a+a{border-top:1px solid var(--thatcampus-border)}
+.people-workspace__list>a:hover{background:var(--thatcampus-surface-soft)}
+.people-workspace__list>a:focus-visible{position:relative;z-index:1;outline:3px solid var(--thatcampus-brand-bright);outline-offset:-3px}
+.people-workspace__icon{display:grid;width:46px;height:46px;place-items:center;border-radius:15px;color:var(--thatcampus-brand);background:var(--thatcampus-brand-soft)}
+.people-workspace__copy{display:grid;min-width:0;gap:3px}
+.people-workspace__copy strong{font-size:16px;letter-spacing:-.02em}
+.people-workspace__copy>span{color:var(--thatcampus-ink-muted);font-size:13px;line-height:1.42}
+.people-workspace__list>a>svg{color:var(--thatcampus-ink-muted)}
+.people-workspace__empty{padding:28px 20px;text-align:center;border:1px solid var(--thatcampus-border);border-radius:var(--thatcampus-radius-card);background:var(--thatcampus-surface)}
+.people-workspace__empty svg{color:var(--thatcampus-brand)}
+.people-workspace__empty h2{margin:10px 0 5px;font-size:18px}
+.people-workspace__empty p{margin:0;color:var(--thatcampus-ink-muted);line-height:1.5}
+@media(max-width:520px){.people-workspace__intro{padding:20px 18px}.people-workspace__list>a{min-height:80px;padding-inline:14px}.people-workspace__copy>span{font-size:12px}}

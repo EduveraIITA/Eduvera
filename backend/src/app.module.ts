@@ -1,4 +1,5 @@
 import { GateModule } from "./gate/gate.module.js";
+import { OrganizationModule } from "./organization/organization.module.js";
 import { TeacherFeedbackModule } from "./teacher-feedback/teacher-feedback.module.js";
 import { OperatingRulesModule } from "./operating-rules/operating-rules.module.js";
 import { InvitationEmailWorker } from "./common/invitation-queue.js";
@@ -9,7 +10,7 @@ import { SchedulePlanningModule } from "./schedule-planning/schedule-planning.mo
 import { RolesModule } from "./roles/roles.module.js";
 import { PermissionGuard } from "./roles/permission.guard.js";
 import { Module } from "@nestjs/common";
-import { APP_GUARD } from "@nestjs/core";
+import { APP_GUARD, APP_INTERCEPTOR } from "@nestjs/core";
 import { AiModule } from "./ai/ai.module.js";
 import { AgentModule } from "./agent/agent.module.js";
 import { CoordinationModule } from "./coordination/coordination.module.js";
@@ -39,15 +40,32 @@ import { RequestsModule } from "./requests/requests.module.js";
 import { NoticesModule } from "./notices/notices.module.js";
 import { AttentionModule } from "./attention/attention.module.js";
 import { AttendanceModelModule } from "./attendance-model/attendance-model.module.js";
+import { ActivityAttendanceModule } from "./attendance/activity-attendance.module.js";
 import { AgentChannelModule } from "./agent/channels/channel.module.js";
 import { CalendarIntegrationsModule } from "./calendar-integrations/calendar-integrations.module.js";
 import { CampusViewModule } from "./campus-view/campus-view.module.js";
+import { CampusScenesModule } from "./campus-scenes/campus-scenes.module.js";
+import { CampusSceneImportModule } from "./campus-scene-import/scene-import.module.js";
 import { CampusScenarioModule } from "./campus-scenarios/campus-scenario.module.js";
-import { CampusLabHostedModule } from "./campus-lab-hosted/campus-lab-hosted.module.js";
+import { ExecutionEnvironmentInterceptor } from "./auth/execution-environment.interceptor.js";
+import { AssignedWorkAccess } from './auth/assigned-work-access.js';
+import { OperatingDayModule } from "./operating-day/operating-day.module.js";
+import { WorkspaceModule } from "./workspace/workspace.module.js";
+import { SimulationModule } from "./simulation/simulation.module.js";
+import { LearningAssignmentsModule } from "./learning/learning-assignments.module.js";
+import { TeachingSessionsModule } from "./teaching-sessions/teaching-sessions.module.js";
+import { FinanceArrangementsModule } from "./operations/finance-arrangements.module.js";
+import { NativeFeeReviewsModule } from "./operations/native-fee-reviews.module.js";
+import { ResourceLoansModule } from "./resource-loans/resource-loans.module.js";
+import { FacilitiesModule } from "./facilities/facilities.module.js";
+import { AccommodationModule } from "./facilities/accommodation/accommodation.module.js";
+import { DiningModule } from "./dining/dining.module.js";
+import { CampusDatesModule } from "./campus-dates/campus-dates.module.js";
 
 @Module({
   imports: [
     GateModule,
+    OrganizationModule,
     OperatingRulesModule,
     TeacherFeedbackModule,
     AnalyticsModule,
@@ -58,6 +76,15 @@ import { CampusLabHostedModule } from "./campus-lab-hosted/campus-lab-hosted.mod
     DatabaseModule,
     AuthModule,
     SchoolModule,
+    LearningAssignmentsModule,
+    TeachingSessionsModule,
+    FinanceArrangementsModule,
+    NativeFeeReviewsModule,
+    ResourceLoansModule,
+    FacilitiesModule,
+    AccommodationModule,
+    DiningModule,
+    CampusDatesModule,
     ChatModule,
     AiModule,
     AgentModule,
@@ -80,19 +107,26 @@ import { CampusLabHostedModule } from "./campus-lab-hosted/campus-lab-hosted.mod
     NoticesModule,
     AttentionModule,
     AttendanceModelModule,
+    ActivityAttendanceModule,
     AgentChannelModule,
     CalendarIntegrationsModule,
     CampusViewModule,
+    CampusScenesModule,
+    CampusSceneImportModule,
     CampusScenarioModule,
-    CampusLabHostedModule,
+    SimulationModule,
+    OperatingDayModule,
+    WorkspaceModule,
   ],
   controllers: [AppController, ReleaseController, SpaController],
   providers: [
     InvitationEmailWorker,
+    AssignedWorkAccess,
     { provide: APP_GUARD, useClass: SessionGuard },
     { provide: APP_GUARD, useClass: CsrfGuard },
     { provide: APP_GUARD, useClass: PublicDemoGuard },
     { provide: APP_GUARD, useClass: PermissionGuard },
+    { provide: APP_INTERCEPTOR, useClass: ExecutionEnvironmentInterceptor },
   ],
 })
 export class AppModule {}

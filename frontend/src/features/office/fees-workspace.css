@@ -1,0 +1,42 @@
+.fee-workspace-entry .workspace-view {
+  width: min(100%, 640px);
+  margin-inline: auto;
+}
+
+.fee-context-row {
+  display: grid;
+  min-height: 76px;
+  padding: 13px 15px;
+  grid-template-columns: 40px minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 12px;
+  background: var(--thatcampus-surface);
+}
+
+.fee-context-row__icon {
+  display: grid;
+  width: 40px;
+  height: 40px;
+  place-items: center;
+  border-radius: var(--thatcampus-radius-control);
+  color: var(--thatcampus-brand);
+  background: var(--thatcampus-brand-soft);
+}
+
+.fee-context-row:focus-visible {
+  z-index: 1;
+  outline: 3px solid color-mix(in srgb, var(--thatcampus-brand) 34%, transparent);
+  outline-offset: -3px;
+}
+
+@media (hover: hover) {
+  .fee-context-row:hover {
+    background: var(--thatcampus-surface-soft);
+  }
+}
+
+.fee-context-row { padding-block: 20px; padding-inline: var(--thatcampus-row-inset); border-radius: var(--thatcampus-radius-row); }
+.fee-context-row__icon { color: var(--thatcampus-logo-green); background: var(--thatcampus-logo-green-soft); }
+.fee-context-row .workspace-directory-row__body { min-width: 0; }
+.fee-context-row :is(strong, small) { overflow-wrap: anywhere; }
+.fee-context-row { background: var(--thatcampus-surface-row); box-shadow: var(--thatcampus-shadow-card); }

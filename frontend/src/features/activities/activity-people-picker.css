@@ -1,0 +1,132 @@
+.activity-people-picker { min-width:0; }
+.activity-people-picker__toolbar {
+  display:flex;
+  align-items:center;
+  justify-content:space-between;
+  gap:8px;
+  flex-wrap:wrap;
+}
+.activity-people-picker__toolbar > div { display:flex; flex-wrap:wrap; gap:8px; }
+.activity-people-picker__toolbar .activity-people-picker__selection {
+  margin:0;
+  color:var(--thatcampus-brand);
+  font-size:14px;
+  font-weight:600;
+}
+.activity-people-picker__toolbar button,
+.activity-people-picker__error button {
+  display:inline-flex;
+  align-items:center;
+  justify-content:center;
+  gap:8px;
+  min-height:44px;
+  padding:8px 12px;
+  border:1px solid transparent;
+  border-radius:var(--thatcampus-radius-control);
+  background:var(--thatcampus-surface);
+  color:var(--thatcampus-ink);
+  box-shadow:var(--thatcampus-shadow-control);
+  font:inherit;
+  font-size:14px;
+  font-weight:600;
+  cursor:pointer;
+}
+.activity-people-picker__toolbar button:active:not(:disabled) { box-shadow:var(--thatcampus-shadow-control-pressed); }
+.activity-people-picker__error { display:grid; justify-items:start; gap:8px; }
+.activity-picker.activity-people-picker > .activity-people-picker__search {
+  display:flex;
+  align-items:center;
+  gap:8px;
+  padding-right:4px;
+}
+.activity-picker.activity-people-picker > .activity-people-picker__search > input {
+  min-width:0;
+  padding-inline:0;
+  background:transparent;
+}
+.activity-people-picker__search > input[type=search]::-webkit-search-cancel-button {
+  -webkit-appearance:none;
+  appearance:none;
+  display:none;
+}
+.activity-people-picker__search > button {
+  display:grid;
+  place-items:center;
+  flex:0 0 44px;
+  width:44px;
+  height:44px;
+  padding:0;
+  border:0;
+  border-radius:var(--thatcampus-radius-control);
+  background:transparent;
+  color:var(--thatcampus-ink);
+  cursor:pointer;
+}
+.activity-people-picker .activity-picker__options { gap:8px; }
+.activity-picker.activity-people-picker .activity-picker__options > .activity-people-picker__person {
+  position:relative;
+  display:flex;
+  align-items:center;
+  gap:12px;
+  min-height:72px;
+  padding:12px var(--thatcampus-row-inset,16px);
+  border:1px solid transparent;
+  border-radius:var(--thatcampus-radius-row);
+  background:var(--thatcampus-surface-row);
+  color:var(--thatcampus-ink);
+  box-shadow:var(--thatcampus-shadow-card);
+  cursor:pointer;
+}
+.activity-people-picker__person > input[type=checkbox] {
+  position:absolute;
+  width:20px;
+  height:20px;
+  margin:0;
+  opacity:0;
+}
+.activity-people-picker__person:focus-within { outline:2px solid var(--thatcampus-brand); outline-offset:3px; }
+.activity-picker.activity-people-picker .activity-picker__options > .activity-people-picker__person.is-selected {
+  border-color:var(--thatcampus-brand);
+  background:var(--thatcampus-brand-soft);
+}
+.activity-people-picker__person > .activity-people-picker__avatar {
+  display:grid;
+  place-items:center;
+  flex:0 0 40px;
+  height:40px;
+  border-radius:50%;
+  background:var(--thatcampus-logo-green-soft);
+  color:var(--thatcampus-logo-green);
+  font-size:14px;
+  font-weight:650;
+}
+.activity-people-picker__person > .activity-people-picker__identity {
+  flex:1;
+  min-width:0;
+  gap:4px;
+  overflow-wrap:anywhere;
+  font-size:16px;
+  font-weight:600;
+}
+.activity-people-picker__identity small { color:var(--thatcampus-ink-secondary); font-size:14px; font-weight:400; }
+.activity-people-picker__person > .activity-people-picker__check {
+  display:grid;
+  place-items:center;
+  flex:0 0 24px;
+  height:24px;
+  border:1px solid var(--thatcampus-border);
+  border-radius:50%;
+  background:var(--thatcampus-surface);
+  color:var(--thatcampus-on-action);
+}
+.activity-people-picker__check > svg { visibility:hidden; }
+.activity-people-picker__person.is-selected > .activity-people-picker__check { border-color:var(--thatcampus-action); background:var(--thatcampus-action); }
+.activity-people-picker__person.is-selected > .activity-people-picker__check > svg { visibility:visible; }
+.activity-people-picker button:focus-visible { outline:2px solid var(--thatcampus-brand); outline-offset:3px; }
+.activity-people-picker__person:has(input:disabled) { cursor:default; }
+
+@media(forced-colors:active) {
+  .activity-people-picker__person > input[type=checkbox] { position:static; opacity:1; }
+  .activity-people-picker__person > .activity-people-picker__check { display:none; }
+  .activity-picker.activity-people-picker .activity-picker__options > .activity-people-picker__person.is-selected { border-color:Highlight; }
+}

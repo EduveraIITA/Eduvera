@@ -37,7 +37,7 @@ export async function planEvent(
         user_id: f.user_id,
         student_id: f.student_id,
         portal: f.role === "guardian" ? "parent" : "student",
-        link: `/${f.role === "guardian" ? "parent" : "student"}/timetable?date=${plan.date}${f.role === "guardian" ? `&student_id=${f.student_id}&day_plan_id=${plan.id}&day_plan_revision=${publishedRevision}` : ""}`,
+        link: `/areas/timetable/schedule?scope=${f.role === "guardian" ? "dependent" : "self"}&student_id=${f.student_id}&date=${plan.date}${f.role === "guardian" ? `&day_plan_id=${plan.id}&day_plan_revision=${publishedRevision}` : ""}`,
       });
     const administrators = new Set(
       (
@@ -56,8 +56,8 @@ export async function planEvent(
           student_id: null,
           portal: principal ? "principal" : "teacher",
           link: principal
-            ? `/principal/timetable/day?school=${plan.school_id}&date=${plan.date}&class=${plan.class_section_id}&day_plan_id=${plan.id}&day_plan_revision=${publishedRevision}`
-            : `/teacher/timetable?date=${plan.date}&day_plan_id=${plan.id}&day_plan_revision=${publishedRevision}`,
+            ? `/areas/timetable/planning/day?school=${plan.school_id}&date=${plan.date}&class=${plan.class_section_id}&day_plan_id=${plan.id}&day_plan_revision=${publishedRevision}`
+            : `/areas/timetable/schedule?date=${plan.date}&day_plan_id=${plan.id}&day_plan_revision=${publishedRevision}`,
         });
     }
     if (recipients.length)

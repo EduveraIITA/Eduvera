@@ -1,9 +1,10 @@
 import type { Transaction } from "kysely";
 import type { Database } from "../database/types.js";
+import type { InstitutionMembershipRole } from "../common/request.js";
 
 export const GOVERNANCE_DECISION_AUTHORITY_PORT = Symbol("GOVERNANCE_DECISION_AUTHORITY_PORT");
 
-export type GovernanceDecisionMatter = "staff_leave_decision" | "transport_duty_change_decision";
+export type GovernanceDecisionMatter = "staff_leave_decision" | "transport_duty_change_decision" | "fee_instalment_decision";
 export type GovernanceDecisionMode = "individual" | "delegated";
 
 export interface GovernanceAuthoritySourceReceipt {
@@ -21,6 +22,7 @@ export interface GovernanceAuthoritySourceReceipt {
 }
 
 export interface GovernanceDecisionAuthorityReceipt {
+  fee_instalment_basis?: { adoption_id: string; mandate_id: string; mandate_revision: number; max_amount_paise: number | null };
   school_id: string;
   matter_code: GovernanceDecisionMatter;
   evaluated_at: string;
@@ -34,7 +36,7 @@ export interface GovernanceDecisionAuthorityReceipt {
   };
   memberships: Array<{
     id: string;
-    role: "student" | "guardian" | "staff" | "admin";
+    role: InstitutionMembershipRole;
     is_active: true;
   }>;
   person: {

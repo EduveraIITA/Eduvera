@@ -4,6 +4,7 @@ import { sql } from "kysely";
 import { DatabaseService } from "../database/database.service.js";
 import type { AuthenticatedRequest, AuthUser } from "../common/request.js";
 import { operatingRules, rulesSchema, type RulesDb } from "./rules.js";
+import { readChatPolicy } from "../chat/chat-policy.js";
 
 const categorySchema = z.enum(["events", "departure", "messages"]);
 const timeSchema = z.string().regex(/^([01]\d|2[0-3]):[0-5]\d$/);
@@ -38,7 +39,6 @@ const messageCategorySchema = z.object({
   enforce_communication_hours: z.boolean(),
   communication_start: timeSchema,
   communication_end: timeSchema,
-  retention_days: z.number().int().min(30).max(3650),
 }).strict();
 
 type Category = z.infer<typeof categorySchema>;
@@ -125,20 +125,7 @@ export class OperatingRulesController {
       `.execute(db)).rows[0] ?? { enabled: true, enabled_modes: ["guardian_pickup", "authorized_collector", "independent_departure", "school_transport", "external_transport"], change_cutoff: "13:00", location_retention_hours: 24, location_stale_seconds: 90, revision: 0 };
       return { category, workflow, domain };
     }
-    const domain = (await sql<{
-      student_teacher_direct_enabled: boolean; guardian_teacher_direct_enabled: boolean;
-      student_group_replies: boolean; guardian_group_replies: boolean; attachments_enabled: boolean;
-      enforce_communication_hours: boolean; communication_start: string; communication_end: string;
-      retention_days: number; revision: number;
-    }>`SELECT student_teacher_direct_enabled,guardian_teacher_direct_enabled,student_group_replies,
-      guardian_group_replies,attachments_enabled,enforce_communication_hours,
-      to_char(communication_start,'HH24:MI') communication_start,to_char(communication_end,'HH24:MI') communication_end,
-      retention_days,revision FROM chat_policies WHERE school_id=${schoolId}::uuid`.execute(db)).rows[0] ?? {
-        student_teacher_direct_enabled: true, guardian_teacher_direct_enabled: true,
-        student_group_replies: true, guardian_group_replies: false, attachments_enabled: true,
-        enforce_communication_hours: false, communication_start: "06:00", communication_end: "21:00",
-        retention_days: 455, revision: 0,
-      };
+    const domain = await readChatPolicy(db, schoolId);
     return { category, workflow, domain };
   }
 
@@ -198,15 +185,15 @@ export class OperatingRulesController {
         workflow.message_attachment_mb = data.message_attachment_mb;
         await sql`INSERT INTO chat_policies(school_id,student_teacher_direct_enabled,guardian_teacher_direct_enabled,
           student_group_replies,guardian_group_replies,attachments_enabled,enforce_communication_hours,
-          communication_start,communication_end,retention_days,updated_by)
+          communication_start,communication_end,updated_by)
           VALUES(${schoolId}::uuid,${data.student_teacher_direct_enabled},${data.guardian_teacher_direct_enabled},
           ${data.student_group_replies},${data.guardian_group_replies},${data.attachments_enabled},${data.enforce_communication_hours},
-          ${data.communication_start}::time,${data.communication_end}::time,${data.retention_days},${req.authUser.id}::uuid)
+          ${data.communication_start}::time,${data.communication_end}::time,${req.authUser.id}::uuid)
           ON CONFLICT(school_id) DO UPDATE SET student_teacher_direct_enabled=excluded.student_teacher_direct_enabled,
           guardian_teacher_direct_enabled=excluded.guardian_teacher_direct_enabled,student_group_replies=excluded.student_group_replies,
           guardian_group_replies=excluded.guardian_group_replies,attachments_enabled=excluded.attachments_enabled,
           enforce_communication_hours=excluded.enforce_communication_hours,communication_start=excluded.communication_start,
-          communication_end=excluded.communication_end,retention_days=excluded.retention_days,updated_by=excluded.updated_by,
+          communication_end=excluded.communication_end,updated_by=excluded.updated_by,
           updated_at=now(),revision=chat_policies.revision+1`.execute(db);
       }
       await sql`INSERT INTO institution_operating_rules(school_id,attendance_finalization_mode,attendance_auto_finalize_minutes,attendance_overdue_reminder_minutes,attendance_overdue_escalation_minutes,event_entry_hours_before,event_staff_hours_after,journey_lead_minutes,message_edit_minutes,message_attachment_mb,updated_by)

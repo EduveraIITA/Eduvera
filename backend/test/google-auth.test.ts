@@ -26,14 +26,14 @@ describe("Google identity proof", () => {
   it.each([{ aud: "attacker-client" }, { iss: "https://attacker.example" }, { exp: 1 }, { nonce: "other-browser" }])("rejects signed invalid claims before account access %j", async change => {
     vi.spyOn(OAuth2Client.prototype, "getFederatedSignonCertsAsync").mockResolvedValue({ certs: { "test-key": publicKey.export({ type: "spki", format: "pem" }).toString() } } as never);
     const audit = { record: vi.fn().mockResolvedValue(undefined) };
-    const service = new GoogleAuthService({} as DatabaseService, audit as unknown as AuditService);
+    const service = new GoogleAuthService({} as DatabaseService, audit as unknown as AuditService, { createForAccount: vi.fn() } as never);
     await expect(service.login({ credential: token(change) }, "browser-nonce", { ip: "127.0.0.1" } as FastifyRequest)).rejects.toThrow(/verified/);
     expect(audit.record).toHaveBeenCalledWith(expect.objectContaining({ action: "auth.google.failed" }));
   });
   it("rejects forged signatures and missing browser cookies", async () => {
     vi.spyOn(OAuth2Client.prototype, "getFederatedSignonCertsAsync").mockResolvedValue({ certs: { "test-key": publicKey.export({ type: "spki", format: "pem" }).toString() } } as never);
     const other = generateKeyPairSync("rsa", { modulusLength: 2048 });
-    const service = new GoogleAuthService({} as DatabaseService, { record: vi.fn() } as unknown as AuditService);
+    const service = new GoogleAuthService({} as DatabaseService, { record: vi.fn() } as unknown as AuditService, { createForAccount: vi.fn() } as never);
     await expect(service.login({ credential: token({}, other.privateKey) }, "browser-nonce", {} as FastifyRequest)).rejects.toThrow(/verified/);
     await expect(service.login({ credential: token() }, undefined, {} as FastifyRequest)).rejects.toThrow(/expired/);
   });

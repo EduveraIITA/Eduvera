@@ -1,0 +1,19 @@
+import { useState } from 'react';
+import { useSession } from '../auth/SessionProvider';
+import { apiFetch, captureApiContext } from '../lib/api';
+import { useApi } from '../lib/query';
+import { ScreenBack } from '../ui/BackNavigation';
+import { Button, Empty, Loading, Notice, Row, SearchField, Section } from '../ui/components';
+
+export function PeopleAcademicIdentityPicker({onSelect,onClose,disabled}:{onSelect:(person:{id:string;revision:number;label:string;first_name:string;last_name:string})=>void;onClose:()=>void;disabled?:boolean}) {
+  const {schoolId}=useSession(),[search,setSearch]=useState(''),[page,setPage]=useState(1),[busy,setBusy]=useState(false),[error,setError]=useState('');
+  const root=`/api/v1/schools/${schoolId}/people/participants`,query=useApi<{results:{id:string;label:string}[];page_size:number;total:number}>(`${root}?${new URLSearchParams({search,page:String(page)})}`);
+  const choose=async(id:string)=>{setBusy(true);setError('');try{const context=captureApiContext(),person=await apiFetch<{id:string;revision:number;label:string;first_name:string;last_name:string}>(`${root}/${id}`);context.assertCurrent();if(person.id!==id || !Number.isSafeInteger(person.revision) || person.revision<1 || typeof person.first_name!=='string' || typeof person.last_name!=='string')throw new Error('The current person identity could not be confirmed.');onSelect(person);}catch(cause){setError(cause instanceof Error?cause.message:'The current person could not load.');}finally{setBusy(false);}};
+  return <Section title="Choose an existing campus person"><ScreenBack title="Back to enrollment row" priority={30} onPress={onClose} disabled={busy}/><SearchField label="Find campus person" placeholder="Name or contact" value={search} onChangeText={value=>{setSearch(value.slice(0,120));setPage(1);}}/>{error?<Notice tone="danger" message={error}/>:null}{query.isPending?<Loading/>:query.isError||!query.data?<Empty title="Campus people unavailable" message={query.error?.message} onRetry={()=>void query.refetch()}/>:<>{query.data.results.map(person=><Row key={person.id} title={person.label} detail="Review this exact campus identity" onPress={disabled||busy?undefined:()=>void choose(person.id)}/>)}{!query.data.results.length?<Empty title="No matching people"/>:null}<Button title="Previous people" kind="secondary" disabled={page<=1||busy} onPress={()=>setPage(page-1)}/><Button title="More people" kind="secondary" disabled={page*(query.data.page_size||20)>=query.data.total||busy} onPress={()=>setPage(page+1)}/></>}</Section>;
+}
+
+export function PeopleAcademicGuardianPicker({onSelect,disabled}:{onSelect:(guardian:{id:string;name:string;phone:string})=>void;disabled?:boolean}){
+  const {schoolId}=useSession(),[search,setSearch]=useState('');
+  const query=useApi<{results:{id:string;name:string;phone:string;linked_admissions:string|null}[]}>(search.trim().length>=2?`/api/v1/people/guardians?${new URLSearchParams({school_id:schoolId!,search:search.trim()})}`:null);
+  return <Section title="Choose an existing guardian"><SearchField label="Find guardian" placeholder="At least two letters or phone digits" value={search} onChangeText={value=>setSearch(value.slice(0,80))}/>{search.trim().length<2?<Notice message="Enter a name or phone number, then choose the exact guardian. Matching text never selects a person automatically."/>:query.isPending?<Loading/>:query.isError?<Empty title="Guardian search unavailable" message={query.error?.message} onRetry={()=>void query.refetch()}/>:query.data?.results.length?query.data.results.slice(0,30).map(guardian=><Row key={guardian.id} title={guardian.name} detail={`${guardian.phone}\nLinked admissions: ${guardian.linked_admissions||'None'}`} onPress={disabled?undefined:()=>onSelect(guardian)}/>):<Empty title="No matching guardians"/>}</Section>;
+}

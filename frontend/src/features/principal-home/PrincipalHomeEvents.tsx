@@ -5,7 +5,7 @@ import type { HomeAction } from "../home-actions/types";
 export function PrincipalHomeEvents({ actions }: { actions: HomeAction[] }) {
   const events = actions.filter(action => action.kind === "event_duty" || action.kind === "event_upcoming");
   return <section className="principal-home__section" aria-labelledby="principal-events-title">
-    <header><h2 id="principal-events-title">Coming up</h2><Link to="/principal/events">All events<ChevronRight size={15} aria-hidden="true" /></Link></header>
+    <header><h2 id="principal-events-title">Coming up</h2><Link to="/areas/events/manage">All events<ChevronRight size={15} aria-hidden="true" /></Link></header>
     <div className="principal-home__group">
       {events.length ? <ul className="principal-home__rows principal-home__events">{events.map(event => {
         const date = event.occurs_at ? new Date(event.occurs_at) : null;

@@ -1,5 +1,9 @@
+import { effectivePeriodsForDate, type PlannerPeriod } from '../../../../packages/contracts/src/academic-planner';
+export { effectivePeriodsForDate } from '../../../../packages/contracts/src/academic-planner';
+export type { PlannerPeriod } from '../../../../packages/contracts/src/academic-planner';
+import { applicationNow } from "../simulation/applicationTime";
 import { ThatCampusLoadingIcon as LoaderCircle } from "../../components/ThatCampusLoader";
-import { useRef, useState, type FormEvent } from "react";
+import { useRef, useState, type FormEvent, type ReactNode } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Link, useNavigate, useSearchParams } from "react-router-dom";
 import {
@@ -9,7 +13,7 @@ import {
 import { OperationsShell } from "../../pages/operations/OperationsShell";
 import { SchoolCalendarSheet } from "../../pages/operations/TimetableBuilderSheets";
 import { createSchoolClosure, deleteSchoolClosure } from "../operations/api";
-import { cleanPeriod, getScheduleSettings, scheduleCommand, type SchedulePeriod, type ScheduleScreen } from "../schedule-planning/api";
+import { cleanPeriod, getScheduleSettings, scheduleCommand, type ScheduleScreen } from "../schedule-planning/api";
 import { getCampusEvents } from "../campus-events/api";
 import type { CampusEventDto } from "../campus-events/types";
 import { TemporalInput } from "../../components/forms/TemporalInput";
@@ -47,7 +51,7 @@ export function resolvePlannerDate(
   explicitDate: string | null | undefined,
   rehearsal: TimetableRehearsalIndicator | null | undefined,
   schoolDate: string | null | undefined,
-  fallbackDate = new Date().toLocaleDateString("en-CA", { timeZone: "Asia/Kolkata" }),
+  fallbackDate = applicationNow().toLocaleDateString("en-CA", { timeZone: "Asia/Kolkata" }),
 ) {
   return explicitDate || rehearsal?.referenceDate || schoolDate || fallbackDate;
 }
@@ -66,57 +70,6 @@ function rangeInstant(date: string, end = false) {
   return new Date(`${date}T${end ? "23:59:59.999" : "00:00:00"}+05:30`).toISOString();
 }
 
-function activeVersion(data: ScheduleScreen, classId: string, date: string) {
-  return data.versions
-    .filter((version) => version.class_section_id === classId && version.state === "published" && version.starts_on <= date && version.ends_on >= date)
-    .sort((left, right) => Number(left.baseline) - Number(right.baseline) || right.starts_on.localeCompare(left.starts_on))[0];
-}
-
-export interface PlannerPeriod extends SchedulePeriod {
-  class_section_id: string;
-  class_name: string;
-  teacher_name: string | null;
-  display_title: string;
-  version_id: string | null;
-  version_state: "draft" | "published" | null;
-}
-
-export function effectivePeriodsForDate(data: ScheduleScreen, date: string, classFilter = "all"): PlannerPeriod[] {
-  if (data.calendar_exceptions.some((item) => item.date === date && !item.is_instructional)) return [];
-  const weekday = isoWeekday(date);
-  return data.classes.flatMap<PlannerPeriod>((schoolClass) => {
-    if (classFilter !== "all" && classFilter !== schoolClass.id) return [];
-    const draft = data.versions.find((version) => version.class_section_id === schoolClass.id && version.state === "draft" && version.starts_on <= date && version.ends_on >= date);
-    const version = draft ?? activeVersion(data, schoolClass.id, date);
-    if (version) return version.periods.filter((period) => period.weekday === weekday).map((period) => ({
-      ...period,
-      class_section_id: schoolClass.id,
-      class_name: schoolClass.name,
-      teacher_name: data.teachers.find((teacher) => teacher.id === period.teacher_user_id)?.name ?? null,
-      display_title: data.subjects.find((subject) => subject.id === period.subject_id)?.name ?? period.title,
-      version_id: version.id,
-      version_state: version.state,
-    }));
-    return data.slots.filter((slot) => slot.class_section_id === schoolClass.id && slot.weekday === weekday).map((slot) => ({
-      id: slot.id,
-      class_section_id: slot.class_section_id,
-      class_name: slot.class_name,
-      subject_id: slot.subject_id,
-      teacher_user_id: slot.teacher_user_id,
-      teacher_name: slot.teacher_name,
-      weekday: slot.weekday,
-      period_number: slot.period_number,
-      starts_at: slot.starts_at,
-      ends_at: slot.ends_at,
-      title: slot.display_title,
-      display_title: slot.display_title,
-      version_id: null,
-      version_state: "published" as const,
-      slot_type: slot.slot_type,
-      room: slot.room,
-    }));
-  }).sort((left, right) => left.starts_at.localeCompare(right.starts_at) || left.class_name.localeCompare(right.class_name));
-}
 
 function eventOccursOn(event: CampusEventDto, date: string) {
   return event.starts_at.slice(0, 10) <= date && event.ends_at.slice(0, 10) >= date;
@@ -134,7 +87,7 @@ function PlannerToolbar({ selected, view, onDate, onView }: { selected: string; 
     <div className="planner-toolbar__date">
       <strong>{label}</strong>
       <button type="button" aria-label={`Previous ${view}`} onClick={() => move(-1)}><ChevronLeft size={19} /></button>
-      <button type="button" className="planner-toolbar__today" onClick={() => onDate(new Date().toLocaleDateString("en-CA", { timeZone: "Asia/Kolkata" }))}>Today</button>
+      <button type="button" className="planner-toolbar__today" onClick={() => onDate(applicationNow().toLocaleDateString("en-CA", { timeZone: "Asia/Kolkata" }))}>Today</button>
       <button type="button" aria-label={`Next ${view}`} onClick={() => move(1)}><ChevronRight size={19} /></button>
     </div>
     <div className="planner-toolbar__views" role="radiogroup" aria-label="Planner view">
@@ -143,16 +96,32 @@ function PlannerToolbar({ selected, view, onDate, onView }: { selected: string; 
   </div>;
 }
 
-function NewMenu({ selected, returnTo, classId, onCreate }: { selected: string; returnTo: string; classId?: string; onCreate: (kind: Exclude<CreateKind, null>) => void }) {
+interface PlannerRouteContract {
+  readonly plannerPath: string;
+  readonly settingsPath: string;
+  readonly dayPlanPath: string;
+  readonly eventCreatePath?: string;
+  readonly eventDetailPath?: string;
+}
+
+const legacyPlannerRoutes: PlannerRouteContract = {
+  plannerPath: "/principal/timetable",
+  settingsPath: "/principal/timetable/weekly",
+  dayPlanPath: "/principal/timetable/day",
+  eventCreatePath: "/areas/events/manage/new",
+  eventDetailPath: "/areas/events/manage",
+};
+
+function NewMenu({ selected, returnTo, classId, eventCreatePath, dayPlanPath, onCreate }: { selected: string; returnTo: string; classId?: string; eventCreatePath?: string; dayPlanPath: string; onCreate: (kind: Exclude<CreateKind, null>) => void }) {
   const ref = useRef<HTMLDetailsElement>(null);
   const eventParams = new URLSearchParams({ starts_at: `${selected}T09:00`, ends_at: `${selected}T12:00`, return_to: returnTo });
   return <details ref={ref} className="planner-new">
     <summary><Plus size={17} />New<ChevronDown size={15} /></summary>
     <div className="planner-new__menu">
       <button type="button" onClick={() => { ref.current?.removeAttribute("open"); onCreate("class"); }}><Repeat2 size={18} /><span><strong>Recurring class</strong><small>Choose a subject, teacher and repeat</small></span></button>
-      <Link to={`/principal/events/new?${eventParams}`} onClick={() => ref.current?.removeAttribute("open")}><CalendarDays size={18} /><span><strong>Event or activity</strong><small>Plan a school event</small></span></Link>
+      {eventCreatePath ? <Link to={`${eventCreatePath}?${eventParams}`} onClick={() => ref.current?.removeAttribute("open")}><CalendarDays size={18} /><span><strong>Event or activity</strong><small>Plan a school event</small></span></Link> : null}
       <button type="button" onClick={() => { ref.current?.removeAttribute("open"); onCreate("closure"); }}><CalendarOff size={18} /><span><strong>Holiday or closure</strong><small>Close one or more school dates</small></span></button>
-      <Link to={`/principal/timetable/day?${new URLSearchParams({ date: selected, view: "day", mode: "edit", ...(classId ? { class: classId } : {}), return_to: returnTo })}`} onClick={() => ref.current?.removeAttribute("open")}><Clock3 size={18} /><span><strong>One-day change</strong><small>Adjust only {formatDate(selected, { day: "numeric", month: "short" })}</small></span></Link>
+      <Link to={`${dayPlanPath}?${new URLSearchParams({ date: selected, view: "day", mode: "edit", ...(classId ? { class: classId } : {}), return_to: returnTo })}`} onClick={() => ref.current?.removeAttribute("open")}><Clock3 size={18} /><span><strong>One-day change</strong><small>Adjust only {formatDate(selected, { day: "numeric", month: "short" })}</small></span></Link>
     </div>
   </details>;
 }
@@ -192,19 +161,19 @@ function nextSchoolDate(data: ScheduleScreen, selected: string) {
   return [selected > data.school_date ? selected : tomorrow, term.starts_on].sort().at(-1)!;
 }
 
-function SlotPlanSheet({ slot, returnTo, classId, onClose, onRecurring }: { slot: TimelineSlot; returnTo: string; classId?: string; onClose: () => void; onRecurring: () => void }) {
+function SlotPlanSheet({ slot, returnTo, classId, eventCreatePath, dayPlanPath, onClose, onRecurring }: { slot: TimelineSlot; returnTo: string; classId?: string; eventCreatePath?: string; dayPlanPath: string; onClose: () => void; onRecurring: () => void }) {
   const eventParams = new URLSearchParams({ starts_at: `${slot.date}T${slot.startsAt}`, ends_at: `${slot.date}T${slot.endsAt}`, return_to: returnTo });
   const dayParams = new URLSearchParams({ date: slot.date, view: "day", mode: "edit", start: slot.startsAt, end: slot.endsAt, return_to: returnTo, ...(classId ? { class: classId } : {}) });
   return <PlannerDialog title="Plan this time" subtitle={`${formatDate(slot.date, { weekday: "short", day: "numeric", month: "short" })} · ${slot.startsAt}–${slot.endsAt}`} onClose={onClose}>
       <div className="planner-choice-list">
         <button type="button" onClick={onRecurring}><Repeat2 size={20} /><span><strong>Recurring class</strong><small>Repeat weekly in a timetable draft</small></span><ChevronRight size={18} /></button>
-        <Link to={`/principal/events/new?${eventParams}`}><CalendarDays size={20} /><span><strong>Event or activity</strong><small>Use this date and time</small></span><ChevronRight size={18} /></Link>
-        <Link to={`/principal/timetable/day?${dayParams}`}><Clock3 size={20} /><span><strong>One-day change</strong><small>Change only this school day</small></span><ChevronRight size={18} /></Link>
+        {eventCreatePath ? <Link to={`${eventCreatePath}?${eventParams}`}><CalendarDays size={20} /><span><strong>Event or activity</strong><small>Use this date and time</small></span><ChevronRight size={18} /></Link> : null}
+        <Link to={`${dayPlanPath}?${dayParams}`}><Clock3 size={20} /><span><strong>One-day change</strong><small>Change only this school day</small></span><ChevronRight size={18} /></Link>
       </div>
   </PlannerDialog>;
 }
 
-function RecurringClassSheet({ data, selectedDate, initialSlot, initialClassId, onClose, onSaved }: { data: ScheduleScreen; selectedDate: string; initialSlot?: TimelineSlot | null; initialClassId?: string; onClose: () => void; onSaved: (message: string) => void }) {
+function RecurringClassSheet({ data, selectedDate, initialSlot, initialClassId, onClose, onSaved }: { data: ScheduleScreen; selectedDate: string; initialSlot?: TimelineSlot | null; initialClassId?: string; onClose: () => void; onSaved: (message: string, classId: string) => void }) {
   const term = data.terms.find((item) => item.id === data.selected_term_id)!;
   const startingClass = data.classes.find((item) => item.id === initialClassId) ?? data.classes[0];
   const [classId, setClassId] = useState(startingClass?.id ?? "");
@@ -217,6 +186,13 @@ function RecurringClassSheet({ data, selectedDate, initialSlot, initialClassId, 
   const [startsOn, setStartsOn] = useState(nextSchoolDate(data, initialSlot?.date ?? selectedDate));
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
+  const prerequisite = !data.classes.length
+    ? { explanation: "Add a class or group before creating its timetable.", label: "Add a class or group", href: "/more/setup/institution/academics" }
+    : !data.subjects.length
+      ? { explanation: "Add the first subject for this campus, then return here to choose its teacher and weekly times.", label: "Add a subject", href: "/more/setup/institution/academics" }
+      : !data.teachers.length
+        ? { explanation: "Connect a teaching staff member before assigning a recurring class.", label: "Set up teaching staff", href: "/more/setup/responsibilities" }
+        : null;
   const submit = async (event: FormEvent) => {
     event.preventDefault();
     if (!days.length) return setError("Choose at least one weekday.");
@@ -237,13 +213,20 @@ function RecurringClassSheet({ data, selectedDate, initialSlot, initialClassId, 
         starts_at: start, ends_at: end, subject_id: subjectId, teacher_user_id: teacherId,
         title: subject?.name ?? "Class", slot_type: "class" as const, room,
       }));
-      await scheduleCommand(`${draft.id}/save`, data.school_id, { expected_revision: draft.revision, starts_on: draft.starts_on, ends_on: draft.ends_on, periods: [...draft.periods, ...additions] });
-      onSaved(`${subject?.name ?? "Class"} was added to the ${data.classes.find((item) => item.id === classId)?.name} draft. Review and publish when the week is ready.`);
+      await scheduleCommand(`${draft.id}/save`, data.school_id, { expected_revision: draft.revision, starts_on: draft.starts_on, ends_on: draft.ends_on, periods: [...draft.periods.map(cleanPeriod), ...additions] });
+      onSaved(`${subject?.name ?? "Class"} was added to the ${data.classes.find((item) => item.id === classId)?.name} draft. Review and publish when the week is ready.`, classId);
       onClose();
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : "The recurring class could not be added.");
     } finally { setBusy(false); }
   };
+  if (prerequisite) return <PlannerDialog title="New recurring class" onClose={onClose}>
+    <div className="planner-sheet-form">
+      <p>{prerequisite.explanation}</p>
+      <div className="planner-choice-list"><Link to={prerequisite.href}><BookOpen size={20} /><span><strong>{prerequisite.label}</strong><small>Use the same campus setup records</small></span><ChevronRight size={18} /></Link></div>
+      <footer><button type="button" className="is-secondary" onClick={onClose}>Back to timetable</button></footer>
+    </div>
+  </PlannerDialog>;
   return <PlannerDialog title="New recurring class" onClose={onClose} busy={busy}>
       <form className="planner-lesson-form planner-sheet-form" onSubmit={(event) => void submit(event)}>
         <div className="planner-sheet__grid">
@@ -266,7 +249,7 @@ function RecurringClassSheet({ data, selectedDate, initialSlot, initialClassId, 
   </PlannerDialog>;
 }
 
-export function PrincipalPlannerRoute({ rehearsal }: { rehearsal?: TimetableRehearsalIndicator | null } = {}) {
+export function PrincipalPlannerRoute({ rehearsal, presentation = "legacy", routes = legacyPlannerRoutes, expectedSchoolId, workspaceContext }: { rehearsal?: TimetableRehearsalIndicator | null; presentation?: "legacy" | "workspace"; routes?: PlannerRouteContract; expectedSchoolId?: string; workspaceContext?: ReactNode } = {}) {
   const [params, setParams] = useSearchParams();
   const navigate = useNavigate();
   const queryClient = useQueryClient();
@@ -279,7 +262,7 @@ export function PrincipalPlannerRoute({ rehearsal }: { rehearsal?: TimetableRehe
   const eventsQuery = useQuery({
     queryKey: ["campus-events", "planner", dataQuery.data?.school_id, dates[0], dates.at(-1)],
     queryFn: () => getCampusEvents(dataQuery.data!.school_id, { from: rangeInstant(dates[0]!), to: rangeInstant(dates.at(-1)!, true), limit: 100 }),
-    enabled: Boolean(dataQuery.data?.school_id),
+    enabled: Boolean(dataQuery.data?.school_id) && (!expectedSchoolId || dataQuery.data?.school_id === expectedSchoolId),
   });
   const [create, setCreate] = useState<CreateKind>(null);
   const [slotIntent, setSlotIntent] = useState<TimelineSlot | null>(null);
@@ -292,7 +275,8 @@ export function PrincipalPlannerRoute({ rehearsal }: { rehearsal?: TimetableRehe
   const setContext = (changes: Record<string, string>) => { const next = new URLSearchParams(params); Object.entries(changes).forEach(([key, value]) => value ? next.set(key, value) : next.delete(key)); setParams(next, { replace: true }); };
   const refresh = async () => { await queryClient.invalidateQueries({ queryKey: ["principal-timetable"] }); await dataQuery.refetch(); };
   const eventItems = eventsQuery.data?.items ?? [];
-  const loading = dataQuery.isPending || (Boolean(dataQuery.data) && eventsQuery.isPending);
+  const scopeMismatch = Boolean(dataQuery.data && expectedSchoolId && dataQuery.data.school_id !== expectedSchoolId);
+  const loading = dataQuery.isPending || (!scopeMismatch && Boolean(dataQuery.data) && eventsQuery.isPending);
   const error = dataQuery.error ?? eventsQuery.error;
   const errorArea = dataQuery.error ? "schedule" : eventsQuery.error ? "events" : null;
   const data = dataQuery.data;
@@ -302,6 +286,15 @@ export function PrincipalPlannerRoute({ rehearsal }: { rehearsal?: TimetableRehe
   const activeLesson = lesson ?? (linkedPeriod ? { period: linkedPeriod, date: selected } : null);
   const openLesson = (period: PlannerPeriod, date: string) => { setGroup(null); setLesson({ period, date }); };
   const openGroup = (date: string, startsAt: string) => setGroup({ date, startsAt });
+  const openPlannerItem = (href: string) => {
+    if (href.startsWith("/areas/events/manage/")) {
+      if (!routes.eventDetailPath) return;
+      const eventId = href.slice("/areas/events/manage/".length).split(/[?#]/, 1)[0];
+      if (eventId) void navigate(`${routes.eventDetailPath}/${eventId}`);
+      return;
+    }
+    void navigate(href);
+  };
   const attentionTarget: CalendarAttentionTarget = {
     selected,
     notificationId: params.get("attention_notification_id") ?? undefined,
@@ -333,8 +326,14 @@ export function PrincipalPlannerRoute({ rehearsal }: { rehearsal?: TimetableRehe
       return false;
     }
   };
-  return <OperationsShell portal="principal" active="timetable" title="Timetable" pageTitleTrailing={<div className="principal-planner__actions" aria-label="Timetable actions"><Link className="planner-settings" aria-label="Academic settings" to={`/principal/timetable/weekly?${params}`}><Settings2 size={19} /></Link><NewMenu selected={selected} returnTo={`/principal/timetable?${params}`} classId={classFilter === "all" ? undefined : classFilter} onCreate={(kind) => { setRecurringSlot(null); setCreate(kind); }} /></div>}>
+  if (scopeMismatch) {
+    return <OperationsShell portal={presentation === "legacy" ? "principal" : undefined} active="timetable" title={presentation === "workspace" ? "Timetable planning" : "Timetable"} backTo={presentation === "workspace" ? "/areas/timetable" : undefined}>
+      <div className="principal-planner"><div className="planner-error" role="alert"><strong>This timetable belongs to another institution.</strong><span>Return to Areas and reopen the timetable for your active institution.</span></div></div>
+    </OperationsShell>;
+  }
+  return <OperationsShell portal={presentation === "legacy" ? "principal" : undefined} active="timetable" title={presentation === "workspace" ? "Timetable planning" : "Timetable"} backTo={presentation === "workspace" ? "/areas/timetable" : undefined} pageTitleTrailing={<div className="principal-planner__actions" aria-label="Timetable actions"><Link className="planner-settings" aria-label="Schedule settings" to={`${routes.settingsPath}?${params}`}><Settings2 size={19} /></Link><NewMenu selected={selected} returnTo={`${routes.plannerPath}?${params}`} classId={classFilter === "all" ? undefined : classFilter} eventCreatePath={routes.eventCreatePath} dayPlanPath={routes.dayPlanPath} onCreate={(kind) => { setRecurringSlot(null); setCreate(kind); }} /></div>}>
     <div className="principal-planner">
+      {workspaceContext}
       {rehearsal ? <TimetableRehearsalStrip rehearsal={rehearsal} showCampusLink /> : null}
       {data ? <CalendarAttentionGate target={attentionTarget} days={data.calendar_exceptions} loaded={dataQuery.isSuccess} /> : null}
       {data ? <>
@@ -347,13 +346,13 @@ export function PrincipalPlannerRoute({ rehearsal }: { rehearsal?: TimetableRehe
       {message ? <div className="planner-success" role="status"><BookOpen size={18} /><span>{message}</span><button type="button" aria-label="Dismiss message" onClick={() => setMessage("")}><X size={16} /></button></div> : null}
       {moveError ? <div className="planner-error planner-error--compact" role="alert"><span>{moveError}</span><button type="button" onClick={() => setMoveError("")}>Dismiss</button></div> : null}
       {data && params.has("period") && !linkedPeriod ? <div className="planner-error planner-error--compact" role="alert"><span>This linked lesson is no longer in the current timetable.</span><button type="button" onClick={() => setContext({ period: "" })}>Dismiss</button></div> : null}
-      {loading ? <div className="planner-loading" role="status"><LoaderCircle className="spin" size={22} />Loading timetable…</div> : error ? <div className="planner-error" role="alert"><strong>The {errorArea === "events" ? "event calendar" : "school schedule"} could not be loaded.</strong><span>{error instanceof Error ? error.message : "Try again."}</span><button type="button" onClick={() => { void dataQuery.refetch(); void eventsQuery.refetch(); }}>Try again</button></div> : data ? view === "month" ? <MonthBoard selected={selected} data={data} events={eventItems} classFilter={classFilter} rehearsal={rehearsal} onSelect={showDay} onPlan={(slot) => { showDay(slot.date); setSlotIntent(slot); }} onOpen={(href) => navigate(href)} onMove={movePeriod} onLesson={openLesson} onGroup={openGroup} /> :
-        <PlannerTimeline dates={dates} selected={selected} periodsForDate={(date) => effectivePeriodsForDate(data, date, classFilter)} events={eventItems} closures={data.calendar_exceptions} grouped={classFilter === "all"} rehearsal={rehearsal} onSelectDate={(date) => setContext({ date })} onPlan={(slot) => { showDay(slot.date); setSlotIntent(slot); }} onOpen={(href) => navigate(href)} onMove={movePeriod} onLesson={openLesson} onGroup={openGroup} /> : null}
-      {data && activeLesson ? <PlannerLessonSheet key={`${activeLesson.period.id}:${activeLesson.date}`} data={data} period={activeLesson.period} date={activeLesson.date} onClose={() => { setLesson(null); if (params.has("period")) setContext({ period: "" }); }} onSaved={(value) => { setMessage(value); void refresh(); }} /> : null}
+      {loading ? <div className="planner-loading" role="status"><LoaderCircle className="spin" size={22} />Loading timetable…</div> : error ? <div className="planner-error" role="alert"><strong>The {errorArea === "events" ? "event calendar" : "school schedule"} could not be loaded.</strong><span>{error instanceof Error ? error.message : "Try again."}</span><button type="button" onClick={() => { void dataQuery.refetch(); void eventsQuery.refetch(); }}>Try again</button></div> : data ? view === "month" ? <MonthBoard selected={selected} data={data} events={eventItems} classFilter={classFilter} rehearsal={rehearsal} onSelect={showDay} onPlan={(slot) => { showDay(slot.date); setSlotIntent(slot); }} onOpen={openPlannerItem} onMove={movePeriod} onLesson={openLesson} onGroup={openGroup} /> :
+        <PlannerTimeline dates={dates} selected={selected} periodsForDate={(date) => effectivePeriodsForDate(data, date, classFilter)} events={eventItems} closures={data.calendar_exceptions} grouped={classFilter === "all"} rehearsal={rehearsal} onSelectDate={(date) => setContext({ date })} onPlan={(slot) => { showDay(slot.date); setSlotIntent(slot); }} onOpen={openPlannerItem} onMove={movePeriod} onLesson={openLesson} onGroup={openGroup} /> : null}
+      {data && activeLesson && !scopeMismatch ? <PlannerLessonSheet key={`${activeLesson.period.id}:${activeLesson.date}`} data={data} period={activeLesson.period} date={activeLesson.date} dayPlanPath={routes.dayPlanPath} plannerPath={routes.plannerPath} onClose={() => { setLesson(null); if (params.has("period")) setContext({ period: "" }); }} onSaved={(value) => { setMessage(value); void refresh(); }} /> : null}
       {data && reviewDraft ? <PlannerPublishSheet data={data} draft={reviewDraft} onClose={() => { setReviewId(null); if (params.has("review")) setContext({ review: "" }); }} onPublished={() => { setMessage("Timetable published."); void refresh(); }} /> : null}
       {data && group ? <PlannerDialog title="Classes this period" subtitle={`${formatDate(group.date, { weekday: "short", day: "numeric", month: "short" })} · ${group.startsAt.slice(0, 5)}`} onClose={() => setGroup(null)}><div className="planner-choice-list">{effectivePeriodsForDate(data, group.date).filter((period) => period.starts_at === group.startsAt).map((period) => <button type="button" key={period.id} onClick={() => { setContext({ class: period.class_section_id }); openLesson(period, group.date); }}><BookOpen size={19} /><span><strong>{period.class_name} · {period.display_title}</strong><small>{period.teacher_name ?? period.room}</small></span><ChevronRight size={18} /></button>)}</div></PlannerDialog> : null}
-      {slotIntent ? <SlotPlanSheet slot={slotIntent} returnTo={`/principal/timetable?${params}`} classId={classFilter === "all" ? undefined : classFilter} onClose={() => setSlotIntent(null)} onRecurring={() => { setRecurringSlot(slotIntent); setSlotIntent(null); setCreate("class"); }} /> : null}
-      {data && create === "class" ? <RecurringClassSheet data={data} selectedDate={selected} initialSlot={recurringSlot} initialClassId={classFilter === "all" ? undefined : classFilter} onClose={() => { setCreate(null); setRecurringSlot(null); }} onSaved={(value) => { setMessage(value); void refresh(); }} /> : null}
+      {slotIntent ? <SlotPlanSheet slot={slotIntent} returnTo={`${routes.plannerPath}?${params}`} classId={classFilter === "all" ? undefined : classFilter} eventCreatePath={routes.eventCreatePath} dayPlanPath={routes.dayPlanPath} onClose={() => setSlotIntent(null)} onRecurring={() => { setRecurringSlot(slotIntent); setSlotIntent(null); setCreate("class"); }} /> : null}
+      {data && create === "class" ? <RecurringClassSheet data={data} selectedDate={selected} initialSlot={recurringSlot} initialClassId={classFilter === "all" ? undefined : classFilter} onClose={() => { setCreate(null); setRecurringSlot(null); }} onSaved={(value, classId) => { setMessage(value); setContext({ class: classId }); void refresh(); }} /> : null}
       {data && create === "closure" && data.terms.find((term) => term.id === data.selected_term_id) ? <SchoolCalendarSheet term={data.terms.find((term) => term.id === data.selected_term_id)!} schoolDate={data.school_date} exceptions={data.calendar_exceptions} onClose={() => setCreate(null)} onCreate={async (input) => { await createSchoolClosure(input); await refresh(); setCreate(null); setMessage(`${input.label} was added to the school calendar.`); }} onDelete={async (date, revision, reason) => { await deleteSchoolClosure(date, revision, reason); await refresh(); }} /> : null}
     </div>
   </OperationsShell>;

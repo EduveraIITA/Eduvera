@@ -2,20 +2,23 @@ import {randomUUID} from "node:crypto";
 import {Pool} from "pg";
 import {beforeAll,afterAll,describe,it,expect} from "vitest";
 import {DatabaseService} from "../src/database/database.service.js";
-import {SchoolEventService} from "../src/school/school-event.service.js";
 import {PeopleImportService} from "../src/people/people-import.service.js";
-import {SchoolService} from "../src/school/school.service.js";
+import type {SchoolService} from "../src/school/school.service.js";
 import {IMPORT_COLUMNS,type ImportValues} from "../src/people/import-csv.js";
 import type {ImportJob} from "../src/people/import-types.js";
 import type {AuthUser,AuthenticatedRequest} from "../src/common/request.js";
 import {requireIsolatedTestDatabaseUrl} from "./test-database.js";
-import {createStaffCoverageReconciliationTestDouble} from "./staff-coverage-reconciliation.test-support.js";
+import {academicParticipationTestServices} from './academic-participation.test-support.js';
+import {ProgressiveWorkspaceProvisioner} from '../src/institution-onboarding/progressive-workspace.provisioner.js';
+import {linkFixtureStaffIdentity} from './fixture-human-identity.test-support.js';
 const pool=new Pool({connectionString:requireIsolatedTestDatabaseUrl(process.env.DATABASE_URL),max:2});
 let db:DatabaseService,imports:PeopleImportService,school:SchoolService,admin:AuthenticatedRequest,teacher:AuthenticatedRequest,parent:AuthenticatedRequest;
+let participation:ReturnType<typeof academicParticipationTestServices>;
 let schoolId:string,termId:string,sectionA:string,today:string,parentId:string;
 let sequence=100;
 const jobs:string[]=[];
 function req(user:AuthUser){return {authUser:user,requestId:randomUUID(),protocol:'http',headers:{host:'localhost'},ip:'127.0.0.1'} as AuthenticatedRequest;}
+function commandReq(user:AuthUser){const request=req(user);return {...request,headers:{...request.headers,'idempotency-key':randomUUID()}};}
 const csv=(rows:ImportValues[])=>[IMPORT_COLUMNS.join(','),...rows.map(r=>IMPORT_COLUMNS.map(c=>`"${r[c].replace(/"/g,'""')}"`).join(','))].join('\r\n');
 function row(overrides:Partial<ImportValues>={}):ImportValues{sequence++;return {admission_number:`BULK-${sequence}`,first_name:'Ishaan',last_name:`Deshmukh${sequence}`,date_of_birth:'2014-04-12',class:'7A',roll_number:String(sequence),enrolled_on:today,guardian_key:`family-${sequence}`,guardian_first_name:'Nandita',guardian_last_name:`Deshmukh${sequence}`,guardian_phone:`90000${String(sequence).padStart(5,'0')}`,guardian_email:'',relationship:'mother',...overrides};}
 async function upload(rows:ImportValues[],key=randomUUID()){const result=await imports.stage(admin,{school_id:schoolId,term_id:termId,filename:'test-enrollment.csv',csv:csv(rows),idempotency_key:key});if(!jobs.includes(result.id))jobs.push(result.id);return result.id;}
@@ -23,38 +26,42 @@ async function detail(id:string){return imports.detail(admin.authUser,id,schoolI
 async function commit(id:string){const current=await detail(id);return imports.commit(admin,id,{school_id:schoolId,expected_revision:current.revision,validation_token:current.review!.validation_token,verified:true});}
 async function count(){return (await pool.query('SELECT count(*)::int AS n FROM students WHERE school_id=$1',[schoolId])).rows[0].n as number;}
 beforeAll(async()=>{
-  db=new DatabaseService();const events=new SchoolEventService(db);imports=new PeopleImportService(db,events);school=new SchoolService(db,events,createStaffCoverageReconciliationTestDouble());
-  const users=(await pool.query<AuthUser>("SELECT * FROM users WHERE username IN ('kavita.staff','pooja.parent') OR id=(SELECT user_id FROM school_memberships WHERE role='admin' AND is_active ORDER BY created_at LIMIT 1)")).rows;
-  admin=req(users.find(u=>u.role==='admin')!);teacher=req(users.find(u=>u.username==='kavita.staff')!);parent=req(users.find(u=>u.username==='pooja.parent')!);
-  schoolId=(await pool.query("INSERT INTO schools(name,code,timezone) VALUES('Isolated import test school',$1,'Asia/Kolkata') RETURNING id",[`import-${randomUUID().slice(0,10)}`])).rows[0].id;
+  db=new DatabaseService();participation=academicParticipationTestServices(db);const {events,core,bridge}=participation;
+  imports=new PeopleImportService(db,events,core,core,core,bridge);school=participation.school;
+  const ownerKey=randomUUID(),owner=await db.insertInto('users').values({username:`import-owner-${ownerKey}`,email:`import-owner-${ownerKey}@example.test`,
+    password_hash:'isolated-test-only',first_name:'Import',last_name:'Owner',role:'admin'}).returning(['id','username','email','first_name','last_name','role','is_active']).executeTakeFirstOrThrow();
+  // Retained canonical evidence cannot be cleaned by deleting its profiles.
+  // Fresh fixture actors keep later API/notices tests' seeded campus scope intact.
+  const teacherKey=randomUUID(),guardianKey=randomUUID();
+  const teacherAccount=await db.insertInto('users').values({username:`import-teacher-${teacherKey}`,email:`import-teacher-${teacherKey}@example.test`,
+    password_hash:'isolated-test-only',first_name:'Import',last_name:'Teacher',role:'staff'})
+    .returning(['id','username','email','first_name','last_name','role','is_active']).executeTakeFirstOrThrow();
+  const guardianAccount=await db.insertInto('users').values({username:`import-guardian-${guardianKey}`,email:`import-guardian-${guardianKey}@example.test`,
+    password_hash:'isolated-test-only',first_name:'Import',last_name:'Guardian',role:'parent'})
+    .returning(['id','username','email','first_name','last_name','role','is_active']).executeTakeFirstOrThrow();
+  admin=req(owner);teacher=req(teacherAccount);parent=req(guardianAccount);
+  schoolId=await db.transaction().execute(tx=>new ProgressiveWorkspaceProvisioner(core).createForAccount(tx,admin.authUser,'Asia/Kolkata'));
+  for(const actor of [admin,teacher,parent])actor.authUser={...actor.authUser,active_school_id:schoolId};
   today=(await pool.query("SELECT (now() AT TIME ZONE 'Asia/Kolkata')::date::text AS today")).rows[0].today;
   termId=(await pool.query("INSERT INTO academic_terms(school_id,academic_year,name,starts_on,ends_on,attendance_threshold,is_active) VALUES($1,'2026-27','Import term',($2::date-90),($2::date+90),85,true) RETURNING id",[schoolId,today])).rows[0].id;
   const classes=(await pool.query("INSERT INTO class_sections(school_id,academic_year,grade,section) VALUES($1,'2026-27','7','A'),($1,'2026-27','7','B') RETURNING id,section",[schoolId])).rows;
   sectionA=classes.find(c=>c.section==='A').id;
-  await pool.query("INSERT INTO school_memberships(user_id,school_id,role) VALUES($1,$4,'admin'),($2,$4,'staff'),($3,$4,'guardian')",[admin.authUser.id,teacher.authUser.id,parent.authUser.id,schoolId]);
-  const teacherProfile=(await pool.query("INSERT INTO staff_profiles(school_id,user_id,staff_code,first_name,last_name,email,staff_kind,designation,employment_type,joined_on,status,created_by,updated_by) VALUES($1,$2,$3,'Kavita','Teacher',$4,'teaching','Class teacher','full_time',$5,'active',$6,$6) RETURNING id",[schoolId,teacher.authUser.id,`IMPORT-${randomUUID().slice(0,8)}`,teacher.authUser.email,today,admin.authUser.id])).rows[0].id;
+  await pool.query("INSERT INTO school_memberships(user_id,school_id,role) VALUES($1,$4,'admin'),($2,$4,'staff'),($3,$4,'guardian') ON CONFLICT DO NOTHING",[admin.authUser.id,teacher.authUser.id,parent.authUser.id,schoolId]);
+  const teacherProfile=(await pool.query("WITH staff_fixture_input(school_id,user_id,staff_code,first_name,last_name,email,staff_kind,designation,employment_type,joined_on,status,created_by,updated_by,person_id) AS (VALUES ($1,$2,$3,'Import','Teacher',$4,'teaching','Class teacher','full_time',$5,'active',$6,$6,gen_random_uuid())), canonical_fixture_person AS (INSERT INTO school_people(id,school_id,first_name,last_name,contact_email,contact_phone) SELECT input.person_id::uuid,input.school_id::uuid,input.first_name,input.last_name,input.email,'' FROM staff_fixture_input input RETURNING id) INSERT INTO staff_profiles(school_id,user_id,staff_code,staff_kind,designation,employment_type,joined_on,status,created_by,updated_by,person_id) SELECT input.school_id::uuid,input.user_id::uuid,input.staff_code,input.staff_kind,input.designation,input.employment_type,input.joined_on::date,input.status,input.created_by::uuid,input.updated_by::uuid,input.person_id::uuid FROM staff_fixture_input input JOIN canonical_fixture_person person ON person.id=input.person_id::uuid RETURNING id",[schoolId,teacher.authUser.id,`IMPORT-${randomUUID().slice(0,8)}`,teacher.authUser.email,today,admin.authUser.id])).rows[0].id;
+  await linkFixtureStaffIdentity(db,{school_id:schoolId,user_id:teacher.authUser.id,owner_user_id:admin.authUser.id,teaching:true});
   await pool.query("INSERT INTO staff_responsibility_assignments(school_id,responsibility_type_id,staff_profile_id,class_section_id,starts_on,status,assigned_by) SELECT $1,id,$2,$3,($4::date-90),'active',$5 FROM staff_responsibility_types WHERE school_id=$1 AND code='class_teacher'",[schoolId,teacherProfile,sectionA,today,admin.authUser.id]);
-  parentId=(await pool.query('SELECT id FROM parents WHERE user_id=$1',[parent.authUser.id])).rows[0].id;
-  const person=(await pool.query("INSERT INTO school_people(school_id,first_name,last_name,contact_phone) VALUES($1,'Pooja','Sharma','9000011111') RETURNING id",[schoolId])).rows[0].id;
+  parentId=(await pool.query("INSERT INTO parents(user_id) VALUES($1) RETURNING id",[parent.authUser.id])).rows[0].id;
+  const person=(await pool.query("INSERT INTO school_people(school_id,first_name,last_name,contact_phone) VALUES($1,'Import','Guardian','9000011111') RETURNING id",[schoolId])).rows[0].id;
   await pool.query('INSERT INTO guardian_school_profiles(school_id,guardian_id,person_id) VALUES($1,$2,$3)',[schoolId,parentId,person]);
+  await db.transaction().execute(tx=>core.linkAccountEndpoint(tx,{school_id:schoolId,person_id:person,user_id:parent.authUser.id,
+    actor_user_id:admin.authUser.id,effective_from:new Date(Date.now()-86400000).toISOString(),effective_until:null,
+    source_domain:'people',source_record_id:parentId,source_revision:1,metadata:{fixture:'explicit_import_guardian'}}));
   const subject=(await pool.query("INSERT INTO subjects(school_id,code,name,short_name) VALUES($1,'MATH','Mathematics','Math') RETURNING id",[schoolId])).rows[0].id;
-  await pool.query("INSERT INTO timetable_slots(class_section_id,term_id,subject_id,weekday,period_number,starts_at,ends_at,teacher_user_id) VALUES($1,$2,$3,1,1,'09:00','09:45',$4)",[sectionA,termId,subject,teacher.authUser.id]);
+  await pool.query("INSERT INTO timetable_slots(class_section_id,term_id,subject_id,weekday,period_number,starts_at,ends_at,teacher_user_id) SELECT $1,$2,$3,weekday,1,'09:00','09:45',$4 FROM generate_series(1,7) weekday",[sectionA,termId,subject,teacher.authUser.id]);
 });
 afterAll(async()=>{
-  if(schoolId){
-    const guardianIds=(await pool.query('SELECT p.id FROM parents p JOIN guardian_school_profiles gp ON gp.guardian_id=p.id WHERE gp.school_id=$1 AND p.user_id IS NULL',[schoolId])).rows.map(r=>r.id);
-    await pool.query('DELETE FROM people_imports WHERE school_id=$1',[schoolId]);
-    await pool.query('DELETE FROM event_outbox WHERE school_id=$1',[schoolId]);await pool.query('DELETE FROM audit_events WHERE school_id=$1',[schoolId]);
-    await pool.query('DELETE FROM guardian_relationships WHERE school_id=$1',[schoolId]);
-    await pool.query('DELETE FROM students WHERE school_id=$1',[schoolId]);
-    await pool.query('DELETE FROM guardian_school_profiles WHERE school_id=$1',[schoolId]);
-    await pool.query('DELETE FROM parents WHERE id=ANY($1::uuid[])',[guardianIds]);
-    await pool.query('DELETE FROM attendance_registers WHERE school_id=$1',[schoolId]);
-    await pool.query('DELETE FROM staff_responsibility_assignments WHERE school_id=$1',[schoolId]);
-    await pool.query('DELETE FROM staff_profiles WHERE school_id=$1',[schoolId]);
-    await pool.query('DELETE FROM class_sections WHERE school_id=$1',[schoolId]);
-    await pool.query('DELETE FROM academic_terms WHERE school_id=$1',[schoolId]);await pool.query('DELETE FROM school_people WHERE school_id=$1',[schoolId]);await pool.query('DELETE FROM schools WHERE id=$1',[schoolId]);
-  }
+  // Canonical People/participation evidence is immutable. The explicitly
+  // disposable integration database owns disposal, not ad-hoc delete chains.
   await db?.destroy();await pool.end();
 });
 describe('Reviewed bulk student enrollment',()=>{
@@ -66,7 +73,7 @@ describe('Reviewed bulk student enrollment',()=>{
     const values=[row()],key=randomUUID();const [a,b]=await Promise.all([upload(values,key),upload(values,key)]);expect(a).toBe(b);await expect(upload([row()],key)).rejects.toThrow('different file');
   });
   it('saves a 200-student batch with complete shared-family graphs, no accounts and no marks',async()=>{
-    const before=await count(),users=(await pool.query('SELECT count(*)::int AS n FROM users')).rows[0].n;
+    const before=await count();
     const values=Array.from({length:200},(_,i)=>row({first_name:['Aarav','Ananya','Kavya','Rohan'][i%4]!,guardian_key:`cohort-family-${Math.floor(i/2)}`,guardian_first_name:`Guardian${Math.floor(i/2)}`,guardian_last_name:'Patil',guardian_phone:`91${String(9800000000+Math.floor(i/2))}`,class:i<100?'7A':'7B'}));
     const id=await upload(values);const result=await commit(id);expect(result).toMatchObject({students:200,guardians_created:100,guardians_reused:0,skipped:0});expect(await count()).toBe(before+200);
     const ids=result!.enrolled.map(r=>r.student_id);
@@ -74,8 +81,8 @@ describe('Reviewed bulk student enrollment',()=>{
     expect((await pool.query('SELECT id FROM attendance_records WHERE student_id=ANY($1::uuid[])',[ids])).rows).toHaveLength(0);
     expect((await pool.query('SELECT id FROM students WHERE id=ANY($1::uuid[]) AND user_id IS NOT NULL',[ids])).rows).toHaveLength(0);
     expect((await pool.query('SELECT id FROM guardian_relationships WHERE student_id=ANY($1::uuid[]) AND can_authorize_leave',[ids])).rows).toHaveLength(0);
-    expect((await pool.query('SELECT count(*)::int AS n FROM users')).rows[0].n).toBe(users);
-    expect((await pool.query("SELECT id FROM event_outbox WHERE school_id=$1 AND idempotency_key LIKE $2",[schoolId,`people-import:${id}:%`])).rows).toHaveLength(2);
+    expect((await pool.query('SELECT p.id FROM parents p JOIN guardian_relationships g ON g.guardian_id=p.id WHERE g.student_id=ANY($1::uuid[]) AND p.user_id IS NOT NULL',[ids])).rows).toHaveLength(0);
+    expect((await pool.query("SELECT id FROM event_outbox WHERE school_id=$1 AND aggregate_type='class_section' AND idempotency_key LIKE $2",[schoolId,`people-import:${id}:%`])).rows).toHaveLength(2);
     expect((await detail(id)).receipt!.enrolled).toHaveLength(200);
     expect((await pool.query("SELECT row_number FROM people_import_rows WHERE import_id=$1 AND raw_values<>'{}'::jsonb",[id])).rows).toHaveLength(0);
   });
@@ -120,15 +127,32 @@ describe('Reviewed bulk student enrollment',()=>{
     try{await expect(imports.commit(admin,id,{school_id:schoolId,expected_revision:1,validation_token:current.review!.validation_token,verified:true})).rejects.toThrow(/sis\.manage|active membership/);}finally{await pool.query("UPDATE school_memberships SET is_active=true WHERE school_id=$1 AND user_id=$2 AND role='admin'",[schoolId,admin.authUser.id]);}
   });
   it('warns about submitted registers, reopens once, and preserves historical roster boundaries',async()=>{
-    const register=(await pool.query("INSERT INTO attendance_registers(school_id,class_section_id,term_id,date,state,revision,submitted_by,submitted_at) VALUES($1,$2,$3,$4,'submitted',1,$5,now()) RETURNING id",[schoolId,sectionA,termId,today,teacher.authUser.id])).rows[0].id;
+    const prepared=await db.transaction().execute(tx=>participation.bridge.prepareDailyInTransaction(tx,admin.authUser,schoolId,sectionA,today,true));
+    const initial=await participation.kernel.detail(admin.authUser,schoolId,prepared.register_id);
+    await participation.kernel.submitRecords(admin.authUser,schoolId,prepared.register_id,{expected_revision:initial.register.revision,
+      records:initial.roster.map(person=>({person_id:person.person_id,status:'absent'}))},commandReq(admin.authUser));
+    const register=(await pool.query('SELECT id FROM attendance_registers WHERE school_id=$1 AND class_section_id=$2 AND date=$3',[schoolId,sectionA,today])).rows[0].id;
+    const oldEntries=(await pool.query('SELECT * FROM activity_attendance_entries WHERE register_id=$1 ORDER BY id',[prepared.register_id])).rows;
     const id=await upload([row(),row()]);expect((await detail(id)).review!.summary.registers_reopened).toBe(1);const result=await commit(id);expect(result!.registers_reopened).toBe(1);
     expect((await pool.query('SELECT state,revision FROM attendance_registers WHERE id=$1',[register])).rows[0]).toEqual({state:'draft',revision:2});
+    expect((await pool.query('SELECT * FROM activity_attendance_entries WHERE register_id=$1 ORDER BY id',[prepared.register_id])).rows).toEqual(oldEntries);
+    const after=await participation.kernel.detail(admin.authUser,schoolId,prepared.register_id);
+    expect(after.roster.filter(person=>person.status===null)).toHaveLength(2);
     const yesterday=(await pool.query('SELECT ($1::date-1)::text AS day',[today])).rows[0].day;
     const past=await school.teacherAttendanceScreen(teacher.authUser,sectionA,yesterday);expect(past.roster.some((s:{id:string})=>result!.enrolled.some(r=>r.student_id===s.id))).toBe(false);
   });
   it('rejects registers locked after review without creating people',async()=>{
-    const id=await upload([row()]),old=await detail(id);await pool.query("UPDATE attendance_registers SET state='locked',locked_by=$3,locked_at=now() WHERE school_id=$1 AND class_section_id=$2",[schoolId,sectionA,admin.authUser.id]);const before=await count();
-    try{await expect(imports.commit(admin,id,{school_id:schoolId,expected_revision:old.revision,validation_token:old.review!.validation_token,verified:true})).rejects.toThrow('invalid row');expect(await count()).toBe(before);}finally{await pool.query("UPDATE attendance_registers SET state='draft',locked_by=NULL,locked_at=NULL WHERE school_id=$1 AND class_section_id=$2",[schoolId,sectionA]);}
+    const id=await upload([row()]),old=await detail(id);
+    const prepared=await db.transaction().execute(tx=>participation.bridge.prepareDailyInTransaction(tx,admin.authUser,schoolId,sectionA,today,true));
+    const initial=await participation.kernel.detail(admin.authUser,schoolId,prepared.register_id);
+    await participation.kernel.submitRecords(admin.authUser,schoolId,prepared.register_id,{expected_revision:initial.register.revision,
+      reason:'Reviewed complete imported roster',records:initial.roster.map(person=>({person_id:person.person_id,status:'absent'}))},commandReq(admin.authUser));
+    const submitted=await participation.kernel.detail(admin.authUser,schoolId,prepared.register_id);
+    await participation.kernel.transition(admin.authUser,schoolId,prepared.register_id,'finalize',{expected_revision:submitted.register.revision},commandReq(admin.authUser));
+    const before=await count();
+    try{await expect(imports.commit(admin,id,{school_id:schoolId,expected_revision:old.revision,validation_token:old.review!.validation_token,verified:true})).rejects.toThrow('invalid row');expect(await count()).toBe(before);}
+    finally{const locked=await participation.kernel.detail(admin.authUser,schoolId,prepared.register_id);await participation.kernel.transition(admin.authUser,schoolId,prepared.register_id,'reopen',
+      {expected_revision:locked.register.revision,reason:'Restore test fixture after locked-source refusal'},commandReq(admin.authUser));}
   });
   it('purges cancelled and expired draft details while retaining minimal history',async()=>{
     const id=await upload([row()]);await imports.cancel(admin,id,{school_id:schoolId,expected_revision:1});expect((await detail(id)).state).toBe('cancelled');expect((await pool.query('SELECT raw_values FROM people_import_rows WHERE import_id=$1',[id])).rows[0].raw_values).toEqual({});
@@ -145,6 +169,6 @@ describe('Reviewed bulk student enrollment',()=>{
   it('commits the 500-student limit using batched writes and class-coalesced events',async()=>{
     const id=await upload(Array.from({length:500},()=>row({class:'7B'})));const before=await count();const result=await commit(id);
     expect(result!.students).toBe(500);expect(await count()).toBe(before+500);
-    expect((await pool.query("SELECT id FROM event_outbox WHERE school_id=$1 AND idempotency_key LIKE $2",[schoolId,`people-import:${id}:%`])).rows).toHaveLength(1);
+    expect((await pool.query("SELECT id FROM event_outbox WHERE school_id=$1 AND aggregate_type='class_section' AND idempotency_key LIKE $2",[schoolId,`people-import:${id}:%`])).rows).toHaveLength(1);
   });
 });

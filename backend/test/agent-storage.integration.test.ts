@@ -14,7 +14,7 @@ it('keeps agent storage behind backend ownership and denies browser-role access'
     FROM pg_class c WHERE c.oid IN ('public.agent_threads'::regclass,'public.agent_runs'::regclass,
       'public.agent_tool_steps'::regclass,'public.agent_actions'::regclass,'public.agent_user_memories'::regclass,
       'public.agent_channel_connections'::regclass,'public.agent_channel_link_tokens'::regclass,
-      'public.agent_channel_updates'::regclass,'public.agent_channel_deliveries'::regclass)`);
-  expect(result.rows).toHaveLength(9);
+      'public.agent_channel_updates'::regclass,'public.agent_channel_deliveries'::regclass,'public.agent_channel_outbound_parts'::regclass)`);
+  expect(result.rows).toHaveLength(10);
   for(const row of result.rows)expect(row).toMatchObject({relrowsecurity:true,app_owned:true,no_public_grant:true,no_browser_grant:true});
 });

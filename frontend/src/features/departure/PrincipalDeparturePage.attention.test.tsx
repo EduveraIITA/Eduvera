@@ -9,7 +9,7 @@ import { clearPendingTransportCommandsForTests } from "./pendingTransportCommand
 
 vi.mock("../../pages/operations/OperationsShell",()=>({OperationsShell:({children}:{children:ReactNode})=><main>{children}</main>}));
 vi.mock("../attention/AttentionOpenAcknowledgement",()=>({AttentionOpenAcknowledgement:()=> <output data-testid="attention-opened"/>}));
-vi.mock("../auth/AuthContext",()=>({useAuth:()=>({user:{id:"admin-1",active_school_id:"school-1"},memberships:[{role:"admin",school_id:"school-1"}],refresh:vi.fn()})}));
+vi.mock("../auth/AuthContext",()=>({useAuth:()=>({user:{id:"operator-1",active_school_id:"school-1"},memberships:[{role:"staff",school_id:"school-1",school_name:"Cambridge International School"}],refresh:vi.fn()})}));
 vi.mock("./api",async original=>({...await original<typeof import("./api")>(),getDepartureWorkspace:vi.fn(),decideDutySwap:vi.fn()}));
 
 const trip:TransportTrip={
@@ -37,9 +37,9 @@ function show(path:string){
 beforeEach(()=>vi.mocked(getDepartureWorkspace).mockResolvedValue(workspace));
 afterEach(()=>{cleanup();clearPendingTransportCommandsForTests();vi.clearAllMocks();});
 
-describe("principal departure attention destinations",()=>{
+describe("departure coordination attention destinations",()=>{
   it("loads and focuses an exact historical departure plan",async()=>{
-    show("/principal/departure?section=pickup&date=2026-09-01&student=student-1&plan=plan-1");
+    show("/areas/departure/manage?section=pickup&date=2026-09-01&student=student-1&plan=plan-1");
     expect(await screen.findByText("Aarav Sharma")).toBeVisible();
     const target=document.getElementById("attention-departure-plan-plan-1");
     expect(target).toHaveClass("is-attention-target");
@@ -48,13 +48,13 @@ describe("principal departure attention destinations",()=>{
   });
 
   it("does not focus a plan whose learner or date does not match",async()=>{
-    show("/principal/departure?section=pickup&date=2026-09-02&student=student-1&plan=plan-1");
+    show("/areas/departure/manage?section=pickup&date=2026-09-02&student=student-1&plan=plan-1");
     expect(await screen.findByRole("alert")).toHaveTextContent("Departure plan unavailable");
     expect(document.getElementById("attention-departure-plan-plan-1")).not.toBeInTheDocument();
   });
 
   it("moves to the exact trip week and focuses the declined duty",async()=>{
-    show("/principal/departure?section=roster&trip=trip-1");
+    show("/areas/departure/manage?section=roster&trip=trip-1");
     expect(await screen.findByText("South route")).toBeVisible();
     await waitFor(()=>expect(document.getElementById("attention-transport-trip-trip-1")).toHaveFocus());
     expect(document.getElementById("attention-transport-trip-trip-1")).toHaveClass("is-attention-target");
@@ -63,28 +63,28 @@ describe("principal departure attention destinations",()=>{
 
   it("shows an unavailable state instead of another trip when the target is stale",async()=>{
     vi.mocked(getDepartureWorkspace).mockResolvedValue({...workspace,trips:[]});
-    show("/principal/departure?section=roster&trip=missing-trip");
+    show("/areas/departure/manage?section=roster&trip=missing-trip");
     expect(await screen.findByRole("alert")).toHaveTextContent("Transport duty unavailable");
     expect(document.querySelector(".departure-duty-card.is-attention-target")).not.toBeInTheDocument();
   });
 
   it("shows truthful resolved states for requests and duty changes no longer in their queues",async()=>{
-    const requestView=show("/principal/departure?section=requests&request=closed-request");
+    const requestView=show("/areas/departure/manage?section=requests&request=closed-request");
     expect(await screen.findByRole("alert")).toHaveTextContent("Departure request unavailable");
     requestView.unmount();
-    show("/principal/departure?section=roster&swap=closed-swap");
+    show("/areas/departure/manage?section=roster&swap=closed-swap");
     expect(await screen.findByRole("alert")).toHaveTextContent("Duty change unavailable");
     expect(document.querySelector(".departure-swap-queue .is-attention-target")).not.toBeInTheDocument();
   });
 
   it("acknowledges school swap approval only at the exact accepted revision",async()=>{
     vi.mocked(getDepartureWorkspace).mockResolvedValue({...workspace,swaps:[acceptedSwap]});
-    show("/principal/departure?section=roster&swap=swap-1&swap_revision=2&attention_notification_id=10000000-0000-4000-a000-000000000001");
+    show("/areas/departure/manage?section=roster&swap=swap-1&swap_revision=2&attention_notification_id=10000000-0000-4000-a000-000000000001");
     expect(await screen.findByTestId("attention-opened")).toBeInTheDocument();
     expect(document.getElementById("attention-duty-swap-swap-1")).toHaveClass("is-attention-target");
     cleanup();
     vi.mocked(getDepartureWorkspace).mockResolvedValue({...workspace,swaps:[acceptedSwap]});
-    show("/principal/departure?section=roster&swap=swap-1&swap_revision=3&attention_notification_id=10000000-0000-4000-a000-000000000001");
+    show("/areas/departure/manage?section=roster&swap=swap-1&swap_revision=3&attention_notification_id=10000000-0000-4000-a000-000000000001");
     expect(await screen.findByText(/changed after the alert/i)).toBeVisible();
     expect(screen.queryByTestId("attention-opened")).not.toBeInTheDocument();
   });
@@ -92,7 +92,7 @@ describe("principal departure attention destinations",()=>{
   it("reuses the school decision command after a response is lost and the page reloads",async()=>{
     vi.mocked(getDepartureWorkspace).mockResolvedValue({...workspace,swaps:[acceptedSwap]});
     vi.mocked(decideDutySwap).mockRejectedValueOnce(new TypeError("response lost")).mockResolvedValueOnce({status:"approved"});
-    const path="/principal/departure?section=roster&swap=swap-1";
+    const path="/areas/departure/manage?section=roster&swap=swap-1";
     show(path);
     const firstApprove=await screen.findByRole("button",{name:"Approve"});
     firstApprove.click();

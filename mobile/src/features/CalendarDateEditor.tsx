@@ -1,0 +1,62 @@
+import { useEffect, useRef, useState } from 'react';
+import { useQueryClient } from '@tanstack/react-query';
+import type { PublishedCampusDate, PublishedCampusDatesPage } from '../../../packages/contracts/src/wire/features/calendar/campusPublishedDates';
+import { useSession } from '../auth/SessionProvider';
+import { captureApiContext, getApiOrigin } from '../lib/api';
+import { useApi } from '../lib/query';
+import { useNativePendingAction } from '../lib/native-pending-action';
+import { useOperationContext } from '../lib/use-operation-context';
+import { calendarDateFields, calendarDateReason, calendarDateRefreshPath, calendarDateRoot, validCalendarDateRecord, type CalendarDateAction } from '../lib/calendar-date-policy';
+import { nativeCalendarMonthRange } from '../lib/native-calendar';
+import { nativeCalendarDateReturnHref, nativeCalendarLocation } from '../lib/calendar-route';
+import { ScreenBack, useCampusNavigation, useScreenExitGuard } from '../ui/BackNavigation';
+import { TemporalField } from '../ui/TemporalField';
+import { Button, Empty, Field, Loading, Notice, Page, Section } from '../ui/components';
+import { ControlButton, Disclosure, Facts, InfoDisclosure } from '../ui/DomainControls';
+
+type Props = { href: string; date: string; schoolId: string; onNavigate: (href: string) => void };
+type Detail = { item: PublishedCampusDate; can_manage: boolean };
+const errorText = (cause: unknown) => cause instanceof Error ? cause.message : 'The current date could not be confirmed.';
+const returnHref = nativeCalendarDateReturnHref;
+
+/** Native publication editor for informational dates; other sources retain their own writer. */
+export function CalendarDateEditor(props: Props) {
+  const q = nativeCalendarLocation(props.href).params, action = q.get('calendar_action'), id = q.get('calendar_date_id');
+  if (q.getAll('calendar_action').length !== 1 || q.getAll('calendar_date_id').length > 1 || !['publish', 'correct', 'cancel'].includes(action ?? '') || action !== 'publish' && (!id || !/^[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}$/i.test(id)) || action === 'publish' && q.has('calendar_date_id')) return <Page title="Important date"><ScreenBack title="Back to Calendar" fallbackHref={returnHref(props.href)} /><Empty title="This date action is incomplete" /></Page>;
+  return <DateEditor key={`${action}:${id ?? 'new'}`} {...props} action={action as CalendarDateAction} id={id ?? undefined} />;
+}
+function DateEditor({ href, date, schoolId, onNavigate, action, id }: Props & { action: CalendarDateAction; id?: string }) {
+  const { complete } = useCampusNavigation(href);
+  const { user, environment, scopeKey } = useSession(), cache = useQueryClient(), root = calendarDateRoot(schoolId), range = nativeCalendarMonthRange(date);
+  const listPath = `${root}?${new URLSearchParams({ ...range, page: '1' })}`;
+  const authority = useApi<PublishedCampusDatesPage>(action === 'publish' ? listPath : null), detail = useApi<Detail>(id ? `${root}/${encodeURIComponent(id)}` : null);
+  const current = !detail.isError && validCalendarDateRecord(detail.data?.item, schoolId, id) ? detail.data!.item : undefined;
+  const canManage = action === 'publish' ? authority.isSuccess && !authority.isError && authority.data.can_manage === true && authority.data.from === range.from && authority.data.until === range.until : !!current && detail.data?.can_manage === true && current.state === 'published';
+  const [source, setSource] = useState<PublishedCampusDate | undefined>(), [title, setTitle] = useState(''), [description, setDescription] = useState(''), [start, setStart] = useState(date), [end, setEnd] = useState(''), [category, setCategory] = useState(''), [reason, setReason] = useState(''), [review, setReview] = useState(false), [error, setError] = useState(''), [saved, setSaved] = useState<PublishedCampusDate | null>(null);
+  const restored = useRef(false);
+  const captureOperation = useOperationContext(JSON.stringify([href, 'campus_date', schoolId, id ?? schoolId]));
+  const write = useNativePendingAction<Detail>({ scope: { actorId: user!.id, schoolId, mode: environment.mode, namespaceId: environment.namespace_id ?? null, origin: getApiOrigin() }, domain: 'calendar', ownerHref: href, refreshPath: id ? `${root}/${encodeURIComponent(id)}` : listPath, resolveRefreshPath: calendarDateRefreshPath, captureOperation,
+    accepted: async (value, assertCurrent, retained) => { const savedId = retained.refreshPath.slice(root.length + 1); if (!validCalendarDateRecord(value?.item, schoolId, savedId)) throw new Error('The refreshed campus date did not match the accepted source.'); await cache.invalidateQueries({ queryKey: ['campus', scopeKey], refetchType: 'none' }); assertCurrent(); setSaved(value.item); } });
+  useEffect(() => { if (!write.ready || restored.current) return; restored.current = true;
+    if (write.action?.ownerHref === href && write.action.payload.kind === 'json') { try { const body = JSON.parse(write.action.payload.body); setTitle(typeof body.title === 'string' ? body.title : ''); setDescription(typeof body.description === 'string' ? body.description : ''); setStart(typeof body.starts_on === 'string' ? body.starts_on : date); setEnd(typeof body.ends_on === 'string' ? body.ends_on : ''); setCategory(typeof body.category_label === 'string' ? body.category_label : ''); setReason(typeof body.reason === 'string' ? body.reason : ''); setReview(true); } catch { /* The journal reports invalid retained storage. */ } }
+  }, [write.ready, write.action, href, date]);
+  useEffect(() => { if (current && !source && !write.action) { setSource(current); setTitle(current.title); setDescription(current.description); setStart(current.starts_on); setEnd(current.ends_on === current.starts_on ? '' : current.ends_on); setCategory(current.category_label); } }, [current, source, write.action]);
+  useEffect(() => { if (saved && !write.action && !write.busy) complete(returnHref(href, saved)); }, [saved, write.action, write.busy, href, complete]);
+  const dirty = title !== (source?.title ?? '') || description !== (source?.description ?? '') || start !== (source?.starts_on ?? date) || end !== (source && source.ends_on !== source.starts_on ? source.ends_on : '') || category !== (source?.category_label ?? '') || !!reason;
+  const stale = !!source && !!current && current.revision !== source.revision, disabled = write.locked || !canManage || stale || !!environment.unavailable;
+  useScreenExitGuard({ dirty: dirty && !write.action && !saved, blocked: write.busy, title: 'Leave this important date?', message: 'Only accepted publications and corrections remain saved.' });
+  const prepare = () => { try { if (disabled) return; if (action !== 'cancel') calendarDateFields({ title, description, start, end, category }, source); if (action !== 'publish') calendarDateReason(reason); setError(''); setReview(true); } catch (cause) { setError(errorText(cause)); } };
+  const send = () => { try { if (disabled || action !== 'publish' && !source) return; const fields = action === 'cancel' ? {} : calendarDateFields({ title, description, start, end, category }, source); const body = { ...fields, ...(action === 'publish' ? {} : { expected_revision: source!.revision, reason: calendarDateReason(reason) }) }; setError(''); void write.run({ endpoint: action === 'publish' ? root : `${root}/${source!.id}/${action}`, body, serverKey: 'idempotency_key', source: { kind: 'campus_date', sourceId: source?.id ?? schoolId, revision: source?.revision ?? 0 } }); } catch (cause) { setError(errorText(cause)); } };
+  const reload = async () => { try { const context = captureApiContext(), result = await detail.refetch({ throwOnError: true }); context.assertCurrent(); if (!validCalendarDateRecord(result.data?.item, schoolId, id)) throw new Error('The current date is unavailable.'); setSource(result.data.item); setTitle(result.data.item.title); setDescription(result.data.item.description); setStart(result.data.item.starts_on); setEnd(result.data.item.ends_on === result.data.item.starts_on ? '' : result.data.item.ends_on); setCategory(result.data.item.category_label); setReason(''); setReview(false); } catch (cause) { setError(errorText(cause)); } };
+  return <Page title={action === 'publish' ? 'Add important date' : action === 'correct' ? 'Correct important date' : 'Cancel important date'}><ScreenBack title="Back to Calendar" disabled={write.busy} fallbackHref={returnHref(href)} /><Notice message="Published campus information only. Sessions, enrollment, attendance, individual deadlines and payments keep their own records." />
+    {write.resumeHref ? <Button title="Return to retained Calendar action" kind="secondary" onPress={() => onNavigate(write.resumeHref!)} /> : null}{write.error || error ? <Notice tone="danger" message={write.error || error} /> : null}{write.action && !write.resumeHref ? <Button title={write.action.phase === 'accepted' ? 'Refresh saved date' : 'Retry identical date action'} busy={write.busy} onPress={() => void write.recover()} /> : null}
+    {action === 'publish' ? authority.isPending ? <Loading /> : authority.isError ? <Empty title="Publishing access could not load" message={authority.error.message} onRetry={() => void authority.refetch()} /> : null : detail.isPending ? <Loading /> : detail.isError || !current ? <Empty title="This exact date is unavailable" message={detail.error?.message} onRetry={() => void detail.refetch()} /> : null}
+    {!canManage && !(action === 'publish' ? authority.isPending : detail.isPending) ? <Notice tone="warning" message="Publishing or correction is unavailable with the current source and access." /> : null}
+    {stale && !write.action ? <><Notice tone="warning" message="This publication changed. Your local details remain until you review the current saved date." /><Button title="Load current date" kind="secondary" onPress={() => void reload()} /></> : null}
+    {write.action ? <Notice message="The exact original request and key are securely retained. An accepted action refreshes its source without publishing again." /> : review ? <><Facts items={[{ label: 'Title', value: action === 'cancel' ? source?.title ?? title : title }, { label: 'Dates', value: `${start}${end && end !== start ? ` – ${end}` : ''}` }, { label: 'Category', value: category || 'Campus date' }]} />{description ? <Section title="Description"><Notice message={description} /></Section> : null}{reason ? <Section title={action === 'cancel' ? 'Cancellation reason' : 'Correction reason'}><Notice message={reason} /></Section> : null}{action === 'cancel' ? <Notice tone="warning" message="The date remains visible as Cancelled with this reason." /> : null}<Button title={action === 'publish' ? 'Publish important date' : action === 'correct' ? 'Save correction' : 'Confirm cancellation'} kind={action === 'cancel' ? 'danger' : 'primary'} disabled={disabled} busy={write.busy} onPress={send} /><ControlButton title="Keep editing" disabled={write.locked} onPress={() => setReview(false)} /></> : <>
+      {action !== 'cancel' ? <><Field label="Title" value={title} onChangeText={setTitle} maxLength={160} editable={!disabled} /><TemporalField label="Starts on" mode="date" value={start} onChange={setStart} disabled={disabled} /><TemporalField label="Ends on · optional" mode="date" value={end} onChange={setEnd} disabled={disabled} minimumDate={new Date(start + 'T00:00:00')} />{end ? <ControlButton title="Use one day" disabled={disabled} onPress={() => setEnd('')} /> : null}<Field label="Description · optional" value={description} onChangeText={setDescription} maxLength={4000} multiline editable={!disabled} /><Disclosure title="Category"><Field label="Category label" value={category} onChangeText={setCategory} maxLength={80} editable={!disabled} placeholder="Campus date" /></Disclosure></> : source ? <Facts items={[{ label: 'Title', value: source.title }, { label: 'Dates', value: `${source.starts_on} – ${source.ends_on}` }]} /> : null}
+      {action !== 'publish' ? <Field label={action === 'cancel' ? 'Cancellation reason' : 'Correction reason'} value={reason} onChangeText={setReason} maxLength={1000} multiline editable={!disabled} /> : null}<Button title="Review important date" disabled={disabled} onPress={prepare} />
+    </>}
+    <InfoDisclosure title="Publication history"><Notice message="Corrections retain the original academic-period reference and provenance. Earlier accepted revisions remain in the owning history." /></InfoDisclosure>
+  </Page>;
+}

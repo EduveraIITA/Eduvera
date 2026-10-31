@@ -43,11 +43,15 @@ export const eventSessionSchema = z.object({
   title: requiredText(160),
   session_type: sessionType,
   venue: text(240).default(""),
+  space_id: uuid.nullable().optional(),
+  use_event_space: z.boolean().optional(),
   starts_at: instant,
   ends_at: instant,
   attendance_mode: attendanceMode,
   participant_student_ids: z.array(uuid).max(500).default([]),
-}).strict().refine((value) => Date.parse(value.ends_at) > Date.parse(value.starts_at), {
+}).strict().refine(value => !value.use_event_space || !value.space_id, {
+  message: "Use either the event location or one session location.", path: ["space_id"],
+}).refine((value) => Date.parse(value.ends_at) > Date.parse(value.starts_at), {
   message: "Session end time must follow its start time.", path: ["ends_at"],
 });
 
@@ -70,6 +74,7 @@ const eventFields = z.object({
   title: requiredText(160),
   description: text(4000).default(""),
   venue: text(240).default(""),
+  space_id: uuid.nullable().optional(),
   starts_at: instant,
   ends_at: instant,
   audience: audienceSchema,
@@ -178,6 +183,7 @@ export const revokeConsentAuthoritySchema = z.object({
 
 export interface CampusEventSessionDto {
   id: string; title: string; session_type: z.infer<typeof sessionType>; venue: string;
+  space_id: string | null; use_event_space: boolean;
   starts_at: string; ends_at: string; attendance_mode: z.infer<typeof attendanceMode>;
   state: "open" | "locked"; revision: number;
   participant_student_ids: string[];
@@ -190,7 +196,7 @@ export interface CampusEventSessionDto {
 export interface CampusEventDto {
   id: string; school_id: string; event_type: z.infer<typeof eventType>;
   subject_id: string | null;
-  status: z.infer<typeof eventStatus>; title: string; description: string; venue: string;
+  status: z.infer<typeof eventStatus>; title: string; description: string; venue: string; space_id: string | null;
   starts_at: string; ends_at: string;
   audience: { mode: z.infer<typeof audienceMode>; class_section_ids: string[]; student_ids: string[] };
   participation_requirement: z.infer<typeof participationRequirement>;

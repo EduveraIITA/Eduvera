@@ -1,4 +1,5 @@
 import { sql } from "kysely";
+import { executionNow } from "../campus-model-core/execution-time.runtime.js";
 import type { AuthUser } from "../common/request.js";
 import type { PlanDb } from "./contracts.js";
 import { authorize, dayContext, getPlan, periods } from "./repository.js";
@@ -118,7 +119,14 @@ export async function teacherDay(
   const rows = (
     await sql`SELECT e.*,concat('Class ',c.grade,c.section) AS class_name,p.response_revision,p.response_note,p.response_source,p.responded_at,
     CASE WHEN e.day_plan_id IS NOT NULL THEN d.owner_id ELSE NULL END AS owner_id,
-    CASE WHEN owner.id IS NOT NULL THEN concat_ws(' ',owner.first_name,owner.last_name) ELSE NULL END AS owner_name
+    CASE WHEN owner.id IS NOT NULL THEN concat_ws(' ',owner.first_name,owner.last_name) ELSE NULL END AS owner_name,
+    CASE WHEN e.slot_type='class' AND NOT e.cancelled AND e.coverage_status IN ('accepted','not_required')
+      AND (staff_has_class_permission(${schoolId}::uuid,${user.id}::uuid,'learning.sessions.manage',e.class_section_id,
+          (${executionNow()}::timestamptz AT TIME ZONE (SELECT timezone FROM schools WHERE id=${schoolId}::uuid))::date)
+        OR staff_has_resource_permission(${schoolId}::uuid,${user.id}::uuid,'learning.sessions.manage','institution',${schoolId}::uuid,
+          (${executionNow()}::timestamptz AT TIME ZONE (SELECT timezone FROM schools WHERE id=${schoolId}::uuid))::date))
+      THEN concat('/areas/timetable/session?date=',${date}::text,'&class_section_id=',e.class_section_id::text,'&period_number=',e.period_number::text)
+      ELSE NULL END AS teaching_session_href
     FROM effective_school_schedule(${schoolId}::uuid,${date}::date) e JOIN class_sections c ON c.id=e.class_section_id
     LEFT JOIN day_plan_periods p ON p.id=e.id LEFT JOIN day_plans d ON d.id=e.day_plan_id LEFT JOIN users owner ON owner.id=d.owner_id
     WHERE e.teacher_user_id=${user.id}::uuid ORDER BY e.starts_at,e.period_number`.execute(

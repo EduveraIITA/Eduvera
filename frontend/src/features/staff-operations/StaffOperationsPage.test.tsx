@@ -1,15 +1,16 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { CoverageOperatingRules } from "../office/CoverageOperatingRules";
-import { cleanup, render, screen, waitFor } from "@testing-library/react";
+import { cleanup, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { MemoryRouter, useLocation, useNavigationType } from "react-router-dom";
 import { AuthorizedStaffLeaveDecisionPage, StaffOperationsPage } from "./StaffOperationsPage";
-import { decideStaffLeave, saveCoveragePolicy, type AdminStaffWorkspace, type CoverageTask, type ResponsibilityAssignment, type StaffLeaveRequest, type StaffProfile, type TeacherStaffWorkspace } from "./api";
+import { decideStaffLeave, saveCoveragePolicy, updateStaffOnboarding, type AdminStaffWorkspace, type CoverageTask, type ResponsibilityAssignment, type StaffLeaveRequest, type StaffProfile, type TeacherStaffWorkspace } from "./api";
 import { saveAccessRole, assignAccessRole, type AccessRole, type RoleOptions, type RoleAssignment } from "./access-api";
 import { clearPendingStaffLeaveCommandsForTests } from "./pendingLeaveCommand";
+import { ExecutionEnvironmentProvider } from "../simulation/ExecutionEnvironmentContext";
 vi.mock("./access-api", async (original) => ({...(await original<typeof import("./access-api")>()),saveAccessRole:vi.fn(),assignAccessRole:vi.fn()}));
-vi.mock("./api", async (original) => ({...(await original<typeof import("./api")>()),saveCoveragePolicy:vi.fn(),decideStaffLeave:vi.fn()}));
+vi.mock("./api", async (original) => ({...(await original<typeof import("./api")>()),saveCoveragePolicy:vi.fn(),decideStaffLeave:vi.fn(),updateStaffOnboarding:vi.fn()}));
 vi.mock("../attention/AttentionOpenAcknowledgement",()=>({AttentionOpenAcknowledgement:()=> <output data-testid="attention-opened"/>}));
 
 vi.mock("../roles/api", async (importOriginal) => ({ ...(await importOriginal<typeof import("../roles/api")>()), getRoles: vi.fn(), assignProfiles: vi.fn() }));
@@ -37,13 +38,85 @@ function NavigationProbe() {
 }
 
 function renderPage(data: AdminStaffWorkspace | TeacherStaffWorkspace, portal: "principal" | "teacher", staffProfileId?: string, path = "/") {
-  return render(<QueryClientProvider client={new QueryClient()}><MemoryRouter initialEntries={[path]}><StaffOperationsPage portal={portal} actorId="actor-1" teacherView={path.startsWith("/teacher/responsibilities")?"responsibilities":"leave"} staffProfileId={staffProfileId} schoolId="school-1" schoolName="Cambridge International School" data={data} refresh={vi.fn().mockResolvedValue(undefined)} /><NavigationProbe /></MemoryRouter></QueryClientProvider>);
+  return render(<QueryClientProvider client={new QueryClient()}><ExecutionEnvironmentProvider environment={{mode:"live"}}><MemoryRouter initialEntries={[path]}><StaffOperationsPage portal={portal} actorId="actor-1" teacherView={path.startsWith("/teacher/responsibilities")?"responsibilities":"leave"} staffProfileId={staffProfileId} schoolId="school-1" schoolName="Cambridge International School" data={data} refresh={vi.fn().mockResolvedValue(undefined)} /><NavigationProbe /></MemoryRouter></ExecutionEnvironmentProvider></QueryClientProvider>);
 }
 
 beforeEach(() => clearPendingStaffLeaveCommandsForTests());
 afterEach(() => { cleanup(); clearPendingStaffLeaveCommandsForTests(); vi.clearAllMocks(); });
 
 describe("StaffOperationsPage", () => {
+  it("pages a large directory and uses actual employment statuses without losing campus context", async () => {
+    const profiles = Array.from({ length: 22 }, (_, index) => ({ ...profile, id: `staff-${index + 1}`, first_name: `Staff person ${index + 1}`, last_name: "", staff_code: `S-${index + 1}`, status: index < 10 ? "active" as const : index < 20 ? "onboarding" as const : "inactive" as const }));
+    const data: AdminStaffWorkspace = { mode: "admin", academic_year: "2026-27", profiles, onboarding_items: [], policies: [], balances: [], requests: [], work_types: [], responsibility_types: [], assignments: [], coverage_tasks: [], references: { classes: [], subjects: [], events: [] } };
+    renderPage(data, "principal", undefined, "/more/setup/responsibilities?section=directory&school=school-1");
+    expect(screen.getAllByRole("link", { name: /^Open Staff person/ })).toHaveLength(10);
+    const pages = within(screen.getByRole("navigation", { name: "staff pages" }));
+    expect(pages.getByText("Page 1 of 3 · 22 staff")).toBeVisible();
+    await userEvent.click(pages.getByRole("button", { name: "Next", exact: true }));
+    expect(screen.getByRole("link", { name: "Open Staff person 20 staff profile" })).toBeVisible();
+    await userEvent.selectOptions(screen.getByRole("combobox", { name: "Staff status" }), "onboarding");
+    expect(screen.getAllByRole("link", { name: /^Open Staff person/ })).toHaveLength(10);
+    expect(screen.queryByRole("navigation", { name: "staff pages" })).not.toBeInTheDocument();
+    expect(screen.getByTestId("navigation-location")).toHaveTextContent("school=school-1");
+    expect(screen.getByTestId("navigation-location")).not.toHaveTextContent("staff_page");
+    await userEvent.type(screen.getByRole("searchbox", { name: "Find staff" }), "person 20");
+    expect(screen.getAllByRole("link", { name: /^Open Staff person/ })).toHaveLength(1);
+    expect(updateStaffOnboarding).not.toHaveBeenCalled();
+  });
+  it("retains directory page and search in profile links and their canonical return", async () => {
+    const profiles = Array.from({ length: 12 }, (_, index) => ({ ...profile, id: `staff-${index + 1}`, first_name: `Staff person ${index + 1}`, last_name: "", staff_code: `S-${index + 1}` }));
+    const data: AdminStaffWorkspace = { mode: "admin", academic_year: "2026-27", profiles, onboarding_items: [], policies: [], balances: [], requests: [], work_types: [], responsibility_types: [], assignments: [], coverage_tasks: [], references: { classes: [], subjects: [], events: [] } };
+    const view = renderPage(data, "principal", undefined, "/more/setup/responsibilities?section=directory&staff_search=Staff+person&staff_page=2");
+    const target = screen.getByRole("link", { name: "Open Staff person 12 staff profile" }).getAttribute("href")!;
+    expect(target).toContain("staff_search=Staff+person");
+    expect(target).toContain("staff_page=2");
+    view.unmount();
+    renderPage(data, "principal", "staff-12", target);
+    await userEvent.click(screen.getByRole("button", { name: "Go back" }));
+    expect(screen.getByTestId("navigation-location")).toHaveTextContent("/more/setup/responsibilities?section=directory&staff_search=Staff+person&staff_page=2");
+  });
+  it("shows a minimal attendance operator without inventing employment or a joining date", () => {
+    const minimal = { ...profile, employment_type: "unspecified" as const, joined_on: null };
+    const data: AdminStaffWorkspace = { mode: "admin", academic_year: "2026-27", profiles: [minimal], onboarding_items: [], policies: [], balances: [], requests: [], work_types: [], responsibility_types: [], assignments: [], coverage_tasks: [], references: { classes: [], subjects: [], events: [] } };
+    renderPage(data, "principal", minimal.id);
+    expect(screen.getByText("Not specified")).toBeVisible();
+    expect(screen.getByText("Not provided")).toBeVisible();
+  });
+  it("labels passive app access optional and excludes it from required onboarding progress", async () => {
+    const passive = { ...profile, person_id: "passive-person", user_id: null, email: "", status: "onboarding" as const };
+    const items = [
+      { id: "identity", staff_profile_id: profile.id, item_key: "identity", label: "Identity verified", required: true, completed_at: null, note: "" },
+      { id: "contract", staff_profile_id: profile.id, item_key: "contract", label: "Employment terms recorded", required: true, completed_at: null, note: "" },
+      { id: "app", staff_profile_id: profile.id, item_key: "account_access", label: "App access (optional)", required: false, completed_at: null, note: "" },
+    ];
+    const data: AdminStaffWorkspace = { mode: "admin", academic_year: "2026-27", profiles: [passive], onboarding_items: items, policies: [], balances: [], requests: [], work_types: [], responsibility_types: [], assignments: [], coverage_tasks: [], references: { classes: [], subjects: [], events: [] } };
+    renderPage(data, "principal", profile.id);
+    expect(screen.getByRole("heading", { name: "0 of 2 required checks complete" })).toBeVisible();
+    expect(screen.getByText("Optional · Managed in People")).toBeVisible();
+    expect(screen.queryByRole("button", { name: /App access/ })).not.toBeInTheDocument();
+    expect(screen.getByRole("link", { name: "Open in People" })).toHaveAttribute("href", "/areas/people/participants/passive-person");
+    expect(updateStaffOnboarding).not.toHaveBeenCalled();
+    cleanup();
+    renderPage({ ...data, profiles: [{ ...passive, status: "active" }], onboarding_items: items.map(item => item.required ? { ...item, completed_at: "2026-10-20T12:00:00Z" } : item) }, "principal", profile.id);
+    expect(screen.getByText("Required onboarding complete")).toBeVisible();
+    expect(screen.getByText("2 required checks recorded")).toBeVisible();
+    await userEvent.click(screen.getByText("Required onboarding complete"));
+    expect(screen.getByText("Optional · Managed in People")).toBeVisible();
+    expect(screen.queryByRole("button", { name: /App access/ })).not.toBeInTheDocument();
+    expect(updateStaffOnboarding).not.toHaveBeenCalled();
+  });
+  it("uses required checklist rows for directory progress and does not guess from all-item totals when unavailable", () => {
+    const onboarding = { ...profile, status: "onboarding" as const, onboarding_total: 5, onboarding_complete: 0 };
+    const data: AdminStaffWorkspace = { mode: "admin", academic_year: "2026-27", profiles: [onboarding], onboarding_items: [
+      { id: "required", staff_profile_id: profile.id, item_key: "identity", label: "Identity verified", required: true, completed_at: "2026-10-20T12:00:00Z", note: "" },
+      { id: "optional", staff_profile_id: profile.id, item_key: "app_access", label: "App access (optional)", required: false, completed_at: null, note: "" },
+    ], policies: [], balances: [], requests: [], work_types: [], responsibility_types: [], assignments: [], coverage_tasks: [], references: { classes: [], subjects: [], events: [] } };
+    renderPage(data, "principal");
+    expect(screen.getByText("100% required checks complete")).toBeVisible();
+    cleanup(); renderPage({ ...data, onboarding_items: [] }, "principal");
+    expect(screen.getByText("Onboarding in progress")).toBeVisible();
+    expect(screen.queryByText(/% ready/)).not.toBeInTheDocument();
+  });
   it("reuses a decision command after response loss and a page reload", async () => {
     const data: AdminStaffWorkspace = { mode: "admin", academic_year: "2026-27", profiles: [profile], onboarding_items: [], policies: [policy], balances: [balance], requests: [request], work_types: [], responsibility_types: [], assignments: [], coverage_tasks: [], references: { classes: [], subjects: [], events: [] } };
     vi.mocked(decideStaffLeave).mockRejectedValueOnce(new TypeError("network interrupted"));
@@ -119,24 +192,29 @@ describe("StaffOperationsPage", () => {
 
   it("gives the teacher balances, request history and an application form", async () => {
     const data: TeacherStaffWorkspace = { mode: "staff", academic_year: "2026-27", profile, policies: [policy], balances: [balance], requests: [request], work_types: [], responsibility_types: [], assignments: [], coverage_tasks: [] };
-    renderPage(data, "teacher");
-    expect(screen.getByText("10 days available · 2026-27")).toBeVisible();
+    renderPage(data, "teacher", undefined, "/areas/responsibilities/leave");
+    expect(screen.getByText("2026-27")).toBeVisible();
+    expect(screen.queryByText(/days available · 2026-27/)).not.toBeInTheDocument();
     expect(document.querySelector(".staff-hero")).toBeNull();
     expect(screen.getByText("Family medical appointment")).toBeVisible();
-    await userEvent.setup().click(screen.getByRole('link',{name:'Balances'}));
+    await userEvent.setup().click(screen.getByText('Leave balances', { selector: 'summary' }));
     expect(screen.getByText("2 used · 1 pending · 12 total")).toBeVisible();
-    expect(screen.queryByText('Family medical appointment')).not.toBeInTheDocument();
+    expect(screen.getByText('Family medical appointment')).toBeVisible();
+    expect(within(screen.getByRole('region', { name: 'Leave balances' })).getByText('9')).toBeVisible();
     await userEvent.setup().click(screen.getByRole("button", { name: "Apply for leave" }));
-    expect(screen.getByTestId("navigation-location")).toHaveTextContent("/teacher/leave?view=balances&create=leave");
+    expect(screen.getByTestId("navigation-location")).toHaveTextContent("/areas/responsibilities/leave?create=leave");
     expect(screen.getByTestId("navigation-type")).toHaveTextContent("PUSH");
     expect(screen.getByRole("heading", { name: "Apply for leave" })).toBeVisible();
+    expect(screen.getByLabelText("Handover note")).not.toBeVisible();
+    expect(screen.getByLabelText("Day type")).toHaveValue("full_day");
+    expect(screen.getByLabelText("Day type")).not.toBeVisible();
+    await userEvent.click(screen.getByText("Half-day or handover", { selector: "summary" }));
     expect(screen.getByLabelText("Handover note")).toBeVisible();
     expect(screen.queryByRole('navigation',{name:'Leave sections'})).not.toBeInTheDocument();
     await userEvent.setup().click(screen.getByRole('button',{name:'Cancel'}));
-    expect(screen.getByTestId("navigation-location")).toHaveTextContent("/teacher/leave?view=balances");
+    expect(screen.getByTestId("navigation-location")).toHaveTextContent("/areas/responsibilities/leave");
     expect(screen.getByTestId("navigation-type")).not.toHaveTextContent("PUSH");
-    expect(screen.getByRole('link',{name:'Balances'})).toHaveAttribute('aria-current','page');
-    await userEvent.setup().click(screen.getByRole('link',{name:'Requests'}));
+    expect(screen.queryByRole('navigation',{name:'Leave sections'})).not.toBeInTheDocument();
     expect(screen.getByText('Family medical appointment')).toBeVisible();
   });
 
@@ -148,8 +226,8 @@ describe("StaffOperationsPage", () => {
     expect(screen.queryByRole("heading", { name: "Staff directory" })).not.toBeInTheDocument();
     expect(document.querySelector(".staff-hero")).toBeNull();
     expect(screen.queryByText("Identity verified")).not.toBeInTheDocument();
-    expect(screen.getByRole("link", { name: "Open Kavita Mehta staff profile" })).toHaveAttribute("href", "/principal/staff/profile-1");
-    await userEvent.setup().click(screen.getByRole("button", { name: /Leave/ }));
+    expect(screen.getByRole("link", { name: "Open Kavita Mehta staff profile" })).toHaveAttribute("href", "/more/setup/responsibilities/profile-1?section=directory");
+    await userEvent.setup().click(screen.getByRole("button", { name: /^Leave\b(?! settings)/ }));
     expect(screen.getByText("2 classes or shifts")).toBeVisible();
     expect(screen.getByText(/need coverage if approved/)).toBeVisible();
     expect(screen.getByRole("button", { name: "Approve" })).toBeVisible();
@@ -214,7 +292,7 @@ describe("StaffOperationsPage", () => {
   it("shows scoped responsibility offers to staff and on the selected staff record", async () => {
     const teacher: TeacherStaffWorkspace = { mode: "staff", academic_year: "2026-27", profile, policies: [policy], balances: [balance], requests: [], work_types: [responsibilityType], responsibility_types: [responsibilityType], assignments: [assignment], coverage_tasks: [] };
     render(<QueryClientProvider client={new QueryClient()}><MemoryRouter><StaffOperationsPage portal="teacher" actorId="actor-1" teacherView="responsibilities" schoolId="school-1" schoolName="Cambridge International School" data={teacher} refresh={vi.fn().mockResolvedValue(undefined)} /></MemoryRouter></QueryClientProvider>);
-    expect(screen.getByRole("heading", { name: "My work", level: 1 })).toBeVisible();
+    expect(screen.getByRole("heading", { name: "Responsibilities", level: 1 })).toBeVisible();
     expect(screen.getByText("Inter-house debate · 10 Oct 2026")).toBeVisible();
     expect(screen.getByRole("button", { name: "Accept" })).toBeVisible();
     cleanup();
@@ -223,7 +301,7 @@ describe("StaffOperationsPage", () => {
     expect(screen.getByText("Event judge")).toBeVisible();
     await userEvent.setup().click(screen.getByLabelText("Event judge, 1 assignment"));
     expect(screen.getByText("Inter-house debate")).toBeVisible();
-    expect(screen.getByRole("link",{name:"Open work: Inter-house debate"})).toHaveAttribute("href","/principal/events/event-1");
+    expect(screen.getByRole("link",{name:"Open work: Inter-house debate"})).toHaveAttribute("href","/areas/events/manage/event-1");
   });
 
   it("consumes an assignment link on the selected staff profile", async () => {
@@ -256,7 +334,7 @@ describe("StaffOperationsPage", () => {
       coverage_policy:{school_id:"school-1",enabled:false,deadline_minutes_before:30,fallback_kind:"independent_study",fallback_label:"Independent study",supervisor_staff_profile_id:null,supervisor_first_name:null,supervisor_last_name:null,revision:1},
     };
     renderPage(principal,"principal",undefined,"/principal/staff?section=policies");
-    expect(screen.getByRole("link", { name: "Automatic cover operating rules" })).toHaveAttribute("href", "/principal/administration?school=school-1&section=rules&rule=coverage");
+    expect(screen.getByRole("link", { name: "Automatic cover operating rules" })).toHaveAttribute("href", "/more/setup/institution/operating-rules?school=school-1&rule=coverage");
     cleanup();
     render(<CoverageOperatingRules schoolId="school-1" data={principal} refresh={async () => {}}/>);
     const user=userEvent.setup();
@@ -277,7 +355,7 @@ describe("StaffOperationsPage", () => {
     const principal: AdminStaffWorkspace={mode:"admin",academic_year:"2026-27",profiles:[profile],onboarding_items:[],policies:[policy],balances:[balance],requests:[],work_types:[],responsibility_types:[],assignments:[],coverage_tasks:[expired],references:{classes:[],subjects:[],events:[]}};
     renderPage(principal,"principal",undefined,"/principal/staff?section=leave");
     expect(screen.getByRole("heading",{name:"Leave coverage"})).toBeVisible();
-    expect(screen.getByText("0 open")).toBeVisible();
+    expect(screen.getByText("0 need cover")).toBeVisible();
     expect(screen.queryByText("Recent automatic outcomes")).not.toBeInTheDocument();
     expect(screen.queryByText("No outcome recorded")).not.toBeInTheDocument();
     expect(screen.queryByLabelText("Cover teacher for Period 2 mathematics")).not.toBeInTheDocument();
@@ -312,7 +390,7 @@ describe("StaffOperationsPage", () => {
     expect(screen.getByText(/changed after the alert/i)).toBeVisible();
   });
 
-  it("keeps revoked work exact and removes completed cover decisions from the live queue", () => {
+  it("keeps exact revoked and resolved cover records available without counting them as open work", () => {
     const revoked={...assignment,status:"revoked" as const,revision:2,revocation_reason:"Event staffing changed."};
     const teacher: TeacherStaffWorkspace = { mode: "staff", academic_year: "2026-27", profile, policies: [], balances: [], requests: [], work_types: [responsibilityType], responsibility_types: [responsibilityType], assignments: [revoked], coverage_tasks: [] };
     renderPage(teacher,"teacher",undefined,"/teacher/responsibilities?assignment=assignment-1&assignment_revision=2&attention_notification_id=10000000-0000-4000-a000-000000000001");
@@ -324,8 +402,9 @@ describe("StaffOperationsPage", () => {
     const principal: AdminStaffWorkspace = { mode: "admin", academic_year: "2026-27", profiles: [profile], onboarding_items: [], policies: [], balances: [], requests: [], work_types: [], responsibility_types: [], assignments: [], coverage_tasks: [decidedCoverage], references: { classes: [], subjects: [], events: [] } };
     renderPage(principal,"principal",undefined,"/principal/staff?section=leave&coverage=coverage-1&coverage_revision=2&attention_notification_id=10000000-0000-4000-a000-000000000001");
     expect(screen.getByTestId("attention-opened")).toBeInTheDocument();
-    expect(screen.getByText("Cover duty resolved")).toBeVisible();
-    expect(screen.queryByText("accepted")).not.toBeInTheDocument();
+    expect(screen.getByText("Period 2 mathematics")).toBeVisible();
+    expect(screen.getByText("Cover accepted")).toBeVisible();
+    expect(screen.getByText("0 need cover")).toBeVisible();
   });
 
   it("acknowledges the principal's exact responsibility response", () => {
@@ -351,14 +430,14 @@ describe("StaffOperationsPage", () => {
     const teacher: TeacherStaffWorkspace = { mode: "staff", academic_year: "2026-27", profile, policies: [policy], balances: [balance], requests: [decided], work_types: [], responsibility_types: [], assignments: [], coverage_tasks: [] };
     renderPage(teacher,"teacher",undefined,"/teacher/leave?request=request-1&request_revision=2&attention_notification_id=10000000-0000-4000-a000-000000000001");
     expect(screen.getByTestId("attention-opened")).toBeInTheDocument();
-    expect(screen.getByText("Approved with cover.")).toBeVisible();
+    expect(screen.getByText("Decision: Approved with cover.")).toBeVisible();
   });
 
   it("assigns a role directly to a class and directs exam and journey staffing to their planning screens", async () => {
     const principal: AdminStaffWorkspace = { mode: "admin", academic_year: "2026-27", profiles: [profile], onboarding_items: [], policies: [policy], balances: [balance], requests: [], work_types: [responsibilityType], responsibility_types: [responsibilityType], assignments: [], coverage_tasks: [], references: { classes: [], subjects: [], events: [{ id: "event-1", title: "Inter-house debate", starts_at: "2026-10-10T09:00:00Z", ends_at: "2026-10-10T12:00:00Z" }] } };
     renderPage({...principal,access_roles:[accessRole],role_options:roleOptions,references:{...principal.references,classes:[{id:"class-7a",name:"Class 7A"}]}}, "principal", profile.id);
     const user=userEvent.setup();
-    expect(screen.getByRole("link",{name:"Journey roster"})).toHaveAttribute("href","/principal/departure");
+    expect(screen.getByRole("link",{name:"Journey roster"})).toHaveAttribute("href","/areas/departure/manage");
     await user.click(screen.getByRole("button", { name: "Assign role" }));
     expect(screen.getByRole("heading", { name: "Assign role · Kavita" })).toBeVisible();
     expect(screen.getByLabelText("Role")).toHaveValue(accessRole.id);

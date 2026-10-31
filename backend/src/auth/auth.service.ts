@@ -1,15 +1,37 @@
 import { RolesService } from "../roles/roles.service.js";
-import { BadRequestException, ConflictException, ForbiddenException, HttpException, Injectable, UnauthorizedException } from "@nestjs/common";
-import { createHash, randomBytes } from "node:crypto";
+import { BadRequestException, ConflictException, ForbiddenException, GoneException, HttpException, Inject, Injectable, NotFoundException, Optional, UnauthorizedException } from "@nestjs/common";
+import { createHash, randomBytes, randomUUID } from "node:crypto";
 import type { FastifyRequest } from "fastify";
-import { sql } from "kysely";
+import { sql, type Kysely } from "kysely";
 import { z } from "zod";
 import { config } from "../config.js";
 import { AuditService } from "../common/audit.service.js";
 import { deliverAccountAction } from "../common/account-email.js";
-import type { AuthUser } from "../common/request.js";
+import type { AuthenticatedRequest, AuthUser } from "../common/request.js";
+import { accountProfileChangeSchema } from "./account-profile.contracts.js";
+import { executionEnvironmentStorage } from "../campus-model-core/execution-time.runtime.js";
+import {
+  TRANSIENT_EXECUTION_RUN_CATALOG,
+  type TransientExecutionRunCatalog,
+} from "../campus-model-core/transient-execution-run.contracts.js";
 import { DatabaseService } from "../database/database.service.js";
+import type { Database } from "../database/types.js";
+import { ProgressiveWorkspaceProvisioner } from "../institution-onboarding/progressive-workspace.provisioner.js";
+import { SimulationService } from "../simulation/simulation.service.js";
+import { HUMAN_AGENT_IDENTITY_PORT, type HumanAgentIdentityPort } from "../campus-model-core/human-agent-identity.port.js";
+import { vettedTimetableResume } from "../schedule-planning/activity-planning-readiness.js";
+import { vettedAssignmentsResume } from "../learning/learning-assignment-readiness.js";
+import { vettedFeesResume } from "../operations/fees-first-readiness.js";
+import { vettedResourceLoansResume } from "../resource-loans/resource-loan-readiness.js";
+import { vettedFacilitiesResume } from "../institution-onboarding/facilities-readiness.js";
+import { vettedAccommodationResume } from "../institution-onboarding/accommodation-readiness.js";
+import { wholeCampusGuidanceResume, type CampusSetupGuidance } from "../institution-onboarding/progressive-onboarding.contracts.js";
+import {
+  ExecutionDataPlaneError,
+  ExecutionDataPlaneRegistry,
+} from "../database/execution-data-plane.js";
 import { hashPassword, isPublishedDemoPassword, validatePassword, verifyPassword } from "./password.js";
+import { NATIVE_SESSION_PREFIX } from "./session-transport.js";
 import { proFeaturesEnabled } from "./pro-features.js";
 import {
   demoProfileSwitcherEnabled,
@@ -26,20 +48,28 @@ import {
   matchingTotpStep,
   normalizeRecoveryCode,
 } from "./mfa.js";
+import {
+  liveSessionExecutionEnvironment,
+  simulationSessionExecutionEnvironment,
+  unavailableSimulationSessionExecutionEnvironment,
+  type ExecutionEnvironmentView,
+  type ResolvedSessionExecutionEnvironment,
+} from "./session-execution-environment.js";
 
 const loginSchema = z.object({ identifier: z.string().trim().min(1).max(254), password: z.string().min(1).max(128) });
 const registrationSchema = z.object({
   email: z.string().trim().toLowerCase().email().max(254),
   password: z.string().min(1).max(128),
-  first_name: z.string().trim().min(1).max(150),
-  last_name: z.string().trim().min(1).max(150),
-  role: z.enum(["student", "parent", "admin"]),
-});
+}).strict();
 const tokenSchema = z.object({ token: z.string().trim().min(32).max(256) });
 const mfaCodeSchema = z.object({ code: z.string().trim().min(6).max(32) });
 const mfaLoginSchema = z.object({ challenge_token: z.string().trim().min(32).max(256), code: z.string().trim().min(6).max(32) });
 const resetRequestSchema = z.object({ email: z.string().trim().toLowerCase().email().max(254) });
 const resetConfirmSchema = tokenSchema.extend({ password: z.string().min(1).max(128) });
+const selectExecutionEnvironmentSchema = z.discriminatedUnion("mode", [
+  z.object({ mode: z.literal("live") }).strict(),
+  z.object({ mode: z.literal("simulation"), run_id: z.string().uuid() }).strict(),
+]);
 const demoUsernames = {
   student: "aarav.student",
   parent: "pooja.parent",
@@ -50,7 +80,33 @@ const demoUsernames = {
 } as const;
 const institutionDemoUsernames = new Set<string>(Object.values(demoUsernames).filter((username) => username !== demoUsernames.company));
 
-export interface SessionIdentity { user: AuthUser; tokenHash: string; csrfToken: string; publicDemo: boolean }
+export interface SessionIdentity {
+  user: AuthUser;
+  tokenHash: string;
+  csrfToken: string;
+  expiresAt: string;
+  publicDemo: boolean;
+  executionEnvironment: ResolvedSessionExecutionEnvironment["environment"];
+  executionEnvironmentView: ExecutionEnvironmentView;
+}
+
+interface StoredExecutionEnvironmentBinding {
+  school_id: string;
+  scenario_id: string;
+  run_id: string;
+  namespace_id: string;
+  expires_at: Date | string;
+}
+
+interface SimulationBindingRunTable {
+  id: string;
+  school_id: string;
+  scenario_id: string;
+  namespace_id: string;
+  gc_state: "retained" | "deleting" | "deleted" | "failed";
+  world_discarded_at: Date | null;
+  retention_expires_at: Date | null;
+}
 
 function publicUser(user: AuthUser) {
   return {
@@ -69,7 +125,30 @@ function publicUser(user: AuthUser) {
 
 @Injectable()
 export class AuthService {
-  constructor(private readonly db: DatabaseService, private readonly audit: AuditService, private readonly roles: RolesService) {}
+  constructor(
+    private readonly db: DatabaseService,
+    private readonly audit: AuditService,
+    private readonly roles: RolesService,
+    private readonly progressiveWorkspaces: ProgressiveWorkspaceProvisioner,
+    @Optional()
+    @Inject(TRANSIENT_EXECUTION_RUN_CATALOG)
+    private readonly transientRuns?: TransientExecutionRunCatalog,
+    @Optional()
+    private readonly executionDataPlanes?: ExecutionDataPlaneRegistry,
+    @Optional() private readonly persistentRuns?: SimulationService,
+    @Optional() @Inject(HUMAN_AGENT_IDENTITY_PORT) private readonly identities?: HumanAgentIdentityPort,
+  ) {}
+
+  private async resolveRun(actorId: string, institutionId: string, runId: string) {
+    const persistent = await this.persistentRuns?.resolveAuthorizedRun({ actor_id: actorId, institution_id: institutionId, run_id: runId });
+    if (persistent) return persistent;
+    if (this.transientRuns === this.persistentRuns) return null;
+    return this.transientRuns?.resolveAuthorizedRun({
+      actor_id: actorId,
+      institution_id: institutionId,
+      run_id: runId,
+    }) ?? null;
+  }
 
   static tokenHash(raw: string): string {
     return createHash("sha256").update(raw).digest("hex");
@@ -77,6 +156,55 @@ export class AuthService {
 
   private sweepTimer?: ReturnType<typeof setInterval>;
   private lastSweepAt = 0;
+
+  private async clearExecutionEnvironmentBinding(tokenHash: string): Promise<void> {
+    await this.db.deleteFrom("auth_session_execution_environments")
+      .where("token_hash", "=", tokenHash)
+      .execute();
+  }
+
+  private async resolveSelectedExecutionEnvironment(input: {
+    tokenHash: string;
+    user: AuthUser;
+    binding: StoredExecutionEnvironmentBinding | null;
+  }): Promise<ResolvedSessionExecutionEnvironment> {
+    const live = () => liveSessionExecutionEnvironment(input.user.active_school_id);
+    if (!input.binding) return live();
+    const unavailable = (
+      reason: Parameters<typeof unavailableSimulationSessionExecutionEnvironment>[1],
+    ) => unavailableSimulationSessionExecutionEnvironment(input.binding!, reason);
+    const bindingExpiry = new Date(input.binding.expires_at).getTime();
+    if (!Number.isFinite(bindingExpiry)
+      || !input.user.active_school_id
+      || input.binding.school_id !== input.user.active_school_id) return unavailable("binding_invalid");
+    if (bindingExpiry <= Date.now()) return unavailable("expired");
+    if (!this.transientRuns || !this.executionDataPlanes) return unavailable("runtime_unavailable");
+
+    try {
+      const run = await this.resolveRun(input.user.id, input.binding.school_id, input.binding.run_id);
+      if (!run) return unavailable("run_unavailable");
+      if (run.scenario_id !== input.binding.scenario_id
+        || run.namespace_id !== input.binding.namespace_id) return unavailable("run_unavailable");
+      if (Date.parse(run.expires_at) <= Date.now()) return unavailable("expired");
+      const coverage = this.executionDataPlanes.assertReady({
+        institutionId: run.institution_id,
+        runId: run.run_id,
+        namespaceId: run.namespace_id,
+      });
+      if (coverage.scenario_id !== run.scenario_id || coverage.expires_at !== run.expires_at) {
+        return unavailable("data_plane_unavailable");
+      }
+      return simulationSessionExecutionEnvironment(run, {
+        manifest_ref: coverage.manifest_ref,
+        checked_at: coverage.checked_at,
+      });
+    } catch (error) {
+      if (error instanceof ExecutionDataPlaneError) return unavailable("data_plane_unavailable");
+      if (error instanceof ForbiddenException) return unavailable("authorization_lost");
+      if (error instanceof NotFoundException) return unavailable("run_unavailable");
+      throw error;
+    }
+  }
 
   // Expired sessions are already rejected on lookup below; the DELETE only reclaims rows,
   // so it runs on a timer instead of on every request.
@@ -97,9 +225,15 @@ export class AuthService {
     const tokenHash = AuthService.tokenHash(rawToken);
     const row = await this.db.selectFrom("auth_sessions as s")
       .innerJoin("users as u", "u.id", "s.user_id")
+      .leftJoin("auth_session_execution_environments as environment", "environment.token_hash", "s.token_hash")
       .select([
         "s.token_hash", "s.csrf_token", "s.expires_at", "s.last_seen_at", "s.active_school_id", "s.is_public_demo",
         "u.id", "u.username", "u.email", "u.first_name", "u.last_name", "u.avatar_url", "u.role", "u.is_active", "u.email_verified_at",
+        "environment.school_id as environment_school_id",
+        "environment.scenario_id as environment_scenario_id",
+        "environment.run_id as environment_run_id",
+        "environment.namespace_id as environment_namespace_id",
+        "environment.expires_at as environment_expires_at",
       ])
       .where("s.token_hash", "=", tokenHash).executeTakeFirst();
     if (!row) return null;
@@ -113,22 +247,37 @@ export class AuthService {
       await this.db.updateTable("auth_sessions").set({ last_seen_at: new Date() })
         .where("token_hash", "=", tokenHash).execute();
     }
+    const user: AuthUser = {
+      id: row.id,
+      username: row.username,
+      email: row.email,
+      first_name: row.first_name,
+      last_name: row.last_name,
+      avatar_url: row.avatar_url,
+      role: row.role,
+      is_active: row.is_active,
+      email_verified_at: row.email_verified_at,
+      active_school_id: row.active_school_id,
+    };
+    const selected = await this.resolveSelectedExecutionEnvironment({
+      tokenHash,
+      user,
+      binding: row.environment_run_id ? {
+        school_id: row.environment_school_id!,
+        scenario_id: row.environment_scenario_id!,
+        run_id: row.environment_run_id,
+        namespace_id: row.environment_namespace_id!,
+        expires_at: row.environment_expires_at!,
+      } : null,
+    });
     return {
       tokenHash,
       csrfToken: row.csrf_token,
+      expiresAt: new Date(row.expires_at).toISOString(),
       publicDemo: row.is_public_demo,
-      user: {
-        id: row.id,
-        username: row.username,
-        email: row.email,
-        first_name: row.first_name,
-        last_name: row.last_name,
-        avatar_url: row.avatar_url,
-        role: row.role,
-        is_active: row.is_active,
-        email_verified_at: row.email_verified_at,
-        active_school_id: row.active_school_id,
-      },
+      user,
+      executionEnvironment: selected.environment,
+      executionEnvironmentView: selected.view,
     };
   }
 
@@ -156,18 +305,27 @@ export class AuthService {
     };
   }
 
-  async createSession(user: AuthUser, request: FastifyRequest, options: { publicDemo?: boolean; ttlSeconds?: number } = {}): Promise<{ rawToken: string; csrfToken: string }> {
+  async createSession(user: AuthUser, request: FastifyRequest, options: { publicDemo?: boolean; ttlSeconds?: number; transport?: "native" } = {}): Promise<{ rawToken: string; csrfToken: string; expiresAt: string }> {
+    return this.createSessionWithDb(this.db, user, request, options);
+  }
+
+  private async createSessionWithDb(db: Kysely<Database>, user: AuthUser, request: FastifyRequest, options: { publicDemo?: boolean; ttlSeconds?: number; transport?: "native" } = {}, lockSelectedMembership = false): Promise<{ rawToken: string; csrfToken: string; expiresAt: string }> {
     if (!user.active_school_id) {
-      const memberships = await this.db.selectFrom('school_memberships').select('school_id')
+      const memberships = await db.selectFrom('school_memberships').select('school_id').distinct()
         .where('user_id','=',user.id).where('is_active','=',true).limit(2).execute();
-      // Only an unambiguous authenticated membership may establish tenant context.
-      if (memberships.length === 1) user.active_school_id = memberships[0]!.school_id;
+      // A person can hold several responsibilities in one institution. Only
+      // distinct institutions, rather than membership rows, make this ambiguous.
+      if (memberships.length === 1) {
+        const schoolId = memberships[0]!.school_id;
+        if (lockSelectedMembership && !await db.selectFrom("school_memberships").select("school_id").where("user_id", "=", user.id).where("school_id", "=", schoolId).where("is_active", "=", true).forUpdate().executeTakeFirst()) throw new UnauthorizedException("Your campus access changed. Start sign-in again.");
+        user.active_school_id = schoolId;
+      }
     }
-    const rawToken = randomBytes(32).toString("base64url");
+    const rawToken = `${options.transport === "native" ? NATIVE_SESSION_PREFIX : ""}${randomBytes(32).toString("base64url")}`;
     const csrfToken = randomBytes(32).toString("hex");
     const expiresAt = new Date(Date.now() + (options.ttlSeconds ?? config().SESSION_TTL_SECONDS) * 1000);
     const ipHash = createHash("sha256").update(request.ip).digest("hex");
-    await this.db.insertInto("auth_sessions").values({
+    await db.insertInto("auth_sessions").values({
       token_hash: AuthService.tokenHash(rawToken),
       user_id: user.id,
       active_school_id: user.active_school_id ?? null,
@@ -177,7 +335,42 @@ export class AuthService {
       user_agent: String(request.headers["user-agent"] ?? "").slice(0, 500),
       is_public_demo: options.publicDemo ?? false,
     }).execute();
-    return { rawToken, csrfToken };
+    return { rawToken, csrfToken, expiresAt: expiresAt.toISOString() };
+  }
+
+  /** Serialize the delayed native return with MFA activation. A factor may not
+   * exist yet, so both writers first lock the owning account row; a factor-only
+   * lock cannot protect the absent-row case. Decision and issuance commit once. */
+  async finalizeNativeGoogleLogin(user: AuthUser, request: FastifyRequest): Promise<
+    { user: AuthUser; mfaChallenge: string } |
+    { user: AuthUser; session: { rawToken: string; csrfToken: string; expiresAt: string } }
+  > {
+    return this.db.transaction().execute(async db => {
+      // Serialize account/MFA writers without blocking the KEY SHARE acquired
+      // by a concurrent primary login's challenge-to-user foreign-key check.
+      const account = await db.selectFrom("users").selectAll().where("id", "=", user.id).where("is_active", "=", true).forNoKeyUpdate().executeTakeFirst();
+      if (!account) throw new UnauthorizedException("This account is unavailable. Start sign-in again.");
+      const current: AuthUser = { ...account, active_school_id: user.active_school_id ?? null };
+      if (current.active_school_id && !await db.selectFrom("school_memberships").select("school_id").where("user_id", "=", current.id).where("school_id", "=", current.active_school_id).where("is_active", "=", true).forUpdate().executeTakeFirst()) throw new UnauthorizedException("Your campus access changed. Start sign-in again.");
+      // Every factor-status writer takes this account lock first. Reading under
+      // it avoids the factor -> challenge lock order opposite MFA completion.
+      const factor = await sql<{ active: boolean }>`SELECT status='active' AS active FROM auth_mfa_factors WHERE user_id=${current.id}::uuid`.execute(db);
+      let result: { user: AuthUser; mfaChallenge: string } | { user: AuthUser; session: { rawToken: string; csrfToken: string; expiresAt: string } };
+      if (factor.rows[0]?.active) {
+        const challenge = randomBytes(32).toString("base64url");
+        await sql`DELETE FROM auth_mfa_login_challenges WHERE user_id=${current.id}::uuid`.execute(db);
+        await sql`INSERT INTO auth_mfa_login_challenges(token_hash,user_id,expires_at)
+          VALUES(${AuthService.tokenHash(challenge)},${current.id}::uuid,now()+interval '5 minutes')`.execute(db);
+        result = { user: current, mfaChallenge: challenge };
+      } else result = { user: current, session: await this.createSessionWithDb(db, current, request, { transport: "native" }, true) };
+      await db.insertInto("audit_events").values({
+        action: "mfaChallenge" in result ? "auth.login.mfa_challenged" : "auth.login.succeeded",
+        actor_id: current.id, school_id: current.active_school_id ?? null, target_type: "", target_id: null,
+        request_id: (request as FastifyRequest & { requestId?: string }).requestId ?? randomUUID(),
+        ip_hash: createHash("sha256").update(request.ip).digest("hex"), metadata: { method: "google", transport: "native", phase: "exchange" },
+      }).execute();
+      return result;
+    });
   }
 
   async publicDemoUser(role: DemoSwitchRole, request: FastifyRequest): Promise<AuthUser> {
@@ -239,7 +432,7 @@ export class AuthService {
 
   async register(body: unknown, request: FastifyRequest) {
     const data = registrationSchema.parse(body);
-    const errors = validatePassword(data.password, { email: data.email, firstName: data.first_name, lastName: data.last_name });
+    const errors = validatePassword(data.password, { email: data.email });
     if (errors.length) {
       throw new (await import("@nestjs/common")).BadRequestException({
         message: "Choose a stronger password.", fields: { password: errors }, code: "validation_error",
@@ -253,18 +446,23 @@ export class AuthService {
     const base = `${local.slice(0, 120)}.${digest}`;
     const passwordHash = await hashPassword(data.password);
     try {
-      const user = await this.db.insertInto("users").values({
-        username: base,
-        email: data.email,
-        password_hash: passwordHash,
-        first_name: data.first_name,
-        last_name: data.last_name,
-        role: data.role,
-      }).returningAll().executeTakeFirstOrThrow();
+      const registration = await this.db.transaction().execute(async (db) => {
+        const account = await db.insertInto("users").values({
+          username: base,
+          email: data.email,
+          password_hash: passwordHash,
+          first_name: "",
+          last_name: "",
+          role: "admin",
+        }).returningAll().executeTakeFirstOrThrow();
+        const schoolId = await this.progressiveWorkspaces.createForAccount(db, account, "UTC");
+        return { account, schoolId };
+      });
+      const user: AuthUser = { ...registration.account, active_school_id: registration.schoolId };
       await this.audit.record({
         action: "auth.registration.succeeded", request, actorId: user.id,
-        targetType: "user", targetId: user.id,
-        metadata: { role: user.role, onboarding_status: "pending_school_membership" },
+        schoolId: registration.schoolId, targetType: "user", targetId: user.id,
+        metadata: { role: user.role, onboarding_status: "purpose_required" },
       });
       const verification = await this.issueAccountToken(user.id, "email_verification", 24 * 60 * 60_000);
       const delivery = await deliverAccountAction({ email: user.email, token: verification.raw, purpose: "email_verification", expiresAt: verification.expiresAt });
@@ -356,15 +554,21 @@ export class AuthService {
   }
 
   async beginMfaEnrollment(user: AuthUser, request: FastifyRequest) {
-    if (!user.email_verified_at) throw new ConflictException("Verify your email before setting up two-step verification.");
-    const existing = await sql<{ status: string }>`SELECT status FROM auth_mfa_factors WHERE user_id=${user.id}::uuid`.execute(this.db);
-    if (existing.rows[0]?.status === "active") throw new ConflictException("Two-step verification is already active.");
     const secret = createMfaSecret();
     const encrypted = encryptMfaSecret(secret);
-    await sql`INSERT INTO auth_mfa_factors(user_id,encrypted_secret,secret_iv,secret_tag,status,confirmed_at,updated_at)
-      VALUES(${user.id}::uuid,${encrypted.encrypted},${encrypted.iv},${encrypted.tag},'pending',NULL,now())
-      ON CONFLICT(user_id) DO UPDATE SET encrypted_secret=excluded.encrypted_secret,secret_iv=excluded.secret_iv,
-        secret_tag=excluded.secret_tag,status='pending',confirmed_at=NULL,last_used_step=NULL,updated_at=now()`.execute(this.db);
+    await this.db.transaction().execute(async db => {
+      // Begin, confirm and delayed session issuance use one account-first lock
+      // order. A stale begin must never overwrite a just-activated factor.
+      const account = await db.selectFrom("users").selectAll().where("id", "=", user.id).where("is_active", "=", true).forUpdate().executeTakeFirst();
+      if (!account) throw new UnauthorizedException("This account is unavailable.");
+      if (!account.email_verified_at) throw new ConflictException("Verify your email before setting up two-step verification.");
+      const existing = await sql<{ status: string }>`SELECT status FROM auth_mfa_factors WHERE user_id=${user.id}::uuid FOR UPDATE`.execute(db);
+      if (existing.rows[0]?.status === "active") throw new ConflictException("Two-step verification is already active.");
+      await sql`INSERT INTO auth_mfa_factors(user_id,encrypted_secret,secret_iv,secret_tag,status,confirmed_at,updated_at)
+        VALUES(${user.id}::uuid,${encrypted.encrypted},${encrypted.iv},${encrypted.tag},'pending',NULL,now())
+        ON CONFLICT(user_id) DO UPDATE SET encrypted_secret=excluded.encrypted_secret,secret_iv=excluded.secret_iv,
+          secret_tag=excluded.secret_tag,status='pending',confirmed_at=NULL,last_used_step=NULL,updated_at=now()`.execute(db);
+    });
     const issuer = "ThatCampus";
     const label = `${issuer}:${user.email}`;
     const uri = `otpauth://totp/${encodeURIComponent(label)}?secret=${secret}&issuer=${encodeURIComponent(issuer)}&algorithm=SHA1&digits=6&period=30`;
@@ -376,6 +580,9 @@ export class AuthService {
     const data = mfaCodeSchema.parse(body);
     const codes = createRecoveryCodes();
     await this.db.transaction().execute(async (db) => {
+      // Same account-first lock order as delayed native session finalization.
+      const account = await db.selectFrom("users").select("id").where("id", "=", user.id).where("is_active", "=", true).forUpdate().executeTakeFirst();
+      if (!account) throw new UnauthorizedException("This account is unavailable.");
       const factor = (await sql<{ encrypted_secret: Buffer; secret_iv: Buffer; secret_tag: Buffer; status: string }>`SELECT encrypted_secret,secret_iv,secret_tag,status
         FROM auth_mfa_factors WHERE user_id=${user.id}::uuid FOR UPDATE`.execute(db)).rows[0];
       if (!factor || factor.status !== "pending") throw new ConflictException("Start two-step verification setup before confirming it.");
@@ -465,13 +672,213 @@ export class AuthService {
     await this.db.deleteFrom("auth_sessions").where("token_hash", "=", tokenHash).execute();
   }
 
+  async returnSessionToLive(tokenHash: string): Promise<void> {
+    await this.clearExecutionEnvironmentBinding(tokenHash);
+  }
+
   async selectSchool(user: AuthUser, sessionHash: string, body: unknown) {
     const { school_id } = z.object({ school_id: z.string().uuid() }).parse(body);
     const membership = await this.db.selectFrom("school_memberships").select("id").where("user_id", "=", user.id)
       .where("school_id", "=", school_id).where("is_active", "=", true).executeTakeFirst();
     if (!membership) throw new ForbiddenException("An active membership in the selected school is required.");
-    await this.db.updateTable("auth_sessions").set({ active_school_id: school_id }).where("token_hash", "=", sessionHash).where("user_id", "=", user.id).execute();
-    return { active_school_id: school_id };
+    await this.db.transaction().execute(async (transaction) => {
+      await transaction.deleteFrom("auth_session_execution_environments")
+        .where("token_hash", "=", sessionHash)
+        .execute();
+      await transaction.updateTable("auth_sessions").set({ active_school_id: school_id })
+        .where("token_hash", "=", sessionHash)
+        .where("user_id", "=", user.id)
+        .execute();
+    });
+    return {
+      active_school_id: school_id,
+      execution_environment: liveSessionExecutionEnvironment(school_id).view,
+    };
+  }
+
+  async currentExecutionEnvironment(user: AuthUser, sessionHash: string) {
+    const row = await this.db.selectFrom("auth_sessions as session")
+      .leftJoin("auth_session_execution_environments as environment", "environment.token_hash", "session.token_hash")
+      .select([
+        "session.active_school_id",
+        "environment.school_id as environment_school_id",
+        "environment.scenario_id as environment_scenario_id",
+        "environment.run_id as environment_run_id",
+        "environment.namespace_id as environment_namespace_id",
+        "environment.expires_at as environment_expires_at",
+      ])
+      .where("session.token_hash", "=", sessionHash)
+      .where("session.user_id", "=", user.id)
+      .where("session.expires_at", ">", new Date())
+      .executeTakeFirst();
+    if (!row) throw new UnauthorizedException("The active authenticated session is unavailable.");
+    const selected = await this.resolveSelectedExecutionEnvironment({
+      tokenHash: sessionHash,
+      user: { ...user, active_school_id: row.active_school_id },
+      binding: row.environment_run_id ? {
+        school_id: row.environment_school_id!,
+        scenario_id: row.environment_scenario_id!,
+        run_id: row.environment_run_id,
+        namespace_id: row.environment_namespace_id!,
+        expires_at: row.environment_expires_at!,
+      } : null,
+    });
+    return { execution_environment: selected.view };
+  }
+
+  async selectExecutionEnvironment(
+    user: AuthUser,
+    sessionHash: string,
+    rawInput: unknown,
+    request: FastifyRequest,
+  ) {
+    const input = selectExecutionEnvironmentSchema.parse(rawInput);
+    const session = await this.db.selectFrom("auth_sessions")
+      .select(["active_school_id", "is_public_demo", "expires_at"])
+      .where("token_hash", "=", sessionHash)
+      .where("user_id", "=", user.id)
+      .where("expires_at", ">", new Date())
+      .executeTakeFirst();
+    if (!session) throw new UnauthorizedException("The active authenticated session is unavailable.");
+    if (session.is_public_demo) {
+      throw new ForbiddenException("The public demo cannot activate a transient Simulation environment.");
+    }
+
+    if (input.mode === "live") {
+      const previous = await this.db.deleteFrom("auth_session_execution_environments")
+        .where("token_hash", "=", sessionHash)
+        .returning(["school_id", "run_id", "namespace_id"])
+        .executeTakeFirst();
+      await this.audit.record({
+        action: "auth.execution_environment.returned_live",
+        request,
+        actorId: user.id,
+        schoolId: session.active_school_id,
+        targetType: "simulation_run",
+        targetId: previous?.run_id ?? null,
+        metadata: previous ? { namespace_id: previous.namespace_id } : { already_live: true },
+      });
+      return { execution_environment: liveSessionExecutionEnvironment(session.active_school_id).view };
+    }
+
+    const schoolId = session.active_school_id;
+    if (!schoolId || user.active_school_id !== schoolId) {
+      throw new ConflictException("Select an institution before entering Simulation.");
+    }
+    const administrator = await this.db.selectFrom("school_memberships")
+      .select("id")
+      .where("school_id", "=", schoolId)
+      .where("user_id", "=", user.id)
+      .where("role", "=", "admin")
+      .where("is_active", "=", true)
+      .executeTakeFirst();
+    if (!administrator) {
+      throw new ForbiddenException("An active institution administrator membership is required.");
+    }
+    if (!this.transientRuns || !this.executionDataPlanes) {
+      throw new ConflictException("Simulation activation is unavailable until the isolated application data plane is ready.");
+    }
+    const run = await this.resolveRun(user.id, schoolId, input.run_id);
+    if (!run || Date.parse(run.expires_at) <= Date.now()) {
+      throw new GoneException("Simulation run not found or expired.");
+    }
+
+    let selected: ResolvedSessionExecutionEnvironment;
+    try {
+      const coverage = this.executionDataPlanes.assertReady({
+        institutionId: schoolId,
+        runId: run.run_id,
+        namespaceId: run.namespace_id,
+      });
+      if (coverage.scenario_id !== run.scenario_id || coverage.expires_at !== run.expires_at) {
+        throw new ExecutionDataPlaneError(
+          "data_plane_identity_mismatch",
+          "The isolated data plane does not match the selected scenario run.",
+          coverage,
+        );
+      }
+      selected = simulationSessionExecutionEnvironment(run, {
+        manifest_ref: coverage.manifest_ref,
+        checked_at: coverage.checked_at,
+      });
+    } catch (error) {
+      if (error instanceof ExecutionDataPlaneError) {
+        throw new ConflictException({
+          message: "This Simulation run cannot be opened in the application until its isolated data plane has full module parity.",
+          code: error.code,
+          missing_modules: error.descriptor?.missing_modules ?? [],
+          incomplete_capabilities: error.descriptor?.incomplete_capabilities ?? [],
+          unsafe_effects: error.descriptor?.unsafe_effects ?? [],
+        });
+      }
+      throw error;
+    }
+
+    await this.db.transaction().execute(async (transaction) => {
+      // Serialize the final session binding with retained-world cleanup. The
+      // catalogue lookup above may have opened the data plane, but GC can claim
+      // an expired world before this transaction commits unless both paths use
+      // the same run-scoped transaction advisory lock.
+      await transaction.selectNoFrom(sql`pg_advisory_xact_lock(hashtextextended(
+        ${`simulation-retention:${run.run_id}`},0
+      ))`.as("retention_lock")).executeTakeFirst();
+      const control = transaction as unknown as Kysely<Database & {
+        simulation_runs: SimulationBindingRunTable;
+      }>;
+      const retained = await control.selectFrom("simulation_runs")
+        .select("id")
+        .where("id", "=", run.run_id)
+        .where("school_id", "=", schoolId)
+        .where("scenario_id", "=", run.scenario_id)
+        .where("namespace_id", "=", run.namespace_id)
+        .where("gc_state", "not in", ["deleting", "deleted"])
+        .where("world_discarded_at", "is", null)
+        .where(sql<boolean>`retention_expires_at IS NULL
+          OR retention_expires_at>clock_timestamp()`)
+        .forKeyShare()
+        .executeTakeFirst();
+      if (!retained) throw new GoneException("Simulation run not found, expired or being released.");
+      const stillActive = await transaction.selectFrom("auth_sessions")
+        .select("token_hash")
+        .where("token_hash", "=", sessionHash)
+        .where("user_id", "=", user.id)
+        .where("active_school_id", "=", schoolId)
+        .where("expires_at", ">", new Date())
+        .executeTakeFirst();
+      if (!stillActive) throw new UnauthorizedException("The active authenticated session changed. Try again.");
+      await transaction.insertInto("auth_session_execution_environments").values({
+        token_hash: sessionHash,
+        school_id: schoolId,
+        scenario_id: run.scenario_id,
+        run_id: run.run_id,
+        namespace_id: run.namespace_id,
+        expires_at: new Date(run.expires_at),
+        bound_by: user.id,
+      }).onConflict((conflict) => conflict.column("token_hash").doUpdateSet({
+        school_id: schoolId,
+        scenario_id: run.scenario_id,
+        run_id: run.run_id,
+        namespace_id: run.namespace_id,
+        expires_at: new Date(run.expires_at),
+        bound_by: user.id,
+        bound_at: new Date(),
+      })).execute();
+    });
+    await this.audit.record({
+      action: "auth.execution_environment.entered_simulation",
+      request,
+      actorId: user.id,
+      schoolId,
+      targetType: "simulation_run",
+      targetId: run.run_id,
+      metadata: {
+        scenario_id: run.scenario_id,
+        namespace_id: run.namespace_id,
+        source_snapshot_ref: run.source_snapshot_ref,
+        expires_at: run.expires_at,
+      },
+    });
+    return { execution_environment: selected.view };
   }
 
   async sessions(user: AuthUser, current: string) {
@@ -485,10 +892,10 @@ export class AuthService {
     return { revoked: true };
   }
 
-  async me(user: AuthUser) {
+  async me(user: AuthUser, options: { allowGuidanceResume?: boolean } = {}) {
     const memberships = await this.db.selectFrom("school_memberships as m")
       .innerJoin("schools as s", "s.id", "m.school_id")
-      .select(["m.id", "m.school_id", "s.name as school_name", "m.role"])
+      .select(["m.id", "m.school_id", "s.name as school_name", "m.role", "m.access_scope"])
       .where("m.user_id", "=", user.id).where("m.is_active", "=", true).execute();
     const own = await this.db.selectFrom("students").select(["id", "avatar_url"]).where("user_id", "=", user.id).execute();
     const linked = await this.db.selectFrom("guardian_relationships as gr")
@@ -498,15 +905,51 @@ export class AuthService {
     const isReferenceInstitutionDemo = config().DEMO_MODE
       && Boolean(user.active_school_id)
       && institutionDemoUsernames.has(user.username);
+    const progressive = (await sql<{
+      status: "purpose_required" | "ready";
+      selected_count: number;
+      resume_step: "purpose" | "first_use" | "operating";
+      resume_goal_key: string | null;
+      resume_path: string;
+      school_id: string;
+      owner_user_id: string;
+      guidance: CampusSetupGuidance;
+    }>`SELECT workspace.status,count(selection.goal_key)::int AS selected_count,
+        workspace.resume_step,workspace.resume_goal_key,workspace.resume_path,workspace.school_id,workspace.owner_user_id,workspace.guidance
+      FROM progressive_onboarding_workspaces workspace
+      JOIN school_memberships membership ON membership.school_id=workspace.school_id
+      LEFT JOIN progressive_onboarding_goal_selections selection ON selection.workspace_id=workspace.id
+      WHERE membership.user_id=${user.id}::uuid AND membership.role='admin' AND membership.is_active AND membership.access_scope='campus'
+        AND (${user.active_school_id ?? null}::uuid IS NULL OR workspace.school_id=${user.active_school_id ?? null}::uuid)
+      GROUP BY workspace.id ORDER BY (workspace.school_id=${user.active_school_id ?? null}::uuid) DESC LIMIT 1`.execute(this.db)).rows[0];
+    const onboardingStatus = memberships.length === 0 ? "workspace_required"
+      : progressive?.status === "purpose_required" && progressive.selected_count === 0 ? "purpose_required" : "ready";
+    const timetableResume = progressive?.resume_goal_key === "timetable" && progressive.resume_step !== "purpose"
+      ? await vettedTimetableResume(this.db, this.identities, user, progressive) : null;
+    const assignmentsResume = progressive?.resume_goal_key === "assignments" && progressive.resume_step !== "purpose"
+      ? await vettedAssignmentsResume(this.db, this.identities, user, progressive) : null;
+    const feesResume = progressive?.resume_goal_key === "fees" && progressive.resume_step !== "purpose"
+      ? await vettedFeesResume(this.db, this.identities, user, progressive) : null;
+    const resourcesResume = progressive?.resume_goal_key === "resources" && progressive.resume_step !== "purpose"
+      ? await vettedResourceLoansResume(this.db, this.identities, user, progressive) : null;
+    const facilitiesResume = progressive?.resume_goal_key === "facilities" && progressive.resume_step !== "purpose"
+      ? await vettedFacilitiesResume(this.db, this.identities, user, progressive) : null;
+    const accommodationResume = progressive?.resume_goal_key === "accommodation" && progressive.resume_step !== "purpose"
+      ? await vettedAccommodationResume(this.db, this.identities, user, progressive) : null;
     return {
       user: { ...publicUser(user), avatar_url: own[0]?.avatar_url || user.avatar_url || null },
       students: [...ids].map((id) => ({ id })),
       memberships,
-      institution_setup_required: !isReferenceInstitutionDemo && memberships.some(m=>m.role==='admin') && Boolean((await sql`SELECT 1 FROM institution_activation_states state
-        JOIN school_memberships membership ON membership.school_id=state.school_id
-        WHERE membership.user_id=${user.id}::uuid AND membership.role='admin' AND membership.is_active AND state.status<>'active'
-          AND (${user.active_school_id ?? null}::uuid IS NULL OR state.school_id=${user.active_school_id ?? null}::uuid)
-        LIMIT 1`.execute(this.db)).rows.length),
+      institution_setup_required: !isReferenceInstitutionDemo && onboardingStatus !== "ready",
+      onboarding: {
+        status: onboardingStatus,
+        selected_goal_count: progressive?.selected_count ?? 0,
+        guidance: progressive?.guidance ?? null,
+        guidance_resume: wholeCampusGuidanceResume(user, progressive,
+          options.allowGuidanceResume !== false && executionEnvironmentStorage.getStore()?.kind !== "simulation"),
+        resume: progressive ? Object.assign({ step: progressive.resume_step, goal: progressive.resume_goal_key, path: progressive.resume_path },
+          timetableResume ?? {}, assignmentsResume ?? {}, feesResume ?? {}, resourcesResume ?? {}, facilitiesResume ?? {}, accommodationResume ?? {}) : null,
+      },
       company_operator: (await sql`SELECT 1 FROM company_operators WHERE user_id=${user.id}::uuid AND is_active`.execute(this.db)).rows.length>0,
       permission_grants: [],
       school_permissions: await Promise.all(memberships.map(async m => ({school_id:m.school_id,...await this.roles.effective(user,m.school_id)}))),
@@ -516,6 +959,40 @@ export class AuthService {
 
   async proFeatures(user: AuthUser) {
     return { enabled: await proFeaturesEnabled(this.db, user.id), preview: true };
+  }
+
+  /** Live account control plane in every selected world; never a campus-person correction. */
+  async updateAccountProfile(request: AuthenticatedRequest) {
+    if (executionEnvironmentStorage.getStore()?.kind === "simulation") {
+      throw new ConflictException("Account names must use the authenticated account control plane.");
+    }
+    if (request.internalAgentDelegation || request.hostedCampusSimulator || request.publicDemo) {
+      throw new ForbiddenException("Use your own signed-in account to change its name.");
+    }
+    const input = accountProfileChangeSchema.parse(request.body);
+    const user = request.authUser;
+    return this.db.transaction().execute(async tx => {
+      const session = await tx.selectFrom("auth_sessions").select("is_public_demo")
+        .where("token_hash", "=", request.sessionHash).where("user_id", "=", user.id)
+        .where("expires_at", ">", new Date()).forUpdate().executeTakeFirst();
+      if (!session) throw new UnauthorizedException("Your session has expired. Sign in again to change your account name.");
+      if (session.is_public_demo) throw new ForbiddenException("This public demo is read-only.");
+      const current = await tx.selectFrom("users").select(["id", "username", "email", "first_name", "last_name", "avatar_url", "role", "is_active", "email_verified_at"])
+        .where("id", "=", user.id).where("is_active", "=", true).forUpdate().executeTakeFirst();
+      if (!current) throw new UnauthorizedException("This account is no longer active.");
+      const changed = current.first_name !== input.first_name || current.last_name !== input.last_name;
+      if (changed && (current.first_name !== input.expected_first_name || current.last_name !== input.expected_last_name)) {
+        throw new ConflictException("Your account name changed in another session. Reload it before saving again.");
+      }
+      if (changed) {
+        await tx.updateTable("users").set({ first_name: input.first_name, last_name: input.last_name, updated_at: new Date() })
+          .where("id", "=", user.id).execute();
+        await tx.insertInto("audit_events").values({ action: "auth.account_name.changed", actor_id: user.id,
+          school_id: null, target_type: "user", target_id: user.id, request_id: request.requestId || randomUUID(),
+          ip_hash: createHash("sha256").update(request.ip).digest("hex"), metadata: { fields: ["first_name", "last_name"], scope: "account" } }).execute();
+      }
+      return { user: publicUser({ ...current, first_name: input.first_name, last_name: input.last_name, active_school_id: user.active_school_id ?? null }), changed, scope: "account" as const };
+    });
   }
 
   async setProFeatures(user: AuthUser, body: unknown, request: FastifyRequest) {
@@ -547,12 +1024,17 @@ export class AuthService {
     return { enabled, preview: true };
   }
 
-  response(user: AuthUser, csrfToken: string) {
+  response(
+    user: AuthUser,
+    csrfToken: string,
+    executionEnvironment: ExecutionEnvironmentView = liveSessionExecutionEnvironment(user.active_school_id).view,
+  ) {
     return {
       user: publicUser(user),
       csrf_token: csrfToken,
       demo_mode: config().DEMO_MODE,
       demo_profile_switcher: this.canUseDemoProfileSwitcher(user),
+      execution_environment: executionEnvironment,
     };
   }
 }

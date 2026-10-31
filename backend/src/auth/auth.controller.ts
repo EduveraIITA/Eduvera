@@ -1,9 +1,9 @@
-import { BadRequestException, Controller, Get, HttpCode, NotFoundException, Post, Req, Res } from "@nestjs/common";
+import { BadRequestException, Controller, Get, HttpCode, NotFoundException, Patch, Post, Req, Res } from "@nestjs/common";
 import { ApiCookieAuth, ApiTags } from "@nestjs/swagger";
 import { randomBytes } from "node:crypto";
 import type { FastifyReply, FastifyRequest } from "fastify";
 import { config } from "../config.js";
-import { Public, SkipCsrf } from "../common/decorators.js";
+import { LiveAccountControl, Public, SkipCsrf } from "../common/decorators.js";
 import type { AuthenticatedRequest } from "../common/request.js";
 import { AuditService } from "../common/audit.service.js";
 import { GoogleAuthService } from "./google-auth.service.js";
@@ -42,15 +42,24 @@ export class AuthController {
     reply.setCookie("csrftoken", csrfToken, this.cookieOptions(false));
     return {
       authenticated: Boolean(identity),
-      user: identity ? this.auth.response(identity.user, csrfToken).user : null,
+      user: identity ? this.auth.response(identity.user, csrfToken, identity.executionEnvironmentView).user : null,
       csrf_token: csrfToken,
       demo_mode: config().DEMO_MODE,
       demo_profile_switcher: identity ? this.auth.canUseDemoProfileSwitcher(identity.user) : false,
       public_demo: identity?.publicDemo ?? false,
+      execution_environment: identity?.executionEnvironmentView ?? { mode: "live", institution_id: null, namespace_id: null },
     };
   }
 
   @Public()
+  @Get("public-demo-config/")
+  publicDemoConfig(@Res({ passthrough: true }) reply: FastifyReply) {
+    reply.header("Cache-Control", "no-store");
+    return { enabled: config().PUBLIC_DEMO_ENABLED };
+  }
+
+  @Public()
+  @LiveAccountControl()
   @Get("google/config/")
   async googleConfig(@Res({ passthrough: true }) reply: FastifyReply) {
     reply.header("Cache-Control", "no-store");
@@ -61,6 +70,7 @@ export class AuthController {
   }
 
   @Public()
+  @LiveAccountControl()
   @Post("google/")
   @HttpCode(200)
   async googleLogin(@Req() request: FastifyRequest, @Res({ passthrough: true }) reply: FastifyReply) {
@@ -112,9 +122,9 @@ export class AuthController {
       ...this.auth.response(user, session.csrfToken),
       verification: result.verification,
       onboarding: {
-        status: "pending_school_membership",
-        has_school_access: false,
-        message: "Your account is ready. Join a school through its invitation or onboarding process to access student data.",
+        status: "purpose_required",
+        has_school_access: true,
+        message: "Your account is ready. Choose what you want ThatCampus to help you run first.",
       },
     };
   }
@@ -205,6 +215,7 @@ export class AuthController {
     if (!role || !demoSwitchRoles.includes(role as DemoSwitchRole)) throw new BadRequestException("Choose one of the available demo profiles.");
     const target = await this.auth.demoProfile(role as DemoSwitchRole);
     if (target.username === request.authUser.username) {
+      await this.auth.returnSessionToLive(request.sessionHash);
       return { ...this.auth.response(target, request.csrfToken), redirect_to: this.demoHome(role as DemoSwitchRole) };
     }
     const session = await this.auth.createSession(target, request, request.publicDemo ? { publicDemo: true, ttlSeconds: config().PUBLIC_DEMO_SESSION_TTL_SECONDS } : {});
@@ -222,7 +233,8 @@ export class AuthController {
   }
 
   private demoHome(role: DemoSwitchRole): string {
-    return { student: "/student", parent: "/parent/home", staff: "/teacher", admin: "/principal" }[role];
+    void role;
+    return "/today";
   }
 
   @Public()
@@ -249,6 +261,24 @@ export class AuthController {
   @HttpCode(200)
   selectSchool(@Req() request: AuthenticatedRequest) { return this.auth.selectSchool(request.authUser, request.sessionHash, request.body); }
 
+  @ApiCookieAuth()
+  @Get("execution-environment/")
+  executionEnvironment(@Req() request: AuthenticatedRequest) {
+    return this.auth.currentExecutionEnvironment(request.authUser, request.sessionHash);
+  }
+
+  @ApiCookieAuth()
+  @Post("execution-environment/")
+  @HttpCode(200)
+  selectExecutionEnvironment(@Req() request: AuthenticatedRequest) {
+    return this.auth.selectExecutionEnvironment(
+      request.authUser,
+      request.sessionHash,
+      request.body,
+      request,
+    );
+  }
+
   @Get("sessions/")
   sessions(@Req() request: AuthenticatedRequest) { return this.auth.sessions(request.authUser, request.sessionHash); }
 
@@ -259,7 +289,12 @@ export class AuthController {
   @ApiCookieAuth()
   @Get("me/")
   me(@Req() request: AuthenticatedRequest) {
-    return this.auth.me(request.authUser).then(result => ({ ...result, public_demo: request.publicDemo === true }));
+    return this.auth.me(request.authUser, { allowGuidanceResume: request.executionEnvironmentView.mode !== "simulation"
+      && !request.publicDemo && !request.internalAgentDelegation && !request.hostedCampusSimulator }).then(result => ({
+      ...result,
+      public_demo: request.publicDemo === true,
+      execution_environment: request.executionEnvironmentView,
+    }));
   }
 
   @ApiCookieAuth()
@@ -270,4 +305,8 @@ export class AuthController {
   @Post("pro-features/")
   @HttpCode(200)
   setProFeatures(@Req() request: AuthenticatedRequest) { return this.auth.setProFeatures(request.authUser, request.body, request); }
+
+  @ApiCookieAuth()
+  @Patch("profile/")
+  accountProfile(@Req() request: AuthenticatedRequest) { return this.auth.updateAccountProfile(request); }
 }

@@ -1,0 +1,54 @@
+.participation-people.person-profile { gap: 1rem; }
+.participation-people.person-profile > .person-profile-identity {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: .75rem;
+  padding: var(--thatcampus-row-inset);
+  border-radius: var(--thatcampus-radius-feature);
+  background: var(--thatcampus-surface-row);
+  box-shadow: var(--thatcampus-shadow-card);
+}
+.person-profile .person-profile-identity__details { flex: 1 1 15rem; gap: .75rem; }
+.person-profile .person-profile-identity .people-avatar { width: 3rem; height: 3rem; flex: 0 0 3rem; background: var(--thatcampus-logo-green-soft); color: var(--thatcampus-logo-green); }
+.person-profile .person-profile-identity > .person-profile-edit { grid-column: 1 / -1; justify-self: start; }
+.person-profile-metrics { display: grid; min-width: 0; align-self: center; }
+.person-profile .person-profile-metrics button { display: grid; gap: .125rem; min-height: 48px; padding: .25rem .5rem; background: transparent; color: var(--thatcampus-ink); box-shadow: none; text-align: left; }
+.person-profile-metrics button + button { border-top: 1px solid var(--thatcampus-border); border-radius: 0; }
+.person-profile-metrics strong { font-size: 1.25rem; line-height: 1.2; }
+.person-profile-metrics span { font-size: .875rem; font-weight: 400; }
+.person-profile .person-profile-identity h1 { font-size: clamp(1.5rem, 7vw, 2rem); }
+.person-profile .person-profile-identity p { margin: .25rem 0; }
+.person-profile-account-state { display: block; color: var(--thatcampus-ink); font-size: .875rem; line-height: 1.5; }
+.person-profile button.person-profile-primary { color: var(--thatcampus-on-action); background: var(--thatcampus-action); border-color: transparent; }
+.person-profile button.person-profile-primary:hover:not(:disabled) { background: var(--thatcampus-action); }
+.person-profile-views { display: flex; gap: .25rem; padding: .25rem; border-radius: var(--thatcampus-radius-control); background: var(--thatcampus-surface-soft); }
+.person-profile .person-profile-views button { flex: 1; min-width: 0; padding: .5rem; background: transparent; color: var(--thatcampus-ink-muted); box-shadow: none; }
+.person-profile .person-profile-views [aria-current="page"] { color: var(--thatcampus-ink); background: var(--thatcampus-brand-soft); box-shadow: var(--thatcampus-shadow-control); }
+.participation-people.person-profile > .people-panel.person-profile-section { padding: 1rem 0; }
+.person-profile-section h2 { display: flex; align-items: center; gap: .5rem; }
+.person-profile .person-profile-contact { gap: .75rem; margin-top: .75rem; }
+.person-profile .person-profile-contact dt { display: flex; align-items: center; gap: .5rem; }
+.person-profile .person-profile-contact dd { padding-left: 1.5rem; font-size: 1rem; }
+.person-profile .person-profile-context > header button { padding-inline: .25rem; background: transparent; color: var(--thatcampus-ink); box-shadow: none; }
+.person-profile .person-profile-source { display: flex; align-items: center; justify-content: space-between; gap: .75rem; min-height: 44px; margin-top: .5rem; padding: .75rem var(--thatcampus-row-inset); border-radius: var(--thatcampus-radius-row); background: var(--thatcampus-surface-row); color: var(--thatcampus-ink); box-shadow: var(--thatcampus-shadow-card); font-size: 1rem; font-weight: 600; text-decoration: none; }
+.person-profile-source > svg { flex: 0 0 auto; }
+.person-profile .person-profile-list > li { padding: 1rem var(--thatcampus-row-inset); margin-bottom: .75rem; border: 0; border-radius: var(--thatcampus-radius-row); background: var(--thatcampus-surface-row); }
+.person-profile .person-profile-list > li > div > a { display: inline-flex; align-items: center; min-height: 44px; font-size: 1rem; }
+.person-profile .person-profile-list > li > a { display: inline-flex; align-items: center; min-height: 44px; font-size: .875rem; }
+.person-profile-choices { display: grid; gap: .75rem; padding: 1rem; }
+.person-profile-choices > button { display: flex; align-items: center; gap: .75rem; width: 100%; min-height: 56px; padding: 1rem var(--thatcampus-row-inset); border: 0; border-radius: var(--thatcampus-radius-row); background: var(--thatcampus-surface-row); color: var(--thatcampus-ink); font: inherit; text-align: left; box-shadow: var(--thatcampus-shadow-card); cursor: pointer; }
+.person-profile-choices > button > span:not(.product-icon) { flex: 1; min-width: 0; }
+.person-profile-choices > button > svg { flex: 0 0 auto; }
+.person-profile-choices small { display: block; margin-top: .25rem; color: var(--thatcampus-ink-muted); font-size: .875rem; line-height: 1.5; }
+.person-profile-choices > button:focus-visible { outline: 3px solid var(--thatcampus-action); outline-offset: 3px; }
+@media (min-width: 600px) { .person-profile .person-profile-contact { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+@media (max-width: 600px) {
+  .person-profile .person-profile-identity__details { grid-column: 1 / -1; }
+  .person-profile .person-profile-metrics { grid-column: 1 / -1; display: flex; }
+  .person-profile .person-profile-metrics button { flex: 1; }
+  .person-profile-metrics button + button { border-top: 0; border-left: 1px solid var(--thatcampus-border); }
+}
+@media (forced-colors: active) { .person-profile .person-profile-views [aria-current="page"] { outline: 2px solid Highlight; outline-offset: -4px; } }

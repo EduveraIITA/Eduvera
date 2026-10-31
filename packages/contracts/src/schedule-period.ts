@@ -1,0 +1,1 @@
+export interface SchedulePeriod { id:string; weekday:number; period_number:number; starts_at:string; ends_at:string; subject_id:string|null; teacher_user_id:string|null; title:string; slot_type:'class'|'break'|'activity'; room:string; }

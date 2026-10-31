@@ -1,3 +1,4 @@
+import { applicationNow } from "../simulation/applicationTime";
 import { useState } from "react";
 import type { AdminDeparture } from "./api";
 
@@ -9,7 +10,7 @@ export function HandoverForm({plan,pending,onSave}:{plan:Plan;pending:boolean;on
   if(!open) return <button className="departure-primary" onClick={()=>setOpen(true)}>Record handover</button>;
   return <form className="departure-rider-confirm" onSubmit={async event=>{
     event.preventDefault();
-    try { await onSave({expected_revision:plan.revision,outcome,evidence_method:"in_person_verification",note,occurred_at:new Date().toISOString()});setOpen(false);setNote(""); }
+    try { await onSave({expected_revision:plan.revision,outcome,evidence_method:"in_person_verification",note,occurred_at:applicationNow().toISOString()});setOpen(false);setNote(""); }
     catch { /* Keep entered evidence available after the parent displays the error. */ }
   }}>
     <p>{plan.collector_name?`Approved receiver: ${plan.collector_name}`:plan.mode==="independent_departure"?"Independent departure is approved for this date.":"Verify the approved external arrangement before release."}</p>

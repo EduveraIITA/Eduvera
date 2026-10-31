@@ -1,0 +1,563 @@
+var __decorate = (this && this.__decorate) || function (decorators, target, key, desc) {
+    var c = arguments.length, r = c < 3 ? target : desc === null ? desc = Object.getOwnPropertyDescriptor(target, key) : desc, d;
+    if (typeof Reflect === "object" && typeof Reflect.decorate === "function") r = Reflect.decorate(decorators, target, key, desc);
+    else for (var i = decorators.length - 1; i >= 0; i--) if (d = decorators[i]) r = (c < 3 ? d(r) : c > 3 ? d(target, key, r) : d(target, key)) || r;
+    return c > 3 && r && Object.defineProperty(target, key, r), r;
+};
+var __metadata = (this && this.__metadata) || function (k, v) {
+    if (typeof Reflect === "object" && typeof Reflect.metadata === "function") return Reflect.metadata(k, v);
+};
+var __param = (this && this.__param) || function (paramIndex, decorator) {
+    return function (target, key) { decorator(target, key, paramIndex); }
+};
+import { executionNow } from "../campus-model-core/execution-time.runtime.js";
+import { BadRequestException, ConflictException, ForbiddenException, Inject, Injectable, NotFoundException } from '@nestjs/common';
+import { mkdir, writeFile, readEnvironmentStoredFile } from "../common/environment-files.js";
+import { join } from 'node:path';
+import { config } from '../config.js';
+import { validateVisitorPhoto } from './visitor-photo.js';
+import { randomBytes, randomUUID } from 'node:crypto';
+import { sql } from 'kysely';
+import { z } from 'zod';
+import { DatabaseService } from '../database/database.service.js';
+import { hasScopedSchoolPermission } from '../roles/authorization.js';
+import { hashPassword } from '../auth/password.js';
+import { SchoolEventService } from '../school/school-event.service.js';
+import { OBSERVATION_INGRESS_PORT } from '../campus-model-core/observation-ingress.port.js';
+import { assertGateTransition, assertPassUsable, gateTokenHash, newGateToken } from './gate.rules.js';
+const visitorWorkspaceQuerySchema = z.object({
+    visitor_page: z.coerce.number().int().min(1).max(2_147_483_647).default(1),
+    visitor_filter: z.enum(['all', 'active', 'pending', 'approved', 'inside', 'closed']).default('all'),
+    visitor_id: z.uuid().optional(),
+}).strict();
+function visitorView(v) {
+    return { id: v.id, school_id: v.school_id, name: v.name, phone: v.phone, purpose: v.purpose, host_user_id: v.host_user_id,
+        photo_url: v.photo_key ? `/api/v1/gate/schools/${v.school_id}/visitors/${v.id}/photo/` : null, category: v.category, host_name: v.host_name, school_name: v.school_name, revision: v.revision, created_at: v.created_at, expires_at: v.expires_at,
+        decided_at: v.decided_at, checked_in_at: v.checked_in_at, checked_out_at: v.checked_out_at,
+        state: ['pending', 'approved'].includes(v.state) && new Date(v.expires_at).getTime() <= executionNow().getTime() ? 'expired' : v.state };
+}
+let GateService = class GateService {
+    db;
+    events;
+    observationIngress;
+    constructor(db, events, observationIngress) {
+        this.db = db;
+        this.events = events;
+        this.observationIngress = observationIngress;
+    }
+    async access(user, school, db = this.db) {
+        z.uuid().parse(school);
+        if (!await hasScopedSchoolPermission(db, user.id, school, 'gate.manage', 'institution', school))
+            throw new ForbiddenException('Manage In & Out permission is required.');
+    }
+    async admin(user, school, db = this.db) {
+        z.uuid().parse(school);
+        const m = await db.selectFrom('school_memberships').select('id').where('school_id', '=', school).where('user_id', '=', user.id).where('role', '=', 'admin').where('is_active', '=', true).executeTakeFirst();
+        if (!m)
+            throw new ForbiddenException('School administrator access is required.');
+    }
+    async lock(db, school) { await sql `SELECT pg_advisory_xact_lock(hashtextextended(${`departure:${school}`},0))`.execute(db); }
+    async audit(db, user, school, action, id) {
+        await db.insertInto('audit_events').values({ actor_id: user.id, school_id: school, action: `gate.${action}`, target_type: 'gate', target_id: id, request_id: randomUUID(), ip_hash: '', metadata: {} }).execute();
+    }
+    async people(db, school, q, id) {
+        return (await sql `SELECT s.id,concat(p.first_name,' ',p.last_name) name,
+   COALESCE(NULLIF(s.avatar_url,''),p.avatar_url) avatar_url,s.admission_number,
+   COALESCE(c.grade||' '||c.section,'') class_label,g.direction,
+   dp.id plan_id,dp.revision plan_revision,dp.state plan_state,dp.mode,dp.authority_id,
+   concat(cp.first_name,' ',cp.last_name) collector_name,cp.avatar_url collector_photo
+   FROM students s JOIN school_people p ON p.id=s.person_id
+   LEFT JOIN LATERAL (SELECT cs.grade,cs.section FROM enrollments e JOIN class_sections cs ON cs.id=e.class_section_id
+     WHERE e.student_id=s.id AND e.is_active ORDER BY e.enrolled_on DESC LIMIT 1) c ON true
+   LEFT JOIN LATERAL (SELECT direction FROM gate_events ge WHERE ge.student_id=s.id ORDER BY occurred_at DESC,id DESC LIMIT 1) g ON true
+   LEFT JOIN schools sc ON sc.id=s.school_id
+   LEFT JOIN departure_plans dp ON dp.student_id=s.id AND dp.school_id=s.school_id AND dp.is_current AND dp.service_date=(now() AT TIME ZONE sc.timezone)::date
+   LEFT JOIN departure_collection_authorities ca ON ca.id=dp.authority_id
+   LEFT JOIN guardian_relationships gr ON gr.id=ca.guardian_relationship_id
+   LEFT JOIN guardian_school_profiles gp ON gp.guardian_id=gr.guardian_id AND gp.school_id=s.school_id
+   LEFT JOIN school_people cp ON cp.id=COALESCE(ca.collector_person_id,gp.person_id)
+   WHERE s.school_id=${school}::uuid AND (${id ?? null}::uuid IS NULL OR s.id=${id ?? null}::uuid)
+   AND (${q}='' OR concat(p.first_name,' ',p.last_name,' ',s.admission_number) ILIKE ${`%${q}%`})
+   ORDER BY p.first_name,p.last_name LIMIT 30`.execute(db)).rows;
+    }
+    async collectionCurrent(db, school, person) {
+        if (person.mode === 'independent_departure')
+            return true;
+        return Boolean((await sql `SELECT EXISTS(SELECT 1 FROM departure_collection_authorities ca JOIN departure_plans dp ON dp.authority_id=ca.id WHERE dp.id=${person.plan_id}::uuid AND dp.school_id=${school}::uuid AND ca.school_id=dp.school_id AND ca.student_id=dp.student_id AND ca.status='active' AND ca.valid_from<=dp.service_date AND (ca.valid_until IS NULL OR ca.valid_until>=dp.service_date)) allowed`.execute(db)).rows[0]?.allowed);
+    }
+    async students(user, school, q) {
+        await this.access(user, school);
+        const term = z.string().trim().max(100).parse(q).toLowerCase();
+        if (term.length < 2 && !/^\d+$/.test(term))
+            return [];
+        // Match and cap the roster before looking up classes. The list does not need
+        // gate history or pickup authority; those are fetched fresh on selection.
+        const pattern = `%${term.replace(/[\\%_]/g, '\\$&')}%`;
+        return (await sql `
+   WITH matched_ids AS MATERIALIZED (
+    SELECT s.id FROM school_people p
+    JOIN students s ON s.person_id=p.id AND s.school_id=p.school_id
+    WHERE p.school_id=${school}::uuid
+     AND lower(p.first_name||' '||p.last_name) LIKE ${pattern} ESCAPE '\\'
+    UNION
+    SELECT s.id FROM students s WHERE s.school_id=${school}::uuid
+     AND lower(s.admission_number) LIKE ${pattern} ESCAPE '\\'
+    UNION
+    SELECT e.student_id FROM enrollments e JOIN students s ON s.id=e.student_id
+     JOIN class_sections c ON c.id=e.class_section_id AND c.school_id=s.school_id
+     WHERE s.school_id=${school}::uuid AND e.is_active
+      AND e.roll_number=${/^\d{1,6}$/.test(term) ? Number(term) : -1}
+   ), matches AS MATERIALIZED (
+    SELECT s.id,s.admission_number,COALESCE(NULLIF(s.avatar_url,''),p.avatar_url) avatar_url,
+     p.first_name,p.last_name
+    FROM students s JOIN school_people p ON p.id=s.person_id AND p.school_id=s.school_id
+    JOIN matched_ids found ON found.id=s.id
+    WHERE s.school_id=${school}::uuid
+    ORDER BY p.first_name,p.last_name,s.id LIMIT 30
+   )
+   SELECT m.id,m.first_name||' '||m.last_name name,m.avatar_url,m.admission_number,
+    COALESCE(c.grade||' '||c.section,'') class_label,c.roll_number,dp.state plan_state,g.direction
+   FROM matches m
+   JOIN schools sc ON sc.id=${school}::uuid
+   LEFT JOIN departure_plans dp ON dp.student_id=m.id AND dp.school_id=sc.id AND dp.is_current
+    AND dp.service_date=(now() AT TIME ZONE sc.timezone)::date
+   LEFT JOIN LATERAL (
+    SELECT cs.grade,cs.section,e.roll_number FROM enrollments e JOIN class_sections cs ON cs.id=e.class_section_id
+    WHERE e.student_id=m.id AND e.is_active AND cs.school_id=${school}::uuid
+    ORDER BY e.enrolled_on DESC,e.id DESC LIMIT 1
+   ) c ON true
+   LEFT JOIN LATERAL (SELECT ge.direction FROM gate_events ge WHERE ge.student_id=m.id
+    ORDER BY ge.occurred_at DESC,ge.id DESC LIMIT 1) g ON true
+   ORDER BY m.first_name,m.last_name,m.id`.execute(this.db)).rows;
+    }
+    async student(user, school, id) {
+        await this.access(user, school);
+        z.uuid().parse(id);
+        const student = (await this.people(this.db, school, '', id))[0];
+        if (!student)
+            throw new NotFoundException('Student not found.');
+        return student;
+    }
+    async staff(user, school, q) {
+        await this.access(user, school);
+        const term = z.string().trim().max(100).parse(q).toLowerCase();
+        if (term.length < 2)
+            return [];
+        const pattern = `%${term.replace(/[\\%_]/g, '\\$&')}%`;
+        return (await sql `SELECT profile.id,concat(person.first_name,' ',person.last_name) name,person.avatar_url,
+    profile.staff_code,profile.designation,profile.department,profile.revision,movement.direction,movement.occurred_at last_movement_at
+   FROM staff_profiles profile JOIN school_people person ON person.id=profile.person_id AND person.school_id=profile.school_id
+   LEFT JOIN LATERAL (SELECT event.direction,event.occurred_at FROM gate_staff_events event
+     WHERE event.school_id=profile.school_id AND event.staff_profile_id=profile.id
+     ORDER BY event.occurred_at DESC,event.id DESC LIMIT 1) movement ON true
+   WHERE profile.school_id=${school}::uuid AND profile.status='active'
+    AND (lower(concat(person.first_name,' ',person.last_name)) LIKE ${pattern} ESCAPE '\\'
+      OR lower(profile.staff_code) LIKE ${pattern} ESCAPE '\\' OR lower(person.contact_email) LIKE ${pattern} ESCAPE '\\')
+   ORDER BY person.first_name,person.last_name LIMIT 30`.execute(this.db)).rows;
+    }
+    async staffProfile(user, school, id, db = this.db) {
+        z.uuid().parse(id);
+        await this.access(user, school, db);
+        const profile = (await sql `SELECT profile.id,concat(person.first_name,' ',person.last_name) name,person.avatar_url,
+    profile.staff_code,profile.designation,profile.department,profile.revision,movement.direction,movement.occurred_at last_movement_at
+   FROM staff_profiles profile JOIN school_people person ON person.id=profile.person_id AND person.school_id=profile.school_id
+   LEFT JOIN LATERAL (SELECT event.direction,event.occurred_at FROM gate_staff_events event
+     WHERE event.school_id=profile.school_id AND event.staff_profile_id=profile.id
+     ORDER BY event.occurred_at DESC,event.id DESC LIMIT 1) movement ON true
+   WHERE profile.school_id=${school}::uuid AND profile.id=${id}::uuid AND profile.status='active'`.execute(db)).rows[0];
+        if (!profile)
+            throw new NotFoundException('Active staff profile not found.');
+        return profile;
+    }
+    async staffMovement(user, school, body) {
+        const b = z.object({ staff_profile_id: z.uuid(), direction: z.enum(['in', 'out']), command_id: z.uuid(), identity_verified: z.literal(true), gate: z.string().trim().min(1).max(80).default('Main gate') }).strict().parse(body);
+        return this.db.transaction().execute(async (tx) => {
+            await this.lock(tx, school);
+            await this.access(user, school, tx);
+            const previous = await tx.selectFrom('gate_staff_events').select(['id', 'staff_profile_id', 'direction', 'recorded_by']).where('command_id', '=', b.command_id).executeTakeFirst();
+            if (previous) {
+                if (previous.staff_profile_id !== b.staff_profile_id || previous.direction !== b.direction || previous.recorded_by !== user.id)
+                    throw new ConflictException('Movement reference was already used.');
+                return { id: previous.id, saved: true };
+            }
+            const current = await this.staffProfile(user, school, b.staff_profile_id, tx);
+            assertGateTransition(current.direction ?? undefined, b.direction);
+            const observedAt = executionNow();
+            const row = await tx.insertInto('gate_staff_events').values({ school_id: school, staff_profile_id: b.staff_profile_id, direction: b.direction, gate: b.gate, source: 'gatekeeper', recorded_by: user.id, command_id: b.command_id, occurred_at: observedAt }).returning('id').executeTakeFirstOrThrow();
+            await this.observationIngress.recordObservations(tx, [{
+                    school_id: school, captured_by: { kind: 'human', user_id: user.id }, kind: 'movement.gate_observed',
+                    subject: { kind: 'staff', domain: 'people', domain_id: b.staff_profile_id, label: current.name, lifecycle_state: 'active', source_revision: current.revision, metadata: { staff_code: current.staff_code } }, context: null,
+                    source_type: 'gate.staff_movement', source_ref: b.command_id, source_record_id: row.id, observed_at: observedAt.toISOString(), received_at: executionNow().toISOString(),
+                    evidence_refs: [`gate_staff_event:${row.id}`], payload: { direction: b.direction, gate: b.gate, capture_source: 'gatekeeper', identity_verified: true, evidence_scope: 'campus_boundary' },
+                    schema_version: 1, state: 'accepted', idempotency_key: `gate-staff-observation:${row.id}`, domain_event_id: null,
+                }]);
+            await this.audit(tx, user, school, `staff_${b.direction}`, row.id);
+            return { id: row.id, saved: true };
+        });
+    }
+    async workspace(user, school, query = {}) {
+        await this.access(user, school);
+        const selected = visitorWorkspaceQuerySchema.parse(query), pageSize = 25;
+        // One statement gives the page and truthful queue totals the same snapshot.
+        // Open visits never age out; only closed history has a one-day horizon.
+        const visitorPage = (await sql `WITH candidates AS MATERIALIZED (
+   SELECT v.*,u.first_name||' '||u.last_name host_name,
+    CASE WHEN v.state IN ('pending','approved') AND v.expires_at<=now() THEN 'expired' ELSE v.state END display_state
+   FROM gate_visitors v LEFT JOIN users u ON u.id=v.host_user_id
+   WHERE v.school_id=${school}::uuid AND (v.state='inside'
+    OR (v.state IN ('pending','approved') AND v.expires_at>now()) OR v.created_at>now()-interval '1 day')
+  ), counts AS (
+   SELECT count(*)::int "all",count(*) FILTER(WHERE display_state IN ('inside','approved','pending'))::int active,
+    count(*) FILTER(WHERE display_state='pending')::int pending,count(*) FILTER(WHERE display_state='approved')::int approved,
+    count(*) FILTER(WHERE display_state='inside')::int inside,count(*) FILTER(WHERE display_state IN ('out','denied','expired'))::int closed
+   FROM candidates
+  ), filtered AS MATERIALIZED (
+   SELECT * FROM candidates WHERE ${selected.visitor_filter}='all'
+    OR (${selected.visitor_filter}='active' AND display_state IN ('inside','approved','pending'))
+    OR (${selected.visitor_filter}='closed' AND display_state IN ('out','denied','expired'))
+    OR display_state=${selected.visitor_filter}
+  ), totals AS (
+   SELECT count(*)::int total,greatest(1,ceil(count(*)::numeric/${pageSize})::int) total_pages FROM filtered
+  ), page AS (SELECT least(${selected.visitor_page},total_pages)::int page,total,total_pages FROM totals)
+  SELECT counts.*,page.*,
+   COALESCE((SELECT jsonb_agg(to_jsonb(visit)) FROM (
+    SELECT * FROM filtered ORDER BY CASE display_state WHEN 'inside' THEN 0 WHEN 'approved' THEN 1 WHEN 'pending' THEN 2 ELSE 3 END,
+     created_at DESC,id DESC LIMIT ${pageSize} OFFSET (SELECT (page-1)*${pageSize} FROM page)
+   ) visit),'[]'::jsonb) visitors FROM counts CROSS JOIN page`.execute(this.db)).rows[0];
+        const { all, active, pending, approved, inside, closed, page, total, total_pages, visitors } = visitorPage;
+        const focusedVisitor = selected.visitor_id ? (await sql `SELECT v.*,u.first_name||' '||u.last_name host_name
+   FROM gate_visitors v LEFT JOIN users u ON u.id=v.host_user_id
+   WHERE v.school_id=${school}::uuid AND v.id=${selected.visitor_id}::uuid`.execute(this.db)).rows[0] : undefined;
+        const hosts = await this.db.selectFrom('school_memberships as m').innerJoin('users as u', 'u.id', 'm.user_id').select(['u.id', 'u.first_name', 'u.last_name']).distinct().where('m.school_id', '=', school).where('m.is_active', '=', true).where('u.is_active', '=', true).where('m.role', 'in', ['admin', 'staff']).execute();
+        const office = await this.db.selectFrom('school_contacts').select(['name', 'phone']).where('school_id', '=', school).where('phone', '!=', '').orderBy('priority').executeTakeFirst();
+        const activity = (await sql `WITH rows AS (
+    SELECT 'student'::text kind,event.id::text id,student.id::text person_id,concat(person.first_name,' ',person.last_name) name,
+      COALESCE(NULLIF(student.avatar_url,''),person.avatar_url) avatar_url,COALESCE(class.grade||' '||class.section,'Student') detail,
+      event.direction,event.occurred_at,NULL::text state
+    FROM gate_events event JOIN students student ON student.id=event.student_id
+    JOIN school_people person ON person.id=student.person_id AND person.school_id=student.school_id
+    LEFT JOIN LATERAL (SELECT section.grade,section.section FROM enrollments enrollment JOIN class_sections section ON section.id=enrollment.class_section_id
+      WHERE enrollment.student_id=student.id AND enrollment.is_active AND section.school_id=${school}::uuid
+      ORDER BY enrollment.enrolled_on DESC,enrollment.id DESC LIMIT 1) class ON true
+    WHERE student.school_id=${school}::uuid
+    UNION ALL
+    SELECT 'staff',event.id::text,profile.id::text,concat(person.first_name,' ',person.last_name),person.avatar_url,
+      COALESCE(NULLIF(profile.designation,''),'Staff'),event.direction,event.occurred_at,NULL::text
+    FROM gate_staff_events event JOIN staff_profiles profile ON profile.id=event.staff_profile_id AND profile.school_id=event.school_id
+    JOIN school_people person ON person.id=profile.person_id AND person.school_id=profile.school_id WHERE event.school_id=${school}::uuid
+    UNION ALL
+    SELECT 'visitor',visitor.id::text,visitor.id::text,visitor.name,NULL::text,visitor.category,
+      CASE WHEN visitor.checked_out_at IS NOT NULL THEN 'out' ELSE 'in' END,
+      COALESCE(visitor.checked_out_at,visitor.checked_in_at),visitor.state
+    FROM gate_visitors visitor WHERE visitor.school_id=${school}::uuid AND visitor.checked_in_at IS NOT NULL
+  ) SELECT * FROM rows ORDER BY occurred_at DESC,id DESC LIMIT 50`.execute(this.db)).rows;
+        return { office: office ?? null, visitors: visitors.map(visitorView), focused_visitor: focusedVisitor ? visitorView(focusedVisitor) : null, hosts: hosts.map(h => ({ id: h.id, name: `${h.first_name} ${h.last_name}` })), pending, activity,
+            visitor_counts: { all, active, pending, approved, inside, closed },
+            visitor_pagination: { page, page_size: pageSize, total, total_pages, has_previous: page > 1, has_next: page < total_pages, filter: selected.visitor_filter } };
+    }
+    async issuePass(user, school, body) {
+        const b = z.object({ student_id: z.uuid(), kind: z.enum(['student', 'pickup']) }).parse(body);
+        return this.db.transaction().execute(async (tx) => {
+            await this.lock(tx, school);
+            const student = await tx.selectFrom('students').select('id').where('school_id', '=', school).where('id', '=', b.student_id).executeTakeFirst();
+            if (!student)
+                throw new NotFoundException('Student not found.');
+            const isAdmin = Boolean(await tx.selectFrom('school_memberships').select('id').where('user_id', '=', user.id).where('school_id', '=', school).where('role', '=', 'admin').where('is_active', '=', true).executeTakeFirst());
+            if (!isAdmin) {
+                const linked = (await sql `SELECT EXISTS(SELECT 1 FROM guardian_relationships gr JOIN parents p ON p.id=gr.guardian_id JOIN school_memberships m ON m.user_id=p.user_id AND m.school_id=gr.school_id AND m.role='guardian' AND m.is_active WHERE gr.student_id=${b.student_id}::uuid AND gr.school_id=${school}::uuid AND p.user_id=${user.id}::uuid) allowed`.execute(tx)).rows[0]?.allowed;
+                if (!linked)
+                    throw new ForbiddenException('Guardian access is required.');
+            }
+            const person = (await this.people(tx, school, '', b.student_id))[0];
+            if (b.kind === 'pickup' && (!person.plan_id || person.plan_state !== 'ready' || !['guardian_pickup', 'authorized_collector', 'independent_departure'].includes(person.mode ?? '')))
+                throw new ConflictException('School must approve the arrangement and mark the student ready first.');
+            if (b.kind === 'pickup' && !await this.collectionCurrent(tx, school, person))
+                throw new ForbiddenException('Pickup authority was revoked or has expired.');
+            // A parent may display only their own currently approved guardian collection pass.
+            if (!isAdmin && b.kind === 'pickup') {
+                const own = (await sql `SELECT EXISTS(SELECT 1 FROM departure_collection_authorities ca JOIN guardian_relationships gr ON gr.id=ca.guardian_relationship_id JOIN parents p ON p.id=gr.guardian_id WHERE ca.id=${person.authority_id}::uuid AND p.user_id=${user.id}::uuid AND ca.status='active') allowed`.execute(tx)).rows[0]?.allowed;
+                if (!own)
+                    throw new ForbiddenException('The school must issue this pass to the approved collecting person.');
+            }
+            const token = newGateToken(), expires = new Date(executionNow().getTime() + (b.kind === 'student' ? 365 * 86400000 : 15 * 60000));
+            const result = (await sql `INSERT INTO gate_qr_passes(school_id,student_id,plan_id,token_hash,kind,expires_at,created_by) VALUES(${school}::uuid,${b.student_id}::uuid,${b.kind === 'pickup' ? person.plan_id : null}::uuid,${gateTokenHash(token)},${b.kind},${expires},${user.id}::uuid) RETURNING id`.execute(tx)).rows[0];
+            await this.audit(tx, user, school, 'pass_issued', result.id);
+            return { qr: token, expires_at: expires, kind: b.kind, name: person.name };
+        });
+    }
+    async pass(db, school, token) {
+        const p = (await sql `SELECT * FROM gate_qr_passes WHERE school_id=${school}::uuid AND token_hash=${gateTokenHash(token)} FOR UPDATE`.execute(db)).rows[0];
+        if (!p)
+            throw new NotFoundException('QR pass not found in this school.');
+        assertPassUsable(p);
+        return p;
+    }
+    async scan(user, school, body) {
+        await this.access(user, school);
+        const b = z.object({ qr: z.string().max(100) }).parse(body);
+        return this.db.transaction().execute(async (tx) => {
+            const visitor = (await sql `SELECT v.*,u.first_name||' '||u.last_name host_name
+    FROM gate_visitors v LEFT JOIN users u ON u.id=v.host_user_id WHERE v.school_id=${school}::uuid AND v.token_hash=${gateTokenHash(b.qr)}`.execute(tx)).rows[0];
+            if (visitor) {
+                if (!['approved', 'inside'].includes(visitor.state) || new Date(visitor.pass_expires_at).getTime() <= executionNow().getTime() || (visitor.state === 'approved' && new Date(visitor.expires_at).getTime() <= executionNow().getTime()))
+                    throw new ConflictException('Visitor pass expired or was already used.');
+                return { visitor: visitorView(visitor), kind: 'visitor' };
+            }
+            const p = await this.pass(tx, school, b.qr);
+            const student = (await this.people(tx, school, '', p.student_id))[0];
+            if (!student)
+                throw new NotFoundException('Student not found.');
+            if (p.kind === 'pickup' && (student.plan_id !== p.plan_id || student.plan_state !== 'ready'))
+                throw new ConflictException('The pickup arrangement has changed. Contact the school office.');
+            if (p.kind === 'pickup' && !await this.collectionCurrent(tx, school, student))
+                throw new ForbiddenException('Pickup authority was revoked or has expired.');
+            return { student, kind: p.kind };
+        });
+    }
+    async movement(user, school, body) {
+        const b = z.object({ student_id: z.uuid(), direction: z.enum(['in', 'out']), qr: z.string().max(100).optional(), command_id: z.uuid(), identity_verified: z.literal(true), gate: z.string().trim().min(1).max(80).default('Main gate') }).parse(body);
+        return this.db.transaction().execute(async (tx) => {
+            await this.lock(tx, school);
+            await this.access(user, school, tx);
+            const previous = await tx.selectFrom('gate_events').select(['id', 'student_id', 'direction', 'recorded_by']).where('command_id', '=', b.command_id).executeTakeFirst();
+            if (previous) {
+                if (previous.student_id !== b.student_id || previous.direction !== b.direction || previous.recorded_by !== user.id)
+                    throw new ConflictException('Movement reference was already used.');
+                return { id: previous.id, saved: true };
+            }
+            const person = (await this.people(tx, school, '', b.student_id))[0];
+            if (!person)
+                throw new NotFoundException('Student not found.');
+            const p = b.qr ? await this.pass(tx, school, b.qr) : null;
+            if (p && p.student_id !== b.student_id)
+                throw new BadRequestException('QR does not match this student.');
+            assertGateTransition(person.direction ?? undefined, b.direction);
+            if (p?.kind === 'pickup' && b.direction !== 'out')
+                throw new BadRequestException('Pickup QR is for exit only.');
+            if (b.direction === 'out') {
+                if (!p || p.kind !== 'pickup' || person.plan_id !== p.plan_id || person.plan_state !== 'ready')
+                    throw new ConflictException('A current approved pickup QR is required for exit.');
+                const plan = await tx.selectFrom('departure_plans').selectAll().where('school_id', '=', school).where('id', '=', p.plan_id).where('is_current', '=', true).forUpdate().executeTakeFirstOrThrow();
+                if (!['guardian_pickup', 'authorized_collector', 'independent_departure'].includes(plan.mode))
+                    throw new BadRequestException('Use the school transport workflow for this departure.');
+                let snapshot = {};
+                if (plan.mode !== 'independent_departure') {
+                    const a = await tx.selectFrom('departure_collection_authorities').selectAll().where('id', '=', plan.authority_id).where('school_id', '=', school).where('student_id', '=', b.student_id).where('status', '=', 'active').where('valid_from', '<=', plan.service_date).where(eb => eb.or([eb('valid_until', 'is', null), eb('valid_until', '>=', plan.service_date)])).executeTakeFirst();
+                    if (!a)
+                        throw new ForbiddenException('Pickup authority was revoked or has expired.');
+                    snapshot = { authority_id: a.id, revision: a.revision };
+                }
+                await tx.insertInto('departure_handovers').values({ school_id: school, plan_id: plan.id, student_id: b.student_id, outcome: plan.mode === 'independent_departure' ? 'departed_independently' : 'handed_over', authority_id: plan.authority_id, authority_snapshot: snapshot, evidence_method: 'in_person_verification', note: 'QR checked and identity verified at gate', occurred_at: executionNow(), recorded_by: user.id }).execute();
+                await tx.updateTable('departure_plans').set({ state: 'completed', revision: plan.revision + 1, updated_at: executionNow() }).where('id', '=', plan.id).execute();
+                await sql `UPDATE gate_qr_passes SET used_at=now() WHERE id=${p.id}::uuid`.execute(tx);
+            }
+            const observedAt = executionNow();
+            const row = await tx.insertInto('gate_events').values({ student_id: b.student_id, direction: b.direction, gate: b.gate, source: 'gatekeeper', device_reference: '', occurred_at: observedAt, recorded_by: user.id, command_id: b.command_id }).returning('id').executeTakeFirstOrThrow();
+            const student = await tx.selectFrom('students as student')
+                .innerJoin('school_people as person', 'person.id', 'student.person_id')
+                .select(['student.id', 'student.admission_number', 'person.first_name', 'person.last_name', 'person.revision'])
+                .where('student.school_id', '=', school).where('student.id', '=', b.student_id).executeTakeFirstOrThrow();
+            await this.observationIngress.recordObservations(tx, [{
+                    school_id: school,
+                    captured_by: { kind: 'human', user_id: user.id },
+                    kind: 'movement.gate_observed',
+                    subject: { kind: 'student', domain: 'people', domain_id: student.id, label: `${student.first_name} ${student.last_name}`.trim() || student.admission_number, lifecycle_state: 'active', source_revision: student.revision, metadata: { admission_number: student.admission_number } },
+                    context: null,
+                    source_type: 'gate.movement',
+                    source_ref: b.command_id,
+                    source_record_id: row.id,
+                    observed_at: observedAt.toISOString(),
+                    received_at: executionNow().toISOString(),
+                    evidence_refs: [`gate_event:${row.id}`],
+                    payload: { direction: b.direction, gate: b.gate, capture_source: 'gatekeeper', identity_verified: true, evidence_scope: 'campus_boundary' },
+                    schema_version: 1,
+                    state: 'accepted',
+                    idempotency_key: `gate-observation:${row.id}`,
+                    domain_event_id: null,
+                }]);
+            await this.audit(tx, user, school, b.direction, row.id);
+            const guardians = (await sql `SELECT DISTINCT p.user_id FROM parents p JOIN guardian_relationships gr ON gr.guardian_id=p.id JOIN school_memberships m ON m.user_id=p.user_id AND m.school_id=gr.school_id AND m.role='guardian' AND m.is_active WHERE gr.student_id=${b.student_id}::uuid AND gr.school_id=${school}::uuid AND p.user_id IS NOT NULL`.execute(tx)).rows.map(g => g.user_id);
+            await this.events.enqueueUserEvent(tx, { schoolId: school, eventType: 'departure.updated', aggregateType: 'gate_event', aggregateId: row.id, audienceUserIds: guardians, idempotencyKey: `gate:${row.id}`, payload: { student_id: b.student_id, direction: b.direction }, notificationUserIds: guardians, notificationPayload: { kind: 'general', title: b.direction === 'in' ? 'Student entered school' : 'Student left school', body: `${person.name} ${b.direction === 'in' ? 'entered' : 'left'} through ${b.gate}.`, link: `/areas/departure/plan?scope=dependent&student_id=${b.student_id}`, metadata: { school_id: school, student_id: b.student_id } } });
+            return { id: row.id, saved: true };
+        });
+    }
+    async approvals(user) {
+        const rows = (await sql `SELECT v.*,s.name school_name,u.first_name||' '||u.last_name host_name
+   FROM gate_visitors v JOIN schools s ON s.id=v.school_id JOIN users u ON u.id=v.host_user_id AND u.is_active
+   WHERE v.host_user_id=${user.id}::uuid AND v.state='pending' AND v.expires_at>now()
+    AND (${user.active_school_id ?? null}::uuid IS NULL OR v.school_id=${user.active_school_id ?? null}::uuid)
+    AND EXISTS(SELECT 1 FROM school_memberships m WHERE m.school_id=v.school_id AND m.user_id=${user.id}::uuid AND m.is_active AND m.role IN ('staff','admin'))
+   ORDER BY v.created_at,v.id LIMIT 30`.execute(this.db)).rows;
+        return rows.map(visitorView);
+    }
+    async visitorChanged(tx, v, action) {
+        const audience = (await sql `SELECT DISTINCT m.user_id FROM school_memberships m
+   JOIN users u ON u.id=m.user_id AND u.is_active
+   WHERE m.school_id=${v.school_id}::uuid AND m.is_active AND m.role IN ('staff','admin')
+    AND (m.user_id=${v.host_user_id}::uuid OR m.role='admin'
+      OR staff_has_resource_permission(m.school_id,m.user_id,'gate.manage','institution',m.school_id))`.execute(tx)).rows.map(row => row.user_id);
+        const requested = action === 'requested';
+        const labels = { requested: 'Visitor approval requested', approve: 'Visitor approved', deny: 'Visitor declined', in: 'Visitor checked in', out: 'Visitor checked out' };
+        await this.events.enqueueUserEvent(tx, { schoolId: v.school_id, eventType: 'gate.visitor.updated', aggregateType: 'gate_visitor', aggregateId: v.id,
+            audienceUserIds: audience, payload: { visitor_id: v.id, revision: v.revision, action, refresh: ['gate', 'notifications'] },
+            idempotencyKey: `gate-visitor:${v.id}:${v.revision}`, notificationUserIds: requested && v.host_user_id ? [v.host_user_id] : ['approve', 'deny'].includes(action) ? [v.recorded_by] : v.host_user_id ? [v.host_user_id] : [],
+            notificationPayload: { kind: 'general', title: labels[action], body: requested ? `${v.name} is waiting at the gate. ${v.purpose}` : `${v.name} · ${labels[action]}`,
+                link: requested
+                    ? `/work/in-out/approvals?visitor=${encodeURIComponent(v.id)}&school=${encodeURIComponent(v.school_id)}`
+                    : ['approve', 'deny'].includes(action)
+                        ? `/areas/in-out/operate?section=visitors&visitor=${encodeURIComponent(v.id)}`
+                        : `/areas/in-out/operate?section=records&visitor=${encodeURIComponent(v.id)}`,
+                metadata: { school_id: v.school_id, visitor_id: v.id } } });
+    }
+    async recordVisitorMovementObservation(tx, v, direction, actorUserId) {
+        const observedAt = direction === 'in' ? v.checked_in_at : v.checked_out_at;
+        if (!observedAt)
+            throw new ConflictException(`Visitor ${direction === 'in' ? 'entry' : 'exit'} time was not recorded.`);
+        await this.observationIngress.recordObservations(tx, [{
+                school_id: v.school_id,
+                captured_by: { kind: 'human', user_id: actorUserId },
+                kind: 'movement.gate_observed',
+                subject: { kind: 'visitor', domain: 'gate', domain_id: v.id, label: v.name, lifecycle_state: 'active', source_revision: v.revision, metadata: { category: v.category, movement_state: direction === 'in' ? 'inside' : 'departed' } },
+                context: null,
+                source_type: 'gate.visitor_movement',
+                source_ref: v.request_id ?? v.id,
+                source_record_id: `${v.id}:${v.revision}`,
+                observed_at: observedAt.toISOString(),
+                received_at: executionNow().toISOString(),
+                evidence_refs: [`gate_visitor:${v.id}:${v.revision}`],
+                payload: { direction, gate: 'Main gate', capture_source: 'gatekeeper', identity_verified: true, evidence_scope: 'campus_boundary', person_scope: 'provisional_visitor' },
+                schema_version: 1,
+                state: 'accepted',
+                idempotency_key: `gate-visitor-observation:${v.id}:${v.revision}:${direction}`,
+                domain_event_id: null,
+            }]);
+    }
+    async visitor(user, school, body, upload) {
+        await this.access(user, school);
+        const b = z.object({ name: z.string().trim().min(2).max(150), phone: z.string().trim().min(6).max(32), purpose: z.string().trim().max(300).optional().default(''), host_user_id: z.preprocess(v => v === '' || v === undefined ? null : v, z.uuid().nullable()), category: z.enum(['parent', 'vendor', 'delivery', 'guest']).default('guest'), request_id: z.uuid().optional() }).parse(body);
+        const photo = validateVisitorPhoto(upload);
+        const requestId = b.request_id ?? randomUUID();
+        return this.db.transaction().execute(async (tx) => {
+            await this.access(user, school, tx);
+            await sql `SELECT pg_advisory_xact_lock(hashtextextended(${`visitor:${school}:${requestId}`},0))`.execute(tx);
+            const existing = (await sql `SELECT * FROM gate_visitors WHERE school_id=${school}::uuid AND request_id=${requestId}::uuid`.execute(tx)).rows[0];
+            if (existing) {
+                if (existing.recorded_by !== user.id || existing.name !== b.name || existing.phone !== b.phone || existing.purpose !== b.purpose || existing.host_user_id !== b.host_user_id || existing.category !== b.category || existing.photo_hash !== (photo?.hash ?? null))
+                    throw new ConflictException('Request reference already used. Review the visitor list before starting a new request.');
+                return visitorView(existing);
+            }
+            const host = b.host_user_id ? await tx.selectFrom('school_memberships as m').innerJoin('users as u', 'u.id', 'm.user_id').select(['u.first_name', 'u.last_name']).where('m.user_id', '=', b.host_user_id).where('m.school_id', '=', school).where('m.role', 'in', ['staff', 'admin']).where('m.is_active', '=', true).where('u.is_active', '=', true).executeTakeFirst() : null;
+            if (b.host_user_id && !host)
+                throw new BadRequestException('Select an active host in this school.');
+            const photoKey = photo ? randomUUID() : null;
+            if (photoKey && upload) {
+                const directory = join(config().uploadDir, 'gate-visitors', school);
+                await mkdir(directory, { recursive: true });
+                await writeFile(join(directory, photoKey), upload.data, { flag: 'wx', mode: 0o640 });
+            }
+            const v = (await sql `INSERT INTO gate_visitors(school_id,name,phone,purpose,host_user_id,recorded_by,request_id,category,photo_key,photo_type,photo_hash,state,checked_in_at)
+    VALUES(${school}::uuid,${b.name},${b.phone},${b.purpose},${b.host_user_id}::uuid,${user.id}::uuid,${requestId}::uuid,${b.category},${photoKey}::uuid,${photo?.type ?? null},${photo?.hash ?? null},${host ? 'pending' : 'inside'},${host ? null : executionNow()}) RETURNING *`.execute(tx)).rows[0];
+            if (!host)
+                await this.recordVisitorMovementObservation(tx, v, 'in', user.id);
+            await this.audit(tx, user, school, host ? 'visitor_registered' : 'visitor_direct_entry', v.id);
+            await this.visitorChanged(tx, v, host ? 'requested' : 'in');
+            return visitorView({ ...v, host_name: host ? `${host.first_name} ${host.last_name}` : '' });
+        });
+    }
+    async visitorPhoto(user, school, id) {
+        z.uuid().parse(school);
+        z.uuid().parse(id);
+        const v = (await sql `SELECT * FROM gate_visitors WHERE school_id=${school}::uuid AND id=${id}::uuid`.execute(this.db)).rows[0];
+        if (!v || !v.photo_key)
+            throw new NotFoundException('Visitor photo not found.');
+        const member = await this.db.selectFrom('school_memberships as m').innerJoin('users as u', 'u.id', 'm.user_id').select('m.role').where('m.school_id', '=', school).where('m.user_id', '=', user.id).where('m.is_active', '=', true).where('u.is_active', '=', true).where('m.role', 'in', ['staff', 'admin']).executeTakeFirst();
+        if (!member || (user.active_school_id && user.active_school_id !== school))
+            throw new ForbiddenException('Visitor photo access is not available.');
+        if (member.role !== 'admin' && v.host_user_id !== user.id)
+            await this.access(user, school);
+        const file = await readEnvironmentStoredFile(join(config().uploadDir, 'gate-visitors', school, v.photo_key), v.photo_type, 'visitor-photo');
+        return { ...file, type: file.content_type };
+    }
+    async visitorAction(user, school, id, action, body = {}) {
+        z.uuid().parse(school);
+        z.uuid().parse(id);
+        z.enum(['approve', 'deny', 'in', 'out']).parse(action);
+        const b = z.object({ expected_revision: z.number().int().positive().optional() }).parse(body ?? {});
+        return this.db.transaction().execute(async (tx) => {
+            const v = (await sql `SELECT v.*,u.first_name||' '||u.last_name host_name FROM gate_visitors v
+    LEFT JOIN users u ON u.id=v.host_user_id WHERE v.school_id=${school}::uuid AND v.id=${id}::uuid FOR UPDATE OF v`.execute(tx)).rows[0];
+            if (!v)
+                throw new NotFoundException('Visitor not found.');
+            const decision = ['approve', 'deny'].includes(action);
+            const state = { approve: 'approved', deny: 'denied', in: 'inside', out: 'out' }[action];
+            if (decision) {
+                const member = await tx.selectFrom('school_memberships as m').innerJoin('users as u', 'u.id', 'm.user_id').select('m.role').where('m.school_id', '=', school).where('m.user_id', '=', user.id).where('m.is_active', '=', true).where('u.is_active', '=', true).where('m.role', 'in', ['staff', 'admin']).executeTakeFirst();
+                if (!member || (member.role !== 'admin' && v.host_user_id !== user.id) || (user.active_school_id && user.active_school_id !== school))
+                    throw new ForbiddenException('Only the requested host or a school administrator can decide this request.');
+                if (b.expected_revision !== undefined && v.state === state && v.decided_by === user.id && v.revision === b.expected_revision + 1)
+                    return { saved: true, visitor: visitorView(v) };
+            }
+            else
+                await this.access(user, school, tx);
+            if (b.expected_revision !== undefined && b.expected_revision !== v.revision)
+                throw new ConflictException('Visitor request changed. Refresh and review the current status.');
+            if ((decision || action === 'in') && new Date(v.expires_at).getTime() <= executionNow().getTime())
+                throw new ConflictException('Visitor request expired. Ask the gate desk for a new request.');
+            if (v.state !== (decision ? 'pending' : action === 'in' ? 'approved' : 'inside'))
+                throw new ConflictException(decision ? 'Visitor decision already recorded.' : 'Visitor is not ready for this movement.');
+            const updated = (await sql `UPDATE gate_visitors SET state=${state},revision=revision+1,
+    decided_by=CASE WHEN ${decision} THEN ${user.id}::uuid ELSE decided_by END,
+    decided_at=CASE WHEN ${decision} THEN now() ELSE decided_at END,
+    checked_in_at=CASE WHEN ${action}='in' THEN now() ELSE checked_in_at END,
+    checked_out_at=CASE WHEN ${action}='out' THEN now() ELSE checked_out_at END
+    WHERE id=${id}::uuid AND school_id=${school}::uuid RETURNING *`.execute(tx)).rows[0];
+            if (action === 'in' || action === 'out')
+                await this.recordVisitorMovementObservation(tx, updated, action, user.id);
+            await this.audit(tx, user, school, `visitor_${action}`, id);
+            await this.visitorChanged(tx, updated, action);
+            return { saved: true, visitor: visitorView({ ...updated, host_name: v.host_name ?? '' }) };
+        });
+    }
+    async visitorPass(user, school, id) {
+        z.uuid().parse(id);
+        await this.admin(user, school);
+        return this.db.transaction().execute(async (tx) => {
+            await this.admin(user, school, tx);
+            const v = (await sql `SELECT name,state,expires_at FROM gate_visitors WHERE id=${id}::uuid AND school_id=${school}::uuid FOR UPDATE`.execute(tx)).rows[0];
+            if (!v || !['approved', 'inside'].includes(v.state))
+                throw new ConflictException('Approve the visitor before issuing a QR pass.');
+            if (new Date(v.expires_at).getTime() <= executionNow().getTime())
+                throw new ConflictException('Visitor request expired.');
+            const token = newGateToken(), expires = new Date(Math.min(new Date(v.expires_at).getTime(), executionNow().getTime() + 8 * 3600000));
+            await sql `UPDATE gate_visitors SET token_hash=${gateTokenHash(token)},pass_expires_at=${expires} WHERE id=${id}::uuid`.execute(tx);
+            await this.audit(tx, user, school, 'visitor_pass_issued', id);
+            return { qr: token, expires_at: expires, kind: 'visitor', name: v.name };
+        });
+    }
+    async gatekeeper(user, school, body) {
+        await this.admin(user, school);
+        const b = z.object({ name: z.string().trim().min(2).max(100), username: z.string().regex(/^[a-z0-9._-]{4,60}$/) }).parse(body);
+        const password = `E!7a${randomBytes(18).toString('base64url')}`, hash = await hashPassword(password);
+        return this.db.transaction().execute(async (tx) => {
+            await this.admin(user, school, tx);
+            if (await tx.selectFrom('users').select('id').where('username', '=', b.username).executeTakeFirst())
+                throw new ConflictException('This username already exists.');
+            const account = await tx.insertInto('users').values({ username: b.username, email: `${b.username}.${randomUUID()}@accounts.eduera.invalid`, password_hash: hash, first_name: b.name, last_name: '', role: 'staff', is_active: true, email_verified_at: executionNow() }).returning('id').executeTakeFirstOrThrow();
+            await tx.insertInto('school_memberships').values({ user_id: account.id, school_id: school, role: 'staff', is_active: true }).execute();
+            const person = await tx.insertInto('school_people').values({ school_id: school, first_name: b.name, last_name: '' }).returning('id').executeTakeFirstOrThrow();
+            const profile = await tx.insertInto('staff_profiles').values({ school_id: school, person_id: person.id, user_id: account.id, staff_code: `GATE-${randomBytes(4).toString('hex')}`, staff_kind: 'non_teaching', designation: 'Gatekeeper', department: 'Security', employment_type: 'full_time', joined_on: executionNow().toISOString().slice(0, 10), status: 'active', created_by: user.id, updated_by: user.id }).returning('id').executeTakeFirstOrThrow();
+            const role = (await sql `INSERT INTO staff_responsibility_types(school_id,code,name,category,scope_kind,description,access_summary,requires_acceptance,capability_permissions,context_kind,source_kind,workflow_family) VALUES(${school}::uuid,'gatekeeper','Gatekeeper','operations','school','School gate entry and exit','Manage In & Out',false,ARRAY['gate.manage'],'institution','system','gatekeeper') ON CONFLICT(school_id,code) DO NOTHING RETURNING id`.execute(tx)).rows[0] ?? (await sql `SELECT id FROM staff_responsibility_types WHERE school_id=${school}::uuid AND code='gatekeeper'`.execute(tx)).rows[0];
+            await sql `INSERT INTO staff_responsibility_assignments(school_id,responsibility_type_id,staff_profile_id,scope_label,starts_on,status,assigned_by) VALUES(${school}::uuid,${role.id}::uuid,${profile.id}::uuid,'School gate',current_date,'active',${user.id}::uuid)`.execute(tx);
+            await this.audit(tx, user, school, 'gatekeeper_created', account.id);
+            return { id: account.id, username: b.username, password };
+        });
+    }
+};
+GateService = __decorate([
+    Injectable(),
+    __param(2, Inject(OBSERVATION_INGRESS_PORT)),
+    __metadata("design:paramtypes", [DatabaseService,
+        SchoolEventService, Object])
+], GateService);
+export { GateService };
+//# sourceMappingURL=gate.service.js.map

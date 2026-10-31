@@ -3,11 +3,16 @@ import { z } from "zod";
 
 export const IMPORT_COLUMNS = ["admission_number","first_name","last_name","date_of_birth","class","roll_number","enrolled_on","guardian_key","guardian_first_name","guardian_last_name","guardian_phone","guardian_email","relationship"] as const;
 export type ImportColumn = typeof IMPORT_COLUMNS[number];
-export type ImportValues = Record<ImportColumn,string>;
-export const valuesSchema = z.object(Object.fromEntries(IMPORT_COLUMNS.map(key=>[key,z.string().trim().max(500).refine(value=>!value.includes(String.fromCharCode(0)),"Null characters are not supported.")])) as Record<ImportColumn,z.ZodString>).strict();
+export const PERSON_REFERENCE_COLUMNS = ['person_id','person_revision','guardian_person_id','guardian_person_revision'] as const;
+export type ImportValues = Record<ImportColumn,string> & Partial<Record<typeof PERSON_REFERENCE_COLUMNS[number],string | undefined>>;
+export const valuesSchema = z.object({ ...Object.fromEntries(IMPORT_COLUMNS.map(key=>[key,z.string().trim().max(500).refine(value=>!value.includes(String.fromCharCode(0)),"Null characters are not supported.")])) as Record<ImportColumn,z.ZodString>,
+  person_id:z.string().trim().max(36).optional(),person_revision:z.string().trim().max(12).optional(),
+  guardian_person_id:z.string().trim().max(36).optional(),guardian_person_revision:z.string().trim().max(12).optional() }).strict();
 export const guardianChoiceSchema = z.discriminatedUnion("mode",[
+  z.object({mode:z.literal('none')}).strict(),
   z.object({mode:z.literal("new")}).strict(),
   z.object({mode:z.literal("existing"),id:z.string().uuid()}).strict(),
+  z.object({mode:z.literal('person'),person_id:z.string().uuid(),expected_revision:z.number().int().positive()}).strict(),
 ]);
 export type GuardianChoice = z.infer<typeof guardianChoiceSchema>;
 export const normalizeName = (first:string,last:string)=>`${first} ${last}`.trim().toLocaleLowerCase("en");
@@ -19,7 +24,7 @@ export function parseImportCsv(source:string):ImportValues[]{
   if(source.includes(String.fromCharCode(0)))throw new BadRequestException("The file contains unsupported null characters. Save it as UTF-8 CSV.");
   const text=source.replace(/^\uFEFF/,"");
   const rows:string[][]=[];let row:string[]=[],field="",quoted=false,closed=false;
-  const endField=()=>{row.push(field);field="";closed=false;if(row.length>IMPORT_COLUMNS.length)throw new BadRequestException("The CSV has too many columns. Use the school template.");};
+  const endField=()=>{row.push(field);field="";closed=false;if(row.length>IMPORT_COLUMNS.length+PERSON_REFERENCE_COLUMNS.length)throw new BadRequestException("The CSV has too many columns. Use the school template.");};
   const endRow=()=>{endField();if(row.some(v=>v.trim()))rows.push(row);row=[];if(rows.length>501)throw new BadRequestException("Import at most 500 students at a time.");};
   for(let i=0;i<text.length;i++){
     const ch=text[i]!;
@@ -33,7 +38,7 @@ export function parseImportCsv(source:string):ImportValues[]{
   if(quoted)throw new BadRequestException("The CSV contains an unclosed quoted field.");
   if(field.length||row.length||closed)endRow();
   const header=rows.shift()?.map(v=>v.trim().toLowerCase());
-  if(!header||header.length!==IMPORT_COLUMNS.length||new Set(header).size!==header.length||IMPORT_COLUMNS.some(c=>!header.includes(c)))throw new BadRequestException(`Use exactly these CSV columns: ${IMPORT_COLUMNS.join(", ")}.`);
+  if(!header||new Set(header).size!==header.length||IMPORT_COLUMNS.some(c=>!header.includes(c))||header.some(c=>![...IMPORT_COLUMNS,...PERSON_REFERENCE_COLUMNS].includes(c as ImportColumn)))throw new BadRequestException(`Use the enrollment template columns, optionally with ${PERSON_REFERENCE_COLUMNS.join(', ')}.`);
   if(!rows.length)throw new BadRequestException("Add at least one student below the header row.");
   return rows.map((cells,index)=>{
     if(cells.length!==header.length)throw new BadRequestException(`Row ${index+2} has ${cells.length} fields; expected ${header.length}.`);

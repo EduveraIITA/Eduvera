@@ -17,7 +17,7 @@ export type PrincipalInsightTopic = "review" | "recording" | "followups" | "lear
 const titles: Record<PrincipalInsightTopic, string> = {
   review: "Attendance review", recording: "Missing records", followups: "Family follow-ups", "learning-review": "Learning review", operations: "Coverage & deadlines", finance: "Fee balances",
 };
-export function PrincipalInsightsPage({ topic = "review" }: { topic?: PrincipalInsightTopic }) {
+export function PrincipalInsightsPage({ topic = "review", presentation = "legacy" }: { topic?: PrincipalInsightTopic; presentation?: "legacy" | "workspace" }) {
   const query = useInsightReview(), [params, setParams] = useSearchParams(), location = useLocation();
   const { studentId } = useParams<{ studentId: string }>();
   const [filtersOpen, setFiltersOpen] = useState(false);
@@ -29,9 +29,8 @@ export function PrincipalInsightsPage({ topic = "review" }: { topic?: PrincipalI
   if (parentTopic !== "review") backParams.delete("via");
   const change = (key: string, value: string) => setParams(previous => { const next = new URLSearchParams(canonicalInsightSearch(previous.toString())); if (value) next.set(key, value); else next.delete(key); return next; }, { replace: true });
   useEffect(() => { if (query.isSuccess && location.hash === "#principal-deadlines") document.getElementById("principal-deadlines")?.scrollIntoView?.({ block: "start" }); }, [query.isSuccess, location.hash]);
-  return <OperationsShell portal="principal" active="insights" title={titles[topic]} backTo={insightPath("principal", parentTopic, backParams.toString())}>
-    <div className="analytics-page">
-      {topic === "operations" ? <Link className="analytics-refresh" to="/principal/teacher-feedback">Teacher feedback →</Link> : null}
+  const content = <div className="analytics-page">
+      {topic === "operations" ? <Link className="analytics-refresh" to="/more/feedback">Teacher feedback →</Link> : null}
       {!studentId ? <div className={`analytics-toolbar${compactFilters ? " insight-review-toolbar" : ""}`}>
         <label className="analytics-class-filter"><span className="analytics-sr-only">Class</span><select value={query.classId} onChange={event => change("class", event.target.value)}><option value="">All classes</option>{query.data?.classes.map(cls => <option key={cls.id} value={cls.id}>{cls.name}</option>)}</select></label>
         {compactFilters ? <button className="analytics-refresh" type="button" aria-label="Review period" aria-expanded={filtersOpen} aria-controls="insight-review-filters" onClick={() => setFiltersOpen(open => !open)}><SlidersHorizontal size={18} aria-hidden="true" /></button> : null}
@@ -49,6 +48,7 @@ export function PrincipalInsightsPage({ topic = "review" }: { topic?: PrincipalI
             {topic === "review" ? studentId ? <AttendanceStudentReview data={query.data} studentId={studentId} /> : <AttendanceChecks data={query.data} /> : topic === "recording" ? <RecordingCompleteness data={query.data} /> : topic === "followups" ? <FollowupInsights data={query.data} /> : topic === "learning-review" ? <LearningReview data={query.data} /> : topic === "operations" ? <TeachingInsights data={query.data} /> : <FeeInsights data={query.data} />}
             <p className="analytics-freshness">Updated {new Intl.DateTimeFormat("en-IN", { hour: "numeric", minute: "2-digit", timeZone: query.data.timezone }).format(new Date(query.data.generated_at))}</p>
           </> : null}
-    </div>
-  </OperationsShell>;
+    </div>;
+  if (presentation === "workspace") return content;
+  return <OperationsShell active="areas" title={titles[topic]} backTo={insightPath("principal", parentTopic, backParams.toString())}>{content}</OperationsShell>;
 }

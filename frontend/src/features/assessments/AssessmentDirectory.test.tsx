@@ -3,6 +3,7 @@ import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-li
 import type { ReactNode } from "react";
 import { Link, MemoryRouter, useLocation } from "react-router-dom";
 import { afterEach, describe, expect, it, vi } from "vitest";
+import * as applicationTime from "../simulation/applicationTime";
 import { AssessmentWorkspacePage } from "./AssessmentWorkspacePage";
 import { createAssessment, getAssessmentDetail, saveAssessmentResults, updateExamArrangements, type AssessmentResult, type AssessmentSummary, type AssessmentWorkspace } from "./api";
 
@@ -17,6 +18,18 @@ function Location(){return <output>{useLocation().search}</output>;}
 function mount(portal:"principal"|"teacher"="teacher",search="",workspace:AssessmentWorkspace=data){return render(<QueryClientProvider client={new QueryClient({defaultOptions:{queries:{retry:false}}})}><MemoryRouter initialEntries={[`/${portal}/assessments${search}`]}><Location/><AssessmentWorkspacePage portal={portal} schoolId="school-1" data={workspace} refresh={vi.fn()}/></MemoryRouter></QueryClientProvider>);}
 
 describe("assessment directory",()=>{
+  it("uses the neutral assessment workspace without selecting a persona portal",async()=>{
+    vi.mocked(getAssessmentDetail).mockResolvedValue({assessment:{...assessment,term_id:"term-1"},results:[],publications:[],viewer_role:"moderator"});
+    const workspace={...data,mode:"admin" as const,references:{terms:[],classes:[],subjects:[],staff:[]}};
+    render(<QueryClientProvider client={new QueryClient({defaultOptions:{queries:{retry:false}}})}><MemoryRouter initialEntries={["/areas/assessments/manage"]}><AssessmentWorkspacePage presentation="workspace" surface="manage" schoolId="school-1" data={workspace} refresh={vi.fn()}/></MemoryRouter></QueryClientProvider>);
+
+    expect(screen.getByRole("heading",{name:"Assessment coordination"})).toBeVisible();
+    expect(screen.getByRole("link",{name:"Back"})).toHaveAttribute("href","/areas/assessments");
+    fireEvent.click(screen.getByRole("button",{name:/English class test/}));
+    expect(await screen.findByRole("heading",{name:"English class test"})).toBeVisible();
+    expect(screen.getByRole("link",{name:"Back"})).toHaveAttribute("href","/areas/assessments/manage");
+  });
+
   it.each(['principal','teacher'] as const)('keeps the %s result register flat and published marks read-only',async portal=>{
     vi.mocked(getAssessmentDetail).mockResolvedValue({assessment:{...assessment,status:'published',term_id:'term-1',evidence_requirement:'none'},results:[result,{...result,id:'result-2',first_name:'Rohan',outcome:'unrecorded',marks:null,feedback:''}],publications:[],viewer_role:'examiner'});
     mount(portal,'?assessment=test-1');
@@ -122,6 +135,9 @@ describe("assessment directory",()=>{
   });
 
   it("lets an administrator correct blocked exam arrangements without recreating the assessment",async()=>{
+    // Keep this planning journey before its scheduled sitting. Otherwise the
+    // native future-date constraint correctly prevents submission as time passes.
+    vi.spyOn(applicationTime,"applicationNow").mockReturnValue(new Date("2026-10-17T04:00:00.000Z"));
     const planning:AssessmentWorkspace={mode:"admin",cycles:[],assessments:[assessment],references:{terms:[],classes:[],subjects:[],staff:[{id:"teacher-1",first_name:"Meera",last_name:"Kapoor",designation:"Teacher"},{id:"teacher-2",first_name:"Neelam",last_name:"Mishra",designation:"Teacher"}],spaces:[{id:"hall-1",name:"Main hall",capacity:60},{id:"hall-2",name:"Senior hall",capacity:80}]}};
     const exam={...assessment,assessment_kind:"exam",status:"draft" as const,scheduled_at:"2026-10-20T04:00:00.000Z",duration_minutes:90,venue:"Main hall",term_id:"term-1"};
     const operation={sitting:{id:"sitting-1",state:"planning" as const,revision:3,space_id:"hall-1",starts_at:"2026-10-20T04:00:00.000Z",ends_at:"2026-10-20T05:30:00.000Z"},space:{id:"hall-1",name:"Main hall",code:"MAIN",kind:"auditorium",capacity:60,campus_name:"Main campus"},invigilators:[{id:"assignment-1",user_id:"teacher-1",username:"meera.teacher",name:"Meera Kapoor",avatar_url:null,status:"accepted" as const,response_note:"",revision:2}],viewer_assignment:null,candidates:[],incidents:[],attendance_counts:{total:0,unrecorded:0,present:0,late:0,absent:0,left_early:0},policy:{readiness_minutes_before:30,attendance_close_after_minutes:15,minimum_invigilators:1,require_all_candidate_attendance:true,post_completion_marking_mode:"manual" as const,revision:1},readiness:{checked_at:"2026-10-17T04:00:00.000Z",can_schedule:false,blockers:[{code:"room_timetable" as const,message:"Main hall is already used by Class 8A.",source:"effective_timetable" as const,source_id:"room:one"}],candidate_count:25,room_capacity:60,accepted_invigilator_count:1,required_invigilator_count:1,timetable_contract:"effective_school_schedule_v4" as const}};
@@ -135,7 +151,7 @@ describe("assessment directory",()=>{
     fireEvent.click(within(dialog).getByRole("checkbox",{name:/Neelam Mishra/}));
     fireEvent.click(within(dialog).getByRole("button",{name:"Save arrangements"}));
 
-    await waitFor(()=>expect(updateExamArrangements).toHaveBeenCalledWith("school-1","test-1",expect.objectContaining({expected_assessment_revision:1,expected_sitting_revision:3,space_id:"hall-2",duration_minutes:90,invigilator_user_ids:["teacher-1","teacher-2"]})));
+    await waitFor(()=>expect(updateExamArrangements).toHaveBeenCalledWith("school-1","test-1",expect.objectContaining({expected_assessment_revision:1,expected_sitting_revision:3,scheduled_at:exam.scheduled_at,space_id:"hall-2",duration_minutes:90,invigilator_user_ids:["teacher-1","teacher-2"]})));
   });
 
   it("keeps cycle creation available when there is no cycle for a new assessment",()=>{
@@ -159,5 +175,29 @@ describe("assessment directory",()=>{
 
     expect(await screen.findByRole("heading", { name: "English class test" })).toBeVisible();
     expect(getAssessmentDetail).toHaveBeenCalledTimes(2);
+  });
+});
+
+
+describe("assessment cycle and policy setup",()=>{
+  const planning=():AssessmentWorkspace=>({mode:"admin",assessments:[],cycles:["2026-27","2027-28"].map((year,index)=>({id:`cycle-${index}`,term_id:`term-${index}`,name:`Cycle ${year}`,code:`C${index}`,starts_on:"2026-10-01",ends_on:"2026-10-31",status:"active",result_label:"Result",revision:1,term_name:"Term",academic_year:year,assessment_count:0,published_count:0})),references:{terms:[],classes:[{id:"future",name:"Future class",academic_year:"2027-28"},{id:"current",name:"Current class",academic_year:"2026-27"}],subjects:[{id:"subject-1",name:"English",color:"#0037b0",icon:"book"}],staff:[],spaces:[{id:"hall-1",name:"Hall"}],grading_policies:[]}});
+  function open(workspace:AssessmentWorkspace){mount("principal","",workspace);fireEvent.click(screen.getByLabelText("Create assessment or cycle"));fireEvent.click(screen.getByRole("button",{name:"New assessment"}));}
+  it("keeps classes inside the selected cycle year and updates the default on cycle change",()=>{
+    open(planning());
+    const classes=screen.getByRole("combobox",{name:"Class",exact:true});
+    expect(classes).toHaveValue("current");
+    expect(within(classes).queryByRole("option",{name:"Future class"})).not.toBeInTheDocument();
+    fireEvent.change(screen.getByRole("combobox",{name:"Cycle",exact:true}),{target:{value:"cycle-1"}});
+    expect(classes).toHaveValue("future");
+    expect(within(classes).queryByRole("option",{name:"Current class"})).not.toBeInTheDocument();
+    expect(screen.getByRole("combobox",{name:"Result policy",exact:true})).toHaveAccessibleDescription(/Marks are recorded as evidence/);
+  });
+  it("prevents creation when the selected cycle has no eligible class",()=>{
+    const workspace=planning();
+    if(workspace.mode!=="admin")throw Error("Expected admin fixture");
+    workspace.references.classes=[];
+    open(workspace);
+    expect(screen.getByText(/No classes are available for this cycle/)).toBeVisible();
+    expect(screen.getByRole("button",{name:"Create assessment"})).toBeDisabled();
   });
 });

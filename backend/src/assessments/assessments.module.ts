@@ -6,9 +6,12 @@ import { AssessmentModelBridgeService } from "./assessment-model-bridge.service.
 import { AssessmentsController } from "./assessments.controller.js";
 import { AssessmentsService } from "./assessments.service.js";
 import { ExamOperationsService } from "./exam-operations.service.js";
+import { ActivityAttendanceKernelModule } from "../attendance/activity-attendance-kernel.module.js";
+import { SchedulePlanningModule } from '../schedule-planning/schedule-planning.module.js';
+import { InvigilationInvitationPolicyModule } from './invigilation-invitation-policy.module.js';
 
 @Module({
-  imports: [SchoolModule, CampusModelCoreModule],
+  imports: [SchoolModule, CampusModelCoreModule, ActivityAttendanceKernelModule, SchedulePlanningModule, InvigilationInvitationPolicyModule],
   controllers: [AssessmentsController],
   providers: [AssessmentsService, ExamOperationsService, AssessmentModelBridgeService, AssessmentInvigilationOfferBridgeService],
   exports: [AssessmentsService, ExamOperationsService],

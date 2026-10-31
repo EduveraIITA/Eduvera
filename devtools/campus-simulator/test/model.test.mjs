@@ -12,7 +12,7 @@ import {
 const processStartedAt = new Date("2026-10-16T00:00:00.000Z");
 
 const legacyOffsets = new Map([
-  ["teacher-attendance", 600],
+  ["teacher-attendance-each-lesson", 600],
   ["staff-guardian-message", 1200],
   ["publish-acknowledgement", 300],
   ["guardian-acknowledgement", 900],
@@ -99,7 +99,7 @@ test("replays the real published Cambridge day through one configured one-hour c
   assert.equal(phaseAt(new Date("2026-10-16T10:12:00.000Z"), routine).period_number, 2);
   assert.equal(phaseAt(new Date("2026-10-16T11:00:00.000Z"), routine).id, "after-school-hours");
 
-  const attendance = behavior.actions.find((action) => action.id === "teacher-attendance");
+  const attendance = { ...behavior.actions.find((action) => action.id === "teacher-attendance-each-lesson"), period_number: 1 };
   const dueAt = new Date(actionDueAt(attendance, routine)).getTime();
   assert.ok(dueAt > startedAt.getTime());
   assert.ok(dueAt < new Date(routine.phases[0].wall_ends_at).getTime());
@@ -150,7 +150,7 @@ test("reports actual campus-local time and phase-relative action windows", async
   assert.equal(simulatedAt(new Date("2026-10-16T03:30:00.000Z"), routine), "2026-10-16T09:00:00+05:30");
   assert.equal(simulatedAt(new Date("2026-10-16T10:00:00.000Z"), routine), "2026-10-16T15:30:00+05:30");
 
-  const attendance = behavior.actions.find((action) => action.id === "teacher-attendance");
+  const attendance = { ...behavior.actions.find((action) => action.id === "teacher-attendance-each-lesson"), period_number: 1 };
   const notice = behavior.actions.find((action) => action.id === "publish-acknowledgement");
   const invigilation = behavior.reactions.find((reaction) => reaction.id === "accept-exam-invigilation");
   assert.equal(behavior.version, "cambridge.behavior.v6");
@@ -402,4 +402,16 @@ test("runs a configured Saturday because school days come from the effective sch
   assert.equal(routine.reference_weekday, 6);
   assert.equal(routine.is_operating_day, true);
   assert.equal(phaseAt(new Date("2026-10-17T03:30:00.000Z"), routine).mode, "lesson");
+});
+
+test("uses the requested simulated school date instead of the API wall-clock date", async () => {
+  const behavior = await loadBehaviorFixture();
+  const startedAt = new Date("2026-10-17T10:00:00.000Z");
+  const timetable = schoolDay({ date: "2026-10-19" });
+  timetable.context.today = "2026-10-17";
+
+  const routine = createRoutineSchedule({ startedAt, now: startedAt, behavior, timetable });
+
+  assert.equal(routine.reference_date, "2026-10-19");
+  assert.equal(simulatedAt(startedAt, routine), "2026-10-19T09:00:00+05:30");
 });

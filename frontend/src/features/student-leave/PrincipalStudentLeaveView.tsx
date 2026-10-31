@@ -9,7 +9,7 @@ import {
   X,
 } from "lucide-react";
 import { useEffect, useMemo, useRef, useState, type FormEvent } from "react";
-import { Link } from "react-router-dom";
+import { Link, useSearchParams } from "react-router-dom";
 import type { ApiLeaveRequest } from "../school/api";
 
 export type SchoolLeaveDecision = "approve" | "reject";
@@ -72,6 +72,13 @@ function statusTone(status: string) {
 }
 
 function LeaveQueue({ queue, selectedId, pending }: { queue: ApiLeaveRequest[]; selectedId?: string; pending: boolean }) {
+  const [params, setParams] = useSearchParams();
+  const pages = Math.max(1, Math.ceil(queue.length / 20));
+  const selectedPage = Math.floor(Math.max(0, queue.findIndex((request) => request.id === selectedId)) / 20) + 1;
+  const requested = Number(params.get("leave_page") ?? selectedPage);
+  const page = Number.isFinite(requested) ? Math.min(pages, Math.max(1, Math.floor(requested))) : 1;
+  const requestHref = (id: string) => { const next = new URLSearchParams(params); next.set("request", id); if (page > 1) next.set("leave_page", String(page)); else next.delete("leave_page"); return `/areas/attendance/leave/review?${next}`; };
+  const changePage = (nextPage: number) => setParams((current) => { const next = new URLSearchParams(current); if (nextPage === 1) next.delete("leave_page"); else next.set("leave_page", String(nextPage)); return next; });
   return (
     <section className="student-leave-queue" aria-labelledby="student-leave-queue-heading">
       <header>
@@ -83,11 +90,11 @@ function LeaveQueue({ queue, selectedId, pending }: { queue: ApiLeaveRequest[]; 
       </header>
       {pending ? <p className="student-leave-queue__empty" role="status">Loading requests…</p> : queue.length ? (
         <div className="student-leave-queue__rows">
-          {queue.map((request) => (
+          {queue.slice((page - 1) * 20, page * 20).map((request) => (
             <Link
               key={request.id}
               className={request.id === selectedId ? "is-selected" : undefined}
-              to={`/principal/student-leave?request=${encodeURIComponent(request.id)}`}
+              to={requestHref(request.id)}
               aria-current={request.id === selectedId ? "true" : undefined}
             >
               <span className="student-leave-queue__avatar" aria-hidden="true">{initials(request)}</span>
@@ -101,6 +108,7 @@ function LeaveQueue({ queue, selectedId, pending }: { queue: ApiLeaveRequest[]; 
           ))}
         </div>
       ) : <p className="student-leave-queue__empty"><Check size={18} aria-hidden="true" />No requests need a school decision.</p>}
+      {pages > 1 && !pending ? <nav className="student-leave-pagination" aria-label="Leave request pages"><button type="button" disabled={page === 1} onClick={() => changePage(page - 1)}>Previous</button><span>Page {page} of {pages} · {queue.length} requests</span><button type="button" disabled={page === pages} onClick={() => changePage(page + 1)}>Next</button></nav> : null}
     </section>
   );
 }
@@ -229,7 +237,7 @@ export function PrincipalStudentLeaveView({ queue, selected, requestedId, busy =
     <div className="principal-student-leave-page">
       <LeaveQueue queue={queue} selectedId={selected?.id} pending={queuePending} />
       {queueUnavailable ? <p className="student-leave-queue-warning" role="status">The decision queue could not refresh. The opened request is still available below.</p> : null}
-      {selected ? <LeaveDetail request={selected} requestedId={requestedId} busy={busy} error={error} onDecide={onDecide} /> : requestedId ? <section className="student-leave-not-found" role="status"><FileText size={22} /><h2>Request not available</h2><p>It may be outside your school scope or no longer exist.</p><Link to="/principal/student-leave">Open the current queue</Link></section> : null}
+      {selected ? <LeaveDetail request={selected} requestedId={requestedId} busy={busy} error={error} onDecide={onDecide} /> : requestedId ? <section className="student-leave-not-found" role="status"><FileText size={22} /><h2>Request not available</h2><p>It may be outside your school scope or no longer exist.</p><Link to="/areas/attendance/leave/review">Open the current queue</Link></section> : null}
     </div>
   );
 }

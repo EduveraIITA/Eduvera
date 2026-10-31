@@ -10,6 +10,7 @@ import type {
 } from "../src/governance/decision-authority.port.js";
 import { StaffLeaveModelBridgeService } from "../src/staff-operations/staff-leave-model-bridge.service.js";
 import { StaffOperationsService } from "../src/staff-operations/staff-operations.service.js";
+import { leaveReviewRouteBasis } from "../src/staff-operations/staff-leave-review-routing.contracts.js";
 import type { TemporalContextPort } from "../src/campus-model-core/temporal-context.port.js";
 import { createStaffCoverageReconciliationTestDouble } from "./staff-coverage-reconciliation.test-support.js";
 
@@ -131,9 +132,18 @@ function setup(receipt: ReturnType<typeof matchedReceipt> | {
     outcome_id: ids.outcome,
     replayed: false,
   });
+  const resolveEventRoute = vi.fn().mockResolvedValue({ status: "matched", behaviour_version_id: ids.behaviour, subscription_id: ids.subscription,
+      message_kind: "request", message_schema_version: 1, response_due_after_seconds: null, expires_after_seconds: null,
+      reaction_kind: "staff_leave_decision_review", behaviour_configuration: { workflow: "staff_leave_decision_review",
+        reviewer_user_id: ids.owner, reviewer_person_id: ids.person, authority_basis: leaveReviewRouteBasis(authorityReceipt) },
+      selector: { required_capability: "staff_leave:decide", scope_mode: "institution", min_recipients: 1, max_recipients: 1 } });
   const coordination: CoordinationRuntimePort = {
-    resolveEventRoute: vi.fn(),
-    authorizeCandidateRecipients: vi.fn(),
+    supersedeDomainMessage: vi.fn(),
+    findExactTrace: vi.fn(),
+    hasAcceptedSourceEvent: vi.fn(),
+    listOperationalMessageWork: vi.fn(),
+    resolveEventRoute,
+    authorizeCandidateRecipients: vi.fn().mockResolvedValue({ authorised: [{ agent_kind: "human", user_id: ids.owner }], unresolved: [], unauthorized: [] }),
     publishAcceptedEvent,
     recordMessageOutcome,
     recordRecipientResponse,
@@ -144,6 +154,7 @@ function setup(receipt: ReturnType<typeof matchedReceipt> | {
     mocks: {
       resolveDecisionOwner,
       assertDecisionAuthority,
+      resolveEventRoute,
       publishAcceptedEvent,
       recordMessageOutcome,
       recordRecipientResponse,
@@ -176,6 +187,25 @@ function submissionInput() {
 }
 
 describe("staff leave model bridge", () => {
+  it.each(["reviewer", "person", "authority", "schema", "deadline", "expiry"] as const)("requires explicit fresh delivery binding: %s", async kind => {
+    const { service, coordination, mocks } = setup();
+    const route = await coordination.resolveEventRoute(transaction, { school_id: ids.school, source_domain: "staff_operations",
+      event_type: "staff.leave.submitted", selector_key: "leave_decision_owner", occurred_at: "2026-10-16T10:00:00.000Z" });
+    if (route.status !== "matched") throw new Error("Expected configured test route.");
+    const config = route.behaviour_configuration as Record<string, unknown>;
+    const changed = { ...route, behaviour_configuration: { ...config } };
+    if (kind === "reviewer") (changed.behaviour_configuration as Record<string, unknown>).reviewer_user_id = ids.requester;
+    if (kind === "person") (changed.behaviour_configuration as Record<string, unknown>).reviewer_person_id = ids.profile;
+    if (kind === "authority") (changed.behaviour_configuration as Record<string, unknown>).authority_basis = { ...leaveReviewRouteBasis(authorityReceipt), rule: { id: ids.rule, revision: 1 } };
+    if (kind === "schema") changed.message_schema_version = 2;
+    if (kind === "deadline") changed.response_due_after_seconds = 60;
+    if (kind === "expiry") changed.expires_after_seconds = 60;
+    mocks.resolveEventRoute.mockResolvedValue(changed);
+    await expect(service.deliveryReady(transaction, ids.school, authorityReceipt, "2026-10-16T10:00:00.000Z")).resolves.toBe(false);
+    await expect(service.publishSubmitted(transaction, submissionInput())).rejects.toThrow(/current leave reviewer must confirm/i);
+    expect(mocks.publishAcceptedEvent).not.toHaveBeenCalled();
+  });
+
   it("resolves only the configured staff-leave decision owner", async () => {
     const { mocks, service } = setup();
     await expect(service.resolveDecisionOwner(
@@ -333,6 +363,7 @@ describe("staff leave model bridge", () => {
       {} as never,
       createStaffCoverageReconciliationTestDouble(),
       {} as TemporalContextPort,
+      {} as never,
     );
     await expect((staff as unknown as {
       canReviewStaffLeave: (
@@ -383,7 +414,8 @@ describe("staff leave domain integration contract", () => {
     const withdraw = service.slice(service.indexOf("async withdrawLeave"));
     expect(withdraw).toContain("cancelSubmittedRequest");
     expect(withdraw).toContain("submissionTrace.original_owner_user_id");
-    expect(withdraw).toContain('cancellation_authority: "original_message_sender"');
+    expect(withdraw).toContain('cancellation_authority: needsDomainClosure ? "native_pending_leave_requester" : "original_message_sender"');
+    expect(withdraw).toContain("supersedeReview");
     expect(withdraw).not.toContain("resolveDecisionOwner");
     expect(withdraw).not.toContain("SELECT user_id FROM school_memberships");
     expect(migration).toContain("correlation_id uuid NOT NULL");

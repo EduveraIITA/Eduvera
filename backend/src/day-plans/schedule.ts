@@ -1,6 +1,7 @@
 import { BadRequestException } from "@nestjs/common";
 import { sql } from "kysely";
 import type { PlanDb, PlanPeriod } from "./contracts.js";
+import { lockCampusSpaceUse } from "../common/campus-space-use.js";
 export interface ScheduleRow extends PlanPeriod {
   id: string;
   class_section_id: string;
@@ -30,12 +31,13 @@ export async function effectiveSchedule(
   date: string,
 ) {
   return (
-    await sql<ScheduleRow>`SELECT * FROM effective_school_schedule_v3(${schoolId}::uuid,${date}::date) ORDER BY starts_at,period_number`.execute(
+    await sql<ScheduleRow>`SELECT * FROM effective_school_schedule_v4(${schoolId}::uuid,${date}::date) ORDER BY starts_at,period_number`.execute(
       db,
     )
   ).rows;
 }
 export async function lockSchedule(db: PlanDb, schoolId: string) {
+  await lockCampusSpaceUse(db, schoolId);
   await sql`SELECT pg_advisory_xact_lock(hashtextextended(${`schedule:${schoolId}`},0))`.execute(
     db,
   );
@@ -91,8 +93,8 @@ export async function scheduleConflicts(
           type: "teacher",
         });
       if (
-        a.room.trim() &&
-        a.room.trim().toLowerCase() === b.room.trim().toLowerCase() &&
+        (a.space_id && b.space_id ? a.space_id === b.space_id : a.room.trim() &&
+        a.room.trim().toLowerCase() === b.room.trim().toLowerCase()) &&
         a.slot_type !== "break" &&
         b.slot_type !== "break"
       )

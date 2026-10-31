@@ -157,6 +157,8 @@ export interface ApiDiaryItem {
   due_at: string | null;
   requires_acknowledgement: boolean;
   acknowledged: boolean;
+  completed: boolean | null;
+  completed_at: string | null;
   published_at: string;
   notes: Array<{ id: string; author_name: string; body: string; created_at: string }>;
 }
@@ -394,10 +396,14 @@ export function getParentHome(studentId?: string) {
   return apiFetch<ParentHomeResponse>(withQuery("/api/v1/screens/parent/home/", { student_id: studentId }));
 }
 
-export function setHomeworkCompleted(itemId: string, studentId: string, completed: boolean) {
+export function getDiaryItem(itemId: string, studentId: string) {
+  return apiFetch<ApiDiaryItem>(withQuery(`/api/v1/diary/${encodeURIComponent(itemId)}/`, { student_id: studentId }));
+}
+
+export function setHomeworkCompleted(itemId: string, studentId: string, completed: boolean, command?: { command_id: string }) {
   return apiFetch(`/api/v1/homework/${itemId}/complete/${completed ? "" : `?student_id=${encodeURIComponent(studentId)}`}`, completed
-    ? { method: "POST", body: JSON.stringify({ student_id: studentId }) }
-    : { method: "DELETE" });
+    ? { method: "POST", body: JSON.stringify({ student_id: studentId, ...(command ? { command } : {}) }) }
+    : { method: "DELETE", ...(command ? { body: JSON.stringify({ command }) } : {}) });
 }
 
 export function getParentAttendance(studentId?: string) {
@@ -713,9 +719,9 @@ export function acknowledgeDiary(itemId: string, studentId: string) {
   });
 }
 
-export function addDiaryNote(itemId: string, studentId: string, body: string) {
+export function addDiaryNote(itemId: string, studentId: string, body: string, command?: { command_id: string; note_id: string }) {
   return apiFetch(`/api/v1/diary/${itemId}/notes/`, {
     method: "POST",
-    body: JSON.stringify({ student_id: studentId, body }),
+    body: JSON.stringify({ student_id: studentId, body, ...(command ? { command } : {}) }),
   });
 }

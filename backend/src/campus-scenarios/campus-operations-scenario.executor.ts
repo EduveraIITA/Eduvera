@@ -77,6 +77,12 @@ function isIntervention(value: ScenarioValue | null): value is ScenarioValue & C
     && Number.isFinite(Date.parse(candidate.ends_at));
 }
 
+function isBaselineSnapshotPlan(value: ScenarioValue | null): value is ScenarioValue & { type: "baseline_snapshot" } {
+  return Boolean(value && typeof value === "object" && !Array.isArray(value)
+    && (value as { type?: unknown }).type === "baseline_snapshot"
+    && Object.keys(value).length === 1);
+}
+
 function policyNumber(input: ScenarioExecutorInput, key: string): number | null {
   const parameters = input.sample.behaviour_policy?.parameters;
   if (!parameters || typeof parameters !== "object" || Array.isArray(parameters)) return null;
@@ -98,8 +104,10 @@ export class CampusOperationsScenarioExecutor implements PureScenarioExecutor {
 
   execute(input: ScenarioExecutorInput): Promise<ScenarioExecutorOutput> {
     if (!isSnapshot(input.snapshot)) throw new Error("Campus scenario executor requires a campus operations snapshot.");
-    if (input.plan.key === "alternative" && !isIntervention(input.plan.intervention)) {
-      throw new Error("Alternative campus scenario requires a supported intervention.");
+    if (input.plan.key === "alternative"
+      && !isIntervention(input.plan.intervention)
+      && !isBaselineSnapshotPlan(input.plan.intervention)) {
+      throw new Error("Alternative campus scenario requires a supported intervention or baseline snapshot plan.");
     }
     const intervention = isIntervention(input.plan.intervention) ? input.plan.intervention : null;
     const stochastic = input.sample.kind === "monte_carlo" && input.sample.behaviour_policy !== null;
@@ -215,12 +223,12 @@ export class CampusOperationsScenarioExecutor implements PureScenarioExecutor {
       }],
       assumptions,
       unsupported: [
-        {
+        ...(intervention ? [{
           domain: "resource_allocation",
           capability: "eligible_candidate_assignment",
           reason: "The snapshot does not contain reviewed teacher eligibility or alternative-space constraints, so the scenario never invents a candidate assignment.",
-        },
-        ...(!stochastic ? [{
+        }] : []),
+        ...(intervention && !stochastic ? [{
           domain: "staff_coordination",
           capability: "cohort_response_forecast",
           reason: "No reviewed versioned cohort behaviour policy was supplied; stochastic ranges are unavailable.",

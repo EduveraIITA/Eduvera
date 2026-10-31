@@ -1,7 +1,8 @@
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { useState, type FormEvent } from "react";
+import { useRef, useState, type FormEvent } from "react";
 import { apiFetch } from "../../lib/api";
 import { LiveRouteError, ScreenLoading } from "../school/LiveRouteState";
+import { InvigilationInvitationRules } from "./InvigilationInvitationRules";
 
 type ExaminationRules = {
   readiness_minutes_before: number;
@@ -27,6 +28,11 @@ export function ExaminationOperatingRules({
   });
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState("");
+  const dirty = useRef({ examination: false, invitations: false });
+  const setDirty = (part: keyof typeof dirty.current, value: boolean) => {
+    dirty.current[part] = value;
+    onDirtyChange(dirty.current.examination || dirty.current.invitations);
+  };
 
   if (query.isPending) return <ScreenLoading />;
   if (query.isError) return <LiveRouteError error={query.error} onRetry={query.refetch} />;
@@ -49,7 +55,7 @@ export function ExaminationOperatingRules({
           post_completion_marking_mode: form.get("post_completion_marking_mode"),
         }),
       });
-      onDirtyChange(false);
+      setDirty("examination", false);
       await query.refetch();
       await client.invalidateQueries();
       setMessage("Examination rules saved.");
@@ -63,7 +69,7 @@ export function ExaminationOperatingRules({
   return <section className="office-panel operating-category">
     <h2>Examination day</h2>
     <p className="office-hint">Set the institution-wide preparation and closing behaviour for physical examinations. Each sitting keeps the rule version it received.</p>
-    <form className="office-form" key={rules.revision} onChange={() => onDirtyChange(true)} onSubmit={(event) => void submit(event)}>
+    <form className="office-form" key={rules.revision} onChange={() => setDirty("examination", true)} onSubmit={(event) => void submit(event)}>
       <div className="office-form-grid">
         <label className="office-field">Begin readiness checks before start (minutes)
           <input name="readiness_minutes_before" type="number" required min="0" max="10080" defaultValue={rules.readiness_minutes_before}/>
@@ -88,5 +94,6 @@ export function ExaminationOperatingRules({
       <button className="office-primary" disabled={busy}>{busy ? "Saving…" : "Save changes"}</button>
       {message ? <p role="status" className="office-hint">{message}</p> : null}
     </form>
+    <InvigilationInvitationRules schoolId={schoolId} onDirtyChange={value => setDirty("invitations", value)} />
   </section>;
 }

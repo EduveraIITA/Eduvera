@@ -1,0 +1,8 @@
+.join-recipient { margin:0; color:var(--thatcampus-ink-secondary); font-size:14px; overflow-wrap:anywhere; }
+.join-success { display:grid; min-width:0; gap:16px; }
+.join-success > p { margin:0; overflow-wrap:anywhere; }
+.join-proof { display:grid; min-width:0; gap:8px; }
+.join-secondary { display:inline-flex; justify-content:center; align-items:center; gap:8px; min-height:44px; padding:8px 12px; border-radius:var(--thatcampus-radius-control); color:var(--thatcampus-ink); background:var(--thatcampus-surface); box-shadow:var(--thatcampus-shadow-control); font-size:14px; font-weight:600; }
+.join-secondary:disabled { opacity:.65; }
+.join-success .auth-primary-button { width:100%; white-space:normal; text-align:center; }
+.join-proof .auth-entry-note { margin:0; }

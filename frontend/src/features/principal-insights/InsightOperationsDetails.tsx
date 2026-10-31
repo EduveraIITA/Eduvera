@@ -14,7 +14,7 @@ export function TeachingInsights({ data }: { data: PrincipalInsights }) {
       ]} />
       <ComparisonBars label="Daily teaching coverage" rows={data.schedule.map(day => ({ id: day.date, name: shortDate(day.date), value: day.planned ? (day.planned - day.unassigned) / day.planned * 100 : null, detail: `${day.planned - day.unassigned} / ${day.planned} periods assigned`, tone: day.unassigned ? "warning" : "positive" }))} />
       <p className="analytics-note">{data.schedule.reduce((sum, item) => sum + item.cancelled, 0)} cancelled periods excluded. Assigned does not mean taught; unaccepted cover remains unassigned.</p>
-      <Link className="analytics-module-link" to="/principal/timetable">Review timetable</Link>
+      <Link className="analytics-module-link" to="/areas/timetable/planning">Review timetable</Link>
     </section>
     <section className="analytics-panel" id="principal-deadlines"><header><h2>Overlapping deadlines</h2></header>
       <p className="analytics-support">Class-days with 3 or more homework or assessment deadlines in the next 7 days.</p>
@@ -39,6 +39,6 @@ export function FeeInsights({ data }: { data: PrincipalInsights }) {
     <p className="analytics-support">{money(paid)} allocated against {money(due)} net fees due.</p>
     {data.fees.length ? <ComparisonBars label="Outstanding balance by age" unit="count" formatValue={money} rows={[...data.fees].sort((a,b) => order.indexOf(a.band) - order.indexOf(b.band)).map(band => ({ id: band.band, name: band.band, value: band.balance_paise, detail: `${money(band.paid_paise)} allocated against ${money(band.due_paise)} due` }))} /> : <p className="analytics-empty">No fee invoices are due.</p>}
     <p className="analytics-note">As of {shortDate(data.operational_date)}. Credits, allocated payments and refunds are included; future instalments are excluded. Amounts due today are not overdue.</p>
-    <Link className="analytics-module-link" to="/principal/fees">Open fee ledger</Link>
+    <Link className="analytics-module-link" to="/areas/fees/ledger">Open fee ledger</Link>
   </section>;
 }

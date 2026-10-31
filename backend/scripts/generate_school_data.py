@@ -5,6 +5,11 @@ The generator uses only Python's standard library.  It emits one transactional
 PostgreSQL seed file, validates the object graph before writing SQL, and embeds
 database-side assertions so a partial or relationally-invalid demo seed can
 never be committed.
+
+Bootstrap contains people, plans and independent synthetic domain examples, not
+reported attendance. Participation reports must be recorded by the owning
+Attendance services after actors and authority have been established. The retired
+academic/event attendance views and immutable historical sources are never seeded.
 """
 
 from __future__ import annotations
@@ -289,45 +294,6 @@ def make_guardians(students: Sequence[dict[str, Any]], rng: random.Random) -> li
     return guardians
 
 
-def status_for(student: dict[str, Any], day_index: int, total_days: int, rng: random.Random) -> str:
-    # The visible 7A leaderboard is deterministic and based on the same daily
-    # points formula used by the API. Missed days are placed before recent streaks.
-    fixed_missed = {
-        "ananya": [],
-        "rohan": [5],
-        "kavya": [8, 19],
-        "aarav": [4, 16, max(0, total_days - 16)],
-    }
-    if student["key"] in fixed_missed:
-        if day_index in fixed_missed[student["key"]]:
-            return "half_day" if student["key"] == "aarav" and day_index == 16 else "absent"
-        return "late" if student["key"] == "aarav" and day_index in {11, total_days - 5} else "present"
-
-    # Other 7A students deliberately stay below Aarav so the ranking is stable.
-    if student["class_key"] == "7a":
-        forced = {2, 10, 18, 26}
-        if day_index in forced:
-            return "absent" if (student["roll"] + day_index) % 3 else "excused"
-
-    band = (student["roll"] + student["grade"] * 3 + (0 if student["section"] == "A" else 5)) % 10
-    roll = rng.random()
-    if band == 0:
-        thresholds = (0.79, 0.83, 0.90, 0.95)
-    elif band <= 2:
-        thresholds = (0.87, 0.91, 0.95, 0.98)
-    else:
-        thresholds = (0.935, 0.96, 0.98, 0.992)
-    if roll < thresholds[0]:
-        return "present"
-    if roll < thresholds[1]:
-        return "late"
-    if roll < thresholds[2]:
-        return "absent"
-    if roll < thresholds[3]:
-        return "excused"
-    return "half_day"
-
-
 def local_timestamp(day: date, hour: int, minute: int) -> str:
     """A wall-clock moment on `day`, clamped so seeded history never post-dates real inserts."""
     stamp = datetime.combine(day, time(hour, minute), tzinfo=IST)
@@ -353,8 +319,8 @@ def add_campus_event_fixtures(
 ) -> dict[str, int]:
     """Add three complete, relationally coherent event workflows.
 
-    The completed Annual Function demonstrates event attendance without
-    rewriting academic attendance.  The upcoming Class 7A excursion
+    The completed Annual Function retains its expected roster, without inventing
+    participation reports or a final register. The upcoming Class 7A excursion
     demonstrates purpose-specific guardian consent and a preparation checklist.
     Kavita Mehta's Class 7A Mathematics test demonstrates an assigned teacher's
     subject-linked class event and its mandatory event register.
@@ -446,16 +412,12 @@ def add_campus_event_fixtures(
         (
             annual_rehearsal_id, school_id, annual_id, "Performer dress rehearsal", "rehearsal", "School Amphitheatre",
             scheduled_timestamp(annual_rehearsal_day, 15, 0), scheduled_timestamp(annual_rehearsal_day, 17, 30),
-            "check_in", "locked", 2, staff_by_key["kavita"]["user_id"],
-            scheduled_timestamp(annual_rehearsal_day, 17, 45), None, None, None, annual_published,
-            scheduled_timestamp(annual_rehearsal_day, 17, 45),
+            "check_in", "open", 1, None, None, None, None, None, annual_published, annual_published,
         ),
         (
             annual_main_id, school_id, annual_id, "Annual cultural programme", "general", "School Amphitheatre",
             scheduled_timestamp(annual_day, 16, 30), scheduled_timestamp(annual_day, 20, 30),
-            "check_in", "locked", 2, staff_by_key["kavita"]["user_id"],
-            scheduled_timestamp(annual_day, 20, 45), None, None, None, annual_published,
-            scheduled_timestamp(annual_day, 20, 45),
+            "check_in", "open", 1, None, None, None, None, None, annual_published, annual_published,
         ),
         (
             picnic_departure_id, school_id, picnic_id, "Departure muster", "departure", "North Gate",
@@ -479,8 +441,6 @@ def add_campus_event_fixtures(
         ),
     ])
 
-    annual_attendance_count = 0
-    annual_rehearsal_count = 0
     for student in students:
         dataset["campus_event_participants"].append((
             school_id, annual_id, student["student_id"], "mandatory", "pending", None,
@@ -489,71 +449,14 @@ def add_campus_event_fixtures(
         dataset["campus_event_session_participants"].append((
             school_id, annual_id, annual_main_id, student["student_id"], "mandatory",
         ))
-        main_status = (
-            "no_show"
-            if student["roll"] % 19 == 0
-            else "late"
-            if student["roll"] % 11 == 0
-            else "excused"
-            if student["roll"] % 17 == 0
-            else "present"
-        )
-        main_note = (
-            "No check-in was recorded before the register was locked."
-            if main_status == "no_show"
-            else "Checked in after the opening welcome."
-            if main_status == "late"
-            else "The event coordinator recorded an approved exception."
-            if main_status == "excused"
-            else "Checked in at the amphitheatre entrance."
-        )
-        attendance_id = deterministic_id(f"campus-event-attendance-annual-main-{student['key']}")
-        marked_at = scheduled_timestamp(annual_day, 20, 35)
-        marker = staff_by_key["kavita"]["user_id"]
-        checked_in_at = (
-            scheduled_timestamp(annual_day, 16, 50)
-            if main_status == "late"
-            else scheduled_timestamp(annual_day, 16, 15)
-            if main_status == "present"
-            else None
-        )
-        dataset["campus_event_attendance"].append((
-            attendance_id, school_id, annual_id, annual_main_id, student["student_id"], main_status,
-            main_note, checked_in_at, None, 1, marker, marked_at, marked_at,
-        ))
-        dataset["campus_event_attendance_revisions"].append((
-            school_id, annual_id, annual_main_id, student["student_id"], attendance_id, None, main_status,
-            None, main_note, None, checked_in_at, None, None, "Initial event register entry.", 1, marker,
-            deterministic_id(f"campus-event-attendance-request-annual-main-{student['key']}"), marked_at,
-        ))
-        annual_attendance_count += 1
-
         if student["class_key"] != "7a" or student["roll"] > 15:
             continue
-        rehearsal_status = "late" if student["roll"] % 9 == 0 else "present"
-        rehearsal_note = "Joined after the first stage call." if rehearsal_status == "late" else "Performer check-in completed."
-        rehearsal_attendance_id = deterministic_id(f"campus-event-attendance-annual-rehearsal-{student['key']}")
-        rehearsal_marked_at = scheduled_timestamp(annual_rehearsal_day, 17, 35)
-        rehearsal_checked_in_at = scheduled_timestamp(
-            annual_rehearsal_day, 15, 20 if rehearsal_status == "late" else 0,
-        )
         dataset["campus_event_session_selected_students"].append((
             school_id, annual_id, annual_rehearsal_id, student["student_id"],
         ))
         dataset["campus_event_session_participants"].append((
             school_id, annual_id, annual_rehearsal_id, student["student_id"], "mandatory",
         ))
-        dataset["campus_event_attendance"].append((
-            rehearsal_attendance_id, school_id, annual_id, annual_rehearsal_id, student["student_id"], rehearsal_status,
-            rehearsal_note, rehearsal_checked_in_at, None, 1, marker, rehearsal_marked_at, rehearsal_marked_at,
-        ))
-        dataset["campus_event_attendance_revisions"].append((
-            school_id, annual_id, annual_rehearsal_id, student["student_id"], rehearsal_attendance_id, None,
-            rehearsal_status, None, rehearsal_note, None, rehearsal_checked_in_at, None, None,
-            "Initial event register entry.", 1, marker,
-            deterministic_id(f"campus-event-attendance-request-annual-rehearsal-{student['key']}"), rehearsal_marked_at,
-        ))
-        annual_rehearsal_count += 1
 
     picnic_students = [student for student in students if student["class_key"] == "7a"]
     picnic_checklist = [
@@ -665,7 +568,7 @@ def add_campus_event_fixtures(
         "campus_events": 3,
         "campus_event_sessions": 6,
         "campus_event_participants": len(students) + len(picnic_students) * 2,
-        "campus_event_attendance_records": annual_attendance_count + annual_rehearsal_count,
+        "campus_event_attendance_records": 0,
         "picnic_participants": len(picnic_students),
         "picnic_granted_consents": granted_consents,
         "picnic_checklist_completions": checklist_completions,
@@ -710,7 +613,7 @@ def build_dataset(as_of: date, seed: int, demo_password: str) -> tuple[dict[str,
     shared_hash = password_hash(demo_password, rng)
 
     dataset: dict[str, list[tuple[Any, ...]]] = {name: [] for name in [
-        "schools", "calendar_days", "users", "memberships", "students", "parents", "guardians", "terms", "sections", "enrollments",
+        "schools", "calendar_days", "users", "memberships", "students", "parents", "guardian_people", "guardians", "terms", "sections", "enrollments",
         "subjects", "subject_attendance", "attendance", "gate_events", "timetable", "policies", "leaves", "leave_audits",
         "diary", "diary_acknowledgements", "diary_notes", "notifications", "contacts",
         "campus_events", "campus_event_class_sections", "campus_event_selected_students", "campus_event_staff",
@@ -740,7 +643,11 @@ def build_dataset(as_of: date, seed: int, demo_password: str) -> tuple[dict[str,
             add_user(guardian["user_id"], guardian["username"], guardian["email"], guardian["first"], guardian["last"], "parent", "guardian")
             added_guardian_users.add(guardian["user_id"])
         if guardian["parent_id"] not in added_parent_ids:
-            dataset["parents"].append((guardian["parent_id"], guardian["user_id"], guardian["phone"]))
+            dataset["parents"].append((guardian["parent_id"], guardian["user_id"]))
+            dataset["guardian_people"].append((
+                deterministic_id(f"guardian-person-{guardian['parent_id']}"), school_id, guardian["parent_id"],
+                guardian["first"], guardian["last"], guardian["phone"], guardian["email"],
+            ))
             added_parent_ids.add(guardian["parent_id"])
         dataset["guardians"].append((
             guardian["relationship_id"], guardian["parent_id"], guardian["student_id"], guardian["relationship"], True, True,
@@ -776,9 +683,7 @@ def build_dataset(as_of: date, seed: int, demo_password: str) -> tuple[dict[str,
         (4, "11:30", "12:05"), (5, "12:15", "13:00"), (6, "13:05", "13:50"),
     ]
     subject_keys = [subject[0] for subject in SUBJECTS]
-    timetable_lookup: dict[tuple[str, int], list[tuple[int, str]]] = {}
     for class_index, (class_key, room) in enumerate(room_by_class.items()):
-        timetable_lookup.update({(class_key, weekday): [] for weekday in range(1, 7)})
         for weekday in range(1, 7):
             slots = period_times if weekday <= 5 else period_times[:3]
             for period, starts_at, ends_at in slots:
@@ -792,7 +697,6 @@ def build_dataset(as_of: date, seed: int, demo_password: str) -> tuple[dict[str,
                 subject_key = subject_keys[subject_index]
                 teacher_options = teacher_by_subject[subject_key]
                 teacher = teacher_options[0 if int(class_key[0]) <= 7 else 1]
-                timetable_lookup[(class_key, weekday)].append((period, subject_key))
                 dataset["timetable"].append((
                     deterministic_id(f"slot-{class_key}-{weekday}-{period}"), class_ids[class_key], term_id, subject_ids[subject_key],
                     weekday, period, starts_at, ends_at, "class", "", f"Room {room}", teacher["user_id"], teacher["designation"],
@@ -817,71 +721,34 @@ def build_dataset(as_of: date, seed: int, demo_password: str) -> tuple[dict[str,
             term_start, term_end, principal["user_id"], assignment_created_at,
         ))
 
-    attendance_by_student: dict[str, dict[date, str]] = {}
+    # Gate sightings are independent synthetic boundary observations. They do not
+    # establish academic attendance, continuous presence, or an absence decision.
     for student_index, student in enumerate(students):
         student_rng = random.Random(seed * 10_000 + student_index)
-        statuses: dict[date, str] = {}
-        marker = homeroom_teacher[student["class_key"]]["user_id"]
-        for day_index, school_day in enumerate(days):
-            status = status_for(student, day_index, len(days), student_rng)
-            statuses[school_day] = status
-            if status == "late":
-                check_in = local_timestamp(school_day, 8, student_rng.randint(47, 58))
-                check_out = local_timestamp(school_day, 14, student_rng.randint(43, 55))
-                remarks = student_rng.choice(["School transport delayed.", "Reported at the attendance desk.", "Delayed by traffic congestion."])
-            elif status in {"present", "half_day"}:
-                check_in = local_timestamp(school_day, 8, student_rng.randint(19, 39))
-                check_out = local_timestamp(school_day, 12 if status == "half_day" else 14, student_rng.randint(15, 55))
-                remarks = "Left after lunch with guardian approval." if status == "half_day" else ""
-            else:
-                check_in = check_out = None
-                remarks = "Approved medical leave." if status == "excused" else "Guardian notified through the school office."
-            dataset["attendance"].append((
-                deterministic_id(f"attendance-{student['key']}-{school_day.isoformat()}"), student["student_id"], class_ids[student["class_key"]],
-                school_day, status, check_in, check_out, remarks, marker,
-            ))
-        attendance_by_student[student["student_id"]] = statuses
-
-        recent_gate_days = days[-10:]
-        for gate_day in recent_gate_days:
-            status = statuses[gate_day]
-            if status in {"absent", "excused"}:
+        for day_index, gate_day in enumerate(days[-10:]):
+            if (student["roll"] + day_index) % 17 == 0:
                 continue
-            attendance_row = next(row for row in reversed(dataset["attendance"]) if row[1] == student["student_id"] and row[3] == gate_day)
-            in_time, out_time = attendance_row[5], attendance_row[6]
+            in_time = local_timestamp(gate_day, 8, student_rng.randint(19, 58))
+            out_time = local_timestamp(gate_day, 14, student_rng.randint(43, 55))
             dataset["gate_events"].append((
                 deterministic_id(f"gate-in-{student['key']}-{gate_day.isoformat()}"), student["student_id"], in_time, "in", "North Gate",
                 "rfid", f"CIS-RFID-{student['admission'][-4:]}",
             ))
-            if out_time:
-                dataset["gate_events"].append((
-                    deterministic_id(f"gate-out-{student['key']}-{gate_day.isoformat()}"), student["student_id"], out_time, "out", "North Gate",
-                    "rfid", f"CIS-RFID-{student['admission'][-4:]}",
-                ))
+            dataset["gate_events"].append((
+                deterministic_id(f"gate-out-{student['key']}-{gate_day.isoformat()}"), student["student_id"], out_time, "out", "North Gate",
+                "rfid", f"CIS-RFID-{student['admission'][-4:]}",
+            ))
 
     for student in students:
-        statuses = attendance_by_student[student["student_id"]]
-        held = {key: 0 for key in subject_keys}
-        attended = {key: 0 for key in subject_keys}
-        excused = {key: 0 for key in subject_keys}
-        for school_day, status in statuses.items():
-            scheduled = timetable_lookup[(student["class_key"], school_day.isoweekday())]
-            for period, subject_key in scheduled:
-                held[subject_key] += 1
-                if status in {"present", "late"} or (status == "half_day" and period < 4):
-                    attended[subject_key] += 1
-                elif status == "excused":
-                    excused[subject_key] += 1
         for subject_key in subject_keys:
             dataset["subject_attendance"].append((
                 deterministic_id(f"subject-attendance-{student['key']}-{subject_key}"), student["student_id"], subject_ids[subject_key], term_id,
-                held[subject_key], attended[subject_key], excused[subject_key],
+                0, 0, 0,
             ))
 
     guardian_by_student = {guardian["student_id"]: guardian for guardian in guardians}
-    approved_candidates = [student for student in students if any(status == "excused" for status in attendance_by_student[student["student_id"]].values())]
-    for index, student in enumerate(approved_candidates[:48]):
-        excused_day = next(day for day, status in attendance_by_student[student["student_id"]].items() if status == "excused")
+    for index, student in enumerate(students[:48]):
+        excused_day = days[index % len(days)]
         guardian = guardian_by_student[student["student_id"]]
         leave_id = deterministic_id(f"leave-approved-{student['key']}-{excused_day.isoformat()}")
         submitted = local_timestamp(excused_day - timedelta(days=2), 18, 10)
@@ -895,7 +762,7 @@ def build_dataset(as_of: date, seed: int, demo_password: str) -> tuple[dict[str,
         for step, (action, previous, current, actor, at, note) in enumerate([
             ("submitted", "draft", "pending_guardian", guardian["user_id"], submitted, "Leave request submitted by the primary guardian."),
             ("authorized", "pending_guardian", "authorized", guardian["user_id"], authorized, "Guardian identity verified and request authorized."),
-            ("approved", "authorized", "school_approved", coordinator["user_id"], decided, "Approved against the daily attendance register."),
+            ("approved", "authorized", "school_approved", coordinator["user_id"], decided, "School review of the synthetic leave request completed; attendance remains unreported."),
         ]):
             dataset["leave_audits"].append((deterministic_id(f"leave-audit-{leave_id}-{step}"), leave_id, actor, action, previous, current, note, at))
 
@@ -971,17 +838,6 @@ def build_dataset(as_of: date, seed: int, demo_password: str) -> tuple[dict[str,
             "The assignment has been noted. Please let us know if any additional worksheet is required.", local_timestamp(as_of, 8, 5),
         ))
 
-    for student in students:
-        statuses = attendance_by_student[student["student_id"]]
-        points = sum(1 if status in {"present", "late"} else 0.5 if status == "half_day" else 0 for status in statuses.values())
-        percentage = round(points * 100 / len(statuses), 2)
-        if percentage < 85:
-            guardian = guardian_by_student[student["student_id"]]
-            dataset["notifications"].append((
-                deterministic_id(f"notification-attendance-{student['key']}"), guardian["user_id"], "attendance", "Attendance attention needed",
-                f"{student['first']}'s attendance is {percentage:.1f}%, below the 85% term requirement.", "/parent/attendance",
-                {"student_id": student["student_id"], "percentage": percentage}, None, local_timestamp(as_of, 15, 45),
-            ))
     for student in students[:32]:
         dataset["notifications"].append((
             deterministic_id(f"notification-diary-{student['key']}"), student["user_id"], "diary", "New diary items published",
@@ -1011,6 +867,7 @@ def build_dataset(as_of: date, seed: int, demo_password: str) -> tuple[dict[str,
         "class_sections": len(class_ids),
         "school_days": len(days),
         "attendance_records": len(dataset["attendance"]),
+        "attendance_seed_contract": "unreported; record participation through owning Attendance services after bootstrap",
         "subject_attendance_rows": len(dataset["subject_attendance"]),
         "timetable_slots": len(dataset["timetable"]),
         "class_staff_assignments": len(dataset["class_staff_assignments"]),
@@ -1022,7 +879,7 @@ def build_dataset(as_of: date, seed: int, demo_password: str) -> tuple[dict[str,
         "relationship_invariants": {
             "students_without_guardian": 0,
             "students_without_enrollment": 0,
-            "students_without_attendance_history": 0,
+            "students_without_attendance_history": len(students),
             "class_slots_without_teacher": 0,
         },
         "demo_accounts": {
@@ -1046,7 +903,6 @@ def validate_dataset(
     student_ids = {student["student_id"] for student in students}
     guardian_student_ids = {guardian["student_id"] for guardian in guardians}
     enrollment_student_ids = {row[1] for row in dataset["enrollments"]}
-    attendance_student_ids = {row[1] for row in dataset["attendance"]}
     active_staff_ids = {teacher["user_id"] for teacher in staff}
     if len(students) != 200 or len(student_ids) != 200:
         raise ValueError("The medium-school fixture must contain exactly 200 unique students.")
@@ -1054,12 +910,12 @@ def validate_dataset(
         raise ValueError("Every student must have exactly one generated primary guardian.")
     if enrollment_student_ids != student_ids or len(dataset["enrollments"]) != len(students):
         raise ValueError("Every student must have exactly one active term enrollment.")
-    if attendance_student_ids != student_ids or len(dataset["attendance"]) != len(students) * len(days):
-        raise ValueError("Every student must have a complete attendance row for every generated school day.")
-    if any(row[8] not in active_staff_ids for row in dataset["attendance"]):
-        raise ValueError("Every attendance row must be marked by active school staff.")
+    if dataset["attendance"] or dataset["campus_event_attendance"] or dataset["campus_event_attendance_revisions"]:
+        raise ValueError("Bootstrap must not fabricate participation reports or write retired attendance sources.")
     if len(dataset["subject_attendance"]) != len(students) * len(SUBJECTS):
         raise ValueError("Every student must have subject attendance for every subject.")
+    if any(row[4:] != (0, 0, 0) for row in dataset["subject_attendance"]):
+        raise ValueError("Bootstrap subject counters must remain empty until owning Attendance services record participation.")
     if any(row[9] == "class" and row[11] not in active_staff_ids for row in dataset["timetable"]):
         raise ValueError("Every class timetable slot must resolve to active teaching staff.")
     if {row[1] for row in dataset["timetable"]} != set(class_ids.values()):
@@ -1169,17 +1025,14 @@ def validate_dataset(
         event = events_by_id[session[2]]
         if not (event[7] <= session[6] < session[7] <= event[8]):
             raise ValueError("Every event session must fall inside its event window.")
-        if session[2] == annual_id and session[9] != "locked":
-            raise ValueError("Completed Annual Function registers must be locked.")
+        if session[2] == annual_id and session[9] != "open":
+            raise ValueError("An event's calendar completion cannot invent a final attendance register.")
         if session[2] == picnic_id and session[9] != "open":
             raise ValueError("Upcoming picnic registers must remain open.")
         if session[2] == class_test_id and session[9] != "open":
             raise ValueError("Upcoming class-test register must remain open.")
 
     participant_lookup = {(row[1], row[2]): row for row in participant_rows}
-    session_participant_lookup = {
-        (row[1], row[2], row[3]): row for row in dataset["campus_event_session_participants"]
-    }
     selected_rehearsal_students = {
         row[3] for row in dataset["campus_event_session_selected_students"]
         if row[1] == annual_id and row[2] == deterministic_id("campus-event-annual-function-rehearsal-2026")
@@ -1214,31 +1067,6 @@ def validate_dataset(
         if row[4] == "optional"
     ):
         raise ValueError("Every optional session-roster participant must have an accepted RSVP.")
-    attendance_ids: set[str] = set()
-    for attendance in dataset["campus_event_attendance"]:
-        attendance_id, _, event_id, session_id, student_id, status, *_ = attendance
-        participant = participant_lookup.get((event_id, student_id))
-        if (
-            participant is None
-            or session_id not in sessions_by_id
-            or sessions_by_id[session_id][2] != event_id
-            or (event_id, session_id, student_id) not in session_participant_lookup
-        ):
-            raise ValueError("Every event attendance record must resolve to its participant and session.")
-        if participant[3] == "optional" and participant[4] != "accepted" and status == "no_show":
-            raise ValueError("Only an accepted optional participant can be marked no-show.")
-        if event_id != annual_id:
-            raise ValueError("Future picnic and class-test sessions must not fabricate attendance observations.")
-        checked_in_at, checked_out_at = attendance[7], attendance[8]
-        if (status in {"present", "late"}) != (checked_in_at is not None) or checked_out_at is not None:
-            raise ValueError("Seeded event attendance timestamps must match the recorded status and capture mode.")
-        attendance_ids.add(attendance_id)
-    if len(attendance_ids) != len(dataset["campus_event_attendance"]):
-        raise ValueError("Event attendance identifiers must be unique.")
-    revision_record_ids = {row[4] for row in dataset["campus_event_attendance_revisions"]}
-    if revision_record_ids != attendance_ids or len(revision_record_ids) != len(dataset["campus_event_attendance_revisions"]):
-        raise ValueError("Every seeded event attendance mark must have one append-only initial revision.")
-
     checklist_items = {row[0]: row for row in dataset["campus_event_checklist_items"]}
     if not checklist_items or any(not row[4] for row in checklist_items.values()):
         raise ValueError("Every picnic kit item must be explicitly required.")
@@ -1302,11 +1130,10 @@ def render_sql(dataset: dict[str, list[tuple[Any, ...]]], summary: dict[str, Any
         "SET LOCAL statement_timeout = '120s';",
         f"SELECT pg_advisory_xact_lock(hashtext('omnischool:seed:{SCHOOL_CODE}'));",
         "CREATE TEMP TABLE omnischool_seed_student_ids (id uuid PRIMARY KEY) ON COMMIT DROP;",
-        "CREATE TEMP TABLE omnischool_seed_days (day date PRIMARY KEY) ON COMMIT DROP;",
+        "CREATE TEMP TABLE omnischool_seed_guardian_people (person_id uuid PRIMARY KEY,school_id uuid NOT NULL,guardian_id uuid NOT NULL,first_name text NOT NULL,last_name text NOT NULL,contact_phone text NOT NULL,contact_email text NOT NULL) ON COMMIT DROP;",
+        "-- Bootstrap does not report participation. Use the owning Attendance services; retired read views and immutable archives are never seed targets.",
     ]
     statements += insert_sql("omnischool_seed_student_ids", ["id"], [(row[0],) for row in dataset["students"]])
-    attendance_dates = sorted({row[3] for row in dataset["attendance"]})
-    statements += insert_sql("omnischool_seed_days", ["day"], [(day,) for day in attendance_dates])
     statements += insert_sql(
         "schools", ["id", "name", "code"], dataset["schools"],
         conflict=" ON CONFLICT(id) DO UPDATE SET name=excluded.name,code=excluded.code",
@@ -1328,9 +1155,19 @@ def render_sql(dataset: dict[str, list[tuple[Any, ...]]], summary: dict[str, Any
         conflict=" ON CONFLICT(id) DO UPDATE SET user_id=excluded.user_id,school_id=excluded.school_id,admission_number=excluded.admission_number,date_of_birth=excluded.date_of_birth,blood_group=excluded.blood_group,emergency_contact=excluded.emergency_contact,avatar_url=excluded.avatar_url",
     )
     statements += insert_sql(
-        "parents", ["id", "user_id", "phone"], dataset["parents"],
-        conflict=" ON CONFLICT(id) DO UPDATE SET user_id=excluded.user_id,phone=excluded.phone",
+        "parents", ["id", "user_id"], dataset["parents"],
+        conflict=" ON CONFLICT(id) DO UPDATE SET user_id=excluded.user_id",
     )
+    statements += insert_sql("omnischool_seed_guardian_people", ["person_id", "school_id", "guardian_id", "first_name", "last_name", "contact_phone", "contact_email"], dataset["guardian_people"])
+    statements.append("""WITH created AS (
+      INSERT INTO school_people(id,school_id,first_name,last_name,contact_phone,contact_email)
+      SELECT seed.person_id,seed.school_id,seed.first_name,seed.last_name,seed.contact_phone,seed.contact_email
+      FROM omnischool_seed_guardian_people seed WHERE NOT EXISTS(
+        SELECT 1 FROM guardian_school_profiles profile WHERE profile.school_id=seed.school_id AND profile.guardian_id=seed.guardian_id)
+      RETURNING id
+    ) INSERT INTO guardian_school_profiles(school_id,guardian_id,person_id)
+      SELECT seed.school_id,seed.guardian_id,seed.person_id FROM omnischool_seed_guardian_people seed
+      JOIN created ON created.id=seed.person_id;""")
     statements += insert_sql(
         "guardian_relationships", ["id", "guardian_id", "student_id", "relationship", "is_primary", "can_authorize_leave"], dataset["guardians"],
         conflict=" ON CONFLICT(guardian_id,student_id) DO UPDATE SET relationship=excluded.relationship,is_primary=excluded.is_primary,can_authorize_leave=CASE WHEN guardian_relationships.authority_source='reviewed' THEN guardian_relationships.can_authorize_leave ELSE excluded.can_authorize_leave END",
@@ -1373,7 +1210,7 @@ def render_sql(dataset: dict[str, list[tuple[Any, ...]]], summary: dict[str, Any
     )
     statements += insert_sql(
         "subject_attendance", ["id", "student_id", "subject_id", "term_id", "classes_held", "classes_attended", "classes_excused"], dataset["subject_attendance"],
-        conflict=" ON CONFLICT(student_id,subject_id,term_id) DO UPDATE SET classes_held=excluded.classes_held,classes_attended=excluded.classes_attended,classes_excused=excluded.classes_excused",
+        conflict=" ON CONFLICT(student_id,subject_id,term_id) DO NOTHING",
     )
     statements += insert_sql(
         "attendance_policies", ["id", "term_id", "name", "minimum_percentage", "medical_document_after_days", "policy_text"], dataset["policies"],
@@ -1388,10 +1225,6 @@ def render_sql(dataset: dict[str, list[tuple[Any, ...]]], summary: dict[str, Any
             "id", "school_id", "class_section_id", "user_id", "role", "subject_id", "valid_from", "valid_until",
             "assigned_by", "created_at",
         ], dataset["class_staff_assignments"], conflict=" ON CONFLICT DO NOTHING",
-    )
-    statements += insert_sql(
-        "attendance_records", ["id", "student_id", "class_section_id", "date", "status", "check_in_at", "check_out_at", "remarks", "marked_by"], dataset["attendance"],
-        conflict=" ON CONFLICT(student_id,date) DO UPDATE SET class_section_id=excluded.class_section_id,status=excluded.status,check_in_at=excluded.check_in_at,check_out_at=excluded.check_out_at,remarks=excluded.remarks,marked_by=excluded.marked_by,updated_at=now()", batch_size=750,
     )
     statements += insert_sql("gate_events", ["id", "student_id", "occurred_at", "direction", "gate", "source", "device_reference"], dataset["gate_events"], conflict=" ON CONFLICT(id) DO UPDATE SET occurred_at=excluded.occurred_at,direction=excluded.direction,gate=excluded.gate,source=excluded.source,device_reference=excluded.device_reference", batch_size=750)
     statements += insert_sql(
@@ -1579,25 +1412,8 @@ ON CONFLICT(id) DO NOTHING;
             "school_id", "event_id", "item_id", "student_id", "completed_by", "completed_at",
         ], dataset["campus_event_checklist_completions"], conflict=" ON CONFLICT DO NOTHING",
     )
-    statements += insert_sql(
-        "campus_event_attendance_records", [
-            "id", "school_id", "event_id", "session_id", "student_id", "status", "note", "checked_in_at", "checked_out_at", "revision",
-            "marked_by", "marked_at", "updated_at",
-        ], dataset["campus_event_attendance"], conflict=" ON CONFLICT DO NOTHING",
-    )
-    statements += insert_sql(
-        "campus_event_attendance_revisions", [
-            "school_id", "event_id", "session_id", "student_id", "attendance_record_id", "previous_status",
-            "new_status", "previous_note", "new_note", "previous_checked_in_at", "new_checked_in_at",
-            "previous_checked_out_at", "new_checked_out_at", "reason", "revision", "changed_by", "request_id", "created_at",
-        ], dataset["campus_event_attendance_revisions"], conflict=" ON CONFLICT DO NOTHING",
-    )
-
     expected_students = summary["students"]
-    expected_days = summary["school_days"]
-    expected_attendance = summary["attendance_records"]
     expected_subject_rows = summary["subject_attendance_rows"]
-    expected_event_attendance = summary["campus_event_attendance_records"]
     expected_picnic_invoices = summary["picnic_fee_invoices"]
     expected_picnic_payments = summary["picnic_fee_payments"]
     statements.append(f"""
@@ -1618,16 +1434,6 @@ BEGIN
     GROUP BY st.id HAVING count(DISTINCT e.id) <> 1 OR count(DISTINCT gr.id) <> 1 OR count(DISTINCT gm.id) <> 1
   ) THEN
     RAISE EXCEPTION 'Seed integrity failure: a student is missing one enrollment or active primary guardian';
-  END IF;
-  IF (SELECT count(*) FROM attendance_records ar JOIN omnischool_seed_student_ids seed ON seed.id=ar.student_id JOIN omnischool_seed_days sd ON sd.day=ar.date) <> {expected_attendance} THEN
-    RAISE EXCEPTION 'Seed integrity failure: attendance row count is incomplete';
-  END IF;
-  IF EXISTS (
-    SELECT seed.id FROM omnischool_seed_student_ids seed
-    LEFT JOIN attendance_records ar ON ar.student_id=seed.id AND ar.date IN (SELECT day FROM omnischool_seed_days)
-    GROUP BY seed.id HAVING count(ar.id) <> {expected_days}
-  ) THEN
-    RAISE EXCEPTION 'Seed integrity failure: a student does not have {expected_days} daily attendance rows';
   END IF;
   IF (SELECT count(*) FROM subject_attendance sa JOIN omnischool_seed_student_ids seed ON seed.id=sa.student_id) <> {expected_subject_rows} THEN
     RAISE EXCEPTION 'Seed integrity failure: subject attendance is incomplete';
@@ -1799,31 +1605,6 @@ BEGIN
   ) <> 15 THEN
     RAISE EXCEPTION 'Seed integrity failure: Annual Function rehearsal roster is incomplete';
   END IF;
-  IF EXISTS (
-    SELECT 1 FROM campus_event_sessions session
-    WHERE session.event_id='{annual_event_id}'::uuid AND session.attendance_mode<>'none' AND session.state<>'locked'
-  ) THEN
-    RAISE EXCEPTION 'Seed integrity failure: completed Annual Function registers are not locked';
-  END IF;
-  IF (
-    SELECT count(*) FROM campus_event_attendance_records
-    WHERE event_id='{annual_event_id}'::uuid
-  ) <> {expected_event_attendance} THEN
-    RAISE EXCEPTION 'Seed integrity failure: Annual Function attendance is incomplete';
-  END IF;
-  IF EXISTS (
-    SELECT 1 FROM campus_event_attendance_records
-    WHERE event_id IN ('{picnic_event_id}'::uuid,'{class_test_event_id}'::uuid)
-  ) THEN
-    RAISE EXCEPTION 'Seed integrity failure: a future event contains fabricated attendance';
-  END IF;
-  IF (
-    SELECT count(*) FROM campus_event_attendance_revisions revision
-    JOIN campus_event_attendance_records attendance ON attendance.id=revision.attendance_record_id
-    WHERE attendance.event_id='{annual_event_id}'::uuid
-  ) <> {expected_event_attendance} THEN
-    RAISE EXCEPTION 'Seed integrity failure: event attendance revision history is incomplete';
-  END IF;
   IF NOT EXISTS (
     SELECT 1 FROM campus_events event
     JOIN campus_event_class_sections scope
@@ -1850,13 +1631,11 @@ END $$;
 ANALYZE users;
 ANALYZE students;
 ANALYZE enrollments;
-ANALYZE attendance_records;
 ANALYZE timetable_slots;
 ANALYZE class_section_staff_assignments;
 ANALYZE campus_events;
 ANALYZE campus_event_participants;
 ANALYZE campus_event_session_participants;
-ANALYZE campus_event_attendance_records;
 ANALYZE fee_invoices;
 ANALYZE fee_payments;
 COMMIT;
@@ -1886,7 +1665,7 @@ def main() -> int:
     args.summary_output.write_text(json.dumps(summary, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
     print(
         f"Generated {summary['students']} students, {summary['parents']} parents, "
-        f"{summary['teachers_and_staff']} teachers/staff and {summary['attendance_records']} attendance rows."
+        f"{summary['teachers_and_staff']} teachers/staff; attendance remains unreported until recorded through the owning services."
     )
     print(f"SQL: {args.output}")
     print(f"Summary: {args.summary_output}")

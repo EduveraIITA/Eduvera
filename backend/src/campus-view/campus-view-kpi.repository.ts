@@ -127,6 +127,7 @@ function campusOccurrences(query: CampusKpiRepositoryQuery): RawBuilder<unknown>
         AND (enrollment.inactive_from IS NULL OR enrollment.inactive_from>occurrence.occurrence_date)
     ) roster ON true
     WHERE occurrence.school_id=${query.school_id}::uuid
+      AND occurrence.claim_kind='exclusive'
       AND occurrence.state='expected' AND occurrence.recorded_until IS NULL
       AND occurrence.slot_type IN ('class','activity')
       AND occurrence.starts_at<${query.to_at}::timestamptz

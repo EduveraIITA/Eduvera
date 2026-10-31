@@ -18,16 +18,22 @@ import {
   UsersRound,
   X,
 } from "lucide-react";
-import { useEffect, useMemo, useState, type FormEvent } from "react";
+import { useEffect, useRef, useState, type FormEvent } from "react";
 import { Link, useNavigate, useSearchParams } from "react-router-dom";
 import { OperationsShell } from "../../pages/operations/OperationsShell";
+import { CollectionView } from "../../components/CollectionView";
+import { InfoSummary } from "../../components/InfoSummary";
 import { browserHistoryIndex, previousPortalLocation } from "../navigation/portalHistory";
 import { samePortalHref } from "../navigation/portalReturnState";
 import {
   adjustStaffBalance,
-  assignCoverage,
   createStaffProfile,
   decideStaffLeave,
+  enableLeaveReviewRouting,
+  getStaffWorkspace,
+  getLeaveReviewRouting,
+  previewStaffLeaveImpact,
+  rerouteStaffLeave,
   respondCoverage,
   respondResponsibility,
   saveLeavePolicy,
@@ -38,12 +44,17 @@ import {
   type CoverageTask,
   type LeaveBalance,
   type LeavePolicy,
+  type LeaveReviewReadiness,
+  type LeaveReviewRouting,
   type ResponsibilityAssignment,
   type StaffLeaveRequest,
+  type StaffLeaveImpact,
+  type StaffLeaveImpactInput,
   type StaffProfile,
   type StaffWorkspace,
   type TeacherStaffWorkspace,
 } from "./api";
+import { ApiError } from "../../lib/api";
 import {
   clearPendingStaffLeaveCommand,
   isDefinitiveStaffLeaveFailure,
@@ -58,12 +69,22 @@ import {
 } from "./pendingCoverageCommand";
 import { AccessRolesPanel } from "./AccessRolesPanel";
 import { MyRoleAssignments, StaffRoleAssignments } from "./StaffRoleAssignments";
+import { CoverageBoard } from "./StaffLeaveCoverage";
 import { AttentionOpenAcknowledgement } from "../attention/AttentionOpenAcknowledgement";
 import { AttentionTargetUnavailable } from "../attention/AttentionTargetUnavailable";
+import { useOptionalExecutionEnvironment } from "../simulation/ExecutionEnvironmentContext";
 import "./staff-operations.css";
 
 import { TemporalInput } from "../../components/forms/TemporalInput";
 type PrincipalSection = "directory" | "roles" | "leave" | "policies";
+function staffDirectoryParams(params: URLSearchParams) {
+  const next = new URLSearchParams({ section: "directory" });
+  for (const key of ["school", "staff_search", "staff_filter", "staff_page"]) {
+    const value = params.get(key);
+    if (value) next.set(key, value);
+  }
+  return next;
+}
 const displayDate = (value: string) =>
   new Intl.DateTimeFormat("en-IN", {
     day: "numeric",
@@ -74,6 +95,9 @@ const displayDate = (value: string) =>
 const number = (value: string | number) => Number(value || 0);
 const days = (value: number) =>
   Number.isInteger(value) ? `${value}` : value.toFixed(1);
+const leaveWorkCount = (request: StaffLeaveRequest) => request.status === "approved"
+  ? request.coverage_tasks ?? request.affected_periods
+  : request.affected_periods;
 const formValue = (form: FormData, key: string) => {
   const value = form.get(key);
   return typeof value === "string" ? value.trim() : "";
@@ -94,6 +118,224 @@ function useAttentionFocus(sourceId: string | null) {
     });
     return () => window.cancelAnimationFrame(frame);
   }, [sourceId]);
+}
+
+interface LeaveCommandAction {
+  operation: StaffLeaveCommandScope["operation"];
+  targetId: string;
+  material: Record<string, unknown>;
+  execute: (commandId: string) => Promise<unknown>;
+  acceptedMessage: string;
+  onAccepted?: () => void;
+}
+
+// A response can be lost after a commit. Keep the exact command available for
+// replay, and never repeat a confirmed write just because its refresh failed.
+function useLeaveCommand(schoolId: string, actorId: string, refresh: () => Promise<void>) {
+  const environment = useOptionalExecutionEnvironment();
+  const worldKey = environment?.mode === "simulation" ? `${environment.namespaceId}:${environment.runId}` : "live";
+  const inFlight = useRef(false);
+  const [busy, setBusy] = useState("");
+  const [busyOperation, setBusyOperation] = useState<LeaveCommandAction["operation"] | null>(null);
+  const [error, setError] = useState("");
+  const [recovery, setRecovery] = useState<{ kind: "unknown" | "refresh"; action?: LeaveCommandAction } | null>(null);
+
+  async function reload() {
+    if (inFlight.current) return;
+    inFlight.current = true;
+    setBusy("refresh");
+    try {
+      await refresh();
+      setRecovery(null);
+      setError("");
+    } catch {
+      setError("Couldn’t refresh requests. No action was repeated.");
+    } finally {
+      inFlight.current = false;
+      setBusy("");
+    }
+  }
+
+  async function run(action: LeaveCommandAction, replay = false) {
+    if (inFlight.current || recovery && !replay) return;
+    inFlight.current = true;
+    setBusy(action.targetId);
+    setBusyOperation(action.operation);
+    setError("");
+    const scope = { schoolId, actorId, operation: action.operation, targetId: action.targetId, worldKey };
+    let command: Awaited<ReturnType<typeof pendingStaffLeaveCommand>> | undefined;
+    try {
+      command = await pendingStaffLeaveCommand(scope, action.material);
+      await action.execute(command.commandId);
+      clearPendingStaffLeaveCommand(scope, command);
+      action.onAccepted?.();
+      try {
+        await refresh();
+        setRecovery(null);
+      } catch {
+        setRecovery({ kind: "refresh" });
+        setError(`${action.acceptedMessage} Couldn’t load the latest status. Refresh requests before acting again.`);
+      }
+    } catch (cause) {
+      const message = cause instanceof Error ? cause.message : "The request could not be completed.";
+      if (isDefinitiveStaffLeaveFailure(cause)) {
+        if (command) clearPendingStaffLeaveCommand(scope, command);
+        const stale = cause instanceof ApiError && [403, 404, 409, 412].includes(cause.status);
+        setRecovery(stale ? { kind: "refresh" } : null);
+        setError(`${message}${stale ? " Refresh requests before acting again." : ""}`);
+      } else {
+        setRecovery({ kind: "unknown", action });
+        setError(`The change is not confirmed. Retry the same action to check it safely. ${message}`);
+      }
+    } finally {
+      inFlight.current = false;
+      setBusy("");
+      setBusyOperation(null);
+    }
+  }
+
+  return {
+    busy,
+    busyOperation,
+    blocked: Boolean(busy || recovery),
+    error,
+    recovery,
+    run,
+    refreshRequests: reload,
+    recover: () => recovery?.kind === "unknown" && recovery.action ? run(recovery.action, true) : reload(),
+  };
+}
+
+function LeaveCommandFeedback({ command }: { command: ReturnType<typeof useLeaveCommand> }) {
+  if (!command.error) return null;
+  return <div className="staff-leave-feedback" role="alert">
+    <p>{command.error}</p>
+    {command.recovery ? <button type="button" className="staff-secondary" disabled={Boolean(command.busy)} onClick={() => void command.recover()}>
+      {command.busy ? "Checking…" : command.recovery.kind === "unknown" ? "Retry same action" : "Refresh requests"}
+    </button> : null}
+  </div>;
+}
+
+function LeaveReviewRouteSummary({ request }: { request: StaffLeaveRequest }) {
+  const route = request.review_route;
+  if (!route || request.status !== "submitted") return null;
+  return <div className={`staff-leave-route${route.state === "current" ? "" : " staff-leave-route--changed"}`}>
+    {route.state === "current" ? <p>{route.reviewer ? <>Waiting for <strong>{route.reviewer.name}</strong></> : "Waiting for review"}</p> : <>
+      <strong>{route.state === "needs_reassignment" ? "Reviewer changed" : "Review unavailable"}</strong>
+      <p>{route.state === "needs_reassignment"
+        ? `Previously sent to ${route.reviewer?.name || "the former reviewer"}.${route.current_reviewer ? ` ${route.current_reviewer.name} is now responsible.` : " A current reviewer is needed."}`
+        : "A current leave reviewer is needed before this request can be decided."}</p>
+    </>}
+  </div>;
+}
+
+function LeaveReviewReadinessNotice({ schoolId, readiness, command, allowConfiguration = true }: {
+  schoolId: string;
+  readiness?: LeaveReviewReadiness;
+  command: ReturnType<typeof useLeaveCommand>;
+  allowConfiguration?: boolean;
+}) {
+  const [checking, setChecking] = useState(false);
+  const [error, setError] = useState("");
+  const [routing, setRouting] = useState<LeaveReviewRouting | null>(null);
+  if (!readiness) return null;
+  if (readiness.state === "ready") return <p className="staff-review-ready">Sent to <strong>{readiness.reviewer?.name || "the current leave reviewer"}</strong> for approval</p>;
+  async function prepare() {
+    setChecking(true);
+    setError("");
+    try {
+      const current = await getLeaveReviewRouting(schoolId);
+      if (current.state === "ready") await command.refreshRequests();
+      else if (current.can_configure && current.expected && current.reviewer) setRouting(current);
+      else setError(current.reason || "Review setup changed. Refresh requests to check the current arrangement.");
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : "Couldn’t load review setup.");
+    } finally { setChecking(false); }
+  }
+  async function enable() {
+    if (!routing?.expected) return;
+    const expected = routing.expected;
+    await command.run({
+      operation: "configure-routing",
+      targetId: "review-routing",
+      material: { expected, confirmed: true },
+      execute: commandId => enableLeaveReviewRouting(schoolId, { command_id: commandId, expected, confirmed: true }),
+      acceptedMessage: "Review requests were enabled.",
+      onAccepted: () => setRouting(null),
+    });
+  }
+  return <div className="staff-review-readiness">
+    <div><strong>Leave review needs setup</strong><p>{readiness.reason || "A current reviewer and delivery arrangement are needed before submitting."}</p></div>
+    {routing ? <div className="staff-review-confirmation">
+      <p>Send leave requests to <strong>{routing.reviewer?.name}</strong>. No automatic decisions or reminders.</p>
+      <div className="staff-request-actions">
+        <button type="button" className="staff-secondary" disabled={command.blocked} onClick={() => setRouting(null)}>Cancel setup</button>
+        <button type="button" className="staff-primary" disabled={command.blocked} onClick={() => void enable()}>{command.busy ? "Enabling…" : "Confirm and enable"}</button>
+      </div>
+    </div> : readiness.can_configure && allowConfiguration ? <button type="button" className="staff-secondary" disabled={checking || command.blocked} onClick={() => void prepare()}>{checking ? "Checking…" : "Enable review requests"}</button> : null}
+    {!allowConfiguration && readiness.can_configure ? <Link to="/areas/responsibilities/leave?view=review">Open review setup</Link> : null}
+    {error ? <p role="alert">{error}</p> : null}
+  </div>;
+}
+
+function LeavePolicyReadinessNotice({ canConfigure }: { canConfigure: boolean }) {
+  return <div className="staff-review-readiness">
+    <div><strong>No leave policy is available</strong><p>{canConfigure ? "Add an active policy for the current year before staff apply." : "Ask a campus administrator to make a leave policy available."}</p></div>
+    {canConfigure ? <Link className="staff-secondary" to="/more/setup/responsibilities?section=policies">Open leave settings</Link> : null}
+  </div>;
+}
+
+function StaffLeaveImpactPreview({ schoolId, actorId, input }: { schoolId: string; actorId: string; input: StaffLeaveImpactInput }) {
+  const environment = useOptionalExecutionEnvironment();
+  const worldKey = environment?.mode === "simulation" ? `${environment.namespaceId}:${environment.runId}` : "live";
+  const { policy_id, starts_on, ends_on, portion } = input;
+  const [retry, setRetry] = useState(0);
+  const [page, setPage] = useState(0);
+  const [result, setResult] = useState<{ key: string; data?: StaffLeaveImpact; error?: string } | null>(null);
+  const valid = Boolean(policy_id && /^\d{4}-\d{2}-\d{2}$/.test(starts_on) && /^\d{4}-\d{2}-\d{2}$/.test(ends_on)
+    && ends_on >= starts_on && (portion === "full_day" || starts_on === ends_on));
+  const key = JSON.stringify([schoolId, actorId, worldKey, policy_id, starts_on, ends_on, portion, retry]);
+  useEffect(() => {
+    if (!valid) return;
+    const controller = new AbortController();
+    let current = true;
+    const timer = window.setTimeout(() => {
+      void previewStaffLeaveImpact(schoolId, { policy_id, starts_on, ends_on, portion }, controller.signal).then(data => {
+        if (current) { setPage(0); setResult({ key, data }); }
+      }).catch((cause: unknown) => {
+        if (current) setResult({ key, error: cause instanceof Error ? cause.message : "Affected work is unavailable." });
+      });
+    }, 200);
+    return () => { current = false; window.clearTimeout(timer); controller.abort(); };
+  }, [schoolId, policy_id, starts_on, ends_on, portion, valid, key]);
+  if (!valid) return null;
+  const current = result?.key === key ? result : null;
+  const data = current?.data;
+  const pageSize = 4;
+  const pageCount = data ? Math.max(1, Math.ceil(data.items.length / pageSize)) : 1;
+  const currentPage = Math.min(page, pageCount - 1);
+  return <section className="staff-leave-impact" aria-labelledby="staff-leave-impact-title" aria-busy={!current}>
+    <header><h2 id="staff-leave-impact-title">Work affected</h2>{data?.state === "ready" ? <span>{data.total} {data.total === 1 ? "activity" : "activities"}</span> : null}</header>
+    {!current ? <p role="status">Checking published classes and dated duties…</p> : current.error ? <>
+      <p role="alert">Couldn’t check affected work. {current.error}</p>
+      <button className="staff-secondary" type="button" onClick={() => setRetry(value => value + 1)}>Retry work preview</button>
+    </> : data ? <>
+      {data.state === "empty" ? <p>No published classes or dated duties found.</p> : <ul>
+        {data.items.slice(currentPage * pageSize, (currentPage + 1) * pageSize).map(item => <li key={item.id}>
+          <strong>{item.title}</strong>
+          <span>{[displayDate(item.date), item.starts_at && item.ends_at ? `${item.starts_at.slice(0, 5)}–${item.ends_at.slice(0, 5)}` : "Time not specified", item.class_label, item.location].filter(Boolean).join(" · ")}</span>
+        </li>)}
+      </ul>}
+      {pageCount > 1 ? <nav aria-label="Affected work pages">
+        <button type="button" className="staff-secondary" disabled={currentPage === 0} onClick={() => setPage(value => value - 1)}>Previous</button>
+        <span>{currentPage + 1} of {pageCount}</span>
+        <button type="button" className="staff-secondary" disabled={currentPage === pageCount - 1} onClick={() => setPage(value => value + 1)}>Next</button>
+      </nav> : null}
+      {data.truncated ? <p>Showing {data.items.length} of {data.total} affected activities.</p> : null}
+      <p className="staff-leave-impact__note">Preview only. Approval checks the current work again.</p>
+      <details><InfoSummary>Preview details</InfoSummary><p>Published timetable and dated responsibilities · {data.time_zone}</p>{data.limitations.map((limitation, index) => <p key={index}>{limitation}</p>)}</details>
+    </> : null}
+  </section>;
 }
 
 export function StaffOperationsPage({
@@ -149,13 +391,130 @@ export function StaffOperationsPage({
         data={data}
         refresh={refresh}
         actorId={actorId}
+        includeOperationalQueues
       />
     );
   return null;
 }
 
+export type StaffWorkspaceSurface = "setup" | "responsibilities" | "coverage" | "leave";
+
+interface StaffOperationsWorkspacePageProps {
+  surface: StaffWorkspaceSurface;
+  schoolId: string;
+  schoolName?: string;
+  data: StaffWorkspace;
+  refresh: () => Promise<void>;
+  staffProfileId?: string;
+  actorId: string;
+}
+
+/**
+ * Canonical responsibility-composed entry point. The workspace returned by the
+ * domain still owns every command and authorization decision; this component
+ * only chooses the surface the manifest granted to the signed-in person.
+ */
+export function StaffOperationsWorkspacePage({
+  surface,
+  schoolId,
+  schoolName,
+  data,
+  refresh,
+  staffProfileId,
+  actorId,
+}: StaffOperationsWorkspacePageProps) {
+  if (surface === "setup" && data.mode === "admin") {
+    return staffProfileId ? (
+      <PrincipalStaffDetailPage
+        schoolId={schoolId}
+        schoolName={schoolName}
+        data={data}
+        profileId={staffProfileId}
+        refresh={refresh}
+      />
+    ) : (
+      <PrincipalStaffPage
+        schoolId={schoolId}
+        schoolName={schoolName}
+        data={data}
+        refresh={refresh}
+        actorId={actorId}
+      />
+    );
+  }
+
+  if (surface === "leave") {
+    return data.mode === "staff" ? (
+      <TeacherLeavePage
+        schoolId={schoolId}
+        schoolName={schoolName}
+        data={data}
+        refresh={refresh}
+        actorId={actorId}
+      />
+    ) : (
+      <StaffLeaveReviewWorkspace
+        schoolId={schoolId}
+        schoolName={schoolName}
+        actorId={actorId}
+        data={data}
+        refresh={refresh}
+      />
+    );
+  }
+
+  if (surface === "coverage") {
+    return data.mode === "staff" ? (
+      <TeacherResponsibilitiesPage
+        surface="coverage"
+        schoolId={schoolId}
+        schoolName={schoolName}
+        data={data}
+        refresh={refresh}
+        actorId={actorId}
+      />
+    ) : (
+      <StaffCoverageWorkspace
+        schoolId={schoolId}
+        schoolName={schoolName}
+        data={data}
+        refresh={refresh}
+      />
+    );
+  }
+
+  if (surface === "responsibilities" && data.mode === "staff") {
+    return (
+      <TeacherResponsibilitiesPage
+        surface="responsibilities"
+        schoolId={schoolId}
+        schoolName={schoolName}
+        data={data}
+        refresh={refresh}
+        actorId={actorId}
+      />
+    );
+  }
+
+  return (
+    <OperationsShell
+      active={surface === "setup" ? "more" : "areas"}
+      title={surface === "setup" ? "Staff setup" : "Responsibilities"}
+      schoolName={schoolName}
+      backTo={surface === "setup" ? "/more/setup" : "/areas/responsibilities"}
+    >
+      <div className="staff-page">
+        <section className="staff-panel staff-profile-missing" role="status">
+          <h2>This workspace is not assigned</h2>
+          <p>Your current responsibilities do not include this surface. Ask an administrator to review your staff profile and assignments.</p>
+          <Link className="staff-secondary" to="/areas/responsibilities">Open responsibilities</Link>
+        </section>
+      </div>
+    </OperationsShell>
+  );
+}
+
 export function AuthorizedStaffLeaveDecisionPage({
-  portal,
   schoolId,
   schoolName,
   actorId,
@@ -163,7 +522,6 @@ export function AuthorizedStaffLeaveDecisionPage({
   data,
   refresh,
 }: {
-  portal: "principal" | "teacher";
   schoolId: string;
   schoolName?: string;
   actorId: string;
@@ -177,11 +535,10 @@ export function AuthorizedStaffLeaveDecisionPage({
   useAttentionFocus(requestId);
   return (
     <OperationsShell
-      portal={portal}
-      active="more"
+      active="work"
       title="Leave request"
       schoolName={schoolName}
-      backTo={`/${portal}/requests`}
+      backTo="/work"
     >
       <div className="staff-page staff-page--teacher">
         {request ? (
@@ -197,7 +554,7 @@ export function AuthorizedStaffLeaveDecisionPage({
           <section className="staff-panel staff-profile-missing" role="alert">
             <h2>Leave request unavailable</h2>
             <p>This request was resolved, reassigned, or is no longer yours to review.</p>
-            <Link className="staff-secondary" to={`/${portal}/requests`}>Back to requests</Link>
+            <Link className="staff-secondary" to="/work">Back to work</Link>
           </section>
         )}
       </div>
@@ -211,12 +568,14 @@ function PrincipalStaffPage({
   data,
   refresh,
   actorId,
+  includeOperationalQueues = false,
 }: {
   schoolId: string;
   schoolName?: string;
   data: AdminStaffWorkspace;
   refresh: () => Promise<void>;
   actorId: string;
+  includeOperationalQueues?: boolean;
 }) {
   const [params, setParams] = useSearchParams();
   const focusRequestId = params.get("request");
@@ -224,13 +583,16 @@ function PrincipalStaffPage({
   const attentionNotificationId = params.get("attention_notification_id");
   const requestRevision = expectedRevision(params.get("request_revision"));
   const coverageRevision = expectedRevision(params.get("coverage_revision"));
-  const requestedSection = focusRequestId || focusCoverageId ? "leave" : params.get("section") === "work-types" ? "roles" : params.get("section");
-  const section: PrincipalSection = [
+  const requestedSection = includeOperationalQueues && (focusRequestId || focusCoverageId)
+    ? "leave"
+    : params.get("section") === "work-types" ? "roles" : params.get("section");
+  const allowedSections: PrincipalSection[] = [
     "directory",
     "roles",
-    "leave",
     "policies",
-  ].includes(requestedSection ?? "")
+    ...(includeOperationalQueues ? ["leave" as const] : []),
+  ];
+  const section: PrincipalSection = allowedSections.includes(requestedSection as PrincipalSection)
     ? (requestedSection as PrincipalSection)
     : "directory";
   const pending = data.requests.filter(
@@ -246,11 +608,10 @@ function PrincipalStaffPage({
   const exactFocusedAttention = exactRequestAttention || exactCoverageAttention;
   return (
     <OperationsShell
-      portal="principal"
       active="more"
-      title="Staff"
+      title="People & responsibilities"
       schoolName={schoolName}
-      backTo="/principal/more"
+      backTo="/more/setup"
     >
       {exactFocusedAttention ? <AttentionOpenAcknowledgement /> : null}
       {hasFocusedAttention && !exactFocusedAttention ? (
@@ -258,14 +619,12 @@ function PrincipalStaffPage({
       ) : null}
       <div className="staff-page">
         <nav className="staff-tabs" aria-label="Staff management sections">
-          {(
-            [
+          {([
               { id: "directory", label: "People", icon: UsersRound },
               { id: "roles", label: "Roles", icon: ClipboardCheck },
-              { id: "leave", label: "Leave", icon: CalendarCheck2 },
-              { id: "policies", label: "Settings", icon: Settings2 },
-            ] as const
-          ).map(({ id, label, icon: Icon }) => (
+              ...(includeOperationalQueues ? [{ id: "leave" as const, label: "Leave", icon: CalendarCheck2 }] : []),
+              { id: "policies", label: "Leave settings", icon: Settings2 },
+            ] as const).map(({ id, label, icon: Icon }) => (
             <button
               type="button"
               key={id}
@@ -309,12 +668,8 @@ function StaffDirectory({
   refresh: () => Promise<void>;
 }) {
   const [adding, setAdding] = useState(false);
-  const [search, setSearch] = useState("");
-  const filtered = data.profiles.filter((item) =>
-    `${staffName(item)} ${item.staff_code} ${item.designation}`
-      .toLowerCase()
-      .includes(search.toLowerCase()),
-  );
+  const [params] = useSearchParams();
+  const directoryParams = staffDirectoryParams(params);
   return (
     <div className="staff-directory-layout">
       <section className="staff-panel staff-directory">
@@ -323,7 +678,7 @@ function StaffDirectory({
             <span>{data.profiles.filter(profile => profile.status === "active").length} active staff</span>
           </div>
           <div className="staff-directory-actions">
-          <Link to={`/principal/invitations?from=staff&role=staff&school=${schoolId}`}>Invite staff</Link>
+          <Link to={`/more/setup/people/invitations?from=staff&role=staff&school=${schoolId}`}>Invite staff</Link>
           <button
             type="button"
             className="staff-primary staff-compact"
@@ -334,26 +689,18 @@ function StaffDirectory({
           </button>
           </div>
         </header>
-        <label className="staff-search">
-          <span className="sr-only">Find staff</span>
-          <input
-            type="search"
-            placeholder="Name, staff code or position"
-            value={search}
-            onChange={(event) => setSearch(event.target.value)}
-          />
-        </label>
-        <div className="staff-list">
-          {filtered.map((item) => {
-            const progress = item.onboarding_total
-              ? Math.round(
-                  ((item.onboarding_complete ?? 0) / item.onboarding_total) *
-                    100,
-                )
-              : 0;
+        <CollectionView items={data.profiles} namespace="staff" label="staff" searchLabel="Find staff" searchPlaceholder="Name, staff code or position" searchText={(item) => `${staffName(item)} ${item.staff_code} ${item.designation} ${item.department} ${item.email}`} categoryLabel="Staff status" categories={[
+          { value: "active", label: "Active", matches: (item) => item.status === "active" },
+          { value: "onboarding", label: "Onboarding", matches: (item) => item.status === "onboarding" },
+          { value: "inactive", label: "Inactive", matches: (item) => item.status === "inactive" },
+        ]} empty={<p className="staff-empty">No staff profiles yet.</p>}>{(visible) => <div className="staff-list">
+          {visible.map((item) => {
+            const items = data.onboarding_items.filter(check => check.staff_profile_id === item.id);
+            const required = items.filter(check => check.required);
+            const progress = required.length ? Math.round(required.filter(check => check.completed_at).length / required.length * 100) : 100;
             return (
               <Link
-                to={`/principal/staff/${item.id}`}
+                to={`/more/setup/responsibilities/${item.id}?${directoryParams}`}
                 key={item.id}
                 aria-label={`Open ${staffName(item)} staff profile`}
               >
@@ -365,8 +712,7 @@ function StaffDirectory({
                   </small>
                   {item.status === "onboarding" ? (
                     <i>
-                      <span style={{ width: `${progress}%` }} />
-                      {progress}% ready
+                      {items.length ? <><span style={{ width: `${progress}%` }} />{progress}% required checks complete</> : "Onboarding in progress"}
                     </i>
                   ) : null}
                 </span>
@@ -377,10 +723,7 @@ function StaffDirectory({
               </Link>
             );
           })}
-          {!filtered.length ? (
-            <p className="staff-empty">No staff match this search.</p>
-          ) : null}
-        </div>
+        </div>}</CollectionView>
       </section>
       {adding ? (
         <NewStaffDialog
@@ -410,6 +753,7 @@ function PrincipalStaffDetailPage({
   refresh: () => Promise<void>;
 }) {
   const [params] = useSearchParams();
+  const directoryHref = `/more/setup/responsibilities?${staffDirectoryParams(params)}`;
   const profile = data.profiles.find((item) => item.id === profileId);
   const focusAssignmentId = params.get("assignment") ?? undefined;
   const assignmentRevision = expectedRevision(params.get("assignment_revision"));
@@ -420,11 +764,10 @@ function PrincipalStaffDetailPage({
 
   return (
     <OperationsShell
-      portal="principal"
       active="more"
       title="Staff profile"
       schoolName={schoolName}
-      backTo="/principal/staff?section=directory"
+      backTo={directoryHref}
     >
       {exactAssignmentAttention ? <AttentionOpenAcknowledgement /> : null}
       {attentionNotificationId && focusAssignmentId && !exactAssignmentAttention ? (
@@ -451,7 +794,7 @@ function PrincipalStaffDetailPage({
           <section className="staff-panel staff-profile-missing" role="status">
             <h2>Staff profile not found</h2>
             <p>This record may have been removed or is no longer available.</p>
-            <Link className="staff-secondary" to="/principal/staff?section=directory">
+            <Link className="staff-secondary" to={directoryHref}>
               Back to people
             </Link>
           </section>
@@ -553,11 +896,11 @@ function StaffDetail({
       <div className="staff-facts">
         <span>
           <small>Joined</small>
-          <strong>{displayDate(profile.joined_on)}</strong>
+          <strong>{profile.joined_on ? displayDate(profile.joined_on) : "Not provided"}</strong>
         </span>
         <span>
           <small>Employment</small>
-          <strong>{profile.employment_type.replace("_", " ")}</strong>
+          <strong>{profile.employment_type === "unspecified" ? "Not specified" : profile.employment_type.replace("_", " ")}</strong>
         </span>
         <span>
           <small>Contact</small>
@@ -567,6 +910,7 @@ function StaffDetail({
       <StaffRoleAssignments schoolId={schoolId} profile={profile} data={workspace} refresh={refresh} focusAssignmentId={focusAssignmentId}/>
       <StaffOnboardingChecklist
         items={items}
+        personId={profile.person_id}
         busy={Boolean(busy)}
         onToggle={toggle}
       />
@@ -654,18 +998,28 @@ function StaffDetail({
 
 function StaffOnboardingChecklist({
   items,
+  personId,
   busy,
   onToggle,
 }: {
   items: AdminStaffWorkspace["onboarding_items"];
+  personId?: string | null;
   busy: boolean;
   onToggle: (item: AdminStaffWorkspace["onboarding_items"][number]) => Promise<void>;
 }) {
   if (!items.length) return null;
-  const complete = items.filter((item) => item.completed_at).length;
+  const required = items.filter((item) => item.required);
+  const complete = required.filter((item) => item.completed_at).length;
+  const hasOptional = required.length !== items.length;
   const checklist = (
     <div className="staff-checklist">
-      {items.map((item) => (
+      {items.map((item) => !item.required && item.item_key === "account_access" ? (
+        <div key={item.id} className="staff-checklist-information">
+          <span aria-hidden="true"><UsersRound size={16} /></span>
+          <strong>{item.label}<small>Optional · Managed in People</small></strong>
+          {personId ? <Link to={`/areas/people/participants/${encodeURIComponent(personId)}`}>Open in People</Link> : null}
+        </div>
+      ) : (
         <button
           type="button"
           key={item.id}
@@ -675,13 +1029,13 @@ function StaffOnboardingChecklist({
         >
           <span>{item.completed_at ? <Check size={16} /> : null}</span>
           <strong>{item.label}</strong>
-          <small>{item.completed_at ? "Recorded" : "Required"}</small>
+          <small>{item.completed_at ? item.required ? "Recorded" : "Recorded · optional" : item.required ? "Required" : "Optional"}</small>
         </button>
       ))}
     </div>
   );
 
-  if (complete === items.length) {
+  if (complete === required.length) {
     return (
       <details className="staff-onboarding-complete">
         <summary>
@@ -689,8 +1043,8 @@ function StaffOnboardingChecklist({
             <FileCheck2 size={19} />
           </span>
           <span>
-            <strong>Onboarding complete</strong>
-            <small>{items.length} checks recorded</small>
+            <strong>{hasOptional ? "Required onboarding complete" : "Onboarding complete"}</strong>
+            <small>{required.length} {hasOptional ? "required checks" : "checks"} recorded</small>
           </span>
           <ChevronRight size={18} />
         </summary>
@@ -705,7 +1059,7 @@ function StaffOnboardingChecklist({
         <div>
           <span>ONBOARDING</span>
           <h3 id="staff-onboarding-heading">
-            {complete} of {items.length} complete
+            {complete} of {required.length} {hasOptional ? "required checks complete" : "complete"}
           </h3>
         </div>
         <FileCheck2 size={20} />
@@ -718,18 +1072,22 @@ function StaffOnboardingChecklist({
 const dataYear = (policies: LeavePolicy[]) =>
   policies[0]?.academic_year ?? "Current year";
 
-function NewStaffDialog({
+export function NewStaffDialog({
   schoolId,
   onClose,
   onSaved,
+  person,
 }: {
   schoolId: string;
   onClose: () => void;
   onSaved: () => Promise<void>;
+  person?: { id: string; label: string; revision: number };
 }) {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const [invite, setInvite] = useState<string | null>(null);
+  const [personCommandKey, setPersonCommandKey] = useState(() => crypto.randomUUID());
+  const [personReference] = useState(() => person ? { id: person.id, expected_revision: person.revision } : undefined);
   async function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     setBusy(true);
@@ -737,18 +1095,18 @@ function NewStaffDialog({
     const form = new FormData(event.currentTarget);
     try {
       const result = await createStaffProfile(schoolId, {
-        first_name: formValue(form, "first_name"),
-        last_name: formValue(form, "last_name"),
-        email: formValue(form, "email"),
-        phone: formValue(form, "phone"),
+        ...(person ? { person: personReference, idempotency_key: personCommandKey } : {
+          first_name: formValue(form, "first_name"), last_name: formValue(form, "last_name"),
+          email: formValue(form, "email"), phone: formValue(form, "phone"),
+        }),
         staff_code: formValue(form, "staff_code"),
         staff_kind: formValue(form, "staff_kind"),
         designation: formValue(form, "designation"),
         department: formValue(form, "department"),
         employment_type: formValue(form, "employment_type"),
-        joined_on: formValue(form, "joined_on"),
+        joined_on: formValue(form, "joined_on") || null,
       });
-      if (result.invitation) setInvite(result.invitation.token);
+      if (result.invitation && !person) setInvite(result.invitation.token);
       else await onSaved();
     } catch (cause) {
       setError((cause as Error).message);
@@ -771,9 +1129,9 @@ function NewStaffDialog({
       >
         <header>
           <div>
-            <span>ONBOARD STAFF</span>
-            <h2 id="new-staff-title">Add staff member</h2>
-            <p>Service record essentials and secure account access.</p>
+            <span>{person ? person.label : "ONBOARD STAFF"}</span>
+            <h2 id="new-staff-title">{person ? "Add work profile" : "Add staff member"}</h2>
+            <p>{person ? "Employment details for this same person. No invitation, account access or operational permissions are created." : "Service record essentials and secure account access."}</p>
           </div>
           <button type="button" aria-label="Close" onClick={onClose}>
             <X size={20} />
@@ -784,8 +1142,7 @@ function NewStaffDialog({
             <ShieldCheck size={28} />
             <h3>Profile created</h3>
             <p>
-              Share this single-use account code privately. It expires in 72
-              hours.
+              Share this single-use account code privately. It expires in 30 minutes.
             </p>
             <code>{invite}</code>
             <button
@@ -804,24 +1161,24 @@ function NewStaffDialog({
             </button>
           </div>
         ) : (
-          <form className="staff-form" onSubmit={(event) => void submit(event)}>
+          <form className="staff-form" onSubmit={(event) => void submit(event)} onChange={() => { if (person) setPersonCommandKey(crypto.randomUUID()); }}>
             <div className="staff-form-grid">
-              <label>
+              {!person ? <><label>
                 First name
                 <input name="first_name" required maxLength={100} />
               </label>
               <label>
                 Last name
                 <input name="last_name" maxLength={100} />
-              </label>
-              <label>
+              </label></> : null}
+              {!person ? <><label>
                 Email
                 <input type="email" name="email" required />
               </label>
               <label>
                 Phone
                 <input type="tel" name="phone" maxLength={30} />
-              </label>
+              </label></> : null}
               <label>
                 Staff code
                 <input
@@ -854,6 +1211,7 @@ function NewStaffDialog({
               <label>
                 Employment
                 <select name="employment_type">
+                  <option value="unspecified">Not specified</option>
                   <option value="full_time">Full time</option>
                   <option value="part_time">Part time</option>
                   <option value="contract">Contract</option>
@@ -861,7 +1219,7 @@ function NewStaffDialog({
               </label>
               <label>
                 Joining date
-                <TemporalInput name="joined_on" type="date" required />
+                <TemporalInput name="joined_on" type="date" />
               </label>
             </div>
             {error ? (
@@ -878,7 +1236,7 @@ function NewStaffDialog({
                 Cancel
               </button>
               <button className="staff-primary" disabled={busy}>
-                {busy ? "Creating…" : "Create & invite"}
+                {busy ? "Creating…" : person ? "Save work profile" : "Create & invite"}
               </button>
             </footer>
           </form>
@@ -898,135 +1256,104 @@ const timeWindow = (startsAt: string | null, endsAt: string | null) =>
     ? `${startsAt.slice(0, 5)}–${endsAt.slice(0, 5)}`
     : "All day";
 
-function CoverageBoard({
+function StaffCoverageWorkspace({
   schoolId,
+  schoolName,
   data,
   refresh,
-  focusCoverageId,
 }: {
   schoolId: string;
+  schoolName?: string;
   data: AdminStaffWorkspace;
   refresh: () => Promise<void>;
-  focusCoverageId?: string | null;
 }) {
-  const [busy, setBusy] = useState("");
-  const [error, setError] = useState("");
-  const gaps = data.coverage_tasks.filter((task) =>
-    ["open", "declined"].includes(task.status),
-  );
-  const offeredCover = data.coverage_tasks.filter(
-    (task) => task.status === "offered",
-  );
-  const focusedCover = focusCoverageId
-    ? data.coverage_tasks.find((task) => task.id === focusCoverageId)
+  const [params] = useSearchParams();
+  const focusCoverageId = params.get("coverage");
+  const attentionNotificationId = params.get("attention_notification_id");
+  const coverageRevision = expectedRevision(params.get("coverage_revision"));
+  const focusedCoverage = focusCoverageId
+    ? data.coverage_tasks.find((item) => item.id === focusCoverageId)
     : undefined;
-  const visibleCover = [...gaps, ...offeredCover];
-  if (focusedCover && ["open", "offered", "declined"].includes(focusedCover.status) && !visibleCover.some((task) => task.id === focusedCover.id)) {
-    visibleCover.unshift(focusedCover);
-  }
-  async function cover(task: CoverageTask, profileId: string) {
-    if (!profileId) return;
-    setBusy(task.id);
-    setError("");
-    try {
-      await assignCoverage(schoolId, task.id, {
-        replacement_staff_profile_id: profileId,
-        note: "Cover offered by school office.",
-        expected_revision: task.revision,
-      });
-      await refresh();
-    } catch (cause) {
-      setError((cause as Error).message);
-    } finally {
-      setBusy("");
-    }
-  }
+  const exactAttention = Boolean(
+    attentionNotificationId
+      && focusedCoverage
+      && coverageRevision
+      && focusedCoverage.revision === coverageRevision
+      && ["accepted", "declined"].includes(focusedCoverage.status),
+  );
+  useAttentionFocus(focusCoverageId);
   return (
-    <div className="staff-responsibility-layout">
-      {error ? (
-        <p className="staff-error" role="alert">
-          {error}
-        </p>
+    <OperationsShell
+      active="areas"
+      title="Coverage"
+      schoolName={schoolName}
+      backTo="/areas/responsibilities"
+    >
+      {exactAttention ? <AttentionOpenAcknowledgement /> : null}
+      {attentionNotificationId && focusCoverageId && !exactAttention ? (
+        <AttentionTargetUnavailable message="This cover item changed after the alert was created. It was not marked as opened." />
       ) : null}
-      <section className="staff-panel staff-cover-board">
-        <header>
-          <h2>Leave coverage</h2>
-          <b>{gaps.length + offeredCover.length} open</b>
-        </header>
-        {focusCoverageId && (!focusedCover || !["open", "offered", "declined"].includes(focusedCover.status)) ? (
-          <section className="staff-assignment-attention-state" role="alert">
-            <strong>Cover duty resolved</strong>
-            <p>This item is no longer in the live queue.</p>
-          </section>
-        ) : null}
-        <div className="staff-cover-list">
-          {visibleCover.map((task) => (
-            <article id={`attention-${task.id}`} tabIndex={-1} className={task.id === focusCoverageId ? "attention-focus" : undefined} key={task.id}>
-              <span
-                className={`staff-duty-icon staff-duty-icon--${task.status}`}
-              >
-                <RotateCcw size={18} />
-              </span>
-              <div>
-                <strong>{task.title}</strong>
-                <small>
-                  {displayDate(task.duty_date)} ·{" "}
-                  {timeWindow(task.starts_at, task.ends_at)}
-                  {task.class_name ? ` · ${task.class_name}` : ""}
-                </small>
-                <p>
-                  {task.absent_first_name} {task.absent_last_name} is away
-                  {task.handover_note ? ` · ${task.handover_note}` : ""}
-                </p>
-              </div>
-              {task.status === "offered" ? (
-                <span className="staff-cover-person">
-                  <small>Offered to</small>
-                  <strong>
-                    {task.replacement_first_name} {task.replacement_last_name}
-                  </strong>
-                </span>
-              ) : ["open", "declined"].includes(task.status) ? (
-                <label>
-                  <span className="sr-only">
-                    Cover teacher for {task.title}
-                  </span>
-                  <select
-                    defaultValue=""
-                    disabled={busy === task.id}
-                    onChange={(event) => void cover(task, event.target.value)}
-                  >
-                    <option value="" disabled>
-                      Choose cover
-                    </option>
-                    {data.profiles
-                      .filter(
-                        (profile) =>
-                          profile.status === "active" &&
-                          profile.id !== task.absent_staff_profile_id,
-                      )
-                      .map((profile) => (
-                        <option key={profile.id} value={profile.id}>
-                          {staffName(profile)} · {profile.designation}
-                        </option>
-                      ))}
-                  </select>
-                </label>
-              ) : (
-                <span className={`staff-status staff-status--${task.status}`}>
-                  {task.status}
-                </span>
-              )}
-            </article>
-          ))}
-          {!visibleCover.length ? (
-            <p className="staff-empty">
-              <Check size={18} /> No uncovered classes or shifts.
-            </p>
-          ) : null}
-        </div>
-      </section>
-    </div>
+      <div className="staff-page">
+        <CoverageBoard
+          schoolId={schoolId}
+          data={data}
+          refresh={refresh}
+          focusCoverageId={focusCoverageId}
+        />
+      </div>
+    </OperationsShell>
+  );
+}
+
+function StaffLeaveReviewWorkspace({
+  schoolId,
+  schoolName,
+  actorId,
+  data,
+  refresh,
+}: {
+  schoolId: string;
+  schoolName?: string;
+  actorId: string;
+  data: AdminStaffWorkspace;
+  refresh: () => Promise<void>;
+}) {
+  const [params] = useSearchParams();
+  const focusRequestId = params.get("request");
+  const attentionNotificationId = params.get("attention_notification_id");
+  const requestRevision = expectedRevision(params.get("request_revision"));
+  const focusedRequest = focusRequestId
+    ? data.requests.find((item) => item.id === focusRequestId)
+    : undefined;
+  const exactAttention = Boolean(
+    attentionNotificationId
+      && focusedRequest
+      && requestRevision
+      && focusedRequest.revision === requestRevision
+      && focusedRequest.status === "submitted",
+  );
+  useAttentionFocus(focusRequestId);
+  return (
+    <OperationsShell
+      active="areas"
+      title="Staff leave"
+      schoolName={schoolName}
+      backTo="/areas/responsibilities"
+    >
+      {exactAttention ? <AttentionOpenAcknowledgement /> : null}
+      {attentionNotificationId && focusRequestId && !exactAttention ? (
+        <AttentionTargetUnavailable message="This leave request changed after the alert was created. It was not marked as opened." />
+      ) : null}
+      <div className="staff-page">
+        <LeaveReview
+          schoolId={schoolId}
+          actorId={actorId}
+          data={data}
+          refresh={refresh}
+          focusRequestId={focusRequestId}
+        />
+      </div>
+    </OperationsShell>
   );
 }
 
@@ -1042,13 +1369,12 @@ function LeaveReview({
 }: {
   schoolId: string;
   actorId: string;
-  data: Pick<StaffWorkspace, "requests" | "balances">;
+  data: StaffWorkspace;
   refresh: () => Promise<void>;
   focusRequestId?: string | null;
   onlyRequestId?: string;
 }) {
-  const [busy, setBusy] = useState("");
-  const [error, setError] = useState("");
+  const command = useLeaveCommand(schoolId, actorId, refresh);
   const visibleRequests = onlyRequestId
     ? data.requests.filter((request) => request.id === onlyRequestId)
     : data.requests;
@@ -1059,40 +1385,30 @@ function LeaveReview({
     decision: "approved" | "rejected",
     note: string,
   ) {
-    setBusy(request.id);
-    setError("");
     const input = {
       decision,
       note: note.trim(),
       expected_revision: request.revision,
     } as const;
-    const commandScope: StaffLeaveCommandScope = {
-      schoolId,
-      actorId,
+    await command.run({
       operation: "decide",
       targetId: request.id,
-    };
-    let command: Awaited<ReturnType<typeof pendingStaffLeaveCommand>> | undefined;
-    try {
-      command = await pendingStaffLeaveCommand(commandScope, input);
-      await decideStaffLeave(schoolId, request.id, {
+      material: input,
+      execute: (commandId) => decideStaffLeave(schoolId, request.id, {
         ...input,
-        command_id: command.commandId,
-      });
-      clearPendingStaffLeaveCommand(commandScope, command);
-      try {
-        await refresh();
-      } catch {
-        setError("The decision was saved, but the latest status could not be loaded. Refresh this page before acting again.");
-      }
-    } catch (cause) {
-      if (command && isDefinitiveStaffLeaveFailure(cause)) {
-        clearPendingStaffLeaveCommand(commandScope, command);
-      }
-      setError((cause as Error).message);
-    } finally {
-      setBusy("");
-    }
+        command_id: commandId,
+      }),
+      acceptedMessage: "The decision was saved.",
+    });
+  }
+  async function reroute(request: StaffLeaveRequest) {
+    await command.run({
+      operation: "reroute",
+      targetId: request.id,
+      material: { expected_revision: request.revision },
+      execute: (commandId) => rerouteStaffLeave(schoolId, request.id, { expected_revision: request.revision, command_id: commandId }),
+      acceptedMessage: "The request was sent to the current reviewer.",
+    });
   }
   return (
     <section className="staff-panel staff-leave-queue">
@@ -1100,11 +1416,9 @@ function LeaveReview({
         <h2>Leave requests</h2>
         <b>{pending.length} pending</b>
       </header>
-      {error ? (
-        <p className="staff-error" role="alert">
-          {error}
-        </p>
-      ) : null}
+      {data.mode === "admin" && !data.policies.some(policy => policy.is_active) ? <LeavePolicyReadinessNotice canConfigure /> : null}
+      {data.leave_review_readiness?.state !== "ready" ? <LeaveReviewReadinessNotice schoolId={schoolId} readiness={data.leave_review_readiness} command={command} /> : null}
+      <LeaveCommandFeedback command={command} />
       <div className="staff-request-list">
         {pending.map((request) => (
           <LeaveRequestCard
@@ -1115,9 +1429,14 @@ function LeaveReview({
                 balance.staff_profile_id === request.staff_profile_id &&
                 balance.policy_id === request.policy_id,
             )}
-            busy={busy === request.id}
+            busy={command.busy === request.id}
+            disabled={command.blocked}
+            reviewReady={!data.leave_review_readiness || data.leave_review_readiness.state === "ready"}
+            actorId={actorId}
             focused={request.id === focusRequestId}
             onDecide={decide}
+            onReroute={reroute}
+            schoolId={schoolId}
           />
         ))}
         {!pending.length ? (
@@ -1130,6 +1449,8 @@ function LeaveReview({
             key={request.id}
             request={request}
             focused={request.id === focusRequestId}
+            coverManagement={data.mode === "admin" ? "admin" : "handoff"}
+            coverage={data.mode === "admin" ? { schoolId, data, refresh } : undefined}
           />
         ))}
       </div>
@@ -1137,24 +1458,75 @@ function LeaveReview({
   );
 }
 
+function LeaveRequestWork({ request, schoolId }: { request: StaffLeaveRequest; schoolId: string }) {
+  const environment = useOptionalExecutionEnvironment();
+  const worldKey = environment?.mode === "simulation" ? `${environment.namespaceId}:${environment.runId}` : "live";
+  const key = `${worldKey}:${schoolId}:${request.id}:${request.revision}`;
+  const [open, setOpen] = useState(false);
+  const [retry, setRetry] = useState(0);
+  const [page, setPage] = useState(0);
+  const [result, setResult] = useState<{ key: string; data?: StaffLeaveImpact; error?: string } | null>(null);
+  useEffect(() => {
+    if (!open || request.affected_work) return;
+    let current = true;
+    void getStaffWorkspace(schoolId, request.id).then(workspace => {
+      const latest = workspace.requests.find(item => item.id === request.id);
+      if (!current) return;
+      if (latest?.revision !== request.revision || latest.status !== "submitted") setResult({ key, error: "This request changed. Refresh requests before deciding." });
+      else if (!latest.affected_work) setResult({ key, error: "The activity preview is unavailable for these dates." });
+      else setResult({ key, data: latest.affected_work });
+    }).catch(() => { if (current) setResult({ key, error: "Couldn’t load affected activities." }); });
+    return () => { current = false; };
+  }, [open, key, retry, schoolId, request.id, request.revision, request.affected_work]);
+  const current = result?.key === key ? result : null;
+  const impact = request.affected_work ?? current?.data;
+  const pageCount = Math.max(1, Math.ceil((impact?.items.length ?? 0) / 4));
+  const currentPage = Math.min(page, pageCount - 1);
+  return <details className="staff-request-work" onToggle={event => setOpen(event.currentTarget.open)}>
+    <summary>View affected activities</summary>
+    {open ? impact ? <>
+      {impact.items.length ? <ul>{impact.items.slice(currentPage * 4, (currentPage + 1) * 4).map(item => <li key={item.id}>
+        <strong>{item.title}</strong><span>{[displayDate(item.date), item.starts_at && item.ends_at ? `${item.starts_at.slice(0, 5)}–${item.ends_at.slice(0, 5)}` : "Time not specified", item.class_label, item.location].filter(Boolean).join(" · ")}</span>
+      </li>)}</ul> : <p>No published classes or dated duties found.</p>}
+      {pageCount > 1 ? <nav aria-label="Request activity pages"><button type="button" className="staff-secondary" disabled={currentPage === 0} onClick={() => setPage(value => value - 1)}>Previous</button><span>{currentPage + 1} of {pageCount}</span><button type="button" className="staff-secondary" disabled={currentPage === pageCount - 1} onClick={() => setPage(value => value + 1)}>Next</button></nav> : null}
+      {impact.truncated ? <p>Showing {impact.items.length} of {impact.total} activities.</p> : null}
+      <p className="staff-scope-note">Planned work · checked again on approval</p>
+    </> : current?.error ? <div role="alert"><p>{current.error}</p><button type="button" className="staff-secondary" onClick={() => { setResult(null); setRetry(value => value + 1); }}>Retry preview</button></div> : <p role="status">Loading affected activities…</p> : null}
+  </details>;
+}
+
 function LeaveRequestCard({
   request,
   balance,
   busy,
+  disabled,
+  reviewReady,
+  actorId,
   focused = false,
   onDecide,
+  onReroute,
+  schoolId,
 }: {
   request: StaffLeaveRequest;
   balance?: LeaveBalance;
   busy: boolean;
+  disabled: boolean;
+  reviewReady: boolean;
+  actorId: string;
   focused?: boolean;
   onDecide: (
     request: StaffLeaveRequest,
     decision: "approved" | "rejected",
     note: string,
   ) => Promise<void>;
+  onReroute: (request: StaffLeaveRequest) => Promise<void>;
+  schoolId: string;
 }) {
   const [note, setNote] = useState("");
+  const [declining, setDeclining] = useState(false);
+  const route = request.review_route;
+  const mayDecide = reviewReady && (!route || route.state === "current" && route.reviewer?.user_id === actorId);
+  const workCount = leaveWorkCount(request);
   const available = balance
     ? number(balance.annual_allowance) +
       number(balance.adjustments) -
@@ -1210,10 +1582,7 @@ function LeaveRequestCard({
         <span>
           <CalendarClock size={17} />
           <strong>
-            {request.status === "approved"
-              ? (request.coverage_tasks ?? request.affected_periods)
-              : request.affected_periods}{" "}
-            classes or shifts
+            {workCount} {workCount === 1 ? "class or shift" : "classes or shifts"}
           </strong>{" "}
           {coverageDecision}
         </span>
@@ -1223,34 +1592,46 @@ function LeaveRequestCard({
         </span> : null}
       </div>
       <p>{request.reason}</p>
+      <LeaveRequestWork request={request} schoolId={schoolId} />
+      <LeaveReviewRouteSummary request={request} />
       {request.handover_note ? (
         <small className="staff-handover">
           Handover: {request.handover_note}
         </small>
       ) : null}
-      {request.status === "submitted" ? (
-        <div className="staff-decision">
-          <input
+      {request.status === "submitted" && route?.can_reroute && route.state !== "current" ? <button
+        type="button"
+        className="staff-primary staff-route-action"
+        disabled={disabled}
+        onClick={() => void onReroute(request)}
+      >{busy ? "Sending…" : route.current_reviewer?.user_id === actorId ? "Take over review" : "Send to current reviewer"}</button> : null}
+      {request.status === "submitted" && mayDecide ? (
+        <div className="staff-decision staff-decision--simple">
+          {declining ? <label className="staff-decline-reason">Reason for declining
+          <textarea
             value={note}
             onChange={(event) => setNote(event.target.value)}
-            placeholder="Decision note (required to decline)"
+            placeholder="Tell the requester why"
             maxLength={1000}
-          />
+            rows={2}
+            autoFocus
+            disabled={disabled}
+          /></label> : null}
           <button
             type="button"
-            className="staff-secondary staff-danger"
-            disabled={busy}
-            onClick={() => void onDecide(request, "rejected", note)}
+            className="staff-secondary"
+            disabled={disabled}
+            onClick={() => { setDeclining(value => !value); setNote(""); }}
           >
-            Decline
+            {declining ? "Back" : "Decline"}
           </button>
           <button
             type="button"
             className="staff-primary"
-            disabled={busy}
-            onClick={() => void onDecide(request, "approved", note)}
+            disabled={disabled || declining && !note.trim()}
+            onClick={() => void onDecide(request, declining ? "rejected" : "approved", declining ? note : "")}
           >
-            {busy ? "Saving…" : "Approve"}
+            {busy ? "Saving…" : declining ? "Decline request" : "Approve"}
           </button>
         </div>
       ) : request.decision_note ? (
@@ -1265,10 +1646,17 @@ function LeaveRequestCard({
 function DecidedLeaveRequest({
   request,
   focused = false,
+  personal = false,
+  coverManagement,
+  coverage,
 }: {
   request: StaffLeaveRequest;
   focused?: boolean;
+  personal?: boolean;
+  coverManagement?: "admin" | "handoff";
+  coverage?: { schoolId: string; data: AdminStaffWorkspace; refresh: () => Promise<void> };
 }) {
+  const workCount = leaveWorkCount(request);
   const coverageDecision = request.status === "approved"
     ? (request.coverage_open ?? 0) > 0
       ? `${request.coverage_open} still need cover`
@@ -1283,29 +1671,30 @@ function DecidedLeaveRequest({
       id={`attention-${request.id}`}
       tabIndex={-1}
       className={`staff-request staff-request--decided staff-request--${request.status}${focused ? " attention-focus" : ""}`}
-      open={focused || undefined}
+      open={focused || coverManagement === "admin" && (request.coverage_open ?? 0) > 0 || undefined}
     >
       <summary>
         <span className="staff-request__avatar">
-          {request.first_name.charAt(0)}
-          {request.last_name.charAt(0)}
+          {personal ? <CalendarClock size={18} aria-hidden="true" /> : <>{request.first_name.charAt(0)}{request.last_name.charAt(0)}</>}
         </span>
         <span className="staff-request__summary-copy">
-          <strong>{request.first_name} {request.last_name}</strong>
+          <strong>{personal ? request.policy_name : `${request.first_name} ${request.last_name}`}</strong>
           <small>
             {displayDate(request.starts_on)}
             {request.ends_on !== request.starts_on ? ` – ${displayDate(request.ends_on)}` : ""}
-            {` · ${request.policy_name}`}
+            {!personal ? ` · ${request.policy_name}` : ""}
           </small>
+          {request.status === "approved" && (request.coverage_open ?? 0) > 0 ? <small className="staff-cover-needed">{request.coverage_open} {(request.coverage_open ?? 0) === 1 ? "activity needs" : "activities need"} cover</small> : null}
         </span>
         <em className={`staff-status staff-status--${request.status}`}>{request.status}</em>
         <ChevronRight size={18} aria-hidden="true" />
       </summary>
       <div className="staff-request__decision-details">
         <div className="staff-impact">
+          <span><strong>{days(number(request.requested_days))} day{number(request.requested_days) === 1 ? "" : "s"}</strong> requested</span>
           <span>
             <CalendarClock size={17} />
-            <strong>{request.coverage_tasks ?? request.affected_periods} classes or shifts</strong>
+            <strong>{workCount} {workCount === 1 ? "class or shift" : "classes or shifts"}</strong>
             {coverageDecision ? ` ${coverageDecision}` : ""}
           </span>
         </div>
@@ -1313,6 +1702,11 @@ function DecidedLeaveRequest({
         {request.decision_note ? (
           <small className="staff-handover">Decision: {request.decision_note}</small>
         ) : null}
+        {request.status === "approved" && coverage && workCount > 0 ? <CoverageBoard {...coverage} leaveRequestId={request.id} embedded /> : null}
+        {request.status === "approved" && (request.coverage_open ?? 0) > 0 ? coverManagement === "admin"
+          ? null
+          : coverManagement === "handoff" ? <p className="staff-handover">Ask a campus administrator to arrange the remaining cover.</p> : null
+          : null}
       </div>
     </details>
   );
@@ -1361,7 +1755,7 @@ function PolicySettings({
           Add policy
         </button>
       </header>
-      <Link className="staff-secondary" to={`/principal/administration?school=${schoolId}&section=rules&rule=coverage`}>Automatic cover operating rules <ChevronRight size={16}/></Link>
+      <Link className="staff-secondary" to={`/more/setup/institution/operating-rules?school=${schoolId}&rule=coverage`}>Automatic cover operating rules <ChevronRight size={16}/></Link>
       <div className="staff-policy-list">
         {data.policies.map((policy) => (
           <button
@@ -1560,12 +1954,14 @@ function PolicyDialog({
 }
 
 function TeacherResponsibilitiesPage({
+  surface = "responsibilities",
   schoolId,
   schoolName,
   data,
   refresh,
   actorId,
 }: {
+  surface?: "responsibilities" | "coverage";
   schoolId: string;
   schoolName?: string;
   data: TeacherStaffWorkspace;
@@ -1581,10 +1977,12 @@ function TeacherResponsibilitiesPage({
   useAttentionFocus(focusAssignmentId ?? focusCoverageId);
   const [busy, setBusy] = useState("");
   const [error, setError] = useState("");
-  const assignments = data.assignments.filter((item) =>
-    ["offered", "active"].includes(item.status),
-  );
-  const focusedAssignment = focusAssignmentId
+  const showAssignments = surface === "responsibilities";
+  const showCoverage = surface === "coverage";
+  const assignments = showAssignments
+    ? data.assignments.filter((item) => ["offered", "active"].includes(item.status))
+    : [];
+  const focusedAssignment = showAssignments && focusAssignmentId
     ? data.assignments.find((item) => item.id === focusAssignmentId)
     : undefined;
   const resolvedFocusedAssignment = focusedAssignment && !assignments.some((item) => item.id === focusedAssignment.id)
@@ -1592,21 +1990,33 @@ function TeacherResponsibilitiesPage({
     : undefined;
   const exactAssignmentAttention = Boolean(attentionNotificationId && focusedAssignment && assignmentRevision
     && focusedAssignment.revision === assignmentRevision && ["offered", "revoked"].includes(focusedAssignment.status));
-  const focusedCoverage = focusCoverageId ? data.coverage_tasks.find((item) => item.id === focusCoverageId) : undefined;
+  const focusedCoverage = showCoverage && focusCoverageId ? data.coverage_tasks.find((item) => item.id === focusCoverageId) : undefined;
   const exactCoverageAttention = Boolean(attentionNotificationId && focusedCoverage && coverageRevision
     && focusedCoverage.revision === coverageRevision && focusedCoverage.status === "offered"
     && focusedCoverage.replacement_staff_profile_id === data.profile.id);
   const hasFocusedAttention = Boolean(attentionNotificationId && (focusAssignmentId || focusCoverageId));
   const exactFocusedAttention = exactAssignmentAttention || exactCoverageAttention;
-  const roleAssignments = data.role_assignments ?? [];
+  const roleAssignments = showAssignments ? (data.role_assignments ?? []) : [];
   const activeRoleAssignments = roleAssignments.filter((item) => ["active","scheduled"].includes(item.display_status));
   const projectedIds = new Set(activeRoleAssignments.filter((item) => item.source_kind === "assignment").map((item) => item.source_id));
+  const allProjectedIds = new Set(roleAssignments.filter((item) => item.source_kind === "assignment").map((item) => item.source_id));
+  const pastAssignments = showAssignments
+    ? data.assignments.filter((item) => ["declined", "completed", "revoked"].includes(item.status) && !allProjectedIds.has(item.id) && item.id !== focusAssignmentId)
+    : [];
   const activeWorkCount = assignments.filter((item) => item.status === "active" && !projectedIds.has(item.id)).length + activeRoleAssignments.length;
-  const cover = data.coverage_tasks.filter(
-    (task) =>
-      task.replacement_staff_profile_id === data.profile.id &&
-      ["offered", "accepted"].includes(task.status),
-  );
+  const cover = showCoverage
+    ? data.coverage_tasks.filter(
+        (task) =>
+          task.replacement_staff_profile_id === data.profile.id &&
+          ["offered", "accepted"].includes(task.status),
+      )
+    : [];
+  const pastCover = showCoverage
+    ? data.coverage_tasks.filter(
+        (task) => task.replacement_staff_profile_id === data.profile.id
+          && ["declined", "completed", "cancelled", "fallback_applied", "expired_unconfirmed"].includes(task.status),
+      )
+    : [];
   const needsReply =
     assignments.filter((item) => item.status === "offered").length +
     cover.filter((item) => item.status === "offered").length;
@@ -1671,11 +2081,10 @@ function TeacherResponsibilitiesPage({
   }
   return (
     <OperationsShell
-      portal="teacher"
-      active="more"
-      title="My work"
+      active="areas"
+      title={surface === "coverage" ? "Coverage" : "Responsibilities"}
       schoolName={schoolName}
-      backTo="/teacher/more"
+      backTo="/areas/responsibilities"
     >
       {exactFocusedAttention ? <AttentionOpenAcknowledgement /> : null}
       {hasFocusedAttention && !exactFocusedAttention ? (
@@ -1686,7 +2095,7 @@ function TeacherResponsibilitiesPage({
             <span>
               {activeWorkCount +
                 cover.filter((item) => item.status === "accepted").length}{" "}
-              current assignments
+              {surface === "coverage" ? "current cover duties" : "current assignments"}
             </span>
             {needsReply ? <span>
               {needsReply
@@ -1772,7 +2181,7 @@ function TeacherResponsibilitiesPage({
           <header>
             <div>
               <span>CURRENT</span>
-              <h2>Assignments</h2>
+              <h2>{surface === "coverage" ? "Accepted cover" : "Assignments"}</h2>
             </div>
             <BadgeCheck size={21} />
           </header>
@@ -1858,10 +2267,37 @@ function TeacherResponsibilitiesPage({
               ))}
             {activeWorkCount === 0 &&
             !cover.some((item) => item.status === "accepted") ? (
-              <p className="staff-empty">No current work assignments.</p>
+              <p className="staff-empty">{surface === "coverage" ? "No accepted cover duties." : "No current work assignments."}</p>
             ) : null}
           </div>
         </section>
+        {pastAssignments.length || pastCover.length ? (
+          <details className="staff-panel staff-my-duties staff-history">
+            <summary>History <span>{pastAssignments.length + pastCover.length}</span></summary>
+            <div className="staff-assignment-list">
+              {pastAssignments.map((item) => (
+                <article className="staff-assignment-card" key={item.id}>
+                  <span className={`staff-duty-icon staff-duty-icon--${item.status}`}><Handshake size={18} /></span>
+                  <div className="staff-assignment-card__main">
+                    <header><div><strong>{item.type_name}</strong><small>{assignmentScope(item)}</small></div><em className={`staff-status staff-status--${item.status}`}>{item.status}</em></header>
+                    <div className="staff-duty-meta"><span><CalendarClock size={14} />{displayDate(item.starts_on)}{item.ends_on ? ` – ${displayDate(item.ends_on)}` : ""}</span></div>
+                    {item.revocation_reason || item.response_note ? <p>{item.revocation_reason || item.response_note}</p> : null}
+                  </div>
+                </article>
+              ))}
+              {pastCover.map((item) => (
+                <article className="staff-assignment-card" key={item.id}>
+                  <span className={`staff-duty-icon staff-duty-icon--${item.status}`}><RotateCcw size={18} /></span>
+                  <div className="staff-assignment-card__main">
+                    <header><div><strong>Cover · {item.title}</strong><small>{item.class_name}{item.subject_name ? ` · ${item.subject_name}` : ""}</small></div><em className={`staff-status staff-status--${item.status}`}>{item.status.replaceAll("_", " ")}</em></header>
+                    <div className="staff-duty-meta"><span><CalendarClock size={14} />{displayDate(item.duty_date)} · {timeWindow(item.starts_at, item.ends_at)}</span></div>
+                    {item.response_note || item.handover_note ? <p>{item.response_note || item.handover_note}</p> : null}
+                  </div>
+                </article>
+              ))}
+            </div>
+          </details>
+        ) : null}
       </div>
     </OperationsShell>
   );
@@ -1943,10 +2379,11 @@ function TeacherLeavePage({
   const requestRevision=expectedRevision(params.get('request_revision'));
   const attentionNotificationId=params.get('attention_notification_id');
   const open=params.get('create')==='leave';
-  const view=params.get('view')==='balances'?'balances':'requests';
+  const canReview = data.can_review_staff_leave === true;
+  const view=params.get('view')==='review'&&canReview?'review':'requests';
   const listParams=new URLSearchParams(params);listParams.delete('create');
   const listQuery=listParams.toString();
-  const listPath=`/teacher/leave${listQuery?`?${listQuery}`:''}`;
+  const listPath=`/areas/responsibilities/leave${listQuery?`?${listQuery}`:''}`;
   const setOpen=(next:boolean)=>{
     if(next){
       setParams(current=>{const query=new URLSearchParams(current);query.set('create','leave');return query;});
@@ -1956,28 +2393,22 @@ function TeacherLeavePage({
     if(samePortalHref(previous,listPath)){void navigate(-1);return;}
     void navigate(listPath,{replace:true});
   };
-  const sectionPath=(next:string)=>{const query=new URLSearchParams(listParams);query.set('view',next);return `/teacher/leave?${query}`;};
-  const [busy, setBusy] = useState("");
-  const [error, setError] = useState("");
+  const sectionPath=(next:string)=>{const query=new URLSearchParams(listParams);query.set('view',next);return `/areas/responsibilities/leave?${query}`;};
+  const command = useLeaveCommand(schoolId, actorId, refresh);
+  const readiness = data.leave_review_readiness;
+  const reviewUnavailable = Boolean(readiness && readiness.state !== "ready");
+  const [leaveDraft, setLeaveDraft] = useState({ policy_id: "", starts_on: "", ends_on: "", portion: "full_day" as StaffLeaveImpactInput["portion"] });
+  const policyId = leaveDraft.policy_id || data.balances[0]?.policy_id || "";
+  const hasPolicy = data.balances.length > 0;
   useAttentionFocus(focusRequestId);
-  const exactRequestAttention=Boolean(attentionNotificationId&&focusRequestId&&requestRevision&&data.requests.some((request)=>
+  const personalRequests = data.requests.filter((request) => request.staff_profile_id === data.profile.id);
+  const exactRequestAttention=Boolean(attentionNotificationId&&focusRequestId&&requestRevision&&personalRequests.some((request)=>
     request.id===focusRequestId&&request.revision===requestRevision&&["approved","rejected"].includes(request.status)));
-  const available = useMemo(
-    () =>
-      data.balances.reduce(
-        (total, balance) =>
-          total +
-          number(balance.annual_allowance) +
-          number(balance.adjustments) -
-          number(balance.used),
-        0,
-      ),
-    [data.balances],
-  );
+  const selectedBalance = data.balances.find(balance => balance.policy_id === policyId);
+  const available = selectedBalance ? number(selectedBalance.annual_allowance) + number(selectedBalance.adjustments) - number(selectedBalance.used) - number(selectedBalance.pending) : 0;
   async function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    setBusy("new");
-    setError("");
+    if (reviewUnavailable || !hasPolicy || command.blocked) return;
     const form = new FormData(event.currentTarget);
     const input = {
       policy_id: formValue(form, "policy_id"),
@@ -1987,122 +2418,82 @@ function TeacherLeavePage({
       reason: formValue(form, "reason"),
       handover_note: formValue(form, "handover_note"),
     };
-    const commandScope: StaffLeaveCommandScope = {
-      schoolId,
-      actorId,
+    await command.run({
       operation: "submit",
       targetId: "new-request",
-    };
-    let command: Awaited<ReturnType<typeof pendingStaffLeaveCommand>> | undefined;
-    try {
-      command = await pendingStaffLeaveCommand(commandScope, input);
-      await submitStaffLeave(schoolId, {
+      material: input,
+      execute: (commandId) => submitStaffLeave(schoolId, {
         ...input,
-        command_id: command.commandId,
-      });
-      clearPendingStaffLeaveCommand(commandScope, command);
-      setOpen(false);
-      try {
-        await refresh();
-      } catch {
-        setError("Your leave request was submitted, but the latest status could not be loaded. Refresh this page before submitting again.");
-      }
-    } catch (cause) {
-      if (command && isDefinitiveStaffLeaveFailure(cause)) {
-        clearPendingStaffLeaveCommand(commandScope, command);
-      }
-      setError((cause as Error).message);
-    } finally {
-      setBusy("");
-    }
+        command_id: commandId,
+      }),
+      acceptedMessage: "Your leave request was submitted.",
+      onAccepted: () => { setLeaveDraft({ policy_id: "", starts_on: "", ends_on: "", portion: "full_day" }); setOpen(false); },
+    });
   }
   async function withdraw(request: StaffLeaveRequest) {
-    setBusy(request.id);
-    setError("");
-    const material = { expected_revision: request.revision };
-    const commandScope: StaffLeaveCommandScope = {
-      schoolId,
-      actorId,
+    await command.run({
       operation: "withdraw",
       targetId: request.id,
-    };
-    let command: Awaited<ReturnType<typeof pendingStaffLeaveCommand>> | undefined;
-    try {
-      command = await pendingStaffLeaveCommand(commandScope, material);
-      await withdrawStaffLeave(schoolId, request.id, request.revision, command.commandId);
-      clearPendingStaffLeaveCommand(commandScope, command);
-      try {
-        await refresh();
-      } catch {
-        setError("The request was withdrawn, but the latest status could not be loaded. Refresh this page before acting again.");
-      }
-    } catch (cause) {
-      if (command && isDefinitiveStaffLeaveFailure(cause)) {
-        clearPendingStaffLeaveCommand(commandScope, command);
-      }
-      setError((cause as Error).message);
-    } finally {
-      setBusy("");
-    }
+      material: { expected_revision: request.revision },
+      execute: (commandId) => withdrawStaffLeave(schoolId, request.id, request.revision, commandId),
+      acceptedMessage: "The request was withdrawn.",
+    });
+  }
+  async function reroute(request: StaffLeaveRequest) {
+    await command.run({
+      operation: "reroute",
+      targetId: request.id,
+      material: { expected_revision: request.revision },
+      execute: (commandId) => rerouteStaffLeave(schoolId, request.id, { expected_revision: request.revision, command_id: commandId }),
+      acceptedMessage: "The request was sent to the current reviewer.",
+    });
   }
   return (
     <OperationsShell
-      portal="teacher"
-      active="more"
-      title={open?'Apply for leave':'My leave'}
+      active="areas"
+      title={open?'Apply for leave':view==='review'?'Staff leave':'My leave'}
       schoolName={schoolName}
-      backTo={open?listPath:'/teacher/more'}
+      backTo={open?listPath:'/areas/responsibilities'}
     >
       {exactRequestAttention ? <AttentionOpenAcknowledgement /> : null}
       {attentionNotificationId&&focusRequestId&&!exactRequestAttention?<AttentionTargetUnavailable message="This leave decision changed after the alert was created. It was not marked as opened."/>:null}
       <div className="staff-page staff-page--teacher">
         {!open?<><div className="staff-inline-summary">
-          <span>{days(available)} days available · {data.academic_year || "Current year"}</span>
-          <button className="staff-primary staff-compact" type="button" onClick={() => setOpen(!open)}>
+          <span>{view==='review'?"Requests for your decision":data.academic_year || "Current year"}</span>
+          {view !== 'review' ? <button className="staff-primary staff-compact" type="button" disabled={command.blocked} onClick={() => setOpen(!open)}>
             <Plus size={18} />
             Apply for leave
-          </button>
-        </div><nav className="workspace-sections" aria-label="Leave sections"><Link replace to={sectionPath('requests')} aria-current={view==='requests'?'page':undefined}>Requests</Link><Link replace to={sectionPath('balances')} aria-current={view==='balances'?'page':undefined}>Balances</Link></nav></>:null}
+          </button> : null}
+        </div>{canReview ? <nav className="workspace-sections" aria-label="Leave sections"><Link replace to={sectionPath('requests')} aria-current={view==='requests'?'page':undefined}>My leave</Link><Link replace to={sectionPath('review')} aria-current={view==='review'?'page':undefined}>To review</Link></nav> : null}</>:null}
         {open ? (
           <section className="staff-panel staff-apply">
             <form
               className="staff-form"
               onSubmit={(event) => void submit(event)}
             >
+              <LeaveReviewReadinessNotice schoolId={schoolId} readiness={readiness} command={command} allowConfiguration={false} />
+              {!hasPolicy ? <LeavePolicyReadinessNotice canConfigure={false} /> : null}
+              <fieldset className="staff-leave-fields" disabled={command.blocked}>
               <div className="staff-form-grid">
                 <label>
-                  Leave type
-                  <select name="policy_id" required>
-                    {data.balances.map((balance) => (
-                      <option value={balance.policy_id} key={balance.policy_id}>
-                        {balance.name} ·{" "}
-                        {days(
-                          number(balance.annual_allowance) +
-                            number(balance.adjustments) -
-                            number(balance.used) -
-                            number(balance.pending),
-                        )}{" "}
-                        available
-                      </option>
-                    ))}
-                  </select>
-                </label>
-                <label>
-                  Day type
-                  <select name="portion">
-                    <option value="full_day">Full day</option>
-                    <option value="first_half">First half</option>
-                    <option value="second_half">Second half</option>
-                  </select>
-                </label>
-                <label>
                   From
-                  <TemporalInput name="starts_on" type="date" required />
+                  <TemporalInput name="starts_on" type="date" required value={leaveDraft.starts_on} onChange={event => setLeaveDraft(current => ({ ...current, starts_on: event.target.value }))} />
                 </label>
                 <label>
                   To
-                  <TemporalInput name="ends_on" type="date" required />
+                  <TemporalInput name="ends_on" type="date" required min={leaveDraft.starts_on || undefined} value={leaveDraft.ends_on} onChange={event => setLeaveDraft(current => ({ ...current, ends_on: event.target.value }))} />
                 </label>
+                {hasPolicy ? <label className="staff-span">
+                  Leave type
+                  <select name="policy_id" aria-label="Leave type" aria-describedby="staff-selected-balance" required value={policyId} onChange={event => setLeaveDraft(current => ({ ...current, policy_id: event.target.value }))}>
+                    {data.balances.map((balance) => (
+                      <option value={balance.policy_id} key={balance.policy_id}>
+                        {balance.name}
+                      </option>
+                    ))}
+                  </select>
+                  <span id="staff-selected-balance" className="staff-selected-balance">{days(available)} days available{number(selectedBalance?.pending ?? 0) > 0 ? ` · ${days(number(selectedBalance?.pending ?? 0))} pending` : ''}</span>
+                </label> : null}
                 <label className="staff-span">
                   Reason
                   <textarea
@@ -2110,38 +2501,43 @@ function TeacherLeavePage({
                     required
                     minLength={8}
                     maxLength={1000}
-                    rows={3}
+                    rows={2}
                     placeholder="Why you need leave"
                   />
                 </label>
-                <label className="staff-span">
-                  Handover note
-                  <textarea
-                    name="handover_note"
-                    maxLength={1000}
-                    rows={2}
-                    placeholder="Classes or duties that need cover"
-                  />
-                </label>
+                <details className="staff-span staff-optional-handover">
+                  <summary>Half-day or handover <span>Optional</span></summary>
+                  <label>
+                    Day type
+                    <select name="portion" value={leaveDraft.portion} onChange={event => setLeaveDraft(current => ({ ...current, portion: event.target.value as StaffLeaveImpactInput["portion"] }))}>
+                      <option value="full_day">Full day</option>
+                      <option value="first_half">First half</option>
+                      <option value="second_half">Second half</option>
+                    </select>
+                  </label>
+                  <label>
+                    Handover note
+                    <textarea name="handover_note" maxLength={1000} rows={2} placeholder="Classes or duties that need cover" />
+                  </label>
+                </details>
               </div>
-              <div className="staff-form-actions"><button type="button" className="staff-secondary" disabled={busy==='new'} onClick={()=>setOpen(false)}>Cancel</button><button className="staff-primary" disabled={busy === "new"}>
-                {busy === "new" ? "Submitting…" : "Submit request"}
+              </fieldset>
+              <StaffLeaveImpactPreview schoolId={schoolId} actorId={actorId} input={{ ...leaveDraft, policy_id: hasPolicy ? policyId : "" }} />
+              <div className="staff-form-actions"><button type="button" className="staff-secondary" disabled={command.blocked} onClick={()=>setOpen(false)}>Cancel</button><button className="staff-primary" disabled={command.blocked || reviewUnavailable || !hasPolicy}>
+                {command.busy === "new-request" ? "Sending…" : "Send request"}
               </button></div>
             </form>
           </section>
         ) : null}
-        {error ? (
-          <p className="staff-error" role="alert">
-            {error}
-          </p>
-        ) : null}
-        {!open&&view==='balances'?<section className="staff-balance-grid">
+        <LeaveCommandFeedback command={command} />
+        {!open&&view==='review'?<LeaveReview schoolId={schoolId} actorId={actorId} data={data} refresh={refresh} focusRequestId={focusRequestId}/>:null}
+        {!open&&view==='requests'&&hasPolicy?<details className="staff-personal-balances" open={params.get('view')==='balances'||undefined}><summary>Leave balances <ChevronRight size={18} aria-hidden="true" /></summary><section className="staff-balance-grid" aria-label="Leave balances">
           {data.balances.map((balance) => {
             const allowance =
               number(balance.annual_allowance) + number(balance.adjustments);
             const used = number(balance.used);
             const pending = number(balance.pending);
-            const remain = allowance - used;
+            const remain = allowance - used - pending;
             return (
               <article key={balance.policy_id}>
                 <span className="staff-policy-icon">
@@ -2172,15 +2568,15 @@ function TeacherLeavePage({
               </article>
             );
           })}
-        </section>:null}
+        </section></details>:null}
         {!open&&view==='requests'?<section className="staff-panel staff-my-requests" aria-label="Leave requests">
-          {data.requests.length ? (
+          {personalRequests.length ? (
             <div className="staff-request-list">
-              {data.requests.map((request) => (
+              {personalRequests.map((request) => request.status !== "submitted" ? <DecidedLeaveRequest key={request.id} request={request} personal focused={request.id === focusRequestId} /> : (
                 <article
                   id={`attention-${request.id}`}
                   tabIndex={-1}
-                  className={`staff-request staff-request--${request.status}${request.id === focusRequestId ? " attention-focus" : ""}`}
+                  className={`staff-request staff-request--personal staff-request--${request.status}${request.id === focusRequestId ? " attention-focus" : ""}`}
                   key={request.id}
                 >
                   <header>
@@ -2199,40 +2595,42 @@ function TeacherLeavePage({
                     <em
                       className={`staff-status staff-status--${request.status}`}
                     >
-                      {request.status}
+                      Pending
                     </em>
                   </header>
                   <div className="staff-request__dates">
                     <span>
-                      <small>DURATION</small>
                       <strong>
                         {days(number(request.requested_days))} day
                         {number(request.requested_days) === 1 ? "" : "s"}
                       </strong>
                     </span>
                     <span>
-                      <small>COVERAGE</small>
-                      <strong>{request.affected_periods} periods</strong>
+                      <strong>{request.affected_periods} {request.affected_periods === 1 ? "activity" : "activities"}</strong>
                     </span>
                   </div>
                   <p>{request.reason}</p>
+                  <LeaveReviewRouteSummary request={request} />
                   {request.decision_note ? (
                     <small className="staff-handover">
                       Decision: <span>{request.decision_note}</span>
                     </small>
                   ) : null}
-                  {request.status === "submitted" ? (
+                  {request.status === "submitted" ? <div className="staff-request-actions">
+                    {request.review_route?.can_reroute && request.review_route.state !== "current" ? <button
+                      type="button" className="staff-primary" disabled={command.blocked} onClick={() => void reroute(request)}
+                    >{command.busy === request.id ? "Sending…" : "Send to current reviewer"}</button> : null}
                     <button
                       type="button"
                       className="staff-secondary staff-withdraw"
-                      disabled={busy === request.id}
+                      disabled={command.blocked}
                       onClick={() => void withdraw(request)}
                     >
-                      {busy === request.id
+                      {command.busy === request.id && command.busyOperation === "withdraw"
                         ? "Withdrawing…"
                         : "Withdraw request"}
                     </button>
-                  ) : null}
+                  </div> : null}
                 </article>
               ))}
             </div>

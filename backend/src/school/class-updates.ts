@@ -24,6 +24,15 @@ export async function classUpdates(db: Kysely<Database>, classIds: string[], use
     WHERE di.class_section_id IN (${sql.join(classIds.map(id => sql`${id}::uuid`))}) AND di.author_id=${userId}::uuid
       AND ${date}::date BETWEEN t.starts_on AND t.ends_on AND di.published_at<=now()
       AND dn.created_at<=now() AND (dn.created_at AT TIME ZONE 'Asia/Kolkata')::date BETWEEN ${date}::date-13 AND ${date}::date
+      AND (di.item_type<>'homework' OR (
+        EXISTS(SELECT 1 FROM staff_role_bindings learning WHERE learning.school_id=di.school_id AND learning.user_id=${userId}::uuid
+          AND learning.context_kind='class' AND learning.scope_id=di.class_section_id AND learning.role_active AND learning.status='active'
+          AND current_date>=learning.starts_on AND (learning.ends_on IS NULL OR current_date<=learning.ends_on) AND 'learning.work.publish'=ANY(learning.permissions)
+          AND (learning.subject_id IS NULL OR learning.subject_id=di.subject_id))
+        AND EXISTS(SELECT 1 FROM staff_role_bindings messaging WHERE messaging.school_id=di.school_id AND messaging.user_id=${userId}::uuid
+          AND messaging.context_kind='class' AND messaging.scope_id=di.class_section_id AND messaging.role_active AND messaging.status='active'
+          AND current_date>=messaging.starts_on AND (messaging.ends_on IS NULL OR current_date<=messaging.ends_on) AND 'messages.send'=ANY(messaging.permissions)
+          AND (messaging.subject_id IS NULL OR messaging.subject_id=di.subject_id))))
     UNION ALL
     SELECT n.id::text, COALESCE(dp.class_section_id::text,n.metadata->>'class_section_id')::uuid, 'change', n.title, n.body, n.created_at, n.read_at IS NULL, n.id
     FROM notifications n LEFT JOIN day_plans dp ON dp.id::text=n.metadata->>'day_plan_id'

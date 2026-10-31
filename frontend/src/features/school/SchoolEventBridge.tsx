@@ -1,7 +1,10 @@
 import { useQueryClient } from "@tanstack/react-query";
 import { useEffect, useState } from "react";
 import { ApiError, apiFetch } from "../../lib/api";
+import { blockExecutionRequests, EXECUTION_ENVIRONMENT_VERIFY_EVENT } from "../../lib/executionRequestScope";
 import { useOptionalAuth } from "../auth/AuthContext";
+import { useOptionalApplicationExecutionEnvironment } from "../simulation/ApplicationExecutionEnvironment";
+import { LIVE_EXECUTION_ENVIRONMENT, executionEnvironmentIdentity } from "../simulation/executionEnvironment";
 import {
   decodeSchoolEventChannelMessage,
   SCHOOL_EVENT_CHANNEL_VERSION,
@@ -15,6 +18,7 @@ import {
   createInvalidationBatcher,
   FULL_SYNC_INVALIDATIONS,
   resolveSchoolEvent,
+  schoolEventMatchesScope,
   SCHOOL_EVENT_TYPES,
   type SchoolEventEnvelope,
   type SchoolEventType,
@@ -26,10 +30,11 @@ const SESSION_VALIDATION_ERROR_THRESHOLD = 2;
 const SESSION_VALIDATION_THROTTLE_MS = 15_000;
 
 const statusMessages: Record<StreamStatus, string> = {
-  connected: "Live school updates connected.",
-  reconnecting: "Reconnecting live school updates.",
-  offline: "Live school updates paused while this device is offline.",
-  unavailable: "Live school updates are unavailable in this browser.",
+  connected: "Campus updates connected.",
+  reconnecting: "Reconnecting campus updates.",
+  offline: "Campus updates paused while this device is offline.",
+  superseded: "Campus updates continue in another active window.",
+  unavailable: "Campus updates are unavailable in this browser.",
 };
 
 function initialStreamStatus(): StreamStatus {
@@ -49,6 +54,17 @@ function encodeEnvelope(envelope: SchoolEventEnvelope) {
 export function SchoolEventBridge() {
   const auth = useOptionalAuth();
   const queryClient = useQueryClient();
+  const applicationEnvironment = useOptionalApplicationExecutionEnvironment();
+  const environment = applicationEnvironment?.environment ?? auth?.executionEnvironment ?? LIVE_EXECUTION_ENVIRONMENT;
+  const institutionId = environment.institutionId ?? auth?.user?.active_school_id ?? undefined;
+  const namespaceId = environment.namespaceId ?? (environment.mode === "live" && institutionId ? `live:${institutionId}` : undefined);
+  const environmentId = executionEnvironmentIdentity(environment.mode === "live"
+    ? { ...environment, institutionId, namespaceId } : environment);
+  // Stable across virtual clock checkpoints: a run's event stream must not
+  // reconnect for each tick, and cannot invalidate another world's cache.
+  const environmentQueryPrefix = JSON.stringify(environment.mode === "simulation"
+    ? ["execution-environment", "simulation", environment.namespaceId, environment.runId]
+    : ["execution-environment", "live"]);
   const userId = auth?.user?.id;
   const authenticated = auth?.status === "authenticated";
   const [streamStatus, setStreamStatus] = useState<StreamStatus>(initialStreamStatus);
@@ -57,7 +73,7 @@ export function SchoolEventBridge() {
     if (!authenticated || !userId) return undefined;
     if (typeof EventSource === "undefined") return undefined;
 
-    const batcher = createInvalidationBatcher(queryClient);
+    const batcher = createInvalidationBatcher(queryClient, 75, JSON.parse(environmentQueryPrefix) as readonly unknown[]);
     const tabId = createTabId();
     const handledEventIds = new Set<string>();
     let currentStatus: StreamStatus = initialStreamStatus();
@@ -67,6 +83,10 @@ export function SchoolEventBridge() {
     let lockAbort: AbortController | undefined;
     let releaseLeadership: (() => void) | undefined;
     let isLeader = false;
+    let leadershipRequestActive = false;
+    let requestLeadership: (() => void) | undefined;
+    let pageSuspended = false;
+    let superseded = false;
     let cleaned = false;
     let consecutiveErrors = 0;
     let lastSessionValidationAt = Number.NEGATIVE_INFINITY;
@@ -98,6 +118,7 @@ export function SchoolEventBridge() {
       if (share && isLeader) post({ kind: "sync" }, targetTabId);
     };
     const enqueueEnvelope = (envelope: SchoolEventEnvelope, expectedType: SchoolEventType) => {
+      if (!schoolEventMatchesScope(envelope, { institutionId, namespaceId })) return false;
       if (handledEventIds.has(envelope.id)) return false;
       const resolution = resolveSchoolEvent(encodeEnvelope(envelope), expectedType, userId);
       if (!resolution.envelope) {
@@ -114,6 +135,15 @@ export function SchoolEventBridge() {
       source?.close();
       if (share && isLeader) post({ kind: "session.expired" });
       window.dispatchEvent(new Event("omnischool:session-expired"));
+    };
+    const environmentChanged = (share: boolean) => {
+      if (share) post({ kind: "environment.changed" });
+      superseded = true;
+      stopSource?.();
+      batcher.cancel();
+      blockExecutionRequests();
+      void queryClient.cancelQueries();
+      window.dispatchEvent(new Event(EXECUTION_ENVIRONMENT_VERIFY_EVENT));
     };
     const validateSession = async () => {
       if (sessionValidationInFlight || !navigator.onLine || cleaned || (!isLeader && channel)) return;
@@ -155,7 +185,7 @@ export function SchoolEventBridge() {
     };
 
     const startSource = (shared: boolean) => {
-      if (source || cleaned) return;
+      if (source || cleaned || pageSuspended || superseded) return;
       const activeSource = new EventSource("/api/v1/events/stream/", { withCredentials: true });
       source = activeSource;
       consecutiveErrors = 0;
@@ -170,11 +200,24 @@ export function SchoolEventBridge() {
         publishStatus(navigator.onLine ? "reconnecting" : "offline");
         scheduleSessionValidation();
       };
-      const handleReady = () => {
+      const handleReady = (event: Event) => {
+        if (event instanceof MessageEvent && typeof event.data === "string") {
+          try {
+            const ready = JSON.parse(event.data) as { namespace_id?: unknown };
+            if (typeof ready.namespace_id === "string" && namespaceId
+              && ready.namespace_id !== namespaceId) { environmentChanged(shared); return; }
+          } catch { requestFullSync(shared); return; }
+        }
         publishStatus("connected");
       };
       const handleSyncRequired = () => requestFullSync(shared);
       const handleSessionExpired = () => expireSession(shared);
+      const handleEnvironmentChanged = () => environmentChanged(shared);
+      const handleStreamReplaced = () => {
+        superseded = true;
+        stopSource?.();
+        publishStatus("superseded");
+      };
       const eventHandlers = new Map<SchoolEventType, EventListener>();
 
       for (const type of SCHOOL_EVENT_TYPES) {
@@ -200,21 +243,31 @@ export function SchoolEventBridge() {
       activeSource.addEventListener("stream.ready", handleReady);
       activeSource.addEventListener("sync.required", handleSyncRequired);
       activeSource.addEventListener("session.expired", handleSessionExpired);
+      activeSource.addEventListener("environment.changed", handleEnvironmentChanged);
+      activeSource.addEventListener("stream.replaced", handleStreamReplaced);
       publishStatus(navigator.onLine ? "reconnecting" : "offline");
 
-      stopSource = () => {
+      const closeSource = () => {
         activeSource.onopen = null;
         activeSource.onerror = null;
         activeSource.removeEventListener("stream.ready", handleReady);
         activeSource.removeEventListener("sync.required", handleSyncRequired);
         activeSource.removeEventListener("session.expired", handleSessionExpired);
+        activeSource.removeEventListener("environment.changed", handleEnvironmentChanged);
+        activeSource.removeEventListener("stream.replaced", handleStreamReplaced);
         for (const [type, handler] of eventHandlers) activeSource.removeEventListener(type, handler);
         activeSource.close();
         if (source === activeSource) source = undefined;
+        if (stopSource === closeSource) stopSource = undefined;
       };
+      stopSource = closeSource;
     };
 
     const handleOnline = () => {
+      if (superseded) {
+        updateStatus("superseded");
+        return;
+      }
       if (isLeader || !channel) {
         publishStatus("reconnecting");
         scheduleSessionValidation();
@@ -226,16 +279,44 @@ export function SchoolEventBridge() {
     };
     const handleOffline = () => {
       clearSessionValidationTimer();
+      if (superseded) {
+        updateStatus("superseded");
+        return;
+      }
       if (isLeader) publishStatus("offline");
       else updateStatus("offline");
     };
     const handleVisibility = () => {
-      if (document.visibilityState !== "visible" || !navigator.onLine || isLeader || !channel) return;
+      if (document.visibilityState !== "visible" || !navigator.onLine || isLeader || !channel || superseded) return;
       requestFullSync();
       post({ kind: "hello" });
     };
+    const relinquishLeadership = () => {
+      const release = releaseLeadership;
+      releaseLeadership = undefined;
+      release?.();
+      lockAbort?.abort();
+    };
+    const handlePageHide = () => {
+      pageSuspended = true;
+      if (isLeader && channel && !superseded) post({ kind: "status", status: "reconnecting" });
+      stopSource?.();
+      relinquishLeadership();
+    };
+    const handlePageShow = () => {
+      pageSuspended = false;
+      if (cleaned || superseded) return;
+      if (channel) {
+        post({ kind: "hello" });
+        requestLeadership?.();
+      } else {
+        startSource(false);
+      }
+    };
     window.addEventListener("online", handleOnline);
     window.addEventListener("offline", handleOffline);
+    window.addEventListener("pagehide", handlePageHide);
+    window.addEventListener("pageshow", handlePageShow);
     document.addEventListener("visibilitychange", handleVisibility);
 
     const lockManager = (navigator as Navigator & { locks?: LockManager }).locks;
@@ -244,7 +325,7 @@ export function SchoolEventBridge() {
       startSource(false);
     } else {
       try {
-        channel = new BroadcastChannel(schoolEventChannelName(userId));
+        channel = new BroadcastChannel(schoolEventChannelName(userId, environmentId));
         const handleChannelMessage = (event: MessageEvent<unknown>) => {
           const message = decodeSchoolEventChannelMessage(event.data);
           if (!message || message.userId !== userId || message.senderTabId === tabId) return;
@@ -256,7 +337,14 @@ export function SchoolEventBridge() {
             requestFullSync();
           } else if (message.kind === "session.expired") {
             expireSession(false);
+          } else if (message.kind === "environment.changed") {
+            environmentChanged(false);
           } else if (message.kind === "status") {
+            if (message.status === "superseded") {
+              superseded = true;
+              stopSource?.();
+              lockAbort?.abort();
+            }
             if (!isLeader) updateStatus(message.status);
           } else if (message.kind === "hello" && isLeader) {
             post({ kind: "status", status: currentStatus === "unavailable" ? "reconnecting" : currentStatus }, message.senderTabId);
@@ -264,32 +352,42 @@ export function SchoolEventBridge() {
           }
         };
         channel.addEventListener("message", handleChannelMessage);
-        lockAbort = new AbortController();
         updateStatus(navigator.onLine ? "reconnecting" : "offline");
         post({ kind: "hello" });
-
-        const lockRequest = lockManager.request(
-          schoolEventLockName(userId),
-          { mode: "exclusive", signal: lockAbort.signal },
-          async (lock) => {
-            if (!lock || cleaned) return;
-            isLeader = true;
-            void validateSession();
-            startSource(true);
-            await new Promise<void>((resolve) => {
-              releaseLeadership = resolve;
-            });
-            stopSource?.();
-            isLeader = false;
-          },
-        );
-        void lockRequest.catch((error: unknown) => {
-          if (cleaned || lockAbort?.signal.aborted || error instanceof DOMException && error.name === "AbortError") return;
-          channel?.removeEventListener("message", handleChannelMessage);
-          channel?.close();
-          channel = undefined;
-          startSource(false);
-        });
+        requestLeadership = () => {
+          if (cleaned || pageSuspended || superseded || leadershipRequestActive || !channel) return;
+          leadershipRequestActive = true;
+          const requestAbort = new AbortController();
+          lockAbort = requestAbort;
+          const lockRequest = lockManager.request(
+            schoolEventLockName(userId, environmentId),
+            { mode: "exclusive", signal: requestAbort.signal },
+            async (lock) => {
+              if (!lock || cleaned || pageSuspended || superseded) return;
+              isLeader = true;
+              void validateSession();
+              startSource(true);
+              await new Promise<void>((resolve) => {
+                releaseLeadership = resolve;
+              });
+              stopSource?.();
+              releaseLeadership = undefined;
+              isLeader = false;
+            },
+          );
+          void lockRequest.catch((error: unknown) => {
+            if (cleaned || requestAbort.signal.aborted || error instanceof DOMException && error.name === "AbortError") return;
+            channel?.removeEventListener("message", handleChannelMessage);
+            channel?.close();
+            channel = undefined;
+            startSource(false);
+          }).finally(() => {
+            leadershipRequestActive = false;
+            if (lockAbort === requestAbort) lockAbort = undefined;
+            if (!cleaned && !pageSuspended && !superseded && channel && !isLeader) requestLeadership?.();
+          });
+        };
+        requestLeadership();
       } catch {
         channel?.close();
         channel = undefined;
@@ -302,16 +400,17 @@ export function SchoolEventBridge() {
       cleaned = true;
       window.removeEventListener("online", handleOnline);
       window.removeEventListener("offline", handleOffline);
+      window.removeEventListener("pagehide", handlePageHide);
+      window.removeEventListener("pageshow", handlePageShow);
       document.removeEventListener("visibilitychange", handleVisibility);
       clearSessionValidationTimer();
       sessionValidationAbort.abort();
       stopSource?.();
-      releaseLeadership?.();
-      lockAbort?.abort();
+      relinquishLeadership();
       channel?.close();
       batcher.cancel();
     };
-  }, [authenticated, queryClient, userId]);
+  }, [authenticated, environmentId, institutionId, namespaceId, environmentQueryPrefix, queryClient, userId]);
 
   if (!authenticated) return null;
   return (

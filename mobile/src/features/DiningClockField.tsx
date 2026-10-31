@@ -1,0 +1,6 @@
+import { useState } from 'react';
+import { Platform, View } from 'react-native';
+import DateTimePicker from '@react-native-community/datetimepicker';
+import { ControlButton } from '../ui/DomainControls';
+import { TemporalValueControl } from '../ui/TemporalValueControl';
+export function DiningClockField({label,value,onChange,disabled,rowLabel}:{label:string;value:string;onChange(value:string):void;disabled?:boolean;rowLabel?:string}){const [open,setOpen]=useState(false),[h,m]=value.split(':').map(Number),valid=/^(?:[01]\d|2[0-3]):[0-5]\d$/.test(value),date=new Date(2000,0,1,valid?h:12,valid?m:0);return <View style={{gap:8}}>{rowLabel?<TemporalValueControl label={rowLabel} accessibilityLabel={label} value={valid?new Intl.DateTimeFormat('en-US',{hour:'numeric',minute:'2-digit',hour12:true}).format(date):'Choose'} disabled={disabled} onPress={()=>setOpen(true)}/>:<ControlButton title={`${label}: ${value||'Choose'}`} disabled={disabled} onPress={()=>setOpen(true)}/>}{open?<><DateTimePicker mode="time" display={Platform.OS==='ios'?'spinner':'default'} value={date} disabled={disabled} onChange={(_e,d)=>{if(d)onChange(`${String(d.getHours()).padStart(2,'0')}:${String(d.getMinutes()).padStart(2,'0')}`);if(Platform.OS!=='ios')setOpen(false);}}/>{Platform.OS==='ios'?<ControlButton title="Done" onPress={()=>setOpen(false)}/>:null}</>:null}</View>;}

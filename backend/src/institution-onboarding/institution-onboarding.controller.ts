@@ -1,4 +1,4 @@
-import { Controller, Get, Post, Req } from "@nestjs/common";
+import { Controller, Get, Patch, Post, Put, Req } from "@nestjs/common";
 import type { AuthenticatedRequest } from "../common/request.js";
 import { InstitutionOnboardingService } from "./institution-onboarding.service.js";
 
@@ -11,13 +11,29 @@ export class InstitutionOnboardingController {
     return this.onboarding.workspace(request.authUser);
   }
 
+  @Post("workspace/")
+  provisionWorkspace(@Req() request: AuthenticatedRequest) {
+    return this.onboarding.provision(request.authUser, request.sessionHash, request.body, request);
+  }
+
+  @Put("goals/")
+  goals(@Req() request: AuthenticatedRequest) {
+    return this.onboarding.setGoals(request.authUser, request.body, request);
+  }
+
+  @Patch("resume/")
+  resume(@Req() request: AuthenticatedRequest) {
+    return this.onboarding.setResume(request.authUser, request.body, request);
+  }
+
+  @Patch("workspace-profile/")
+  profile(@Req() request: AuthenticatedRequest) {
+    return this.onboarding.setProfile(request.authUser, request.body, request);
+  }
+
   @Post("institution-applications/")
   submitInstitution(@Req() request: AuthenticatedRequest) {
     return this.onboarding.submitFormal(request.authUser, request.body, request);
   }
 
-  @Post("coaching-workspaces/")
-  createCoaching(@Req() request: AuthenticatedRequest) {
-    return this.onboarding.createCoaching(request.authUser, request.sessionHash, request.body, request);
-  }
 }

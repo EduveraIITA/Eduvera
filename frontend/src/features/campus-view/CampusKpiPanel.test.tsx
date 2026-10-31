@@ -10,6 +10,7 @@ import { getCampusKpis } from "./kpiApi";
 import type { CampusKpiPage, CampusKpiRange, CampusKpiResponse } from "./kpiApi";
 
 vi.mock("./kpiApi", () => ({ getCampusKpis: vi.fn() }));
+vi.mock("../auth/AuthContext", () => ({ useAuth: () => ({ user: { active_school_id: "school-1" }, memberships: [{ school_id: "school-1", role: "admin" }] }) }));
 const getCampusKpisMock = vi.mocked(getCampusKpis);
 
 beforeAll(() => {
@@ -146,19 +147,16 @@ beforeEach(() => {
 afterEach(() => cleanup());
 
 describe("CampusKpiPanel", () => {
-  it("keeps live evidence separate from isolated planning", async () => {
+  it("keeps live evidence in Campus View and links to the canonical Simulation workspace", async () => {
     const user = userEvent.setup();
     renderHarness();
     await user.click(screen.getByRole("button", { name: "Open KPIs" }));
     await screen.findByText("Current space state");
 
-    await user.click(screen.getByRole("button", { name: "Plan & what-if" }));
-    expect(await screen.findByRole("heading", { name: "Test a future change" })).toBeInTheDocument();
-    expect(screen.getByText(/No live changes or messages/i)).toBeInTheDocument();
-    expect(screen.queryByRole("tab", { name: "Overview" })).not.toBeInTheDocument();
-
-    await user.click(screen.getByRole("button", { name: "Live performance" }));
-    expect(await screen.findByRole("tab", { name: "Overview" })).toBeInTheDocument();
+    expect(screen.getByText("Live performance")).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: "Open Simulation" })).toHaveAttribute("href", "/more/simulation");
+    expect(screen.getByRole("tab", { name: "Overview" })).toBeInTheDocument();
+    expect(screen.queryByRole("heading", { name: "Test a future change" })).not.toBeInTheDocument();
   });
 
   it("navigates KPI pages and history ranges without replacing the campus map query", async () => {

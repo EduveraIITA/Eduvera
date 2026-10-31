@@ -30,7 +30,8 @@ const exceptionInput = z.object({
   scope_kind: z.enum(["institution", "assigned_resources"]).default("assigned_resources"),
   valid_from: date,
   valid_until: date,
-}).strict();
+}).strict().refine(input => !["resources.manage", "facilities.manage", "accommodation.manage", "dining.manage"].includes(input.permission) || input.scope_kind === "institution",
+  "Borrowing, repair, accommodation and dining management require an explicit institution-scoped access exception.");
 
 type Db = DatabaseService | Transaction<Database>;
 interface ProfileRow {
@@ -81,7 +82,7 @@ export class RolesService {
     const profiles = access.role === "staff" ? (await sql<{ id: string; name: string; is_primary: boolean }>`
       SELECT DISTINCT role_id AS id,role_name AS name,false AS is_primary FROM staff_role_bindings
       WHERE school_id=${schoolId}::uuid AND user_id=${user.id}::uuid AND status='active' AND role_active
-        AND starts_on<=current_date AND (ends_on IS NULL OR ends_on>=current_date)
+        AND starts_on<=campus_permission_date(${schoolId}::uuid) AND (ends_on IS NULL OR ends_on>=campus_permission_date(${schoolId}::uuid))
       ORDER BY name`.execute(db)).rows : [];
     const permissions = [...new Set(access.sources.map((source) => source.permission))].sort();
     return {
@@ -110,7 +111,7 @@ export class RolesService {
     const profiles = await sql<ProfileRow & { member_count: number; duty_ids: string[] }>`SELECT profile.*,
       (SELECT count(*)::int FROM school_custom_role_assignments assignment
         WHERE assignment.school_id=profile.school_id AND assignment.role_id=profile.id
-          AND assignment.valid_from<=current_date AND (assignment.valid_until IS NULL OR assignment.valid_until>=current_date)) AS member_count,
+          AND assignment.valid_from<=campus_permission_date(${schoolId}::uuid) AND (assignment.valid_until IS NULL OR assignment.valid_until>=campus_permission_date(${schoolId}::uuid))) AS member_count,
       COALESCE((SELECT array_agg(duty.responsibility_type_id ORDER BY duty.responsibility_type_id)
         FROM school_custom_role_duties duty WHERE duty.school_id=profile.school_id AND duty.role_id=profile.id),'{}'::uuid[]) AS duty_ids
       FROM school_custom_roles profile WHERE profile.school_id=${schoolId}::uuid ORDER BY lower(profile.name)`.execute(this.db);
@@ -120,12 +121,12 @@ export class RolesService {
       SELECT membership.user_id,concat_ws(' ',account.first_name,account.last_name) AS name,account.email,membership.role,
         COALESCE((SELECT array_agg(assignment.role_id ORDER BY assignment.is_primary DESC,assignment.assigned_at)
           FROM school_custom_role_assignments assignment WHERE assignment.school_id=membership.school_id
-            AND assignment.user_id=membership.user_id AND assignment.valid_from<=current_date
-            AND (assignment.valid_until IS NULL OR assignment.valid_until>=current_date)),'{}'::uuid[]) AS profile_ids,
+            AND assignment.user_id=membership.user_id AND assignment.valid_from<=campus_permission_date(${schoolId}::uuid)
+            AND (assignment.valid_until IS NULL OR assignment.valid_until>=campus_permission_date(${schoolId}::uuid))),'{}'::uuid[]) AS profile_ids,
         (SELECT assignment.role_id FROM school_custom_role_assignments assignment
           WHERE assignment.school_id=membership.school_id AND assignment.user_id=membership.user_id
-            AND assignment.is_primary AND assignment.valid_from<=current_date
-            AND (assignment.valid_until IS NULL OR assignment.valid_until>=current_date) LIMIT 1) AS primary_profile_id
+            AND assignment.is_primary AND assignment.valid_from<=campus_permission_date(${schoolId}::uuid)
+            AND (assignment.valid_until IS NULL OR assignment.valid_until>=campus_permission_date(${schoolId}::uuid)) LIMIT 1) AS primary_profile_id
       FROM school_memberships membership JOIN users account ON account.id=membership.user_id
       WHERE membership.school_id=${schoolId}::uuid AND membership.is_active AND account.is_active
         AND membership.role IN ('staff','admin') ORDER BY account.first_name,account.last_name`.execute(this.db);
@@ -134,7 +135,7 @@ export class RolesService {
       exception.source_kind,exception.scope_kind,exception.valid_from,exception.valid_until,exception.review_due_on,
       exception.status,exception.revision
       FROM school_access_exceptions exception WHERE exception.school_id=${schoolId}::uuid
-        AND exception.status='active' AND exception.valid_until>=current_date
+        AND exception.status='active' AND exception.valid_until>=campus_permission_date(${schoolId}::uuid)
       ORDER BY exception.review_due_on,exception.created_at`.execute(this.db);
     return {
       templates: PROFILE_TEMPLATES,
@@ -159,7 +160,7 @@ export class RolesService {
         JOIN staff_responsibility_types type ON type.id=assignment.responsibility_type_id
         JOIN staff_profiles profile ON profile.id=assignment.staff_profile_id
         WHERE assignment.school_id=${schoolId}::uuid AND assignment.status IN ('offered','active')
-          AND (assignment.ends_on IS NULL OR assignment.ends_on>=current_date)
+          AND (assignment.ends_on IS NULL OR assignment.ends_on>=campus_permission_date(${schoolId}::uuid))
           AND profile.user_id IS NOT NULL
         UNION ALL
         SELECT 'class',assignment.id,assignment.user_id,type.id,type.name,'active',
@@ -169,7 +170,7 @@ export class RolesService {
         LEFT JOIN subjects subject ON subject.id=assignment.subject_id
         JOIN staff_responsibility_types type ON type.school_id=assignment.school_id AND type.code=assignment.role
         WHERE assignment.school_id=${schoolId}::uuid
-          AND (assignment.valid_until IS NULL OR assignment.valid_until>=current_date)
+          AND (assignment.valid_until IS NULL OR assignment.valid_until>=campus_permission_date(${schoolId}::uuid))
         UNION ALL
         SELECT 'event',event.id,staff.user_id,type.id,type.name,event.status,event.title
         FROM campus_event_staff staff
@@ -197,7 +198,7 @@ export class RolesService {
         FROM restricted_care_role_assignments assignment
         JOIN staff_responsibility_types type ON type.school_id=assignment.school_id AND type.code='safety_officer'
         WHERE assignment.school_id=${schoolId}::uuid AND assignment.status='active'
-          AND (assignment.valid_until IS NULL OR assignment.valid_until>=current_date)
+          AND (assignment.valid_until IS NULL OR assignment.valid_until>=campus_permission_date(${schoolId}::uuid))
       )
       SELECT actual.kind,actual.id,actual.user_id,actual.title,actual.status,actual.scope_label
       FROM actual_duties actual
@@ -213,8 +214,8 @@ export class RolesService {
         SELECT 1 FROM school_custom_role_assignments profile_assignment
         JOIN school_custom_role_duties duty ON duty.school_id=profile_assignment.school_id AND duty.role_id=profile_assignment.role_id
         WHERE profile_assignment.school_id=${schoolId}::uuid AND profile_assignment.user_id=actual.user_id
-          AND profile_assignment.valid_from<=current_date
-          AND (profile_assignment.valid_until IS NULL OR profile_assignment.valid_until>=current_date)
+          AND profile_assignment.valid_from<=campus_permission_date(${schoolId}::uuid)
+          AND (profile_assignment.valid_until IS NULL OR profile_assignment.valid_until>=campus_permission_date(${schoolId}::uuid))
           AND duty.responsibility_type_id=actual.responsibility_type_id
       ) ORDER BY actual.title,actual.scope_label`.execute(db)).rows;
   }
@@ -259,7 +260,7 @@ export class RolesService {
         if (id) {
           const assignedUsers = new Set((await sql<{ user_id: string }>`SELECT user_id FROM school_custom_role_assignments
             WHERE school_id=${schoolId}::uuid AND role_id=${saved.id}::uuid
-              AND valid_from<=current_date AND (valid_until IS NULL OR valid_until>=current_date)`.execute(db)).rows.map((row) => row.user_id));
+              AND valid_from<=campus_permission_date(${schoolId}::uuid) AND (valid_until IS NULL OR valid_until>=campus_permission_date(${schoolId}::uuid))`.execute(db)).rows.map((row) => row.user_id));
           const affected = (await this.dutyMismatches(db, schoolId)).filter((item) => assignedUsers.has(item.user_id));
           if (affected.length) {
             const labels = [...new Set(affected.map((item) => item.title))].slice(0, 3).join(", ");
@@ -301,7 +302,7 @@ export class RolesService {
       if (!member.rows.length) throw new ForbiddenException("Roles can only be assigned to active staff. Administrator access is protected.");
       const old = (await sql<{ role_id: string }>`SELECT role_id FROM school_custom_role_assignments
         WHERE school_id=${schoolId}::uuid AND user_id=${memberId}::uuid
-          AND valid_from<=current_date AND (valid_until IS NULL OR valid_until>=current_date)
+          AND valid_from<=campus_permission_date(${schoolId}::uuid) AND (valid_until IS NULL OR valid_until>=campus_permission_date(${schoolId}::uuid))
         ORDER BY role_id FOR UPDATE`.execute(db)).rows.map((row) => row.role_id).sort();
       if (JSON.stringify(old) !== JSON.stringify(expected)) throw new ConflictException("This staff role changed. Refresh and try again.");
       if (profileIds.length) {
@@ -312,7 +313,7 @@ export class RolesService {
       await sql`DELETE FROM school_custom_role_assignments WHERE school_id=${schoolId}::uuid AND user_id=${memberId}::uuid`.execute(db);
       for (const profileId of profileIds) await sql`INSERT INTO school_custom_role_assignments(
         school_id,user_id,role_id,assigned_by,is_primary,valid_from
-      ) VALUES(${schoolId}::uuid,${memberId}::uuid,${profileId}::uuid,${user.id}::uuid,${profileId === data.primary_profile_id},current_date)`.execute(db);
+      ) VALUES(${schoolId}::uuid,${memberId}::uuid,${profileId}::uuid,${user.id}::uuid,${profileId === data.primary_profile_id},campus_permission_date(${schoolId}::uuid))`.execute(db);
       const incompatible = (await this.dutyMismatches(db, schoolId)).filter((item) => item.user_id === memberId);
       if (incompatible.length) {
         const labels = [...new Set(incompatible.map((item) => item.title))].slice(0, 3).join(", ");
@@ -337,7 +338,7 @@ export class RolesService {
     const access = await effectiveSchoolAccess(this.db, memberId, schoolId);
     const exceptions = await sql<AccessExceptionRow>`SELECT id,permission,reason,source_kind,scope_kind,valid_from,valid_until,review_due_on,status,revision
       FROM school_access_exceptions WHERE school_id=${schoolId}::uuid AND user_id=${memberId}::uuid
-        AND status='active' AND valid_until>=current_date ORDER BY review_due_on,created_at`.execute(this.db);
+        AND status='active' AND valid_until>=campus_permission_date(${schoolId}::uuid) ORDER BY review_due_on,created_at`.execute(this.db);
     return {
       member,
       permissions: [...new Set(access.sources.map((source) => source.permission))],

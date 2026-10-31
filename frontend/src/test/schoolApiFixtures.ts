@@ -260,6 +260,8 @@ export function schoolApiFixture(path: string): unknown {
           due_at: "2026-09-18T12:00:00.000Z",
           requires_acknowledgement: true,
           acknowledged: false,
+          completed: false,
+          completed_at: null,
           published_at: "2026-09-16T09:00:00.000Z",
           notes: [],
         },

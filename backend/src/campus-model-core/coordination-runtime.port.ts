@@ -60,6 +60,65 @@ export interface OperationalMessageOutcomeReceipt {
   replayed: boolean;
 }
 
+export interface CoordinationTraceQuery {
+  school_id: string;
+  source_domain: string;
+  source_record_id: string;
+  event_type: string;
+  source_revision: number;
+  /** Narrow a retained multi-recipient delivery without weakening its exact source lineage. */
+  message_id?: string;
+}
+
+/** Owning-domain closure of obsolete work, not a recipient response or sender action.
+ * First effect requires a freshly authorized command prepared in this same owning
+ * transaction; accepted commands may only replay an exact retained effect. The
+ * Core verifies current actor/authority, exact previous source event and next
+ * accepted typed event in the selected execution world. */
+export interface DomainMessageSupersessionInput {
+  school_id: string;
+  command_id: string;
+  message_id: string;
+  previous_event_id: string;
+  /** Explicit older open work for this exact source, not a substitute for the
+   * freshly checked current command revision. Omission retains adjacent-only semantics. */
+  previous_source_revision?: number;
+  resulting_event_id: string;
+  required_capability: string;
+  occurred_at: string;
+  idempotency_key: string;
+}
+
+export interface CoordinationTraceReceipt {
+  event_id: string;
+  correlation_id: string;
+  message_id: string;
+  /** Current exact-source protocol state; not authorization or native source state. */
+  message_state?: OperationalMessageState;
+  /** Protocol response eligibility at the selected execution clock, never domain authorization.
+   * A response due date is informative; only a terminal state or expiry closes delivery. */
+  message_open?: boolean;
+}
+
+export interface SourceEventLookup {
+  school_id: string;
+  source_outbox_event_id: string;
+}
+
+export interface OperationalMessageWorkQuery {
+  workflow: string;
+  states: readonly ("queued" | "delivered" | "acknowledged")[];
+  limit: number;
+  claim?: boolean;
+}
+
+export interface OperationalMessageWorkItem {
+  message_id: string;
+  school_id: string;
+  state: "queued" | "delivered" | "acknowledged";
+  payload: Record<string, unknown>;
+}
+
 export interface CoordinationRouteResolutionInput {
   school_id: string;
   source_domain: string;
@@ -115,6 +174,18 @@ export interface CoordinationCandidateAuthorizationReceipt {
 }
 
 export interface CoordinationRuntimePort {
+  findExactTrace(
+    transaction: Transaction<Database>,
+    input: CoordinationTraceQuery,
+  ): Promise<CoordinationTraceReceipt | null>;
+  hasAcceptedSourceEvent(
+    transaction: Transaction<Database>,
+    input: SourceEventLookup,
+  ): Promise<boolean>;
+  listOperationalMessageWork(
+    transaction: Transaction<Database>,
+    input: OperationalMessageWorkQuery,
+  ): Promise<OperationalMessageWorkItem[]>;
   resolveEventRoute(
     transaction: Transaction<Database>,
     input: CoordinationRouteResolutionInput,
@@ -134,5 +205,9 @@ export interface CoordinationRuntimePort {
   recordRecipientResponse(
     transaction: Transaction<Database>,
     input: RecipientOperationalMessageResponse,
+  ): Promise<OperationalMessageOutcomeReceipt>;
+  supersedeDomainMessage(
+    transaction: Transaction<Database>,
+    input: DomainMessageSupersessionInput,
   ): Promise<OperationalMessageOutcomeReceipt>;
 }

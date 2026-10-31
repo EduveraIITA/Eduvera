@@ -3,17 +3,22 @@ import { useQueryClient } from "@tanstack/react-query";
 import { saveAttendanceContinuityBatch } from "../operations/api";
 import { useAuth } from "../auth/AuthContext";
 import { listQueuedAttendanceCaptures, removeQueuedAttendanceCapture } from "./attendanceOfflineStore";
+import { useOptionalApplicationExecutionEnvironment } from "../simulation/ApplicationExecutionEnvironment";
 
 export const attendanceContinuityEvent = "omnischool:attendance-continuity";
 
 export function AttendanceContinuitySync() {
   const auth = useAuth();
+  const applicationEnvironment = useOptionalApplicationExecutionEnvironment();
+  const environmentMode = applicationEnvironment?.environment.mode ?? auth.executionEnvironment?.mode ?? "live";
   const queryClient = useQueryClient();
   const syncing = useRef(false);
 
   useEffect(() => {
     const sync = async () => {
-      if (!navigator.onLine || syncing.current || !auth.user) return;
+      // Offline captures belong to the authoritative Live campus. Never replay
+      // them into an isolated virtual fork, even though both use the same API.
+      if (environmentMode !== "live" || !navigator.onLine || syncing.current || !auth.user) return;
       syncing.current = true;
       try {
         const captures = await listQueuedAttendanceCaptures(auth.user.id);
@@ -51,7 +56,7 @@ export function AttendanceContinuitySync() {
       window.clearInterval(interval);
       window.removeEventListener("online", requestSync);
     };
-  }, [auth.user, queryClient]);
+  }, [auth.user, environmentMode, queryClient]);
 
   return null;
 }

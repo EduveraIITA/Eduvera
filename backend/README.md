@@ -1,220 +1,221 @@
-# ThatCampus Node backend
+# ThatCampus backend
 
-NestJS 11 + Fastify 5 API for the first ThatCampus vertical: student attendance and parent/student workflows. PostgreSQL is the only datastore; Kysely provides a strict typed query layer. The API preserves the React client's existing `/api/v1` contracts while keeping room for later School OS modules.
+NestJS/Fastify, TypeScript, Kysely and PostgreSQL 17 implement the domain services,
+Campus Model Core, authenticated APIs and workers. Start with the
+[current contracts](../docs/blueprint/README.md) and
+[delivery state](../docs/blueprint/IMPLEMENTATION_PLAN.md), not historical portal
+routes or old demo credentials.
 
-## What is implemented
+## Setup and hosting
 
-- Signed, opaque cookie sessions backed by PostgreSQL; session tokens are stored only as SHA-256 hashes.
-- Signed double-submit CSRF protection on every unsafe mutation, including login and registration. Demo-session bootstrap is the deliberate development-only exception.
-- Scrypt password hashes, password quality validation, collision-safe normalized usernames, logout/session expiry cleanup, and pending-school onboarding for public registration.
-- Active-membership + relationship tenant checks for every student object. Students see themselves, guardians see linked children, and staff act only inside their school.
-- Parent/student aggregate screens, subject/daily attendance, gate events, timetable, diary acknowledgement/notes, notifications, leave workflows, and full-roster attendance register submission.
-- Revision-checked and idempotent attendance commands, teacher correction reasons, principal lock/unlock controls, and immutable before/after correction history.
-- A transactional event outbox, multi-instance-safe worker, PostgreSQL broker, authorized SSE replay, persistent attendance notifications, and targeted React cache refresh.
-- Approved leave updates attendance on actual instructional timetable dates and recomputes subject aggregates without overwriting a recorded present/late state.
-- Leave submission accepts JSON or one multipart request. A multipart request may contain `category`, `starts_on`, `ends_on`, `reason`, optional `student_id`, and one PDF/JPEG/PNG `file` up to 10 MB. Leave, authorization, audit, notifications, and document metadata commit together; staged files are removed on rollback.
-- Guardian `clarify` records a same-state audit event and notifies the student. It never declines the request. An authorized guardian's own submission is immediately `authorized` and ready for school review.
-- Generic Attendance Copilot provider boundary: deterministic `mock`, local `ollama`, or an OpenAI-compatible chat endpoint. All provider context is assembled from server-authorized PostgreSQL queries and bound to one student.
-- PostgreSQL audit log, shared PostgreSQL rate-limit buckets, request IDs, security headers, CORS allowlist, Swagger/OpenAPI, liveness/readiness, static assets, and React history fallback.
-- Cross-school constraint triggers and browser-role grant lockdown protect the relational graph even when an application check regresses.
+Requirements: Node 22.12+, PostgreSQL 17 and compatible client tools. Live, event and
+migration connections target the intended application database; product Simulation
+requires its own isolated store on the same server. No database/process per run.
 
-## Local setup
-
-Requires Node.js 22+ and PostgreSQL 14+.
-
-```bash
+```sh
 cp .env.example .env
 npm ci
-set -a; . ./.env; set +a
+# Review the exact database targets and private values first.
 npm run db:migrate
-npm run db:seed
-npm run dev
+node --env-file-if-exists=.env --import tsx --watch src/main.ts
 ```
 
-The seed workflow also requires Python 3.11+ and the PostgreSQL `psql` client. It generates and then non-destructively upserts a complete 200-student school cohort, example custom roles, the extra demo administrator and the non-production company operator. Use `npm run db:generate` to inspect the generated SQL and summary without changing PostgreSQL, `npm run db:seed:roles` to repair only role/operator demo records after migrations `032`–`033`, and `npm run test:seed` to run the relationship and transaction-safety checks.
+`db:generate` produces reviewable Cambridge synthetic fixture output;
+`db:seed` writes that development fixture through its current seed chain.
+It also needs Python 3.11+ and `psql`. Do not seed a customer/shared database,
+publish fixture passwords or fabricate attendance to satisfy an older test.
 
-Production-like compiled start:
+A compiled process uses `npm run build` then `npm start`.
+`SPA_DIST_DIR` selects the compiled web directory. On the managed SSD preview,
+`backend/dist` is watched: use a separate reviewed build directory and controlled
+activation rather than compiling into the running tree.
 
-```bash
-npm run build
-node dist/main.js
-```
+| Endpoint | Purpose |
+| --- | --- |
+| `/healthz` | Process liveness |
+| `/readyz` | Database and event readiness, not every product/provider dependency |
+| `/releasez` | Immutable runtime identity |
+| `/api/docs`, `/api/schema` | Current API specification |
+| `/metrics` | Metrics; Bearer `METRICS_TOKEN` in managed deployments |
+| `/api/v1` | Authenticated versioned application API |
 
-Set `SPA_DIST_DIR` to the React `dist` directory. Exact assets are served directly and `/`, `/login`, `/signup`, `/launcher`, `/parent/*`, `/student/*`, and onboarding paths return `index.html` for client-side routing.
+## Security and effect boundaries
 
-## Demo accounts
+Browser sessions use signed opaque cookies with hashed server-side tokens.
+Every unsafe browser command, including login/registration, requires signed
+double-submit CSRF: send the `csrftoken` value as `X-CSRFToken`.
+Managed deployments require secure cookies, strong independent secrets, exact
+HTTPS origins, trusted-proxy review and non-demo authentication.
 
-The primary credential demo accounts use `OmniDemo@2026` (or `DEMO_PASSWORD` during seeding):
+Domain APIs recheck active membership, responsibility/relationship authority,
+target scope, revisions and invariants. Commands retain idempotency and immutable
+audit/event evidence. Model Core coordinates domain execution; neither browser nor
+Assistant gets direct database access. The Assistant's provider/cost settings are
+server-controlled: the active local preview uses configured Vertex Gemini, while
+`AI_*` legacy attendance-copilot and optional photo settings are separate adapters.
+Do not infer active inference from example Ollama defaults or configure silent
+provider fallback.
 
-| Persona | Username | Email |
-|---|---|---|
-| Parent | `pooja.parent` | `pooja.sharma@example.test` |
-| Student | `aarav.student` | `aarav.sharma@example.test` |
-| Staff | `kavita.staff` | `kavita.mehta@example.test` |
-
-The following synthetic identities receive random, unusable-as-demo passwords and are available
-only through one-click personas when `DEMO_MODE=true`:
-
-| Persona | Username | Email |
-|---|---|---|
-| School admin | `arjun.admin` | `arjun.rao@example.test` |
-| Company operator | `company.demo` | `company.operator@example.test` |
-
-Pooja is Aarav's primary parent and Ananya's registered guardian. Every seeded student has an active enrollment, primary guardian, complete two-month attendance history, subject totals, timetable, and operational data used by the student, parent, teacher, and principal screens. Aarav also has an authorization-pending medical leave, approved history, diary items, notifications, and school contact details.
-
-## API and health
-
-- Swagger UI: `/api/docs`
-- OpenAPI JSON: `/api/schema`
-- Liveness: `/healthz`
-- PostgreSQL and live-event readiness: `/readyz`
-- Release identity: `/releasez`
-- Prometheus metrics: `/metrics` (Bearer `METRICS_TOKEN` in managed deployments)
-- Versioned API: `/api/v1`
-
-Core groups include `auth/*`, `students/*`, `attendance-records/*`, `leave-requests/*`, `diary/*`, `notifications/*`, `events/stream/`, `teacher/attendance/bulk/`, `attendance-registers/*`, `screens/parent/*`, `screens/student/*`, and `ai/attendance/query/`. Both canonical and trailing-slash API paths are accepted for client compatibility.
-
-The `csrftoken` cookie is readable by the React client; send that exact signed cookie value in `X-CSRFToken`. The session cookie is `HttpOnly`. In HTTPS environments set `COOKIE_SECURE=true`, use a random 32+ character `COOKIE_SECRET`, and configure exact `ALLOWED_ORIGINS`.
+Private files need authenticated bounded access. Local transactional uploads are
+not a horizontally scaled production storage plan: configure encrypted durable
+storage, content/malware validation, retention and restore procedures first.
 
 ## Verification
 
-```bash
+Use focused owning files or `npm run test:fast` for routine feedback.
+The fast lane contains reviewed source/logic tests with unreachable databases;
+it does not replace full CI or isolated Simulation acceptance.
+
+```sh
 npm run typecheck
 npm run lint
+npm run test:fast
+# Full suite: create and migrate/seed this fresh disposable local database first.
+TEST_DATABASE_ISOLATED=true \
+DATABASE_URL=postgresql://localhost/thatcampus_test \
+MIGRATION_DATABASE_URL=postgresql://localhost/thatcampus_test \
+EVENT_DATABASE_URL=postgresql://localhost/thatcampus_test npm test
+```
+
+`npm test` builds first; `test:ci` verifies conformance and runs already-built
+tests. Default database tests remain serial because some alter process state.
+Guards reject shared/remote/deployed or ambiguously named targets. Use fresh
+loopback databases with a `test`/`ci` name; do not reuse a completed fixture as a
+clean acceptance target. Provision/migrate/seed explicitly and remove only the
+exact disposable databases afterward. Never relax isolation flags against Live.
+
+See [verification limits](../docs/VERIFICATION.md#tests) and the bounded
+[read-load harness](load-tests/README.md) before performance tests.
+
+### Isolated Simulation suites
+
+These opt-in tests create/drop schemas; the product suite resets its target
+database. Use three distinct, disposable loopback databases owned by the test
+role, with compatible `psql`/`pg_dump` on PATH:
+
+```sh
+createdb thatcampus_sim_source_test
+createdb thatcampus_sim_world_store_test
+createdb thatcampus_sim_product_store_test
+
+DATABASE_URL=postgresql://localhost/thatcampus_sim_source_test \
+MIGRATION_DATABASE_URL=postgresql://localhost/thatcampus_sim_source_test \
+EVENT_DATABASE_URL=postgresql://localhost/thatcampus_sim_source_test npm run db:migrate
+
 npm run build
-DATABASE_URL=postgresql://localhost/omnischool_test \
-MIGRATION_DATABASE_URL=postgresql://localhost/omnischool_test \
-EVENT_DATABASE_URL=postgresql://localhost/omnischool_test npm test
-npm audit --omit=dev
+
+SIMULATION_DATABASE_TEST_ISOLATED=true \
+SIMULATION_TEST_SOURCE_DATABASE_URL=postgresql://localhost/thatcampus_sim_source_test \
+SIMULATION_TEST_TARGET_DATABASE_URL=postgresql://localhost/thatcampus_sim_world_store_test \
+npm run test:ci -- test/simulation-world.integration.test.ts
+
+SIMULATION_PRODUCT_DATABASE_TEST_ISOLATED=true \
+SIMULATION_PRODUCT_TEST_SOURCE_DATABASE_URL=postgresql://localhost/thatcampus_sim_source_test \
+SIMULATION_PRODUCT_TEST_TARGET_DATABASE_URL=postgresql://localhost/thatcampus_sim_product_store_test \
+npm run test:ci -- test/simulation-product.integration.test.ts
+
+SIMULATION_LIFECYCLE_DATABASE_TEST_ISOLATED=true \
+DATABASE_URL=postgresql://localhost/thatcampus_sim_source_test \
+npm run test:ci -- test/simulation-lifecycle.integration.test.ts
 ```
 
-The integration suite starts the compiled Fastify app on a temporary local port.
-Its guard rejects shared, remote, staging, production, or ambiguously named
-databases, so `DATABASE_URL` must point to a disposable loopback database whose
-name includes `test`. CI provisions, migrates, seeds, tests, and destroys that
-database. Coverage includes auth/CSRF, role and relationship isolation, register
-revision conflicts, retry idempotency, lock/unlock, leave-to-attendance updates,
-authorized SSE replay, event deduplication, cross-school constraints, timetable
-mutations, and the generic AI response contract.
+Run suites sequentially if sharing the source. The source must also be disposable;
+fixtures create/remove test tenants and may clear rate buckets. Test success is
+not proof of ordinary mobile UI, real inference or every owning-domain workflow.
 
-## Docker
+## Simulation operations
 
-Run this from the repository root so the image can compile both React and Node:
+Simulation is maintained with every platform change. Review
+`simulation:conformance:audit`, update adapters/tests and the reviewed revision,
+then use `simulation:conformance:update`. Build/CI verify the source/schema/
+frontend receipt. Never regenerate it simply to hide drift; capability evidence
+gaps remain distinct from safety inventory.
 
-```bash
-docker build -f backend/Dockerfile -t omnischool .
-docker run --rm \
-  --entrypoint node \
-  -e MIGRATION_DATABASE_URL="${MIGRATION_DATABASE_URL:?set MIGRATION_DATABASE_URL}" \
-  omnischool dist/database/migrate.js
-docker run --rm -p 8000:8000 \
-  -e DEPLOYMENT_ENVIRONMENT=production \
-  -e DATABASE_URL="${DATABASE_URL:?set DATABASE_URL}" \
-  -e EVENT_DATABASE_URL="${EVENT_DATABASE_URL:?set EVENT_DATABASE_URL}" \
-  -e COOKIE_SECRET="${COOKIE_SECRET:?set COOKIE_SECRET}" \
-  -e METRICS_TOKEN="${METRICS_TOKEN:?set METRICS_TOKEN}" \
-  -e ALLOWED_ORIGINS='https://school.example' \
-  -e PUBLIC_URL='https://school.example' \
-  -e RELEASE_SHA="${RELEASE_SHA:?set RELEASE_SHA}" \
-  -e COOKIE_SECURE=true \
-  -v omnischool-uploads:/app/storage/leave-documents \
-  omnischool
-```
+Captures need `pg_dump` in the **API process** PATH, or absolute
+`SIMULATION_PG_DUMP_PATH`. The client must support PostgreSQL 17 and not be older
+than the source server. Launchd/container services do not inherit a terminal PATH.
+Preflight rejects an unavailable/incompatible tool before reserving a fresh run;
+accepted exact retries remain recoverable. This check is separate from `/readyz`.
 
-The runtime container never applies migrations or demo data. Compose uses
-explicit one-shot services for local migration and seeding; a managed
-deployment must run the migration command once as its release step. Uploaded
-documents require a durable volume or object-storage adapter before
-horizontally scaled deployment.
+Budgets and worker settings are in `.env.example`. Active/paused unbounded runs
+have no wall-clock TTL. Pressure explicitly rejects admission or pauses retained
+work; terminal retention defaults to 30 days. Pinning prevents ordinary removal.
+One paged Saved list manages retained worlds, while history retains removed runs;
+Compare explicitly enables selection. Draft discard is a revision/status-checked
+native Stop followed by fenced cleanup, not an unchecked delete.
 
-## Operational notes
+Cleanup refuses active, pinned, selected, leased or pending worlds and preserves
+shared snapshots plus run history. `SIMULATION_GC_ENABLED=false` remains deliberate
+until the deployment's retention policy/store are validated. Preparation recovery
+uses DB time and its bounded timeout; it cannot expire an active indefinite run.
+Released bytes are an accounting estimate, not an OS-space guarantee.
 
-- PostgreSQL rate limits are shared across API instances. For very high request volume, replace this table-backed limiter with Redis or an edge gateway without changing controller contracts.
-- Local filesystem uploads are transactional at the application/database boundary and cleaned on rollback. Production clusters should use encrypted object storage, malware scanning, retention rules, and signed download URLs.
-- AI is read-only and advisory. Provider failures return `503`; no provider receives data for a student the current user cannot access.
-- Run migrations with a dedicated deployment identity and use separate runtime credentials with only required table privileges in production.
+Retained worlds carry immutable semantic/schema compatibility manifests. Old,
+tampered or incompatible worlds fail closed without a Live fallback; automatic
+in-place upgrades are not implemented. Pause/Stop coordinate at safe checkpoint
+boundaries. Large first reads can remain slow; see
+[current evidence and limits](../docs/VERIFICATION.md#simulation).
 
 ## Event delivery and operations
 
-The write path is deliberately database-first:
+Domain change, audit and typed outbox event commit together. Publication uses
+transactional claims, commit-ordered delivery cursors, bounded retries/dead letters
+and PostgreSQL LISTEN/NOTIFY. Authorized SSE replay rechecks current access; an
+outbox audience is routing evidence, not an enduring permission grant. Browser
+tabs elect one connection and relay allowlisted invalidations. Replay gaps request
+a full scoped sync, not silent stale results.
 
-1. A command validates school, role, class/student relationship, expected
-   register revision, and its `Idempotency-Key`.
-2. Attendance/leave/timetable rows, audit history, aggregate updates, and an
-   `event_outbox` row commit in one transaction.
-3. Any API instance may claim unpublished rows with `FOR UPDATE SKIP LOCKED`.
-   A singleton cursor serializes publication so the assigned delivery cursor
-   follows commit/publication order even when business transactions finish out
-   of order. Persistent notification creation and `pg_notify` occur atomically.
-4. Every API instance listens on the PostgreSQL channel and delivers only to
-   authorized user IDs connected to that instance.
-5. Tabs for the same user elect one leader for the credentialed
-   `/api/v1/events/stream/` connection and relay validated envelopes through a
-   user-scoped browser channel. The versioned `v2-<delivery sequence>` cursor
-   replays missed authorized events after reconnect and invalidates only
-   allowlisted query scopes. Legacy/invalid cursors or a retention gap request one
-   full cache sync rather than periodic polling.
+`DATABASE_URL` can use transaction pooling for ordinary queries.
+`EVENT_DATABASE_URL` must use a direct/session connection for LISTEN;
+`MIGRATION_DATABASE_URL` uses a dedicated direct deployment identity.
+Remote URLs require TLS. Budget pool capacity plus an event connection per process;
+tune worker/replay/SSE settings from measurements, not predicted user totals.
+Supabase browser roles have no application table grants; introducing its Data API
+requires explicit reviewed membership policies, not weakening the current API boundary.
 
-The publisher retries individual failures with bounded backoff and dead-letters
-exhausted rows so one poison event cannot block a batch. Cleanup advances the
-replay floor atomically before deleting expired rows. Live and replay delivery
-re-check current membership, guardian, and timetable-assignment authorization;
-the audience stored on an outbox row is only a routing optimization.
+Release order: record a tested backup and migration checksums; apply forward-only
+migrations once; verify candidate readiness/identity; roll API/workers/assets;
+perform authorized workflow/Simulation smoke checks. Roll back binaries separately.
+A destructive restore requires review and a separate recovery target; never erase
+current Live or Simulation state as an application rollback shortcut.
 
-The same worker scans each school in its own timezone after that school's
-`attendance_submission_cutoff`. It emits a deduplicated
-`attendance.register.overdue` alert only for scheduled instructional classes
-whose register is still missing, targeting the assigned teacher and an active
-school administrator. A dedicated maintenance lease throttles this scan across
-instances without contending with the event publication cursor.
+Monitor readiness, latency/error rate, pool saturation, SSE connections, outbox
+age/failures and worker recovery. Logs retain safe request/correlation IDs, never
+cookies, CSRF tokens, documents, provider bodies or AI context. Back up database,
+private files and encryption keys coherently and test isolated restores.
 
-`DATABASE_URL` may use a Supabase transaction pooler for ordinary API queries.
-`EVENT_DATABASE_URL` is mandatory in managed environments and must use a direct
-connection or the session pooler: a transaction-pooler connection cannot retain
-`LISTEN` state. `MIGRATION_DATABASE_URL` is mandatory for `db:migrate`, should
-use the direct connection, and is held only by the release job. All remote URLs
-must use `sslmode=require`, `verify-ca`, or `verify-full`. The validated
-`DATABASE_POOL_MAX` range is 1–50; budget at least one event connection per API
-process in addition to that pool. Managed deployments also require a unique
-32+ character `METRICS_TOKEN`; monitoring clients send it as a Bearer token.
-Tune `EVENT_BATCH_SIZE`, `EVENT_CLEANUP_BATCH_SIZE`,
-`EVENT_BROKER_CONNECT_TIMEOUT_MS`, `EVENT_WORKER_INTERVAL_MS`,
-`EVENT_REPLAY_LIMIT`, `SSE_MAX_CONNECTIONS`, and
-`SSE_MAX_CONNECTIONS_PER_SESSION` from load-test data, not anticipated user
-count alone.
+Docker builds from the repository root via `backend/Dockerfile`; its runtime
+does not migrate/seed automatically. Compose uses explicit local one-shot jobs.
+Managed deployments inject secrets and run migrations once through their release
+identity. The separate [legacy Stage runbook](../deploy/gcp/README.md) is not the
+active Digital Twin preview deployment.
 
-Use [`load-tests/morning-attendance.mjs`](load-tests/morning-attendance.mjs) for
-the bounded teacher-home/register read burst and optional SSE soak. It refuses a
-non-loopback target without explicit HTTPS opt-in, hard-caps concurrency, rate,
-duration, and response sizes, and has no attendance mutation path. Provision a
-dedicated load-test teacher rather than using a real staff account.
+## Native app session transport
 
-The Supabase Data API is not part of the application data path. Migrations enable
-RLS and revoke `anon`/`authenticated` table access so a browser cannot bypass the
-NestJS authorization boundary. If Supabase Auth/Data API is introduced later,
-add explicit school-membership policies and policy tests before granting either
-role access; do not weaken the current lockdown as a shortcut.
+Native sessions use the same hashed session store, memberships and selected
+Live/Simulation context. Send `Authorization: Bearer <access_token>` with
+`credentials: "omit"`; never mix cookies with the native token. Only a valid
+native credential bypasses browser CSRF. Invalid Bearer credentials cannot fall
+back to a browser cookie.
 
-Release order:
+| Endpoint under `/api/v1/auth/native/` | Contract |
+| --- | --- |
+| `POST login/` | `{identifier,password}`; ordinary auth result plus opaque token, Bearer type and expiry |
+| `POST mfa/login/` | `{challenge_token,code}`; MFA must succeed before session issuance |
+| `POST register/` | `{email,password}`; token plus existing verification/onboarding result |
+| `GET session/` | Bearer required; current auth/world/expiry, never echoes token |
+| `POST logout/` | 204 only after durable revocation; expired/revoked token returns 401 |
+| `POST password-reset/request/` | `{email}`; existing abuse-limited recovery |
+| `POST password-reset/confirm/` | `{token,password}`; single-use proof and all-session revocation |
 
-1. Back up the database and record the current migration version/checksums.
-2. Run migrations once through `MIGRATION_DATABASE_URL` with the deployment
-   identity, then verify `/readyz` and the expected `/releasez` commit.
-3. Roll worker/API instances, then the immutable frontend assets.
-4. Run authenticated smoke checks for teacher submit/correct, principal
-   lock/unlock, parent/student notification, SSE reconnect, and approved leave.
-5. Roll back application containers independently when needed. Database
-   migrations are forward-only; restore into a separate database before a
-   destructive recovery decision.
+Use ordinary `auth/me/` for current memberships/permissions and
+`auth/active-school/` to recheck/change campus. Existing MFA, session review,
+revoke-others and environment controls accept native credentials.
+Authentication remains Live control-plane state, not run-local campus data.
 
-Monitor `/healthz`, `/readyz`, API latency/error rate, open SSE connections,
-database pool saturation, unpublished outbox count, oldest unpublished event age,
-and `event_outbox.attempts/last_error`. Alert on sustained outbox age or readiness
-failure. Retain structured logs with request IDs and audit actor IDs, but never
-session cookies, CSRF values, leave documents, or AI context.
-
-For Supabase production, enable the backup/PITR tier appropriate to the recovery
-objectives, include private leave-document storage in the same recovery plan, and
-perform scheduled restore drills into an isolated project. A backup is not
-considered operational until restore time and relationship-validation checks have
-been measured.
+Store tokens in device-only Keychain/Android secure storage, bound to the configured
+HTTPS API origin. Default session lifetime is 8 hours; no refresh token or indefinite
+renewal is implemented. HTTP 401 requires sign-in. Cancel old requests and clear scoped
+caches after account/campus/world changes. Unknown mutations retain their exact
+command and owning recovery contract; this is not a general offline queue.
+See [native scope](../mobile/PARITY.md) and [acceptance](../docs/VERIFICATION.md#native).

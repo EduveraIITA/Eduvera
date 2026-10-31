@@ -10,7 +10,7 @@ export interface ClassUpdate {
 export function useClassUpdates(date: string, enabled = true) {
   const auth = useAuth();
   return useQuery({ queryKey: ["teacher-class-updates", auth.user?.id, date], enabled,
-    queryFn: () => apiFetch<{ results: ClassUpdate[] }>(`/api/v1/screens/teacher/class-updates/?date=${date}`),
+    queryFn: () => apiFetch<{ results: ClassUpdate[] }>(`/api/v1/areas/people/classes/updates/?date=${date}`),
     staleTime: 20_000, refetchInterval: 60_000 });
 }
 export function activityLabel(items: ClassUpdate[]) {

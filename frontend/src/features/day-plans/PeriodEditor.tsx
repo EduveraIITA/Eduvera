@@ -132,7 +132,9 @@ export function PeriodEditor({
             <input
               value={value.room}
               maxLength={80}
-              onChange={(e) => setValue({ ...value, room: e.target.value })}
+              onChange={(e) => setValue({ ...value, room: e.target.value,
+                // Changing a label cannot silently move its canonical place link.
+                space_id: e.target.value === value.room ? value.space_id ?? null : null })}
             />
           </label>
           <label>

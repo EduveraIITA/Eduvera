@@ -1,0 +1,8 @@
+import { useOperationContext } from './use-operation-context';
+import { useState } from 'react';
+import { useSession } from '../auth/SessionProvider';
+import { getApiOrigin } from './api';
+import { useNativePendingAction, type NativePendingAction, type NativePendingInput, type NativePendingSource } from './native-pending-action';
+import { departureResultReadPath } from './departure-operations';
+export function useDepartureCommand(refresh:()=>Promise<unknown>,ownerHref:string,refreshPath:string){const{user,schoolId,environment}=useSession(),[accepted,setAccepted]=useState<NativePendingAction|null>(null);const writer=useNativePendingAction({captureOperation: useOperationContext(JSON.stringify([ownerHref, refreshPath])), scope:{actorId:user!.id,schoolId:schoolId!,mode:environment.mode,namespaceId:environment.namespace_id??null,origin:getApiOrigin()},domain:'departure',ownerHref,refreshPath,resolveRefreshPath:departureResultReadPath,accepted:async(_latest,assertCurrent,action)=>{await refresh();assertCurrent();setAccepted(action);}});return{...writer,accepted,pending:writer.action?{accepted:writer.action.phase==='accepted',replayPolicy:writer.action.replayPolicy}:null,run:(path:string,body:Record<string,unknown>,options?:{method?:NativePendingInput['method'];source?:NativePendingSource})=>writer.run({endpoint:path,body,replayPolicy:'inspect_only',...options}),runKeyed:(path:string,body:Record<string,unknown>,source:NativePendingSource)=>writer.run({endpoint:path,body,serverKey:'command_id',replayPolicy:'same_request',source})};}
+export type DepartureWrite=ReturnType<typeof useDepartureCommand>;

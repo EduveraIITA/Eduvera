@@ -1,0 +1,64 @@
+.learning-assignments, .learning-assignment-work { display: grid; gap: 24px; min-width: 0; }
+.learning-assignment-heading, .learning-assignment-label, .learning-assignment-status, .learning-assignment-progress { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
+.learning-assignments h2 { margin: 0; font-size: 24px; overflow-wrap: anywhere; }
+.learning-assignments h3 { margin: 0 0 12px; font-size: 20px; }
+.learning-assignment-caption, .learning-assignment-status > span, .learning-assignment-progress > span { color: var(--thatcampus-ink-secondary); font-size: 14px; line-height: 1.5; margin: 0; }
+.learning-assignment-prose { white-space: pre-wrap; overflow-wrap: anywhere; line-height: 1.6; margin: 0; }
+.learning-assignment-form { padding: 20px; display: grid; gap: 20px; min-width: 0; }
+.learning-assignment-form fieldset, .learning-assignment-work fieldset { border: 0; padding: 0; margin: 0; min-width: 0; }
+.learning-assignment-form fieldset, .learning-assignment-form label, .learning-assignment-work label, .learning-assignment-options, .learning-assignment-response, .learning-assignment-review, .learning-assignment-review-action { display: grid; gap: 12px; }
+.learning-assignment-form input:not([type="radio"]), .learning-assignment-form select, .learning-assignment-form textarea, .learning-assignment-work textarea { width: 100%; min-width: 0; box-sizing: border-box; font: inherit; font-size: 16px; min-height: 48px; border-radius: 16px; border: 1px solid var(--thatcampus-border); padding: 12px 16px; background: var(--thatcampus-surface); color: var(--thatcampus-ink); }
+.learning-assignment-form textarea, .learning-assignment-work textarea { resize: vertical; }
+.learning-assignment-form button, .learning-assignments button { min-height: 44px; padding: 12px 16px; border-radius: 16px; border: 0; font: inherit; font-weight: 600; color: var(--thatcampus-ink); background: var(--thatcampus-surface-row); box-shadow: var(--thatcampus-shadow-control); cursor: pointer; }
+.learning-assignment-form button:disabled, .learning-assignments button:disabled { cursor: default; opacity: .55; }
+.learning-assignment-form button:focus-visible, .learning-assignments button:focus-visible, .learning-assignment-upload:focus-within { outline: 3px solid var(--thatcampus-brand); outline-offset: 3px; }
+.learning-assignment-actions { display: flex; gap: 12px; align-items: center; flex-wrap: wrap; padding: 4px 0; }
+.learning-assignment-actions > button { flex: 1 1 140px; }
+.learning-assignment-actions > button:last-child, .learning-assignment-heading > button, .learning-assignment-review-action > button { background: var(--thatcampus-action); color: var(--thatcampus-on-action); }
+.learning-assignment-heading > button { display: inline-flex; align-items: center; justify-content: center; gap: 8px; white-space: nowrap; flex-shrink: 0; }
+.learning-assignment-heading > button > svg { flex-shrink: 0; }
+.learning-assignment-list { display: grid; gap: 12px; }
+.learning-assignment-list > button { width: 100%; display: flex; align-items: center; gap: 16px; text-align: left; padding: 16px; border-radius: 20px; background: var(--thatcampus-surface-row); box-shadow: var(--thatcampus-shadow-card); }
+.learning-assignment-list > button > span { flex: 1; min-width: 0; display: grid; gap: 4px; overflow-wrap: anywhere; }
+.learning-assignment-list small, .learning-assignment-file small { color: var(--thatcampus-ink-secondary); font-size: 14px; font-weight: 400; }
+.learning-assignment-back { justify-self: start; display: inline-flex; align-items: center; gap: 4px; }
+.learning-assignment-pages { display: flex; gap: 12px; justify-content: flex-end; }
+.learning-assignment-attempt { padding: 20px 0; border-bottom: 1px solid var(--thatcampus-border); display: grid; gap: 16px; }
+.learning-assignment-attempt > header { display: grid; gap: 4px; }
+.learning-assignment-attempt > header > span, .learning-assignment-attempt small { font-size: 14px; color: var(--thatcampus-ink-secondary); }
+.learning-assignment-feedback { display: grid; gap: 8px; padding: 16px; border-radius: 20px; background: var(--thatcampus-surface-row); }
+.learning-assignment-file { display: flex; align-items: center; gap: 12px; padding: 12px 0; color: var(--thatcampus-brand); text-decoration: none; min-width: 0; }
+.learning-assignment-file > span { display: grid; gap: 4px; flex: 1; min-width: 0; overflow-wrap: anywhere; }
+.learning-assignment-receipt { font-size: 12px; overflow-wrap: anywhere; line-height: 1.6; color: var(--thatcampus-ink-secondary); }
+.learning-assignment-upload { position: relative; display: inline-flex !important; gap: 8px !important; align-items: center; min-height: 44px; cursor: pointer; color: var(--thatcampus-brand); font-weight: 600; }
+.learning-assignment-upload input { position: absolute; width: 1px; height: 1px; opacity: 0; }
+.learning-assignment-decisions { display: flex !important; gap: 16px !important; flex-wrap: wrap; }
+.learning-assignment-decisions legend { margin-bottom: 12px; font-weight: 600; }
+.learning-assignment-decisions label { display: flex; align-items: center; min-height: 44px; gap: 8px; }
+.learning-assignment-decisions input { width: 20px; height: 20px; accent-color: var(--thatcampus-action); }
+.learning-assignment-options { margin-top: 16px; }
+.learning-assignment-icon { min-width: 44px; display: grid; place-items: center; }
+.learning-assignment-list > .learning-offering-entry, .learning-offering-choice, .learning-offering-person-list > button { display: flex; align-items: center; gap: 12px; width: 100%; padding: 16px; box-sizing: border-box; border-radius: 20px; background: var(--thatcampus-surface-row); box-shadow: var(--thatcampus-shadow-card); text-align: left; color: var(--thatcampus-ink); text-decoration: none; }
+.learning-offering-entry > span, .learning-offering-choice > span:not(.learning-offering-avatar), .learning-offering-person-list > button > span:not(.learning-offering-avatar):not(.learning-offering-check) { display: grid; gap: 4px; flex: 1; min-width: 0; overflow-wrap: anywhere; }
+.learning-offering-choice small, .learning-offering-person-list small, .learning-offering-entry small { color: var(--thatcampus-ink-secondary); font-size: 14px; font-weight: 400; }
+.learning-offering-avatar { display: grid; place-items: center; width: 44px; height: 44px; flex: 0 0 44px; border-radius: 50%; color: var(--thatcampus-brand); background: var(--thatcampus-surface); font-weight: 650; }
+.learning-offering-form section { display: grid; gap: 12px; }
+.learning-offering-form h3 { margin: 0; font-size: 18px; }
+.learning-offering-form h3 small { color: var(--thatcampus-ink-secondary); font-size: 14px; }
+.learning-offering-form .learning-assignment-label > button { display: inline-flex; align-items: center; gap: 6px; }
+.learning-offering-chips { display: flex; flex-wrap: wrap; gap: 8px; max-height: 180px; overflow: auto; padding: 4px; }
+.learning-offering-chips > span { display: inline-flex; align-items: center; gap: 4px; border-radius: 16px; padding-left: 12px; background: var(--thatcampus-surface-row); box-shadow: var(--thatcampus-shadow-control); font-size: 14px; }
+.learning-offering-chips button { display: grid; place-items: center; padding: 8px; min-width: 44px; background: transparent; box-shadow: none; }
+.learning-offering-chips > .learning-offering-review-name { padding: 10px 12px; }
+.learning-offering-person-list { display: grid; gap: 10px; }
+.learning-offering-check { display: grid; place-items: center; width: 24px; height: 24px; flex: 0 0 24px; border-radius: 50%; box-shadow: inset 0 0 0 1px var(--thatcampus-border); }
+.learning-offering-person-list [aria-pressed="true"] .learning-offering-check { background: var(--thatcampus-action); color: var(--thatcampus-on-action); box-shadow: none; }
+.learning-offering-own { display: inline-flex; align-items: center; justify-content: space-between; gap: 12px; color: var(--thatcampus-brand); text-decoration: none; font-weight: 600; min-height: 44px; }
+.learning-offering-empty { display: grid; gap: 12px; padding: 28px 0; }
+.learning-offering-roster { display: grid; gap: 12px; max-height: 360px; overflow: auto; padding: 4px; }
+.learning-offering-roster a { color: var(--thatcampus-brand); text-decoration: none; }
+.learning-offering-search { display: grid; gap: 8px; font-size: 14px; color: var(--thatcampus-ink-secondary); }
+.learning-offering-search input { font: inherit; font-size: 16px; padding: 12px 16px; min-height: 48px; min-width: 0; border: 1px solid var(--thatcampus-border); border-radius: 16px; background: var(--thatcampus-surface); color: var(--thatcampus-ink); }
+.learning-offering-entry:focus-visible, .learning-offering-own:focus-visible { outline: 3px solid var(--thatcampus-brand); outline-offset: 3px; }
+.learning-assignment-heading > button.learning-offering-manage { background: var(--thatcampus-surface-row); color: var(--thatcampus-ink); }
+@media (max-width: 360px) { .learning-assignment-actions { gap: 8px; } .learning-assignment-actions > button { flex-basis: 120px; } }

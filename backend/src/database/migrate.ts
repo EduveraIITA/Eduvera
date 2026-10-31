@@ -2,10 +2,13 @@ import { readFile, readdir } from "node:fs/promises";
 import { createHash } from "node:crypto";
 import { resolve } from "node:path";
 import { Pool } from "pg";
-import { postgresClientConnectionConfig } from "./connection-policy.js";
+import { assertIsolatedMigrationBinding,assertSupportedPostgreSqlVersion,postgresClientConnectionConfig } from "./connection-policy.js";
 
 const connectionString = process.env.MIGRATION_DATABASE_URL;
 if (!connectionString) throw new Error("MIGRATION_DATABASE_URL is required");
+if (process.env.TEST_DATABASE_ISOLATED === "true") {
+  assertIsolatedMigrationBinding(connectionString, process.env.DATABASE_URL);
+}
 const deploymentEnvironment = process.env.DEPLOYMENT_ENVIRONMENT ?? process.env.NODE_ENV ?? "development";
 const connection = postgresClientConnectionConfig(connectionString, {
   name: "MIGRATION_DATABASE_URL",
@@ -18,6 +21,8 @@ const client = await pool.connect();
 let locked = false;
 
 try {
+  const version=(await client.query<{version:number}>("SELECT current_setting('server_version_num')::int AS version")).rows[0]!.version;
+  assertSupportedPostgreSqlVersion(version);
   await client.query("SELECT pg_advisory_lock(hashtext('omnischool_schema_migrations'))");
   locked = true;
   await client.query(`

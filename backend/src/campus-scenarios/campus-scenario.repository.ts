@@ -4,6 +4,10 @@ import { sql, type Kysely } from "kysely";
 import { DatabaseService } from "../database/database.service.js";
 import type { Database } from "../database/types.js";
 import type {
+  ScenarioIdentityMapping,
+  ScenarioSourceAgentKind,
+} from "../campus-model-core/scenarios/contracts.js";
+import type {
   CampusScenarioCoverageEvidence,
   CampusScenarioInterventionType,
   CampusScenarioRepositorySnapshot,
@@ -46,13 +50,123 @@ interface ConfigurationRow {
 
 interface SnapshotInput {
   school_id: string;
-  campus_id: string;
+  campus_id: string | null;
   timezone: string;
   captured_at: string;
   horizon_to: string;
-  target: CampusScenarioTarget;
+  target: CampusScenarioTarget | null;
   scenario_id: string;
+  run_id: string;
   behaviour_policy_version_id: string | null;
+}
+
+export interface ScenarioAgentIdentityRow {
+  id: string;
+  agent_kind: string;
+  person_id: string | null;
+  external_ref: string | null;
+  revision: number | string;
+}
+
+const sourceAgentKinds = new Set<ScenarioSourceAgentKind>([
+  "human", "team", "device", "integration", "software",
+]);
+
+function requiredIdentityValue(value: string | null, label: string): string {
+  if (value === null || value.trim().length === 0) {
+    throw new Error(`Cannot capture scenario identity: ${label} is missing.`);
+  }
+  if (value !== value.trim()) {
+    throw new Error(`Cannot capture scenario identity: ${label} is not canonical.`);
+  }
+  return value;
+}
+
+/**
+ * Convert a complete active Model Core agent registry snapshot to isolated,
+ * run-local counterparts. This intentionally fails closed if legacy or corrupted
+ * data violates the reviewed human/non-human identity shapes.
+ */
+export function buildScenarioIdentityMappings(input: {
+  scenario_id: string;
+  run_id: string;
+  behaviour_policy_version_id: string | null;
+  agents: readonly ScenarioAgentIdentityRow[];
+}): ScenarioIdentityMapping[] {
+  const scenarioId = requiredIdentityValue(input.scenario_id, "scenario ID");
+  const runId = requiredIdentityValue(input.run_id, "run ID");
+  const namespaceId = `scenario:${scenarioId}:run:${runId}`;
+  const behaviourVersion = input.behaviour_policy_version_id === null
+    ? null
+    : requiredIdentityValue(input.behaviour_policy_version_id, "behaviour policy version ID");
+  const seen = new Set<string>();
+
+  return input.agents.map((row) => {
+    const agentId = requiredIdentityValue(row.id, "source agent ID");
+    if (seen.has(agentId)) {
+      throw new Error(`Cannot capture scenario identity: duplicate source agent ${agentId}.`);
+    }
+    seen.add(agentId);
+    if (!sourceAgentKinds.has(row.agent_kind as ScenarioSourceAgentKind)) {
+      throw new Error(`Cannot capture scenario identity: unsupported agent kind ${row.agent_kind}.`);
+    }
+    if (!Number.isSafeInteger(Number(row.revision)) || Number(row.revision) < 1) {
+      throw new Error(`Cannot capture scenario identity: agent ${agentId} has an invalid revision.`);
+    }
+
+    const kind = row.agent_kind as ScenarioSourceAgentKind;
+    const sourceRevision = Number(row.revision);
+    const readiness = kind === "human"
+      ? (behaviourVersion
+          ? { state: "modelled" as const, reason: "approved_human_behaviour_policy" }
+          : { state: "passive" as const, reason: "human_intent_not_modelled" })
+      : kind === "team"
+        ? { state: "passive" as const, reason: "team_queue_identity_only" }
+        : { state: "unsupported" as const, reason: `${kind}_scenario_reaction_not_configured` };
+    const counterpart = {
+      kind: "scenario_counterpart" as const,
+      scenario_counterpart_id: `${namespaceId}:agent:${agentId}`,
+      scenario_id: scenarioId,
+      run_id: runId,
+      namespace_id: namespaceId,
+      source_agent_id: agentId,
+      source_agent_kind: kind,
+      source_agent_revision: sourceRevision,
+      // The selected cohort policy is human behaviour evidence; it cannot be
+      // silently attached to teams, devices, integrations or software actors.
+      behaviour_policy_version_id: kind === "human" ? behaviourVersion : null,
+      readiness: readiness.state,
+      readiness_reason: readiness.reason,
+    };
+
+    if (kind === "human") {
+      if (row.external_ref !== null) {
+        throw new Error(`Cannot capture scenario identity: human agent ${agentId} has an external reference.`);
+      }
+      return {
+        source: {
+          kind,
+          human_agent_id: agentId,
+          person_id: requiredIdentityValue(row.person_id, `human agent ${agentId} person ID`),
+        },
+        delegates: [],
+        counterpart,
+      };
+    }
+
+    if (row.person_id !== null) {
+      throw new Error(`Cannot capture scenario identity: ${kind} agent ${agentId} has a person identity.`);
+    }
+    return {
+      source: {
+        kind,
+        agent_id: agentId,
+        external_ref: requiredIdentityValue(row.external_ref, `${kind} agent ${agentId} external reference`),
+      },
+      delegates: [],
+      counterpart,
+    };
+  });
 }
 
 function iso(value: Date | string): string {
@@ -209,7 +323,7 @@ export class CampusScenarioRepository {
 
   private async schedule(
     schoolId: string,
-    campusId: string,
+    campusId: string | null,
     timezone: string,
     from: string,
     to: string,
@@ -276,7 +390,8 @@ export class CampusScenarioRepository {
         AND ((day.school_day+schedule.ends_at) AT TIME ZONE ${timezone})>${from}::timestamptz
         AND ((day.school_day+schedule.starts_at) AT TIME ZONE ${timezone})<${to}::timestamptz
         AND (
-          selected_space.campus_id=${campusId}::uuid
+          ${campusId}::uuid IS NULL
+          OR selected_space.campus_id=${campusId}::uuid
           OR (schedule.space_id IS NULL AND placement.campus_id=${campusId}::uuid)
         )
       ORDER BY starts_at,schedule.class_section_id,schedule.period_number,schedule.occurrence_key
@@ -515,7 +630,7 @@ export class CampusScenarioRepository {
       coverageEvidence,
       configurationSnapshot,
       spacesMeta,
-      agentsMeta,
+      activeAgents,
       approvedBehaviourPolicy,
     ] = await Promise.all([
       this.schedule(input.school_id, input.campus_id, input.timezone, input.captured_at, input.horizon_to, db),
@@ -524,15 +639,15 @@ export class CampusScenarioRepository {
       db.selectFrom("campus_spaces")
         .select(({ fn }) => [fn.count<number>("id").as("count"), fn.max<number>("revision").as("revision")])
         .where("school_id", "=", input.school_id)
-        .where("campus_id", "=", input.campus_id)
+        .$if(input.campus_id !== null, (query) => query.where("campus_id", "=", input.campus_id!))
         .where("status", "=", "active")
         .executeTakeFirst(),
       db.selectFrom("campus_model_agents")
-        .select(({ fn }) => [fn.count<number>("id").as("count"), fn.max<number>("revision").as("revision")])
+        .select(["id", "agent_kind", "person_id", "external_ref", "revision"])
         .where("school_id", "=", input.school_id)
-        .where("agent_kind", "=", "human")
         .where("status", "=", "active")
-        .executeTakeFirst(),
+        .orderBy("id")
+        .execute(),
       input.behaviour_policy_version_id
         ? this.approvedScenarioPolicy(
           input.school_id,
@@ -549,23 +664,47 @@ export class CampusScenarioRepository {
       .where("is_active", "=", true)
       .executeTakeFirst() : null;
     const scheduleRevisionMax = sessions.reduce((maximum, session) => Math.max(maximum, session.source_revision), 0);
-    const teacherIdentities = new Map<string, { person_id: string }>();
+    const identities = buildScenarioIdentityMappings({
+      scenario_id: input.scenario_id,
+      run_id: input.run_id,
+      behaviour_policy_version_id: approvedBehaviourPolicy?.id ?? null,
+      agents: activeAgents,
+    });
+    const sourcesById = new Map(identities.map((mapping) => {
+      if (!("source" in mapping)) {
+        throw new Error("Scenario repository emitted an unsupported legacy identity mapping.");
+      }
+      const id = mapping.source.kind === "human"
+        ? mapping.source.human_agent_id
+        : mapping.source.agent_id;
+      return [id, mapping.source] as const;
+    }));
+    const teacherIdentities = new Set<string>();
     for (const session of sessions) {
       if (session.teacher_agent_id && session.teacher_person_id) {
-        teacherIdentities.set(session.teacher_agent_id, { person_id: session.teacher_person_id });
+        const source = sourcesById.get(session.teacher_agent_id);
+        if (source?.kind !== "human" || source.person_id !== session.teacher_person_id) {
+          throw new Error(
+            `Cannot capture scenario: scheduled teacher agent ${session.teacher_agent_id} has no matching active human identity.`,
+          );
+        }
+        teacherIdentities.add(session.teacher_agent_id);
       }
     }
-    const identities = [...teacherIdentities].map(([humanAgentId, identity]) => ({
-      human: { kind: "human" as const, human_agent_id: humanAgentId, person_id: identity.person_id },
-      delegates: [],
-      persona: {
-        kind: "scenario_persona" as const,
-        scenario_persona_id: `${input.scenario_id}:human:${humanAgentId}`,
-        scenario_id: input.scenario_id,
-        source_human_agent_id: humanAgentId,
-        behaviour_policy_version_id: approvedBehaviourPolicy?.id ?? null,
-      },
-    }));
+    const agentKindCounts = {
+      human: 0,
+      team: 0,
+      device: 0,
+      integration: 0,
+      software: 0,
+    };
+    for (const row of activeAgents) {
+      agentKindCounts[row.agent_kind] += 1;
+    }
+    const agentRevisionMax = activeAgents.reduce(
+      (maximum, agent) => Math.max(maximum, Number(agent.revision)),
+      0,
+    );
 
     return {
       snapshot: {
@@ -585,7 +724,7 @@ export class CampusScenarioRepository {
       source_revisions: {
         schedule: scheduleRevisionMax ? `max:${scheduleRevisionMax}` : "none",
         spaces: spacesMeta?.revision ? `max:${spacesMeta.revision}` : "none",
-        agents: agentsMeta?.revision ? `max:${agentsMeta.revision}` : "none",
+        agents: agentRevisionMax ? `max:${agentRevisionMax}` : "none",
         enrolments: enrolmentsMeta?.revision ? `max:${enrolmentsMeta.revision}` : "none",
         coverage_evidence: coverageEvidence.evidence_hash ?? "none",
         behaviour_policy: approvedBehaviourPolicy?.configuration_hash ?? "none",
@@ -595,6 +734,8 @@ export class CampusScenarioRepository {
         sessions: sessions.length,
         spaces: Number(spacesMeta?.count ?? 0),
         teachers: teacherIdentities.size,
+        agents: activeAgents.length,
+        agent_kinds: agentKindCounts,
         enrolments: Number(enrolmentsMeta?.count ?? 0),
       },
     };

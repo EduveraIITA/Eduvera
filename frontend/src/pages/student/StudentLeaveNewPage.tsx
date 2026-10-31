@@ -34,6 +34,8 @@ export interface StudentLeaveDraft {
 }
 
 export interface StudentLeaveNewPageProps {
+  /** Render inside the neutral responsibility workspace instead of a persona shell. */
+  embedded?: boolean;
   context?: {
     studentName: string;
     className: string;
@@ -99,6 +101,7 @@ function formatLeaveDate(value: string) {
 }
 
 export function StudentLeaveNewPage({
+  embedded = false,
   context,
   initialDraft,
   routes,
@@ -199,10 +202,9 @@ export function StudentLeaveNewPage({
     window.setTimeout(() => setDraftSaved(false), 2800);
   }
 
-  return (
-    <StudentShell activeNav="launcher" variant="platform" routes={routes} pageTitle="Apply leave" onBack={onBack}>
+  const content = (
       <form className="student-page-stack leave-new-page" onSubmit={submit}>
-        <button className="workspace-text-action" type="button" onClick={onOpenStatus ?? (() => navigate("/student/leave"))}><History size={16} />View requests</button>
+        <button className="workspace-text-action" type="button" onClick={onOpenStatus ?? (() => navigate("/areas/attendance/leave?scope=self"))}><History size={16} />View requests</button>
 
         <section className="form-section" aria-labelledby="leave-category-heading">
           <header className="form-section__heading"><h2 id="leave-category-heading">Category</h2><span>Select primary reason</span></header>
@@ -258,6 +260,11 @@ export function StudentLeaveNewPage({
           <button className="quiet-action" type="button" onClick={saveDraft}><Save size={16} />{draftSaved ? "Draft Saved" : "Save Application as Draft"}</button>
         </div>
       </form>
+  );
+  if (embedded) return <div className="student-app student-app--embedded">{content}</div>;
+  return (
+    <StudentShell activeNav="launcher" variant="platform" routes={routes} pageTitle="Apply leave" onBack={onBack}>
+      {content}
     </StudentShell>
   );
 }

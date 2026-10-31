@@ -1,5 +1,6 @@
 import { useQuery } from "@tanstack/react-query";
-import { Pencil, Plus, ShieldCheck, Trash2 } from "lucide-react";
+import { Pencil, Plus, Trash2 } from "lucide-react";
+import { ProductIcon } from "../../components/ProductIcon";
 import { Navigate } from "react-router-dom";
 import { useState } from "react";
 import { ScreenLoading, LiveRouteError } from "../school/LiveRouteState";
@@ -66,7 +67,7 @@ export function RoleSetupPanel({ school, onChanged }: { school: string; onChange
       {!data.profiles.length ? <div className="office-panel roles-empty"><h3>No roles yet</h3><p>Create a role before assigning staff responsibilities.</p><button className="office-secondary" onClick={() => setEditor(null)}>Create role</button></div> : <div className="roles-list">{data.profiles.map((role) => {
         const responsibilities = data.duties.filter((duty) => role.duty_ids.includes(duty.id));
         return <article className="office-panel roles-card" key={role.id}>
-          <div className="roles-card-mark" aria-hidden="true"><ShieldCheck size={20} /></div>
+          <div className="roles-card-mark" aria-hidden="true"><ProductIcon name="responsibilities" size={28} /></div>
           <div className="roles-card-copy">
             <h3>{role.name}</h3>
             {role.description ? <p>{role.description}</p> : null}

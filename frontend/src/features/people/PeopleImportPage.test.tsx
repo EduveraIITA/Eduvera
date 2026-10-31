@@ -7,7 +7,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import PeopleImportPage from './PeopleImportPage';
 import { enrollmentOptions } from './api';
 import { getImports, getImport, stageImport } from './import-api';
-vi.mock('../auth/AuthContext',()=>({useAuth:()=>({memberships:[{role:'admin',school_id:'school-1',school_name:'School'}],hasPortal:()=>true})}));
+vi.mock('../auth/AuthContext',()=>({useAuth:()=>({memberships:[{role:'admin',school_id:'school-1',school_name:'School',permissions:['sis.manage']}]})}));
 vi.mock('../../pages/operations/OperationsShell',()=>({OperationsShell:({title,backTo,children}:{title:string;backTo:string;children:ReactNode})=><><h1>{title}</h1><Link to={backTo}>Go back</Link>{children}</>}));
 vi.mock('./api',async original=>({...await original<typeof import('./api')>(),enrollmentOptions:vi.fn()}));
 vi.mock('./import-api',async original=>({...await original<typeof import('./import-api')>(),getImports:vi.fn(),getImport:vi.fn(),stageImport:vi.fn()}));
@@ -18,8 +18,16 @@ beforeEach(()=>{
 });
 afterEach(()=>{cleanup();vi.clearAllMocks();});
 function NavigationProbe(){const location=useLocation();const navigate=useNavigate();return <><span data-testid="location">{location.pathname}{location.search}</span><button type="button" onClick={()=>navigate(-1)}>Browser back</button></>;}
-const show=(search='')=>render(<QueryClientProvider client={new QueryClient({defaultOptions:{queries:{retry:false}}})}><MemoryRouter initialEntries={['/principal/students/import'+search]}><NavigationProbe/><PeopleImportPage/></MemoryRouter></QueryClientProvider>);
+const show=(search='')=>render(<QueryClientProvider client={new QueryClient({defaultOptions:{queries:{retry:false}}})}><MemoryRouter initialEntries={['/areas/people/import'+search]}><NavigationProbe/><PeopleImportPage/></MemoryRouter></QueryClientProvider>);
 describe('student import navigation',()=>{
+  it('reports mixed enrollment completion without claiming every person has guardian links and returns to People',async()=>{
+    vi.mocked(getImport).mockResolvedValue({id:'import-1',filename:'mixed.csv',state:'committed',revision:2,row_count:2,created_at:'2026-10-06T00:00:00Z',expires_at:'2026-10-07T00:00:00Z',receipt:{import_id:'import-1',students:2,guardians_created:1,guardians_reused:0,skipped:0,registers_reopened:0,enrolled:[]},review:null});
+    show('?import=import-1&school=school-1');
+    expect(await screen.findByText('2 enrollment records saved. Guardian links were added only where chosen. No attendance marks or login permissions were added.')).toBeVisible();
+    expect(screen.getByRole('link',{name:'Open People'})).toHaveAttribute('href','/areas/people/participants');
+    expect(screen.queryByText(/complete guardian links/)).not.toBeInTheDocument();
+    expect(screen.queryByRole('link',{name:'Open student directory'})).not.toBeInTheDocument();
+  });
   it('opens a focused upload form and returns to the import list',async()=>{
     const user=userEvent.setup();show();await user.click(await screen.findByRole('button',{name:'New import'}));
     expect(await screen.findByLabelText('Academic term')).toBeVisible();

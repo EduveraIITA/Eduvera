@@ -14,7 +14,7 @@
 .import-actions>span {flex:1;min-width:12rem;}
 .import-metrics {display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:1rem;margin:1.25rem 0;}
 .import-metrics>div {border-left:2px solid var(--thatcampus-border);padding-left:.75rem;}
-.import-metrics dt {color:var(--thatcampus-ink-muted);font-size:.8125rem;line-height:1.5;}
+.import-metrics dt {color:var(--thatcampus-ink-muted);font-size:.875rem;line-height:1.5;}
 .import-metrics dd {margin:.25rem 0 0;font-size:1.5rem;font-weight:700;font-variant-numeric:tabular-nums;}
 .import-steps {display:flex;gap:1rem;list-style:none;padding:0;margin:0;font-size:.875rem;color:var(--thatcampus-ink-muted);}
 .import-steps [aria-current=step] {color:var(--thatcampus-brand);font-weight:700;border-bottom:2px solid var(--thatcampus-brand);padding-bottom:.5rem;}
@@ -22,13 +22,13 @@
 .import-table-scroll {overflow-x:auto;max-width:100%;}
 .import-table {border-collapse:collapse;width:100%;font-size:.875rem;text-align:left;}
 .import-table th,.import-table td {padding:1rem .75rem;border-bottom:1px solid var(--thatcampus-border);vertical-align:top;}
-.import-table thead {color:var(--thatcampus-ink-muted);font-size:.75rem;}
+.import-table thead {color:var(--thatcampus-ink-muted);font-size:.875rem;}
 .import-table th[scope=row] {min-width:10rem;font-weight:400;}
 .import-table th strong,.import-table th span,.import-table small {display:block;line-height:1.6;}
 .import-table th strong {font-weight:700;}
-.import-table small,.import-table th span {font-size:.75rem;color:var(--thatcampus-ink-muted);}
-.import-issues {padding-left:1rem;line-height:1.6;min-width:12rem;font-size:.8125rem;margin:.5rem 0 0;}
-.import-status {display:inline-flex;border-radius:var(--thatcampus-radius-pill);padding:.25rem .625rem;font-size:.75rem;line-height:1.5;font-weight:600;white-space:nowrap;}
+.import-table small,.import-table th span {font-size:.875rem;color:var(--thatcampus-ink-muted);}
+.import-issues {padding-left:1rem;line-height:1.6;min-width:12rem;font-size:.875rem;margin:.5rem 0 0;}
+.import-status {display:inline-flex;border-radius:var(--thatcampus-radius-pill);padding:.25rem .625rem;font-size:.875rem;line-height:1.5;font-weight:600;white-space:nowrap;}
 .import-status--error {background:var(--thatcampus-danger-soft);color:var(--thatcampus-danger);}
 .import-status--warning {background:var(--thatcampus-warning-soft);color:var(--thatcampus-ink);}
 .import-status--ready {background:var(--thatcampus-positive-soft);color:var(--thatcampus-positive);}
@@ -36,8 +36,8 @@
 .import-history {list-style:none;margin:0;padding:0;}
 .import-history li {display:flex;align-items:center;gap:1rem;flex-wrap:wrap;padding:1rem 0;border-top:1px solid var(--thatcampus-border);}
 .import-history li>div {display:grid;gap:.375rem;flex:1;min-width:12rem;overflow-wrap:anywhere;}
-.import-history li span,.import-history li small {font-size:.8125rem;color:var(--thatcampus-ink-muted);}
-.import-pagination {display:flex;gap:.75rem;justify-content:space-between;align-items:center;margin-top:1rem;font-size:.8125rem;}
+.import-history li span,.import-history li small {font-size:.875rem;color:var(--thatcampus-ink-muted);}
+.import-pagination {display:flex;gap:.75rem;justify-content:space-between;align-items:center;margin-top:1rem;font-size:.875rem;}
 .import-result {display:grid;gap:1rem;}
 .import-result p {margin:0;line-height:1.6;}
 .import-result>button {justify-self:start;}

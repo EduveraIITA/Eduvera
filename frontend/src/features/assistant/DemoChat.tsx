@@ -30,7 +30,7 @@ function OpenAssistant({chat,context}:{chat:DemoChatControl;context:AssistantCon
   const close=useRef(chat.close);
   const location=useLocation();
   const navigate=useAssistantNavigation();
-  const fullPath='/'+context.portal+'/assistant'+(context.studentId?'?student_id='+encodeURIComponent(context.studentId):'');
+  const fullPath='/areas/assistant/conversation'+(context.studentId?'?student_id='+encodeURIComponent(context.studentId):'');
   const returnState={assistantReturnTo:location.pathname+location.search,assistantScrollY:window.scrollY};
   useAssistantKeyboard(panel);
   useEffect(()=>{close.current=chat.close;},[chat.close]);

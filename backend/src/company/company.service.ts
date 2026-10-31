@@ -34,7 +34,7 @@ export class CompanyService {
       FROM school_invitations i JOIN schools s ON s.id=i.school_id WHERE i.source='company' ORDER BY i.created_at DESC LIMIT 100`.execute(this.db);
     const applications = await sql`SELECT a.id,a.institution_name,a.requested_code,a.institution_kind,a.timezone,a.state_code,a.district,
       a.website,a.applicant_role_title,a.regulator_type,a.regulator_reference,a.status,a.review_note,a.revision,a.submitted_at,a.updated_at,
-      a.provisioned_school_id,u.first_name,u.last_name,u.email AS applicant_email
+      a.workspace_school_id,a.provisioned_school_id,u.first_name,u.last_name,u.email AS applicant_email
       FROM institution_onboarding_applications a JOIN users u ON u.id=a.applicant_user_id
       ORDER BY CASE a.status WHEN 'submitted' THEN 0 WHEN 'needs_information' THEN 1 ELSE 2 END,a.submitted_at DESC
       LIMIT 200`.execute(this.db);
@@ -124,9 +124,16 @@ export class CompanyService {
     try {
       return await this.db.transaction().execute(async db => {
         await this.authorize(user,db);
+        const verificationScope = (await sql<{workspace_school_id:string|null}>`SELECT workspace_school_id
+          FROM institution_onboarding_applications WHERE id=${applicationId}::uuid`.execute(db)).rows[0];
+        if (!verificationScope) throw new NotFoundException('Institution onboarding application not found.');
+        if (verificationScope.workspace_school_id) {
+          await sql`SELECT pg_advisory_xact_lock(hashtextextended(${`progressive-verification:${verificationScope.workspace_school_id}`},0))`.execute(db);
+        }
         const application = (await sql<{
-          id:string;applicant_user_id:string;institution_name:string;requested_code:string;institution_kind:'school'|'college'|'hybrid';
+          id:string;applicant_user_id:string;institution_name:string;requested_code:string;institution_kind:'school'|'college'|'coaching'|'hybrid';
           timezone:string;state_code:string;district:string;regulator_type:string;regulator_reference:string;status:string;
+          workspace_school_id:string|null;
         }>`SELECT * FROM institution_onboarding_applications WHERE id=${applicationId}::uuid FOR UPDATE`.execute(db)).rows[0];
         if (!application) throw new NotFoundException('Institution onboarding application not found.');
         if (!['submitted','needs_information'].includes(application.status)) throw new ConflictException('This application has already reached a final decision.');
@@ -147,20 +154,37 @@ export class CompanyService {
           return { status: 'rejected' };
         }
         const institutionCode = input.institution_code ?? application.requested_code;
+        if (!application.workspace_school_id) {
+          throw new ConflictException('This legacy application is not attached to a private workspace. Ask the applicant to resubmit verification from their workspace.');
+        }
+        const ownedWorkspace = (await sql<{id:string}>`SELECT school.id FROM schools school
+          JOIN school_memberships membership ON membership.school_id=school.id
+          WHERE school.id=${application.workspace_school_id}::uuid
+            AND membership.user_id=${application.applicant_user_id}::uuid
+            AND membership.role='admin' AND membership.is_active
+          FOR UPDATE OF school,membership`.execute(db)).rows[0];
+        if (!ownedWorkspace) throw new ConflictException('The attached private workspace or its administrator is no longer active.');
         const official = (await sql<{id:string}>`SELECT id FROM institution_directory
           WHERE source=upper(${application.regulator_type}) AND source_code=upper(trim(${application.regulator_reference}))
           AND source IN ('UDISE','AISHE')`.execute(db)).rows[0];
         const selected = official ? await this.directory.prepare(db,{directory_id:official.id,name:application.institution_name,institution_kind:application.institution_kind}) : null;
-        const school = (await sql<{id:string;name:string;code:string}>`INSERT INTO schools(
-          name,code,timezone,institution_kind,onboarding_model,verification_status,created_by_user_id)
-          VALUES(${application.institution_name},${institutionCode},${application.timezone},${application.institution_kind},'company_verified','approved',${application.applicant_user_id}::uuid)
-          RETURNING id,name,code`.execute(db)).rows[0]!;
+        const school = (await sql<{id:string;name:string;code:string}>`UPDATE schools SET
+          name=${application.institution_name},code=${institutionCode},timezone=${application.timezone},
+          institution_kind=${application.institution_kind},onboarding_model='company_verified',verification_status='approved'
+          WHERE id=${application.workspace_school_id}::uuid RETURNING id,name,code`.execute(db)).rows[0]!;
         if (selected) await this.directory.link(db,school.id,selected.directory_id);
-        await sql`INSERT INTO school_memberships(user_id,school_id,role) VALUES(${application.applicant_user_id}::uuid,${school.id}::uuid,'admin')`.execute(db);
-        const capability = application.institution_kind === 'college' ? 'india_college_core' : 'india_school_core';
+        const capability = application.institution_kind === 'college' ? 'india_college_core'
+          : application.institution_kind === 'coaching' ? 'coaching_core' : 'india_school_core';
+        const educationLevels = application.institution_kind === 'college' ? ['higher_education']
+          : application.institution_kind === 'coaching' ? ['coaching'] : ['primary','upper_primary','secondary'];
         await sql`UPDATE institution_regulatory_profiles SET institution_kind=${application.institution_kind},state_code=${application.state_code},district=${application.district},
-          capability_packs=ARRAY[${capability}]::text[],recognition_reference=${application.regulator_reference},reviewed_on=current_date,
+          education_levels=${educationLevels}::text[],capability_packs=ARRAY[${capability}]::text[],recognition_reference=${application.regulator_reference},reviewed_on=current_date,
           review_note=${input.note || 'Company verification completed during onboarding.'},updated_by=${user.id}::uuid WHERE school_id=${school.id}::uuid`.execute(db);
+        await sql`UPDATE progressive_onboarding_workspaces SET profile_named=true,revision=revision+1,updated_at=now()
+          WHERE school_id=${school.id}::uuid`.execute(db);
+        // The institution-name writer trigger projects the accepted domain name
+        // through ensure_live_responsibility_scope in this same transaction.
+        // Core persistence and revisions remain private to that owning adapter.
         await sql`UPDATE institution_onboarding_applications SET status='approved',requested_code=${institutionCode},review_note=${input.note},reviewed_by=${user.id}::uuid,
           reviewed_at=now(),provisioned_school_id=${school.id}::uuid,updated_at=now() WHERE id=${applicationId}::uuid`.execute(db);
         await sql`INSERT INTO institution_onboarding_audits(application_id,actor_id,action,from_status,to_status,note,metadata)

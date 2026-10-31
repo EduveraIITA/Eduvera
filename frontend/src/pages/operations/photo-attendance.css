@@ -34,7 +34,7 @@
 .photo-attendance-header > button { display: grid; width: 40px; height: 40px; place-items: center; border-radius: var(--thatcampus-radius-control); color: var(--thatcampus-ink-secondary); background: var(--thatcampus-surface-soft); }
 .photo-attendance-tabs { display: grid; grid-template-columns: 1fr 1fr; gap: 4px; margin: 16px 20px 0; padding: 4px; border-radius: 12px; background: var(--thatcampus-surface-soft); }
 .photo-attendance-tabs button { min-height: 40px; padding: 0 12px; border-radius: 9px; color: var(--thatcampus-ink-muted); background: transparent; font-size: 12px; font-weight: 750; }
-.photo-attendance-tabs button[aria-selected="true"] { color: var(--thatcampus-brand); background: #ffffff; box-shadow: var(--thatcampus-shadow-card); }
+.photo-attendance-tabs button[aria-selected="true"] { color: var(--thatcampus-brand); background: var(--thatcampus-surface); box-shadow: var(--thatcampus-shadow-card); }
 .photo-attendance-content { display: grid; gap: 16px; padding: 20px; }
 .photo-attendance-loading { display: flex; min-height: 180px; align-items: center; justify-content: center; gap: 10px; color: var(--thatcampus-ink-muted); font-size: 13px; }
 .photo-attendance-error { display: flex; gap: 10px; margin: 16px 20px 0; padding: 12px 14px; border: 1px solid #efaaa5; border-radius: var(--thatcampus-radius-control); color: var(--thatcampus-danger); background: var(--thatcampus-danger-soft); font-size: 12px; line-height: 1.5; }
@@ -57,10 +57,10 @@
 .photo-capture-card strong { color: var(--thatcampus-ink); font-size: 14px; }
 .photo-capture-card p { max-width: 440px; margin: 4px auto 0; color: var(--thatcampus-ink-muted); font-size: 11px; line-height: 1.5; }
 .photo-capture-actions { display: flex; gap: 8px; }
-.photo-capture-actions button { display: inline-flex; min-height: 42px; padding: 0 13px; align-items: center; gap: 7px; border: 1px solid var(--thatcampus-border); border-radius: var(--thatcampus-radius-control); color: var(--thatcampus-brand); background: #ffffff; font-size: 12px; font-weight: 750; }
+.photo-capture-actions button { display: inline-flex; min-height: 42px; padding: 0 13px; align-items: center; gap: 7px; border: 1px solid var(--thatcampus-border); border-radius: var(--thatcampus-radius-control); color: var(--thatcampus-brand); background: var(--thatcampus-surface); font-size: 12px; font-weight: 750; }
 .photo-attendance-fields { display: grid; gap: 12px; }
 .photo-attendance-fields > label:not(.photo-attendance-check) { display: grid; gap: 6px; color: var(--thatcampus-ink-secondary); font-size: 11px; font-weight: 700; }
-.photo-attendance-fields input:not([type="checkbox"]) { width: 100%; min-height: 44px; padding: 0 12px; border: 1px solid var(--thatcampus-border); border-radius: var(--thatcampus-radius-control); color: var(--thatcampus-ink); background: #ffffff; font-size: 13px; font-weight: 500; }
+.photo-attendance-fields input:not([type="checkbox"]) { width: 100%; min-height: 44px; padding: 0 12px; border: 1px solid var(--thatcampus-border); border-radius: var(--thatcampus-radius-control); color: var(--thatcampus-ink); background: var(--thatcampus-surface); font-size: 13px; font-weight: 500; }
 .photo-attendance-check { display: flex; align-items: flex-start; gap: 10px; color: var(--thatcampus-ink-secondary); font-size: 11px; line-height: 1.55; cursor: pointer; }
 .photo-attendance-check input { width: 20px; height: 20px; flex: 0 0 auto; margin: 0; accent-color: var(--thatcampus-brand-bright); }
 .photo-ai-assist { display: grid; grid-template-columns: auto auto minmax(0, 1fr); gap: 10px; align-items: center; padding: 12px 14px; border: 1px solid var(--thatcampus-border); border-radius: var(--thatcampus-radius-control); background: var(--thatcampus-surface-soft); cursor: pointer; }
@@ -70,18 +70,18 @@
 .photo-ai-assist strong { color: var(--thatcampus-ink); font-size: 12px; }
 .photo-ai-assist small { color: var(--thatcampus-ink-muted); font-size: 10px; line-height: 1.45; }
 .photo-ai-assist.is-unavailable { cursor: not-allowed; opacity: .72; }
-.photo-attendance-primary { display: inline-flex; min-height: 46px; padding: 0 16px; align-items: center; justify-content: center; gap: 8px; border-radius: var(--thatcampus-radius-control); color: #ffffff; background: var(--thatcampus-brand-bright); font-size: 13px; font-weight: 800; }
+.photo-attendance-primary { display: inline-flex; min-height: 46px; padding: 0 16px; align-items: center; justify-content: center; gap: 8px; border-radius: var(--thatcampus-radius-control); color: var(--thatcampus-on-action); background: var(--thatcampus-action); font-size: 13px; font-weight: 800; }
 .photo-attendance-fineprint { margin: -5px 0 0; color: var(--thatcampus-ink-muted); font-size: 10px; line-height: 1.5; text-align: center; }
 .photo-reference-list { display: grid; gap: 8px; }
-.photo-reference-list article { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; gap: 11px; align-items: center; padding: 12px; border: 1px solid var(--thatcampus-border); border-radius: var(--thatcampus-radius-card); background: #ffffff; transition: border-color 180ms cubic-bezier(.16,1,.3,1), background-color 180ms cubic-bezier(.16,1,.3,1), box-shadow 180ms cubic-bezier(.16,1,.3,1); }
-.photo-reference-list article.is-added { border-color: rgba(0, 104, 95, .28); background: linear-gradient(180deg, #ffffff 0%, var(--thatcampus-positive-soft) 100%); box-shadow: 0 8px 20px rgba(0, 104, 95, .08); }
+.photo-reference-list article { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; gap: 11px; align-items: center; padding: 12px; border: 1px solid var(--thatcampus-border); border-radius: var(--thatcampus-radius-card); background: var(--thatcampus-surface); transition: border-color 180ms cubic-bezier(.16,1,.3,1), background-color 180ms cubic-bezier(.16,1,.3,1), box-shadow 180ms cubic-bezier(.16,1,.3,1); }
+.photo-reference-list article.is-added { border-color: color-mix(in srgb, var(--thatcampus-positive) 28%, transparent); background: linear-gradient(180deg, var(--thatcampus-surface) 0%, var(--thatcampus-positive-soft) 100%); box-shadow: 0 8px 20px color-mix(in srgb, var(--thatcampus-positive) 8%, transparent); }
 .photo-reference-list article > div { display: grid; gap: 2px; min-width: 0; }
 .photo-reference-list strong { overflow: hidden; color: var(--thatcampus-ink); font-size: 12px; text-overflow: ellipsis; white-space: nowrap; }
 .photo-reference-list span { color: var(--thatcampus-ink-muted); font-size: 10px; }
 .photo-reference-list article > .photo-reference-actions { display: flex; min-width: 0; align-items: center; justify-content: flex-end; gap: 7px; }
 .photo-reference-actions button { display: inline-flex; min-height: 38px; padding: 0 10px; align-items: center; justify-content: center; gap: 6px; border-radius: var(--thatcampus-radius-control); color: var(--thatcampus-brand); background: var(--thatcampus-brand-soft); font-size: 11px; font-weight: 750; white-space: nowrap; }
 .photo-reference-actions button:first-child { color: var(--thatcampus-positive); background: var(--thatcampus-positive-soft); }
-.photo-reference-success { display: inline-flex; min-height: 30px; padding: 0 9px; align-items: center; gap: 5px; border-radius: var(--thatcampus-radius-pill); color: var(--thatcampus-positive); background: #ffffff; font-size: 10px; font-weight: 800; animation: photo-reference-success-pop 560ms cubic-bezier(.16,1,.3,1); box-shadow: 0 5px 14px rgba(0, 104, 95, .12); }
+.photo-reference-success { display: inline-flex; min-height: 30px; padding: 0 9px; align-items: center; gap: 5px; border-radius: var(--thatcampus-radius-pill); color: var(--thatcampus-positive); background: var(--thatcampus-surface); font-size: 10px; font-weight: 800; animation: photo-reference-success-pop 560ms cubic-bezier(.16,1,.3,1); box-shadow: 0 5px 14px rgba(0, 104, 95, .12); }
 .photo-reference-success svg { stroke-width: 3; }
 .photo-student-avatar { display: grid; width: 42px; height: 42px; place-items: center; overflow: hidden; border-radius: 50%; color: var(--thatcampus-brand); background: var(--thatcampus-brand-soft); font-size: 11px; font-weight: 800; }
 .photo-student-avatar img { width: 100%; height: 100%; object-fit: cover; }
@@ -91,8 +91,8 @@
 .photo-review-summary strong { font-size: 20px; }
 .photo-review-summary span { color: var(--thatcampus-ink-muted); font-size: 10px; }
 .photo-face-strip { display: flex; gap: 10px; padding-bottom: 4px; overflow-x: auto; }
-.photo-face-strip article { display: grid; width: 96px; flex: 0 0 96px; gap: 4px; padding: 7px; border: 1px solid var(--thatcampus-border); border-radius: var(--thatcampus-radius-control); background: #ffffff; }
-.photo-face-strip article.is-auto { border-color: #91d5ca; background: var(--thatcampus-positive-soft); }
+.photo-face-strip article { display: grid; width: 96px; flex: 0 0 96px; gap: 4px; padding: 7px; border: 1px solid var(--thatcampus-border); border-radius: var(--thatcampus-radius-control); background: var(--thatcampus-surface); }
+.photo-face-strip article.is-auto { border-color: color-mix(in srgb, var(--thatcampus-positive) 42%, transparent); background: var(--thatcampus-positive-soft); }
 .photo-face-strip img { width: 80px; height: 80px; object-fit: cover; border-radius: 8px; }
 .photo-face-fallback { display: grid; width: 80px; height: 80px; place-items: center; border-radius: 8px; background: var(--thatcampus-surface-soft); color: var(--thatcampus-ink-muted); }
 .photo-face-strip span { overflow: hidden; font-size: 10px; font-weight: 750; text-overflow: ellipsis; white-space: nowrap; }
@@ -107,7 +107,7 @@
 .photo-review-roster article span { color: var(--thatcampus-ink-muted); font-size: 10px; }
 .photo-review-roster article small { display: inline-flex; align-items: center; gap: 3px; margin-top: 2px; color: var(--thatcampus-positive); font-size: 9px; font-weight: 750; }
 .photo-review-roster article small.needs-review { color: var(--thatcampus-warning); }
-.photo-review-roster select { width: 100%; min-height: 40px; padding: 0 9px; border: 1px solid var(--thatcampus-border); border-radius: var(--thatcampus-radius-control); color: var(--thatcampus-ink); background: #ffffff; font-size: 11px; font-weight: 700; }
+.photo-review-roster select { width: 100%; min-height: 40px; padding: 0 9px; border: 1px solid var(--thatcampus-border); border-radius: var(--thatcampus-radius-control); color: var(--thatcampus-ink); background: var(--thatcampus-surface); font-size: 11px; font-weight: 700; }
 .photo-attendance-dialog :is(button, input, select):focus-visible { outline: 3px solid var(--thatcampus-brand-bright); outline-offset: 2px; }
 
 @media (max-width: 680px) {
@@ -140,7 +140,7 @@
     position: static;
     padding: 0 16px 16px;
     border-bottom: 0;
-    background: #ffffff;
+    background: var(--thatcampus-surface);
     backdrop-filter: none;
   }
   .photo-attendance-tabs { margin-inline: 16px; }

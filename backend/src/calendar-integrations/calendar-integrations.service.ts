@@ -10,6 +10,7 @@ import {AssessmentsService} from '../assessments/assessments.service.js';
 import {CampusEventsService} from '../campus-events/campus-events.service.js';
 import {SchoolService} from '../school/school.service.js';
 import {serializeCalendar,type ICalendarEvent} from './ical.js';
+import { captureSimulationProviderEffect, selectedSimulationResources } from '../common/simulation-resources.js';
 
 const portal=z.enum(['principal','teacher','parent','student']);
 const scopeInput=z.object({portal,student_id:z.string().uuid().optional()}).strict();
@@ -57,8 +58,9 @@ export class CalendarIntegrationsService {
 
   async createSubscription(request:AuthenticatedRequest){
     const input=scopeInput.parse(request.body);const scope=await this.scope(request.authUser,input);
-    const base=config().PUBLIC_URL?.replace(/\/$/,'');
-    if(!base)throw new BadRequestException('Calendar subscriptions require the public application URL to be configured.');
+    const simulated=selectedSimulationResources();
+    const base=simulated?'':config().PUBLIC_URL?.replace(/\/$/,'');
+    if(!simulated&&!base)throw new BadRequestException('Calendar subscriptions require the public application URL to be configured.');
     const raw=randomBytes(32).toString('base64url');const tokenHash=hash(raw);const hint=raw.slice(-6);
     const row=await this.db.transaction().execute(async tx=>{
       await sql`UPDATE calendar_subscriptions SET state='revoked',revoked_at=now(),revision=revision+1
@@ -69,7 +71,24 @@ export class CalendarIntegrationsService {
         RETURNING id,created_at,revision`.execute(tx)).rows[0]!;
       await this.audit(tx,request,scope,'calendar.subscription.created',created.id,{portal:scope.portal,student_id:scope.studentId});return created;
     });
+    if(simulated){
+      await captureSimulationProviderEffect({kind:'connector_call',provider:'calendar',operation:'create_preview',logicalKey:row.id,
+        idempotencyKey:`calendar-preview:${row.id}`,payload:{evidence_mode:'simulation',external_subscription:false}});
+      return {...row,token_hint:'simulation',feed_url:`/api/v1/calendar-connections/subscriptions/${row.id}/preview.ics`,
+        calendar_name:`Simulation · ${scope.calendarName}`,evidence_mode:'simulation' as const,external_subscription:false};
+    }
     return {...row,token_hint:hint,feed_url:`${base}/api/v1/calendar-connections/subscriptions/${raw}/feed.ics`,calendar_name:scope.calendarName};
+  }
+
+  async preview(request:AuthenticatedRequest,id:string){
+    if(!selectedSimulationResources())throw new NotFoundException('Run-local previews are available only inside Simulation.');
+    const subscription=(await sql<{school_id:string;portal:Portal;student_id:string|null}>`SELECT school_id,portal,student_id
+      FROM calendar_subscriptions WHERE id=${z.string().uuid().parse(id)}::uuid AND owner_id=${request.authUser.id}::uuid AND state='active'`.execute(this.db)).rows[0];
+    if(!subscription)throw new NotFoundException('This run-local calendar preview is not active.');
+    const scope=await this.scope(request.authUser,{portal:subscription.portal,...(subscription.student_id?{student_id:subscription.student_id}:{})});
+    if(scope.schoolId!==subscription.school_id)throw new NotFoundException('Calendar not found in this campus.');
+    const today=(await sql<{today:string}>`SELECT (now() AT TIME ZONE ${scope.timezone})::date::text AS today`.execute(this.db)).rows[0]!.today;
+    return this.calendar(scope,request.authUser,plusDays(today,-30),plusDays(today,370));
   }
 
   async revoke(request:AuthenticatedRequest,id:string){
@@ -115,7 +134,10 @@ export class CalendarIntegrationsService {
     const [holidays,timetable,events,assessments]=await Promise.all([
       this.holidays(scope,from,to),this.timetable(scope,from,to),this.events(scope,user,from,to),this.assessmentEvents(scope,user,from,to),
     ]);
-    return serializeCalendar({name:scope.calendarName,timezone:scope.timezone,events:[...holidays,...timetable,...events,...assessments],
+    const simulated=Boolean(selectedSimulationResources());
+    return serializeCalendar({name:simulated?`Simulation · ${scope.calendarName}`:scope.calendarName,timezone:scope.timezone,
+      events:[...holidays,...timetable,...events,...assessments].map(event=>simulated?{...event,title:`Simulation · ${event.title}`,
+        description:`SIMULATION ONLY — not the Live campus calendar. ${event.description??''}`}:event),
       ...(generatedAt?{generatedAt}:{}),
     });
   }

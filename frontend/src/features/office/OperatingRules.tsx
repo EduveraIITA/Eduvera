@@ -21,21 +21,21 @@ export function OperatingRules({ schoolId }: { schoolId: string }) {
     setDirtySections((current) => current[key] === value ? current : { ...current, [key]: value });
   }, [editorKey]);
   useUnsavedChangesGuard(dirty, "Discard your unsaved operating-rule changes?");
-  const base = `?school=${encodeURIComponent(schoolId)}&section=rules`;
+  const base = `/more/setup/institution/operating-rules?school=${encodeURIComponent(schoolId)}`;
   const categories = [
     ["attendance", "Attendance", "Academic registers, campus presence and capture methods"],
     ["examinations", "Examination day", "Room readiness, invigilation and candidate attendance"],
     ["events", "Event attendance", "Observation windows for every event register"],
     ["coverage", "Leave cover", "Deadlines and automatic fallback decisions"],
     ["departure", "Departure & transport", "Allowed arrangements, cutoff and location handling"],
-    ["messages", "Messaging", "Who can message, communication hours and retention"],
+    ["messages", "Messaging", "Who can message, communication hours and privacy"],
   ];
   if (!categories.some(([id]) => id === rule)) return <>
     <p className="office-hint">How the app operates across your institution.</p>
     <nav className="more-grid more-grid--list" aria-label="Operating rule categories">{categories.map(([id, title]) => <Link className="more-tile more-tile--text-only" key={id} to={`${base}&rule=${id}`}><span className="more-tile__copy"><strong>{title}</strong></span><ChevronRight className="more-tile__chevron" size={18} aria-hidden="true"/></Link>)}</nav>
   </>;
   return <>
-    {rule === "attendance" ? <WorkflowRules schoolId={schoolId} category="attendance" onDirtyChange={(value) => setSectionDirty("workflow", value)}/> : rule === "examinations" ? <ExaminationOperatingRules schoolId={schoolId} onDirtyChange={(value) => setSectionDirty("examinations", value)}/> : rule === "coverage" ? <CoverageRules schoolId={schoolId} onDirtyChange={(value) => setSectionDirty("coverage", value)}/> : <CategoryOperatingRules schoolId={schoolId} category={rule as "events" | "departure" | "messages"} onDirtyChange={(value) => setSectionDirty("category", value)}/>}
+    {rule === "attendance" ? <WorkflowRules schoolId={schoolId} category="attendance" onDirtyChange={(value) => setSectionDirty("workflow", value)}/> : rule === "examinations" ? <ExaminationOperatingRules schoolId={schoolId} onDirtyChange={(value) => setSectionDirty("examinations", value)}/> : rule === "coverage" ? <CoverageRules schoolId={schoolId} onDirtyChange={(value) => setSectionDirty("coverage", value)}/> : <CategoryOperatingRules key={editorKey} schoolId={schoolId} category={rule as "events" | "departure" | "messages"} onDirtyChange={(value) => setSectionDirty("category", value)}/>}
   </>;
 }
 function CoverageRules({ schoolId, onDirtyChange }: { schoolId: string; onDirtyChange: (dirty: boolean) => void }) {

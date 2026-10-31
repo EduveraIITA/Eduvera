@@ -1,0 +1,14 @@
+{
+  "version": 1,
+  "activeProjectId": "paper-main",
+  "projects": [
+    {
+      "id": "paper-main",
+      "type": "paper",
+      "title": "ThatCampus Current System Architecture Atlas",
+      "source": "paper.md",
+      "renderTemplate": "paged",
+      "customCss": "paper.css"
+    }
+  ]
+}

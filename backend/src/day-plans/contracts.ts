@@ -26,6 +26,7 @@ export const periodSchema = z
     title: text(120).refine((v) => !!v, "Enter a period name."),
     slot_type: z.enum(["class", "break", "activity"]),
     room: text(80),
+    space_id: uuid.nullable().optional(),
     teacher_user_id: uuid.nullable(),
     cancelled: z.boolean(),
     materials: z
@@ -110,6 +111,7 @@ export function comparable(p: PlanPeriod) {
     title: p.title,
     slot_type: p.slot_type,
     room: p.room,
+    space_id: p.space_id ?? null,
     teacher_user_id: p.teacher_user_id,
     cancelled: p.cancelled,
     materials: p.materials,

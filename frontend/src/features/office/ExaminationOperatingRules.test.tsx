@@ -18,7 +18,10 @@ const rules = {
 
 describe("examination operating rules", () => {
   it("saves one institution rule set with optimistic revision", async () => {
-    vi.mocked(apiFetch).mockResolvedValue(rules);
+    vi.mocked(apiFetch).mockImplementation(url => Promise.resolve(String(url).includes("invigilation-invitations") ? {
+      school_id: "school-1", policy: { state: "unconfigured", revision: 0, enabled: false, recipient_person_ids: [], response_due_minutes: null, expires_after_minutes: null, approved_at: null, approved_by: null, approval_note: null },
+      eligible_recipients: [], readiness: { can_create_invitations: false, missing_recipient_count: 0 }, capabilities: { can_approve: true },
+    } : rules));
     const dirty = vi.fn();
     render(<QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}>
       <ExaminationOperatingRules schoolId="school-1" onDirtyChange={dirty}/>

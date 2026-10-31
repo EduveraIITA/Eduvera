@@ -22,15 +22,27 @@ setInterval(() => {
   for (const [key, bucket] of memoryBuckets) if (bucket.expiresAt <= now) memoryBuckets.delete(key);
 }, 60_000).unref();
 
-export function rateLimitRule(path: string, method = "GET"): { limit: number; windowMs: number } {
+function authCeremonyPath(path: string): string {
+  if (/^\/api\/v1\/auth\/native\/invitations\/(?:accept|recipient-proof)\/$/u.test(path))
+    return path.replace("/auth/native/invitations/", "/invitations/");
+  const authPath = path.replace(/^\/api\/v1\/auth\/native\//u, "/api/v1/auth/");
+  // Browser handoff steps share the existing Google read/write budgets across
+  // web/native transports and phases; adding a phase cannot multiply a bucket.
+  if (/^\/api\/v1\/auth\/google\/(?:start|proof|exchange)\/$/u.test(authPath)) return "/api/v1/auth/google/";
+  if (authPath === "/api/v1/auth/google/authorize/") return "/api/v1/auth/google/config/";
+  return authPath;
+}
+
+function normalizedRateLimitRule(path: string, method: string): { limit: number; windowMs: number } {
   if (/\/campus-view\/scenarios\/targets\/$/.test(path)) return { limit: 12, windowMs: 60_000 };
   if (method === "POST" && /\/campus-view\/scenarios\/$/.test(path)) return { limit: 6, windowMs: 60_000 };
   if (/\/agent\/threads\/[^/]+\/messages\/?$/.test(path)) return { limit: 10, windowMs: 60_000 };
   if (/\/agent\/threads\/?$/.test(path)) return { limit: 60, windowMs: 60_000 };
   if (path.replace(/\/$/, "").endsWith("/invitations/accept")) return { limit: 10, windowMs: 60_000 };
+  if (path.replace(/\/$/, "").endsWith("/invitations/recipient-proof")) return { limit: 10, windowMs: 60_000 };
   if (path.endsWith("/auth/register/")) return { limit: 5, windowMs: 60 * 60_000 };
   if (path.endsWith("/auth/google/") || path.endsWith("/auth/google/config/")) return { limit: 20, windowMs: 60_000 };
-  if (path.endsWith("/auth/login/") || path.endsWith("/auth/demo-session/")) return { limit: 10, windowMs: 60_000 };
+  if (path.endsWith("/auth/login/") || path.endsWith("/auth/demo-session/") || path.endsWith("/auth/public-demo-session/")) return { limit: 10, windowMs: 60_000 };
   if (path.endsWith("/auth/mfa/login/")) return { limit: 10, windowMs: 5 * 60_000 };
   if (path.endsWith("/auth/password-reset/request/") || path.endsWith("/auth/email-verification/request/")) return { limit: 5, windowMs: 60 * 60_000 };
   if (path.endsWith("/auth/password-reset/confirm/") || path.endsWith("/auth/email-verification/confirm/") || path.endsWith("/auth/mfa/confirm/")) return { limit: 10, windowMs: 10 * 60_000 };
@@ -38,12 +50,19 @@ export function rateLimitRule(path: string, method = "GET"): { limit: number; wi
   return { limit: 300, windowMs: 60_000 };
 }
 
+export function rateLimitRule(path: string, method = "GET"): { limit: number; windowMs: number } {
+  return normalizedRateLimitRule(authCeremonyPath(path), method);
+}
+
 export function rateLimitHook(db: DatabaseService) {
   return async (request: FastifyRequest, reply: FastifyReply): Promise<void> => {
     const path = (request.url.split("?")[0] ?? request.url).replace(/\/+$/, '') + '/';
     if (!path.startsWith("/api/")) return;
-    const { limit, windowMs } = rateLimitRule(path, request.method);
-    const normalizedPath = path.replace(/\/agent\/threads\/[^/]+\/messages\/?$/, '/agent/messages');
+    // Normalize once for both rule selection and the persisted/memory key, so
+    // alternating native and web transports cannot double the same IP budget.
+    const ceremonyPath = authCeremonyPath(path);
+    const { limit, windowMs } = normalizedRateLimitRule(ceremonyPath, request.method);
+    const normalizedPath = ceremonyPath.replace(/\/agent\/threads\/[^/]+\/messages\/?$/, '/agent/messages');
     const bucketKey = createHash("sha256").update(`${request.ip}:${request.method}:${normalizedPath}`).digest("hex");
     const expiresAt = new Date(Date.now() + windowMs);
     let bucket: { hits: number; expires_at: Date };

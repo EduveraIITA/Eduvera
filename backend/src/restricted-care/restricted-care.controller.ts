@@ -1,4 +1,4 @@
-import { Body, Controller, Get, Param, Post, Req } from "@nestjs/common";
+import { Body, Controller, Get, Param, Post, Query, Req } from "@nestjs/common";
 import type { AuthenticatedRequest } from "../common/request.js";
 import { RestrictedCareService } from "./restricted-care.service.js";
 
@@ -9,6 +9,21 @@ export class RestrictedCareController {
   @Get("workspace/")
   workspace(@Req() req: AuthenticatedRequest, @Param("schoolId") schoolId: string) {
     return this.care.workspace(req.authUser, schoolId);
+  }
+
+  @Get("commands/:commandId/confirmation/")
+  confirm(@Req() req: AuthenticatedRequest, @Param("schoolId") schoolId: string, @Param("commandId") commandId: string) {
+    return this.care.confirm(req.authUser, schoolId, commandId);
+  }
+
+  @Get("orphaned-cases/")
+  orphanedCases(@Req() req: AuthenticatedRequest, @Param("schoolId") schoolId: string, @Query("page") page?: string) {
+    return this.care.orphanedCases(req.authUser, schoolId, page ?? 1);
+  }
+
+  @Post("orphaned-cases/:caseId/reassign/")
+  recoverOwner(@Req() req: AuthenticatedRequest, @Param("schoolId") schoolId: string, @Param("caseId") caseId: string, @Body() body: unknown) {
+    return this.care.recoverOwner(req.authUser, schoolId, caseId, body);
   }
 
   @Post("team-assignments/")

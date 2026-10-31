@@ -1,9 +1,11 @@
+import { guardianFeeReviewServices, linkGuardianFeeFixtureActor } from "./fee-review.test-support.js";
+import { ensureFixtureGuardianProfile } from "./fixture-guardian-profile.test-support.js";
 import { randomUUID } from "node:crypto";
 import { Pool } from "pg";
 import { beforeAll, afterAll, describe, it, expect, vi } from "vitest";
 import { DatabaseService } from "../src/database/database.service.js";
 import { OperationsService } from "../src/operations/operations.service.js";
-import { FeeReviewService } from "../src/operations/fee-review.service.js";
+import type { FeeReviewService } from "../src/operations/fee-review.service.js";
 import type { AuthUser } from "../src/common/request.js";
 import { requireIsolatedTestDatabaseUrl } from "./test-database.js";
 import { RazorpayClient, type RazorpayPayment } from "../src/operations/razorpay.client.js";
@@ -36,7 +38,7 @@ describe.skipIf(!isolated)("Razorpay sandbox invoice integration", () => {
   const claim = (reference: string = randomUUID()) => ({ kind: "payment", amount_paise: 4000, method: "bank_transfer", reference, note: "Transferred today", idempotency_key: randomUUID() });
 
   beforeAll(async () => {
-    db = new DatabaseService(); operations = new OperationsService(db, createStaffCoverageReconciliationTestDouble()); service = new FeeReviewService(db, operations);
+    db = new DatabaseService(); operations = new OperationsService(db, createStaffCoverageReconciliationTestDouble()); service = guardianFeeReviewServices(db, operations).service;
     payments = new RazorpayService(db, gateway);
     vi.spyOn(gateway, "enabled").mockReturnValue(true);
     vi.spyOn(gateway, "keyId").mockReturnValue("rzp_test_fixture");
@@ -47,7 +49,9 @@ describe.skipIf(!isolated)("Razorpay sandbox invoice integration", () => {
     for (const [actor, role] of [[admin, "admin"], [parent, "guardian"], [outsider, "guardian"], [learner, "student"]] as const) await pool.query("INSERT INTO school_memberships(school_id,user_id,role) VALUES($1,$2,$3)", [school, actor.id, role]);
     student = (await pool.query("INSERT INTO students(user_id,school_id,admission_number) VALUES($1,$2,$3) RETURNING id", [learner.id, school, randomUUID()])).rows[0].id;
     const p = (await pool.query("INSERT INTO parents(user_id) VALUES($1) RETURNING id", [parent.id])).rows[0].id;
+    await ensureFixtureGuardianProfile(pool,{schoolId:school,guardianId:p,firstName:parent.first_name,lastName:parent.last_name});
     await pool.query("INSERT INTO guardian_relationships(school_id,student_id,guardian_id,relationship) VALUES($1,$2,$3,'guardian')", [school, student, p]);
+    for (const actor of [admin, parent, learner]) await linkGuardianFeeFixtureActor(db, guardianFeeReviewServices(db, operations).core, school, actor, admin.id);
   });
   afterAll(async () => { await db?.destroy(); await pool.end(); });
   it("rejects other families, students and cross-school checkout", async () => {

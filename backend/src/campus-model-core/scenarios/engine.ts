@@ -19,6 +19,10 @@ import {
   createScenarioExecutionContext,
   deepFreezeScenarioValue,
 } from "./runtime.js";
+import {
+  createScenarioIdentityManifest,
+  scenarioIdentityManifestHash,
+} from "./identity-manifest.js";
 
 function instant(value: string, label: string): number {
   const parsed = Date.parse(value);
@@ -199,6 +203,23 @@ export class IsolatedScenarioEngine implements ScenarioEngine {
       throw new Error("Scenario executor must publish an ID and version.");
     }
     const snapshot = deepFreezeScenarioValue(cloneScenarioValue(request.source.snapshot));
+    const snapshotHash = scenarioSnapshotHash(snapshot);
+    const identities = structuredClone(request.identities);
+    const configurationSnapshot = structuredClone(request.configuration_snapshot);
+    const identityManifest = createScenarioIdentityManifest({
+      institution_id: request.institution_id,
+      scenario_id: request.scenario_id,
+      run_id: request.run_id,
+      namespace_id: request.namespace_id,
+      source_snapshot_hash: snapshotHash,
+      source_snapshot_version: request.source.snapshot_version,
+      source_snapshot_at: new Date(
+        instant(request.source.snapshot_at, "Scenario snapshot_at"),
+      ).toISOString(),
+      configuration_snapshot: configurationSnapshot,
+      identities,
+    });
+    const identityManifestHash = scenarioIdentityManifestHash(identityManifest);
 
     const execute = async (
       plan: typeof request.baseline | typeof request.alternative,
@@ -214,8 +235,8 @@ export class IsolatedScenarioEngine implements ScenarioEngine {
         run_id: request.run_id,
         deterministic_seed: seed,
         horizon: request.horizon,
-        configuration_snapshot: request.configuration_snapshot,
-        identities: request.identities,
+        configuration_snapshot: configurationSnapshot,
+        identities,
       });
       const output = await executor.execute({
         context,
@@ -328,14 +349,16 @@ export class IsolatedScenarioEngine implements ScenarioEngine {
       run_id: request.run_id,
       requested_at: new Date(instant(request.requested_at, "Scenario requested_at")).toISOString(),
       expires_at: new Date(instant(request.expires_at, "Scenario expires_at")).toISOString(),
-      snapshot_hash: scenarioSnapshotHash(snapshot),
+      snapshot_hash: snapshotHash,
       snapshot_version: request.source.snapshot_version,
       snapshot_at: new Date(instant(request.source.snapshot_at, "Scenario snapshot_at")).toISOString(),
       source_revisions: structuredClone(request.source.source_revisions),
+      identity_manifest: structuredClone(identityManifest),
+      identity_manifest_hash: identityManifestHash,
       deterministic_seed: request.deterministic_seed,
       horizon: structuredClone(request.horizon),
       executor: { id: executor.executor_id, version: executor.version },
-      configuration_snapshot: structuredClone(request.configuration_snapshot),
+      configuration_snapshot: structuredClone(configurationSnapshot),
       assumptions,
       unsupported,
       baseline,

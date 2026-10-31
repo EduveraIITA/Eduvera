@@ -7,6 +7,7 @@ import { NoticesService } from "../src/notices/notices.service.js";
 import { RequestsService } from "../src/requests/requests.service.js";
 import { SchoolEventService } from "../src/school/school-event.service.js";
 import { requireIsolatedTestDatabaseUrl } from "./test-database.js";
+import { financeArrangementServices } from "./finance-arrangements.test-support.js";
 
 const isolated = process.env.TEST_DATABASE_ISOLATED === "true";
 const suite = isolated ? describe : describe.skip;
@@ -51,6 +52,10 @@ beforeAll(async () => {
     JOIN timetable_slots slot ON slot.teacher_user_id=teacher.id
     JOIN enrollments enrollment ON enrollment.class_section_id=slot.class_section_id AND enrollment.term_id=slot.term_id AND enrollment.is_active
     JOIN students student ON student.id=enrollment.student_id
+    JOIN schools school ON school.id=student.school_id AND school.code='cis'
+    JOIN users administrator ON administrator.username='meera.principal'
+    JOIN school_memberships administration ON administration.school_id=school.id
+      AND administration.user_id=administrator.id AND administration.is_active AND administration.role='admin'
     JOIN guardian_relationships relationship ON relationship.student_id=student.id
     JOIN parents parent ON parent.id=relationship.guardian_id
     JOIN users guardian ON guardian.id=parent.user_id AND guardian.username='pooja.parent'
@@ -58,10 +63,10 @@ beforeAll(async () => {
       AND staff_has_class_permission(student.school_id,teacher.id,'messages.send',enrollment.class_section_id)
     ORDER BY enrollment.class_section_id LIMIT 1
   `)).rows[0];
-  if (!scope) throw new Error("The isolated test database needs the standard Kavita/Pooja class fixture.");
+  if (!scope) throw new Error("The isolated test database needs the Cambridge Kavita/Pooja class fixture and Meera's active administrator membership.");
   schoolId = scope.school_id; classId = scope.class_section_id; studentId = scope.student_id;
   db = new DatabaseService(); const events = new SchoolEventService(db);
-  notices = new NoticesService(db, events); requests = new RequestsService(db);
+  notices = new NoticesService(db, events); requests = new RequestsService(db, undefined, undefined, financeArrangementServices(db).reads);
   admin = await account("meera.principal"); teacher = await account("kavita.staff"); parent = await account("pooja.parent");
 });
 
@@ -101,15 +106,33 @@ suite("School notices and response tracking", () => {
     expect(managerRow).toMatchObject({ recipient_count: published.recipient_count, response_count: 0,
       unopened_count: published.recipient_count, pending_response_count: published.recipient_count,
       delivery_exception_count: 0 });
+    const workspaceManager = await notices.list(admin.authUser, { scope: "responsibility", school_id: schoolId });
+    expect(workspaceManager).toMatchObject({ scope: "responsibility", school_id: schoolId });
+    expect(workspaceManager.results).toContainEqual(expect.objectContaining({ id: draft.id, can_manage: true }));
+    expect(await notices.detail(admin.authUser, draft.id, { scope: "responsibility" }))
+      .toMatchObject({ id: draft.id, can_manage: true });
+    expect(await notices.references(admin.authUser, { scope: "responsibility", school_id: schoolId }))
+      .toMatchObject({ school_id: schoolId, audience_kinds: ["class_guardians", "school_guardians", "school_staff"] });
     const initialList = await notices.list(parent.authUser, { portal: "parent", student_id: studentId });
     expect(initialList.results.find((row) => row.id === draft.id)).toMatchObject({
       attention_reasons: ["unread", "response_required"],
       last_seen_notice_revision: 0,
     });
     expect(initialList.attention).toMatchObject({ unread: expect.any(Number), action_required: expect.any(Number) });
-    const linkedNotification = (await pool.query(`SELECT id,read_at FROM notifications
+    const workspaceDependent = await notices.list(parent.authUser, { scope: "dependent", student_id: studentId });
+    expect(workspaceDependent).toMatchObject({ scope: "dependent", student_id: studentId });
+    expect(workspaceDependent.results).toContainEqual(expect.objectContaining({ id: draft.id }));
+    expect(await notices.detail(parent.authUser, draft.id, { scope: "dependent", student_id: studentId }))
+      .toMatchObject({ id: draft.id, can_manage: false });
+    expect((await notices.attentionItems(parent.authUser, { scope: "dependent", student_id: studentId })).items)
+      .toContainEqual(expect.objectContaining({
+        source_id: draft.id,
+        href: `/areas/messages/updates/${draft.id}?scope=dependent&student_id=${studentId}`,
+      }));
+    const linkedNotification = (await pool.query(`SELECT id,read_at,link FROM notifications
       WHERE recipient_id=$1 AND metadata->>'notice_recipient_id'=$2`, [parent.authUser.id, recipient.id])).rows[0];
     expect(linkedNotification?.read_at).toBeNull();
+    expect(linkedNotification?.link).toBe(`/areas/messages/updates/${draft.id}?scope=dependent&student_id=${studentId}`);
     const sibling = (await pool.query(`SELECT recipient.id,recipient.student_id FROM school_notice_recipients recipient
       JOIN parents parent ON parent.id=recipient.guardian_id
       WHERE recipient.notice_id=$1 AND parent.user_id=$2 AND recipient.student_id<>$3 LIMIT 1`,
@@ -169,10 +192,7 @@ suite("School notices and response tracking", () => {
     createdStaffUsers.push(staffUser.id);
     await pool.query("INSERT INTO school_memberships(school_id,user_id,role,is_active) VALUES($1,$2,'staff',true)",
       [schoolId, staffUser.id]);
-    const staffProfile = (await pool.query<{ id: string }>(`INSERT INTO staff_profiles(
-      school_id,user_id,staff_code,first_name,last_name,email,staff_kind,designation,employment_type,
-      joined_on,status,created_by,updated_by
-    ) VALUES($1,$2,$3,'Notice','Author',$4,'teaching','Teacher','full_time',current_date,'active',$5,$5)
+    const staffProfile = (await pool.query<{ id: string }>(`WITH staff_fixture_input(school_id,user_id,staff_code,first_name,last_name,email,staff_kind,designation,employment_type,joined_on,status,created_by,updated_by,person_id) AS (VALUES ($1,$2,$3,'Notice','Author',$4,'teaching','Teacher','full_time',current_date,'active',$5,$5,gen_random_uuid())), canonical_fixture_person AS (INSERT INTO school_people(id,school_id,first_name,last_name,contact_email,contact_phone) SELECT input.person_id::uuid,input.school_id::uuid,input.first_name,input.last_name,input.email,'' FROM staff_fixture_input input RETURNING id) INSERT INTO staff_profiles(school_id,user_id,staff_code,staff_kind,designation,employment_type,joined_on,status,created_by,updated_by,person_id) SELECT input.school_id::uuid,input.user_id::uuid,input.staff_code,input.staff_kind,input.designation,input.employment_type,input.joined_on::date,input.status,input.created_by::uuid,input.updated_by::uuid,input.person_id::uuid FROM staff_fixture_input input JOIN canonical_fixture_person person ON person.id=input.person_id::uuid
     RETURNING id`, [schoolId, staffUser.id, `NOTICE-${suffix.slice(0, 8)}`, staffUser.email, admin.authUser.id])).rows[0]!;
     createdStaffProfiles.push(staffProfile.id);
     const assignment = (await pool.query<{ id: string }>(`INSERT INTO staff_responsibility_assignments(

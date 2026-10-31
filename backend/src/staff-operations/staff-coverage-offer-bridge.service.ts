@@ -1,3 +1,4 @@
+import { executionNow } from "../campus-model-core/execution-time.runtime.js";
 import { ConflictException, Inject, Injectable } from "@nestjs/common";
 import { randomUUID } from "node:crypto";
 import { sql, type Transaction } from "kysely";
@@ -316,7 +317,7 @@ export class StaffCoverageOfferBridgeService {
       kind: "general",
       title: "Cover duty offered",
       body: `${task.title} on ${task.duty_date} needs your response.`,
-      staff_link: `/teacher/responsibilities?coverage=${task.id}&coverage_revision=${revision}`,
+      staff_link: `/areas/responsibilities/mine?coverage=${task.id}&coverage_revision=${revision}`,
       attention_eligible: true,
       attention_portal: "teacher",
       attention_module: "responsibilities",
@@ -564,7 +565,7 @@ export class StaffCoverageOfferBridgeService {
           duty_date: task.duty_date,
           starts_at: task.starts_at,
           ends_at: task.ends_at,
-          action_path: `/teacher/responsibilities?coverage=${task.id}&coverage_revision=${task.revision + 1}`,
+          action_path: `/areas/responsibilities/mine?coverage=${task.id}&coverage_revision=${task.revision + 1}`,
         },
       },
       selector_input: {
@@ -591,7 +592,7 @@ export class StaffCoverageOfferBridgeService {
       offered_at: new Date(occurredAt),
       responded_at: null,
       response_note: "",
-      updated_at: new Date(),
+      updated_at: executionNow(),
     }).where("id", "=", task.id)
       .where("school_id", "=", input.school_id)
       .where("revision", "=", task.revision)

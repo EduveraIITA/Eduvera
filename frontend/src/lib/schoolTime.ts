@@ -1,3 +1,4 @@
+import { applicationNow } from "../features/simulation/applicationTime";
 export const schoolTimeZone = "Asia/Kolkata";
 
 export interface SchoolClock {
@@ -11,7 +12,7 @@ function calendarDate(value: string) {
   return new Date(Date.UTC(year ?? 1970, (month ?? 1) - 1, day ?? 1));
 }
 
-export function schoolClock(now = new Date()): SchoolClock {
+export function schoolClock(now = applicationNow()): SchoolClock {
   const parts = new Intl.DateTimeFormat("en-GB", {
     timeZone: schoolTimeZone,
     year: "numeric",
@@ -33,7 +34,7 @@ export function schoolClock(now = new Date()): SchoolClock {
   };
 }
 
-export function schoolDateToday(now = new Date()) {
+export function schoolDateToday(now = applicationNow()) {
   return schoolClock(now).date;
 }
 

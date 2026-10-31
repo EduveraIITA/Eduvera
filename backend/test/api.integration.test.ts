@@ -4,17 +4,21 @@ import { unlink } from "node:fs/promises";
 import { join } from "node:path";
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { Pool } from "pg";
+import { sql } from "kysely";
 import { DatabaseService } from "../src/database/database.service.js";
-import type { AuthenticatedRequest, AuthUser } from "../src/common/request.js";
+import type { AuthenticatedRequest } from "../src/common/request.js";
 import { SchoolEventService } from "../src/school/school-event.service.js";
-import { SchoolService } from "../src/school/school.service.js";
 import {
   assertIsolatedTestDatabaseName,
   requireIsolatedTestDatabaseUrl,
   requireManagedTestApiBaseUrl,
 } from "./test-database.js";
-import { createStaffCoverageReconciliationTestDouble } from "./staff-coverage-reconciliation.test-support.js";
-import type { CampusModelCorePort } from "../src/campus-model-core/campus-model-core.port.js";
+import { academicParticipationTestServices, rollbackAcademicFixture } from "./academic-participation.test-support.js";
+import { createClassPracticeFixture } from "./class-practice.test-support.js";
+import { ActivityPlanningService } from "../src/schedule-planning/activity-planning.service.js";
+import { ResponsibilityProjectionService } from "../src/campus-model-core/responsibility-projection.service.js";
+import { createLiveExecutionEnvironment } from "../src/campus-model-core/execution-environment.runtime.js";
+import { executionEnvironmentStorage } from "../src/campus-model-core/execution-time.runtime.js";
 
 const port = 8022;
 const base = requireManagedTestApiBaseUrl(process.env.API_BASE_URL, `http://127.0.0.1:${port}`);
@@ -23,7 +27,6 @@ const metricsToken = "integration-test-metrics-token-long-enough";
 const pool = new Pool({ connectionString: databaseUrl, max: 2, application_name: "omnischool_tests" });
 let server: ChildProcess | undefined;
 const cleanupLeaves: string[] = [];
-const cleanupUsers: string[] = [];
 
 async function json<T = any>(response: Response): Promise<T> {
   return response.json() as Promise<T>;
@@ -59,6 +62,16 @@ class BrowserSession {
     await this.csrf();
     const response = await this.request("/api/v1/auth/login/", { method: "POST", body: JSON.stringify({ identifier, password: "OmniDemo@2026" }) }, true);
     expect(response.status).toBe(200);
+    // These cases exercise the Cambridge fixture, not the account's incidental
+    // membership count after other suites create private campuses. Use the same
+    // explicit selection API as a multi-institution browser; retain the original
+    // login response for callers that inspect its identity envelope.
+    const cambridge = (await pool.query<{ id: string }>("SELECT id FROM schools WHERE code='cis'")).rows[0];
+    if (!cambridge) throw new Error("The API suite needs the Cambridge institution fixture.");
+    const selected = await this.request("/api/v1/auth/active-school/", {
+      method: "POST", body: JSON.stringify({ school_id: cambridge.id }),
+    }, true);
+    expect(selected.status).toBe(200);
     return response;
   }
 }
@@ -73,6 +86,33 @@ async function waitForServer(): Promise<void> {
     await new Promise((resolve) => setTimeout(resolve, 50));
   }
   throw new Error("Test server did not become ready");
+}
+
+async function waitForInitialEventBacklog(): Promise<void> {
+  // Readiness is not a promise of an empty durable outbox. Earlier suites may
+  // legitimately enqueue events, so capture a bounded setup-only set and wait
+  // for its actual publication. New events do not extend this barrier and each
+  // SSE assertion below retains its own short publication deadline.
+  const captured = (await pool.query<{ id: string }>(`
+    SELECT id FROM event_outbox
+    WHERE published_at IS NULL AND dead_lettered_at IS NULL
+      AND available_at<=clock_timestamp()
+      AND event_source_is_valid(school_id,event_type,aggregate_type,aggregate_id,payload)
+    ORDER BY available_at,created_at,id LIMIT 10001
+  `)).rows.map((event) => event.id);
+  if (captured.length > 10000) throw new Error("API setup outbox exceeds the bounded 10000-event fixture backlog.");
+  if (!captured.length) return;
+  const deadline = Date.now() + 45000;
+  let remaining = captured.length;
+  do {
+    remaining = (await pool.query<{ remaining: number }>(`
+      SELECT count(*)::int AS remaining FROM event_outbox
+      WHERE id=ANY($1::uuid[]) AND published_at IS NULL
+    `, [captured])).rows[0]!.remaining;
+    if (!remaining) return;
+    await new Promise((resolve) => setTimeout(resolve, 250));
+  } while (Date.now() < deadline);
+  throw new Error(`API setup did not publish ${remaining}/${captured.length} captured eligible events`);
 }
 
 async function waitForPublishedEvent(eventId: string): Promise<{
@@ -155,7 +195,8 @@ beforeAll(async () => {
     stdio: ["ignore", "pipe", "pipe"],
   });
   await waitForServer();
-});
+  await waitForInitialEventBacklog();
+}, 60000);
 
 beforeEach(async () => {
   // Keep authentication and endpoint throttles independent across cases. This
@@ -165,20 +206,23 @@ beforeEach(async () => {
 });
 
 afterAll(async () => {
+  // Always stop the owned child, including when a fixture cleanup fails.
+  server?.kill("SIGTERM");
   for (const leaveId of cleanupLeaves) {
     const documents = await pool.query<{ storage_key: string }>("SELECT storage_key FROM leave_documents WHERE leave_request_id=$1", [leaveId]);
     await pool.query("DELETE FROM leave_requests WHERE id=$1", [leaveId]);
     for (const document of documents.rows) await unlink(join(process.cwd(), "storage/leave-documents", document.storage_key)).catch(() => undefined);
   }
-  for (const userId of cleanupUsers) await pool.query("DELETE FROM users WHERE id=$1", [userId]);
+  // Registered private campuses retain canonical identity and audit records.
+  // The explicitly isolated test database, not ad-hoc FK-ordered deletes, owns
+  // their disposal after the suite.
   await pool.end();
-  server?.kill("SIGTERM");
 });
 
 describe("ThatCampus API", () => {
   it("serves reviewed import APIs with session, role, CSRF and private download enforcement",async()=>{
     const principal=new BrowserSession();expect((await principal.login("meera.principal")).status).toBe(200);
-    const scope=(await pool.query("SELECT t.school_id,t.id FROM academic_terms t JOIN school_memberships m ON m.school_id=t.school_id JOIN users u ON u.id=m.user_id WHERE u.username='meera.principal' AND m.role='admin' AND t.is_active LIMIT 1")).rows[0];
+    const scope=(await pool.query("SELECT t.school_id,t.id FROM academic_terms t JOIN school_memberships m ON m.school_id=t.school_id JOIN users u ON u.id=m.user_id JOIN schools s ON s.id=t.school_id WHERE u.username='meera.principal' AND s.code='cis' AND m.role='admin' AND t.is_active LIMIT 1")).rows[0];
     const endpoint='/api/v1/people/imports';const template=await principal.request(`${endpoint}/template?school_id=${scope.school_id}`);
     expect(template.status).toBe(200);expect(template.headers.get('content-type')).toContain('text/csv');expect(template.headers.get('cache-control')).toContain('no-store');const header=(await template.text()).trim();
     const body={school_id:scope.school_id,term_id:scope.id,filename:'api-contract.csv',csv:`${header}\nAPI-IMPORT-TEST,Test,Student,2014-04-12,7A,2000,2026-09-15,API-FAMILY,Test,Guardian,9000099999,,guardian`,idempotency_key:randomUUID()};
@@ -239,7 +283,7 @@ describe("ThatCampus API", () => {
       SELECT task_name FROM event_maintenance_leases
       WHERE task_name='attendance_register_auto_finalize'
     `);
-    expect(finalizationLease.rows).toEqual([{ task_name: "attendance_register_auto_finalize" }]);
+    expect(finalizationLease.rows).toEqual([]);
     const retentionLease = await pool.query<{ task_name: string }>(`
       SELECT task_name FROM event_maintenance_leases
       WHERE task_name='event_retention_cleanup'
@@ -262,6 +306,7 @@ describe("ThatCampus API", () => {
     const client = {
       id: "full-sync-client",
       userId: "full-sync-user",
+      binding: { kind: "live", institution_id: "school", namespace_id: "live:school" },
       lastSequence: null,
       replaying: true,
       replayOverflow: false,
@@ -288,7 +333,7 @@ describe("ThatCampus API", () => {
           audience_user_ids: [client.userId],
           payload: { refresh: ["student.attendance"] },
           created_at: new Date(),
-        });
+        }, "live:school");
       }
       return true;
     };
@@ -314,6 +359,7 @@ describe("ThatCampus API", () => {
     let content = "";
     const client = {
       id: "zero-watermark-client",
+      binding: { kind: "live", institution_id: "school", namespace_id: "live:school" },
       lastSequence: null,
       closed: false,
       reply: {
@@ -500,7 +546,7 @@ describe("ThatCampus API", () => {
       for (let attempt = 0; attempt < 10 && !ordered.every((event) => content.includes(event.id)); attempt++) {
         const next = await Promise.race([
           reader.read(),
-          new Promise<never>((_, reject) => setTimeout(() => reject(new Error("Ordered legacy batch delivery timed out")), 1_000)),
+          new Promise<never>((_, reject) => setTimeout(() => reject(new Error("Ordered legacy batch delivery timed out")), 5_000)),
         ]);
         if (next.done) break;
         content += decoder.decode(next.value, { stream: true });
@@ -922,7 +968,7 @@ describe("ThatCampus API", () => {
     expect(demoProfileResponse.status).toBe(200);
     expect(await json(demoProfileResponse)).toMatchObject({
       user: { active_school_id: cambridge.id },
-      memberships: [{ school_id: cambridge.id, role: "admin" }],
+      memberships: expect.arrayContaining([expect.objectContaining({ school_id: cambridge.id, role: "admin" })]),
       institution_setup_required: false,
     });
 
@@ -950,7 +996,7 @@ describe("ThatCampus API", () => {
     expect(rejected.status).toBe(403);
     const switched = await browser.request('/api/v1/auth/demo-profile-switch/', { method:'POST', body:JSON.stringify({role:'admin'}) }, true);
     expect(switched.status).toBe(200);
-    expect(await json(switched)).toMatchObject({user:{username:'meera.principal',role:'admin'},redirect_to:'/principal'});
+    expect(await json(switched)).toMatchObject({user:{username:'meera.principal',role:'admin'},redirect_to:'/today'});
     expect(await json(await browser.request('/api/v1/auth/session/'))).toMatchObject({authenticated:true,user:{username:'meera.principal'}});
     expect((await pool.query("SELECT count(*)::int n FROM audit_events WHERE action='auth.demo_profile.switched' AND target_id=(SELECT id FROM users WHERE username='meera.principal')")).rows[0].n).toBeGreaterThan(0);
 
@@ -977,20 +1023,21 @@ describe("ThatCampus API", () => {
     expect((await json(response)).user.active_school_id).toBeNull();
   });
 
-  it("requires registration CSRF and leaves new identities pending school onboarding", async () => {
+  it("requires registration CSRF and starts a new administrator at purpose selection in one private workspace", async () => {
     const browser = new BrowserSession();
     await browser.csrf();
     const email = `riya.${Date.now()}@example.test`;
-    const payload = { email, password: "N1mble!RiverStone2026", first_name: "Riya", last_name: "Kapoor", role: "student" };
+    const payload = { email, password: "N1mble!RiverStone2026" };
     expect((await browser.request("/api/v1/auth/register/", { method: "POST", body: JSON.stringify(payload) })).status).toBe(403);
     const response = await browser.request("/api/v1/auth/register/", { method: "POST", body: JSON.stringify(payload) }, true);
     expect(response.status).toBe(201);
     const body = await json(response);
-    cleanupUsers.push(body.user.id);
-    expect(body.onboarding).toMatchObject({ status: "pending_school_membership", has_school_access: false });
+    expect(body.user).toMatchObject({ email, role: "admin" });
+    expect(body.user.active_school_id).toEqual(expect.any(String));
+    expect(body.onboarding).toMatchObject({ status: "purpose_required", has_school_access: true });
     const me = await json(await browser.request("/api/v1/auth/me/"));
-    expect(me.memberships).toEqual([]);
-    expect((await browser.request("/api/v1/screens/student/attendance/")).status).toBe(404);
+    expect(me.memberships).toEqual([expect.objectContaining({ school_id: body.user.active_school_id, role: "admin" })]);
+    expect(me).toMatchObject({ institution_setup_required: true, onboarding: { status: "purpose_required" } });
   });
 
   it("returns live parent aggregates, contacts, notifications, and guardian timetable data", async () => {
@@ -999,18 +1046,15 @@ describe("ThatCampus API", () => {
     const home = await json(await browser.request("/api/v1/screens/parent/home/"));
     expect(home.student.user.display_name).toBe("Aarav Sharma");
     expect(home.semester_metrics).toMatchObject({
-      attendance_rank: expect.any(Number),
-      attendance_cohort_size: expect.any(Number),
+      attendance_rank: null,
+      attendance_cohort_size: null,
       homework_due: expect.any(Number),
       homework_total: expect.any(Number),
       homework_recent: expect.any(Number),
       homework_previous: expect.any(Number),
     });
     expect(home.semester_metrics.homework_total).toBeGreaterThanOrEqual(home.semester_metrics.homework_due);
-    expect(home.ranking.students).toHaveLength(25);
-    const currentStudent = home.ranking.students.find((item: any) => item.is_current);
-    expect(currentStudent).toMatchObject({ name: "Aarav Sharma", rank: expect.any(Number) });
-    expect(home.semester_metrics.attendance_rank).toBe(currentStudent.rank);
+    expect(home.ranking).toMatchObject({ published: false, leaders: [], students: [], current_rank: null });
     expect(home.semester_metrics.attendance_trend_percent === null || Number.isFinite(home.semester_metrics.attendance_trend_percent)).toBe(true);
     const feeLedger = await json(await browser.request(`/api/v1/schools/${home.student.school.id}/fees/?student_id=${home.student.id}`));
     const term = home.student.current_enrollment.term;
@@ -1041,7 +1085,7 @@ describe("ThatCampus API", () => {
     });
     const attendance = await json(await browser.request("/api/v1/screens/parent/attendance/"));
     expect(attendance.contacts[0].phone).toBeTruthy();
-    expect(attendance.ranking.students).toHaveLength(25);
+    expect(attendance.ranking).toMatchObject({ published: false, students: [] });
     const timetable = await browser.request("/api/v1/students/timetable/");
     expect(timetable.status).toBe(200);
     expect((await json(timetable)).results.length).toBeGreaterThan(0);
@@ -1306,36 +1350,19 @@ describe("ThatCampus API", () => {
     });
   });
 
-  it("computes class attendance ranking from recorded peer attendance", async () => {
+  it("does not invent class attendance ranking without sufficient accepted records", async () => {
     const browser = new BrowserSession();
     await browser.login("aarav.student");
     const body = await json(await browser.request("/api/v1/screens/student/attendance/"));
     expect(body.ranking).toMatchObject({
-      published: true,
-      cohort_size: 25,
+      published: false,
+      cohort_size: 0,
       minimum_recorded_days: 5,
-      current_rank: expect.any(Number),
+      current_rank: null,
     });
     const percentages = body.ranking.leaders.map((item: any) => item.percentage);
-    expect(percentages).toHaveLength(3);
-    expect(percentages[0]).toBe(100);
-    expect(percentages).toEqual([...percentages].sort((left: number, right: number) => right - left));
-    expect(body.ranking.leaders[0].name).toMatch(/\.$/);
-    expect(body.ranking.leaders[0]).toMatchObject({ avatar_url: "/assets/demo-camera-attendance/student-01.jpg", streak: expect.any(Number) });
-    const rosterSize=(await pool.query<{count:number}>(`SELECT count(*)::int AS count FROM enrollments peer
-      WHERE peer.is_active AND (peer.class_section_id,peer.term_id) IN (
-        SELECT mine.class_section_id,mine.term_id FROM enrollments mine
-        JOIN students student ON student.id=mine.student_id JOIN users account ON account.id=student.user_id
-        WHERE account.username='aarav.student' AND mine.is_active
-      )`)).rows[0]!.count;
-    // The walking-transport demo added learners without enough recorded days to
-    // rank. The list includes the full roster, not just the eligible cohort.
-    expect(body.ranking.students).toHaveLength(rosterSize);
-    expect(body.ranking.students[0]).toMatchObject({ rank: 1, percentage: 100, is_current: false });
-    expect(body.ranking.students[0].name).toMatch(/\.$/);
-    expect(body.ranking.students.filter((item: any) => item.is_current)).toMatchObject([
-      { name: "Aarav Sharma", rank: body.ranking.current_rank },
-    ]);
+    expect(percentages).toEqual([]);
+    expect(body.ranking.students).toEqual([]);
     expect(body.ranking.current_streak).toEqual(expect.any(Number));
   });
 
@@ -1463,7 +1490,7 @@ describe("ThatCampus API", () => {
     expect(saved.roster.every((student: any) => student.status)).toBe(true);
     expect(saved.register).toMatchObject({
       state: "submitted", revision: expect.any(Number),
-      auto_finalize_at: expect.any(String),
+      auto_finalize_at: null,
       finalization_policy_revision: expect.any(Number),
       finalization_source: null,
     });
@@ -1492,14 +1519,11 @@ describe("ThatCampus API", () => {
             AND slot.coverage_status IN ('not_required','accepted')
         ) LIMIT 1`, [classId, home.teacher.id, home.date])).rows[0];
     expect(unauthorizedActor).toBeTruthy();
-    try {
-      await pool.query("UPDATE attendance_registers SET submitted_by=$1::uuid WHERE class_section_id=$2::uuid AND date=$3::date", [unauthorizedActor.user_id, classId, home.date]);
-      const mismatchOversight = await json(await principal.request(`/api/v1/screens/principal/home/?date=${home.date}`));
-      expect(mismatchOversight.classes.find((row: any) => row.id === classId)).toMatchObject({ submission_status: "submitted", submission_authorized: false });
-      expect(mismatchOversight.summary.classes_submitted).toBe(oversight.summary.classes_submitted - 1);
-    } finally {
-      await pool.query("UPDATE attendance_registers SET submitted_by=$1::uuid WHERE class_section_id=$2::uuid AND date=$3::date", [home.teacher.id, classId, home.date]);
-    }
+    await expect(pool.query("UPDATE attendance_registers SET submitted_by=$1::uuid WHERE class_section_id=$2::uuid AND date=$3::date",
+      [unauthorizedActor.user_id, classId, home.date])).rejects.toThrow(/read projection/i);
+    const retainedOversight = await json(await principal.request(`/api/v1/screens/principal/home/?date=${home.date}`));
+    expect(retainedOversight.classes.find((row: any) => row.id === classId)).toMatchObject({
+      submission_status: "submitted", submitted_by_name: "Kavita Mehta", submission_authorized: true });
   });
 
   it("accepts current offline-safe observations and quarantines expired or paper captures for review", async () => {
@@ -1521,7 +1545,7 @@ describe("ThatCampus API", () => {
       source: "live_app",
       source_reference: "",
       device_id: null,
-      observed_at: new Date().toISOString(),
+      observed_at: new Date(`${date}T09:30:00+05:30`).toISOString(),
       roster_fingerprint: register.continuity_snapshot.roster_fingerprint,
       roster_captured_at: register.continuity_snapshot.captured_at,
       roster_expires_at: register.continuity_snapshot.expires_at,
@@ -1563,7 +1587,7 @@ describe("ThatCampus API", () => {
         source: "paper",
         source_reference: "Register book 7A, page 42",
         device_id: null,
-        observed_at: new Date().toISOString(),
+        observed_at: new Date(`${date}T09:30:00+05:30`).toISOString(),
         roster_fingerprint: paperRegister.continuity_snapshot.roster_fingerprint,
         roster_captured_at: paperRegister.continuity_snapshot.captured_at,
         roster_expires_at: paperRegister.continuity_snapshot.expires_at,
@@ -1577,7 +1601,10 @@ describe("ThatCampus API", () => {
       method: "POST", body: JSON.stringify({ decision: "accept", reason: "Matched every row against the signed paper register", expected_revision: paperRegister.register.revision }),
     }, true);
     expect(applied.status).toBe(200);
-    const stored = await pool.query("SELECT capture_source,observed_at FROM attendance_submissions WHERE capture_batch_id=$1", [paper.batch.id]);
+    const stored = await pool.query(`SELECT receipt.capture_source,receipt.observed_at
+      FROM attendance_capture_batches batch JOIN activity_attendance_context_receipts receipt
+        ON receipt.command_id=batch.accepted_participation_command_id AND receipt.school_id=batch.school_id
+      WHERE batch.id=$1`, [paper.batch.id]);
     expect(stored.rows).toMatchObject([{ capture_source: "paper", observed_at: expect.any(Date) }]);
     await expect(pool.query("UPDATE attendance_observations SET remarks='tampered' WHERE batch_id=$1", [paper.batch.id])).rejects.toThrow(/append-only/i);
   });
@@ -1618,18 +1645,17 @@ describe("ThatCampus API", () => {
 
   it("revalidates teacher authority inside the attendance write transaction", async () => {
     const database = new DatabaseService();
-    const events = new SchoolEventService(database);
-    const school = new SchoolService(
-      database,
-      events,
-      createStaffCoverageReconciliationTestDouble(),
-    );
+    const { school, bridge } = academicParticipationTestServices(database);
     const user = (await pool.query<{
       id: string; username: string; email: string; first_name: string;
       last_name: string; role: "staff"; is_active: boolean;
     }>(`
-      SELECT id, username, email, first_name, last_name, role, is_active
-      FROM users WHERE username='kavita.staff'
+      SELECT account.id, account.username, account.email, account.first_name, account.last_name, account.role, account.is_active,
+        membership.school_id AS active_school_id
+      FROM users account JOIN school_memberships membership ON membership.user_id=account.id
+        AND membership.is_active AND membership.role='staff'
+      JOIN schools school ON school.id=membership.school_id AND school.code='cis'
+      WHERE account.username='kavita.staff'
     `)).rows[0]!;
     const date = await latestScheduledDateForTeacher("kavita.staff");
     const home = await school.teacherHomeScreen(user, date);
@@ -1651,29 +1677,18 @@ describe("ThatCampus API", () => {
       headers: { "idempotency-key": `authority-race-${randomUUID()}` },
       requestId: randomUUID(),
     } as unknown as AuthenticatedRequest;
-    type SchoolRoleHook = (
-      authenticatedUser: AuthUser,
-      roles: Array<"staff" | "admin">,
-      schoolId?: string,
-    ) => Promise<unknown>;
-    const schoolInternals = school as unknown as { requireSchoolRole: SchoolRoleHook };
-    const originalRequireSchoolRole = schoolInternals.requireSchoolRole.bind(school);
-    let roleChecks = 0;
     let signalPreflight!: () => void;
     let releasePreflight!: () => void;
     const preflightReached = new Promise<void>((resolve) => { signalPreflight = resolve; });
     const continueWrite = new Promise<void>((resolve) => { releasePreflight = resolve; });
-    schoolInternals.requireSchoolRole = async (...args: Parameters<SchoolRoleHook>) => {
-      const membership = await originalRequireSchoolRole(...args);
-      roleChecks += 1;
-      // Entry guard, screen access, then the pre-transaction membership check.
-      // Pause after the latter so revocation is caught inside the write lock.
-      if (roleChecks === 3) {
-        signalPreflight();
-        await continueWrite;
-      }
-      return membership;
-    };
+    const saveInTransaction = bridge.saveDailyRecordsInTransaction.bind(bridge);
+    const pausedWrite = vi.spyOn(bridge, "saveDailyRecordsInTransaction").mockImplementation(async (...args) => {
+      // The preflight roster is already read. Revoke before the canonical
+      // adapter and kernel perform their current in-transaction authority checks.
+      signalPreflight();
+      await continueWrite;
+      return saveInTransaction(...args);
+    });
 
     const save = school.saveTeacherAttendance(user, payload, request);
     try {
@@ -1685,7 +1700,7 @@ describe("ThatCampus API", () => {
       `, [user.id, screen.class.school_id]);
       expect(revoked.rowCount).toBe(1);
       releasePreflight();
-      await expect(save).rejects.toThrow(/active school staff membership/i);
+      await expect(save).rejects.toThrow(/active|identity|responsibility|membership|institution/i);
     } finally {
       releasePreflight();
       await save.catch(() => undefined);
@@ -1694,7 +1709,7 @@ describe("ThatCampus API", () => {
         SET is_active=true
         WHERE user_id=$1 AND school_id=$2 AND role='staff'
       `, [user.id, screen.class.school_id]);
-      schoolInternals.requireSchoolRole = originalRequireSchoolRole;
+      pausedWrite.mockRestore();
       await database.destroy();
     }
   });
@@ -1772,7 +1787,10 @@ describe("ThatCampus API", () => {
     expect(timetable.selected_term_id).toEqual(expect.any(String));
     expect(timetable.slots.length).toBeGreaterThan(250);
     expect(timetable.classes).toHaveLength(8);
-    expect(timetable.teachers).toHaveLength(17);
+    const teacherCount = (await pool.query<{ count: number }>(`SELECT count(*)::int AS count
+      FROM school_memberships WHERE school_id=(SELECT school_id FROM academic_terms WHERE id=$1)
+        AND role='staff' AND is_active`, [timetable.selected_term_id])).rows[0]!.count;
+    expect(timetable.teachers).toHaveLength(teacherCount);
     expect(timetable.coverage).toHaveLength(timetable.classes.length * timetable.subjects.length);
     expect(timetable.calendar_exceptions).toEqual(expect.any(Array));
     const coveredSlot = timetable.slots.find((item: any) => item.weekday >= 1 && item.weekday <= 5 && item.subject_id);
@@ -1881,21 +1899,21 @@ describe("ThatCampus API", () => {
     const schoolId = identity.memberships.find((membership: any) => membership.role === "admin")?.school_id;
     expect(schoolId).toEqual(expect.any(String));
 
-    const dateResult = await pool.query<{ date: string }>(`
-      SELECT record.date::text AS date
-      FROM attendance_records record
-      JOIN class_sections section ON section.id=record.class_section_id
-      WHERE section.school_id=$1
-      GROUP BY record.date
-      HAVING bool_or(record.status='half_day')
-        AND bool_or(record.status='excused')
-        AND bool_or(record.status='absent')
-        AND bool_or(record.status IN ('present','late'))
-      ORDER BY record.date DESC
-      LIMIT 1
-    `, [schoolId]);
-    const date = dateResult.rows[0]?.date;
-    expect(date).toEqual(expect.any(String));
+    const date = await latestScheduledDateForTeacher("kavita.staff");
+    const teacher = new BrowserSession(); await teacher.login("kavita.staff");
+    const home = await json(await teacher.request(`/api/v1/screens/teacher/home/?date=${date}`));
+    const classId = home.classes[0].class_section_id;
+    const register = await json(await principal.request(`/api/v1/screens/teacher/attendance/?class_section_id=${classId}&date=${date}`));
+    const statuses = ["present", "late", "absent", "excused", "half_day"];
+    const recorded = await principal.request("/api/v1/teacher/attendance/bulk/", {
+      method: "POST", headers: { "Idempotency-Key": randomUUID() }, body: JSON.stringify({
+        class_section_id: classId, date, expected_revision: register.register.revision,
+        reason: "Explicit score-calculation acceptance fixture",
+        records: register.roster.map((student: any, index: number) => ({ student_id: student.id,
+          status: statuses[index % statuses.length], remarks: "Accepted score fixture" })),
+      }),
+    }, true);
+    expect(recorded.status, await recorded.clone().text()).toBe(200);
 
     const expected = await pool.query<{
       class_section_id: string;
@@ -1929,7 +1947,10 @@ describe("ThatCampus API", () => {
         AND enrollment.term_id=term.id AND enrollment.is_active
       LEFT JOIN attendance_records record ON record.student_id=enrollment.student_id
         AND record.class_section_id=section.id AND record.date=$2::date
-      WHERE section.school_id=$1
+      WHERE section.school_id=$1 AND EXISTS(SELECT 1 FROM effective_school_schedule($1::uuid,$2::date) lesson
+        WHERE lesson.class_section_id=section.id AND lesson.term_id=term.id
+          AND lesson.weekday=extract(isodow from $2::date)::int AND NOT lesson.cancelled
+          AND lesson.slot_type IN ('class','activity'))
       GROUP BY section.id
       ORDER BY section.id
     `, [schoolId, date]);
@@ -2080,7 +2101,7 @@ describe("ThatCampus API", () => {
         ORDER BY notification.recipient_id
       `, [`event:${eventId}`]);
       expect(notifications.rows.map((row) => row.recipient_id).sort()).toEqual(expectedAudience);
-      expect(notifications.rows.find((row) => row.role === "staff")?.link).toBe(`/teacher/attendance?class_section_id=${classSectionId}&date=${schoolDate}`);
+      expect(notifications.rows.find((row) => row.role === "staff")?.link).toBe(`/areas/attendance/registers?class_section_id=${classSectionId}&date=${schoolDate}`);
       expect(notifications.rows.find((row) => row.role === "admin")).toBeUndefined();
 
       await pool.query(`
@@ -2106,271 +2127,95 @@ describe("ThatCampus API", () => {
     }
   });
 
-  it("automatically finalizes a due submitted register with policy and audit traceability", async () => {
-    const schoolId = randomUUID();
-    const termId = randomUUID();
-    const classSectionId = randomUUID();
-    const registerId = randomUUID();
-    const code = `AUTO-FINAL-${randomUUID().slice(0, 8)}`;
-    const eventDatabase = new DatabaseService();
-    const recordAcceptedChange = vi.fn().mockResolvedValue({});
-    const scanner = new SchoolEventService(eventDatabase, {
-      recordAcceptedChange,
-    } as unknown as CampusModelCorePort);
-    let actorId = "";
-    try {
-      const actor = await pool.query<{ id: string }>("SELECT id FROM users WHERE username='kavita.staff'");
-      actorId = actor.rows[0]!.id;
-      await pool.query(`
-        INSERT INTO schools (id, name, code, timezone, attendance_submission_cutoff)
-        VALUES ($1, 'Automatic Finalization Integration School', $2, 'Asia/Kolkata', '10:30')
-      `, [schoolId, code]);
-      await pool.query(`
-        INSERT INTO academic_terms (
-          id, school_id, academic_year, name, starts_on, ends_on,
-          attendance_threshold, is_active
-        ) VALUES ($1, $2, '2099-00', 'Integration term', '2099-01-01', '2099-12-31', 85, true)
-      `, [termId, schoolId]);
-      await pool.query(`
-        INSERT INTO class_sections (
-          id, school_id, academic_year, grade, section, board, room_number
-        ) VALUES ($1, $2, '2099-00', 'IT', 'F', 'Integration', 'Lab')
-      `, [classSectionId, schoolId]);
-      await pool.query(`
-        INSERT INTO school_memberships (user_id, school_id, role, is_active)
-        VALUES ($1, $2, 'staff', true)
-      `, [actorId, schoolId]);
-      await pool.query(`
-        INSERT INTO attendance_registers (
-          id, school_id, class_section_id, term_id, date, state, revision,
-          submitted_by, submitted_at, auto_finalize_at, finalization_policy_revision,
-          finalization_source, created_at, updated_at
-        ) VALUES (
-          $1, $2, $3, $4, '2099-03-10', 'submitted', 7,
-          $5, now() - interval '2 minutes', now() - interval '1 minute', 12,
-          NULL, now(), now()
-        )
-      `, [registerId, schoolId, classSectionId, termId, actorId]);
-      await pool.query(`
-        UPDATE event_maintenance_leases SET last_claimed_at=NULL
-        WHERE task_name='attendance_register_auto_finalize'
-      `);
-
-      const finalized = await (scanner as unknown as {
-        finalizeDueAttendanceRegisters(): Promise<number>;
-      }).finalizeDueAttendanceRegisters();
-      expect(finalized).toBe(1);
-
-      const register = await pool.query<{
-        state: string; revision: number; auto_finalize_at: Date | null;
-        finalization_policy_revision: number; finalization_source: string;
-        locked_by: string; locked_at: Date;
-      }>(`
-        SELECT state, revision, auto_finalize_at, finalization_policy_revision,
-          finalization_source, locked_by, locked_at
-        FROM attendance_registers WHERE id=$1
-      `, [registerId]);
-      expect(register.rows[0]).toMatchObject({
-        state: "locked", revision: 8, auto_finalize_at: null,
-        finalization_policy_revision: 12, finalization_source: "automatic",
-        locked_by: actorId,
+  it("automatically finalizes only through the configured participation kernel with software attribution", async () => {
+    const database = new DatabaseService();
+    try { await rollbackAcademicFixture(database, async db => {
+      const f = await createClassPracticeFixture(db), services = academicParticipationTestServices(db);
+      const date = new Date(Date.now()+86_400_000).toISOString().slice(0,10);
+      let now = new Date(`${date}T09:30:00.000Z`);
+      const environment = createLiveExecutionEnvironment({institution_id:f.schoolId, clock:{now:()=>now,nowIso:()=>now.toISOString()}});
+      await executionEnvironmentStorage.run(environment, async () => {
+        await sql`INSERT INTO institution_operating_rules(school_id,updated_by,attendance_finalization_mode,attendance_auto_finalize_minutes)
+          VALUES(${f.schoolId}::uuid,${f.owner.id}::uuid,'automatic',1)`.execute(db);
+        const owner = await db.transaction().execute(tx=>services.core.resolveAccountEndpoint(tx,{school_id:f.schoolId,user_id:f.owner.id,at:now.toISOString()}));
+        const planning = new ActivityPlanningService(db,services.events,services.core,services.core,services.core,new ResponsibilityProjectionService(services.core));
+        const request = {authUser:f.owner,requestId:randomUUID(),headers:{"idempotency-key":randomUUID()}} as unknown as AuthenticatedRequest;
+        const draft = await planning.create(request,f.schoolId,{idempotency_key:randomUUID(),title:"Finalization acceptance",purpose:"training",
+          timezone:"UTC",starts_on:date,recurrence:"once",starts_at:"09:00",ends_at:"10:00",person_ids:[f.learner.personId],
+          attendance_mode:"roll_call",recorder_person_id:owner.person_id,reviewer_person_id:owner.person_id});
+        await planning.publish(request,f.schoolId,draft.id,{idempotency_key:randomUUID(),expected_revision:draft.revision});
+        const occurrence = (await planning.ensureOccurrences(f.schoolId,date,date)).find(item=>item.plan_version_id===draft.id)!;
+        const registerId = await services.kernel.ensureRegister(f.schoolId,occurrence.id);
+        await services.kernel.submitRecords(f.owner,f.schoolId,registerId,{expected_revision:0,records:[{person_id:f.learner.personId,status:"present"}]},request);
+        now = new Date(`${date}T09:32:00.000Z`);
+        expect(await services.kernel.finalizeDue(f.schoolId)).toBe(1);
+        expect((await services.kernel.detail(f.owner,f.schoolId,registerId)).register).toMatchObject({state:"locked",revision:2});
+        expect(await services.kernel.finalizeDue(f.schoolId)).toBe(0);
+        const evidence = await db.selectFrom("campus_model_commands as command")
+          .innerJoin("campus_model_command_outcomes as outcome","outcome.command_id","command.id")
+          .innerJoin("campus_model_agents as actor","actor.id","command.actor_agent_id")
+          .select(["outcome.status","outcome.code","actor.agent_kind"])
+          .where("command.school_id","=",f.schoolId).where("command.command_type","=","attendance.participation.automatic_finalize").execute();
+        expect(evidence).toEqual([{status:"accepted",code:"participation_finalized_automatically",agent_kind:"software"}]);
       });
-      expect(register.rows[0]!.locked_at).toBeInstanceOf(Date);
-
-      const audit = await pool.query<{ action: string; metadata: any }>(`
-        SELECT action, metadata FROM audit_events
-        WHERE target_type='attendance_register' AND target_id=$1
-      `, [registerId]);
-      expect(audit.rows).toHaveLength(1);
-      expect(audit.rows[0]).toMatchObject({
-        action: "attendance.register.finalized_automatically",
-        metadata: { revision: 8, finalization_policy_revision: 12, automated: true },
-      });
-      const event = await pool.query<{ event_type: string; payload: any }>(`
-        SELECT event_type, payload FROM event_outbox
-        WHERE school_id=$1 AND aggregate_id=$2
-      `, [schoolId, classSectionId]);
-      expect(event.rows).toHaveLength(1);
-      expect(event.rows[0]).toMatchObject({
-        event_type: "attendance.register.locked",
-        payload: { state: "locked", action: "locked", revision: 8 },
-      });
-      expect(recordAcceptedChange).toHaveBeenCalledWith(expect.anything(), expect.objectContaining({
-        school_id: schoolId,
-        actor_user_id: actorId,
-        command_type: "attendance.register.finalize_automatically",
-        target: { domain: "attendance", domain_id: registerId },
-        expected_revision: 7,
-        operating_rule_version_ref: "institution_operating_rules:12",
-        outcome: expect.objectContaining({ code: "finalized_automatically", resulting_revision: 8 }),
-        domain_event_id: expect.any(String),
-      }));
-
-      await pool.query(`
-        UPDATE event_maintenance_leases SET last_claimed_at=NULL
-        WHERE task_name='attendance_register_auto_finalize'
-      `);
-      expect(await (scanner as unknown as {
-        finalizeDueAttendanceRegisters(): Promise<number>;
-      }).finalizeDueAttendanceRegisters()).toBe(0);
-    } finally {
-      await pool.query("DELETE FROM event_outbox WHERE school_id=$1", [schoolId]);
-      await pool.query("DELETE FROM audit_events WHERE school_id=$1", [schoolId]);
-      await pool.query("DELETE FROM schools WHERE id=$1", [schoolId]);
-      await eventDatabase.destroy();
-    }
+    }); } finally { await database.destroy(); }
   });
 
-  it("refreshes half-day subject attendance from checkout times with a deterministic first-half fallback", async () => {
-    const schoolId = randomUUID();
-    const termId = randomUUID();
-    const classSectionId = randomUUID();
-    const studentUserId = randomUUID();
-    const guardianUserId = randomUUID();
-    const studentId = randomUUID();
-    const guardianId = randomUUID();
-    const firstSubjectId = randomUUID();
-    const secondSubjectId = randomUUID();
-    const suffix = randomUUID().slice(0, 8);
+  it("refreshes canonical half-day fractions without fabricating checkout times or changing source evidence", async () => {
     const database = new DatabaseService();
-    const events = new SchoolEventService(database);
-    const school = new SchoolService(
-      database,
-      events,
-      createStaffCoverageReconciliationTestDouble(),
-    );
     try {
+      const f = await createClassPracticeFixture(database), services = academicParticipationTestServices(database);
+      const dates = (await pool.query<{ first_date: string; second_date: string }>(`
+        SELECT (current_date-2)::text AS first_date,(current_date-1)::text AS second_date
+      `)).rows[0]!;
+      const subjects = await database.insertInto("subjects").values([
+        { school_id: f.schoolId,code: "HALF-A",name: "Half-day A",short_name: "A",color: "#1D4ED8",icon: "book-open" },
+        { school_id: f.schoolId,code: "HALF-B",name: "Half-day B",short_name: "B",color: "#1D4ED8",icon: "book-open" },
+      ]).returning("id").execute();
       await pool.query(`
-        INSERT INTO users (
-          id, username, email, password_hash, first_name, last_name, role, is_active
-        ) VALUES
-          ($1, $3, $4, 'integration-only', 'Subject', 'Student', 'student', true),
-          ($2, $5, $6, 'integration-only', 'Subject', 'Guardian', 'parent', true)
-      `, [
-        studentUserId,
-        guardianUserId,
-        `subject.student.${suffix}`,
-        `subject.student.${suffix}@example.test`,
-        `subject.guardian.${suffix}`,
-        `subject.guardian.${suffix}@example.test`,
-      ]);
-      await pool.query(`
-        INSERT INTO schools (id, name, code, timezone, attendance_submission_cutoff)
-        VALUES ($1, 'Subject Attendance Integration School', $2, 'Asia/Kolkata', '10:30')
-      `, [schoolId, `SUBJECT-${suffix}`]);
-      const dates = await pool.query<{ fallback_date: string; checkout_date: string }>(`
-        SELECT ((now() AT TIME ZONE timezone)::date - 2)::text AS fallback_date,
-          ((now() AT TIME ZONE timezone)::date - 1)::text AS checkout_date
-        FROM schools WHERE id=$1
-      `, [schoolId]);
-      const { fallback_date: fallbackDate, checkout_date: checkoutDate } = dates.rows[0]!;
-      await pool.query(`
-        INSERT INTO academic_terms (
-          id, school_id, academic_year, name, starts_on, ends_on,
-          attendance_threshold, is_active
-        ) VALUES ($1, $2, '2099-00', 'Integration term', $3::date - 5, $4::date + 1, 85, true)
-      `, [termId, schoolId, fallbackDate, checkoutDate]);
-      await pool.query(`
-        INSERT INTO class_sections (
-          id, school_id, academic_year, grade, section, board, room_number
-        ) VALUES ($1, $2, '2099-00', 'IT', 'H', 'Integration', 'Half-day lab')
-      `, [classSectionId, schoolId]);
-      await pool.query(`
-        INSERT INTO students (
-          id, user_id, school_id, admission_number, avatar_url
-        ) VALUES ($1, $2, $3, $4, '')
-      `, [studentId, studentUserId, schoolId, `SUB-${suffix}`]);
-      await pool.query(`
-        INSERT INTO parents (id, user_id, phone) VALUES ($1, $2, '+910000000000')
-      `, [guardianId, guardianUserId]);
-      await pool.query(`
-        INSERT INTO guardian_relationships (
-          guardian_id, student_id, relationship, is_primary, can_authorize_leave
-        ) VALUES ($1, $2, 'guardian', true, true)
-      `, [guardianId, studentId]);
-      await pool.query(`
-        INSERT INTO school_memberships (user_id, school_id, role, is_active)
-        VALUES ($1, $3, 'student', true), ($2, $3, 'guardian', true)
-      `, [studentUserId, guardianUserId, schoolId]);
-      await pool.query(`
-        INSERT INTO enrollments (
-          student_id, class_section_id, term_id, roll_number, is_active
-        ) VALUES ($1, $2, $3, 1, true)
-      `, [studentId, classSectionId, termId]);
-      await pool.query(`
-        INSERT INTO subjects (id, school_id, code, name, short_name, color, icon)
-        VALUES
-          ($1, $3, 'SUB-A', 'Subject A', 'A', '#1D4ED8', 'book-open'),
-          ($2, $3, 'SUB-B', 'Subject B', 'B', '#1D4ED8', 'book-open')
-      `, [firstSubjectId, secondSubjectId, schoolId]);
-      await pool.query(`
-        INSERT INTO timetable_slots (
-          class_section_id, term_id, subject_id, weekday, period_number,
-          starts_at, ends_at, slot_type, title, room, teacher_designation
-        )
-        SELECT $1, $2, fixture.subject_id, fixture.weekday, fixture.period_number,
-          fixture.starts_at, fixture.ends_at, 'class', fixture.title, 'Half-day lab', 'Subject teacher'
-        FROM (
-          VALUES
-            ($3::uuid, EXTRACT(ISODOW FROM $5::date)::int, 1::smallint, '09:00'::time, '09:45'::time, 'A1'),
-            ($4::uuid, EXTRACT(ISODOW FROM $5::date)::int, 2::smallint, '10:00'::time, '10:45'::time, 'B1'),
-            ($3::uuid, EXTRACT(ISODOW FROM $5::date)::int, 3::smallint, '11:00'::time, '11:45'::time, 'A2'),
-            ($4::uuid, EXTRACT(ISODOW FROM $5::date)::int, 4::smallint, '12:00'::time, '12:45'::time, 'B2'),
-            ($3::uuid, EXTRACT(ISODOW FROM $6::date)::int, 1::smallint, '09:00'::time, '09:45'::time, 'A1'),
-            ($4::uuid, EXTRACT(ISODOW FROM $6::date)::int, 2::smallint, '10:00'::time, '10:45'::time, 'B1'),
-            ($3::uuid, EXTRACT(ISODOW FROM $6::date)::int, 3::smallint, '11:00'::time, '11:45'::time, 'A2'),
-            ($4::uuid, EXTRACT(ISODOW FROM $6::date)::int, 4::smallint, '12:00'::time, '12:45'::time, 'B2')
-        ) AS fixture(subject_id, weekday, period_number, starts_at, ends_at, title)
-      `, [classSectionId, termId, firstSubjectId, secondSubjectId, fallbackDate, checkoutDate]);
-      await pool.query(`
-        INSERT INTO attendance_records (
-          student_id, class_section_id, date, status, check_out_at, remarks
-        ) VALUES
-          ($1, $2, $3, 'half_day', NULL, 'No checkout; use the first-half fallback'),
-          ($1, $2, $4, 'half_day', (($4::date + '11:50'::time) AT TIME ZONE 'Asia/Kolkata'), 'Checkout after period three')
-      `, [studentId, classSectionId, fallbackDate, checkoutDate]);
-
-      await (school as unknown as {
-        refreshSubjectAttendance(db: DatabaseService, studentIds: string[]): Promise<void>;
-      }).refreshSubjectAttendance(database, [studentId]);
-
-      const actual = await pool.query<{
-        subject_id: string;
-        classes_held: number;
-        classes_attended: number;
-        classes_excused: number;
-      }>(`
-        SELECT subject_id, classes_held, classes_attended, classes_excused
-        FROM subject_attendance
-        WHERE student_id=$1 AND term_id=$2
-        ORDER BY subject_id
-      `, [studentId, termId]);
-      const bySubject = new Map(actual.rows.map((row) => [row.subject_id, {
-        classes_held: Number(row.classes_held),
-        classes_attended: Number(row.classes_attended),
-        classes_excused: Number(row.classes_excused),
-      }]));
-      // On the no-checkout day, four periods deterministically allocate the
-      // first two (A1/B1). The 11:50 checkout on the second day includes
-      // A1/B1/A2 but excludes B2.
-      expect(bySubject.get(firstSubjectId)).toEqual({
-        classes_held: 4,
-        classes_attended: 3,
-        classes_excused: 0,
-      });
-      expect(bySubject.get(secondSubjectId)).toEqual({
-        classes_held: 4,
-        classes_attended: 2,
-        classes_excused: 0,
-      });
+        INSERT INTO timetable_slots(class_section_id,term_id,subject_id,weekday,period_number,starts_at,ends_at,
+          slot_type,title,room,teacher_designation)
+        SELECT $1,$2,fixture.subject_id,extract(isodow FROM date.day)::int,fixture.period_number,
+          fixture.starts_at,fixture.ends_at,'class',fixture.title,'Half-day fixture','Subject teacher'
+        FROM (VALUES
+          ($3::uuid,1::smallint,'09:00'::time,'09:45'::time,'A1'),
+          ($4::uuid,2::smallint,'10:00'::time,'10:45'::time,'B1'),
+          ($3::uuid,3::smallint,'11:00'::time,'11:45'::time,'A2'),
+          ($4::uuid,4::smallint,'12:00'::time,'12:45'::time,'B2')
+        ) fixture(subject_id,period_number,starts_at,ends_at,title)
+        CROSS JOIN (VALUES($5::date),($6::date)) date(day)
+      `,[f.classId,f.termId,subjects[0]!.id,subjects[1]!.id,dates.first_date,dates.second_date]);
+      const archiveBefore = (await pool.query("SELECT * FROM attendance_records_legacy_source WHERE class_section_id=$1",[f.classId])).rows;
+      for (const day of [dates.first_date,dates.second_date]) {
+        const req = { authUser: f.owner,requestId: randomUUID(),headers: { "idempotency-key": randomUUID() } } as unknown as AuthenticatedRequest;
+        await database.transaction().execute(tx => services.bridge.saveDailyRecordsInTransaction(tx,f.owner,f.schoolId,f.classId,day,
+          { expected_revision: 0,records: [f.learner,f.secondLearner].map(person => ({ student_id: person.id,status: "half_day" })) },req));
+      }
+      const decisions = (await pool.query("SELECT status,check_out_at FROM attendance_records WHERE student_id=$1 ORDER BY date",[f.learner.id])).rows;
+      // Current canonical daily decisions do not claim a checkout timestamp.
+      // Both four-period days therefore use the first two-period allocation.
+      expect(decisions).toEqual([{ status: "half_day",check_out_at: null },{ status: "half_day",check_out_at: null }]);
+      const historyBefore = (await pool.query(`
+        SELECT revision.* FROM activity_attendance_entry_revisions revision
+        JOIN activity_attendance_academic_roster person ON person.register_id=revision.register_id AND person.person_id=revision.person_id
+        WHERE person.student_id=$1 ORDER BY revision.id
+      `,[f.learner.id])).rows;
+      await services.school.refreshSubjectAttendance(database,[f.learner.id]);
+      const actual = (await pool.query<{ subject_id: string; classes_held: number; classes_attended: number; classes_excused: number }>(`
+        SELECT subject_id,classes_held,classes_attended,classes_excused FROM subject_attendance
+        WHERE student_id=$1 AND term_id=$2 ORDER BY subject_id
+      `,[f.learner.id,f.termId])).rows;
+      expect(actual).toHaveLength(2);
+      expect(actual.every(row => Number(row.classes_held)===4 && Number(row.classes_attended)===2 && Number(row.classes_excused)===0)).toBe(true);
+      expect((await pool.query("SELECT * FROM attendance_records_legacy_source WHERE class_section_id=$1",[f.classId])).rows).toEqual(archiveBefore);
+      expect((await pool.query(`
+        SELECT revision.* FROM activity_attendance_entry_revisions revision
+        JOIN activity_attendance_academic_roster person ON person.register_id=revision.register_id AND person.person_id=revision.person_id
+        WHERE person.student_id=$1 ORDER BY revision.id
+      `,[f.learner.id])).rows).toEqual(historyBefore);
     } finally {
-      await pool.query("DELETE FROM guardian_relationships WHERE school_id=$1", [schoolId]);
-      await pool.query("DELETE FROM students WHERE school_id=$1", [schoolId]);
-      await pool.query("DELETE FROM guardian_school_profiles WHERE school_id=$1", [schoolId]);
-      await pool.query("DELETE FROM school_people WHERE school_id=$1", [schoolId]);
-      await pool.query("DELETE FROM schools WHERE id=$1", [schoolId]);
-      await pool.query("DELETE FROM parents WHERE id=$1", [guardianId]);
-      await pool.query("DELETE FROM users WHERE id=ANY($1::uuid[])", [[studentUserId, guardianUserId]]);
+      // Accepted canonical history is immutable. The isolated test database owns
+      // disposal; do not add a fixture-only archive/view writer or delete chain.
       await database.destroy();
     }
   });

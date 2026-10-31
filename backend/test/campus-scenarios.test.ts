@@ -4,6 +4,7 @@ import { describe, expect, it } from "vitest";
 import type { AuthUser } from "../src/common/request.js";
 import { countConflictingIntervals } from "../src/campus-scenarios/campus-operations-scenario.executor.js";
 import {
+  buildScenarioIdentityMappings,
   isFutureScenarioWindow,
   scenarioDateWindows,
   type CampusScenarioRepository,
@@ -33,9 +34,15 @@ const user: AuthUser = {
 interface FakeScenarioOptions {
   teacher_agent_id?: string | null;
   space_capacity?: number | null;
+  empty_sessions?: boolean;
+  no_campus?: boolean;
 }
 
 class FakeScenarioRepository {
+  resolveTargetCalls = 0;
+  lastSnapshotTarget: CampusScenarioRepositorySnapshot["target"] | undefined;
+  lastSnapshotCampusId: string | null | undefined;
+
   constructor(
     private readonly sessionStart: string,
     private readonly sessionEnd: string,
@@ -46,9 +53,12 @@ class FakeScenarioRepository {
   hasActiveAdminMembership() { return Promise.resolve(this.authorized); }
   school() { return Promise.resolve({ id: SCHOOL_ID, name: "Test School", timezone: "Asia/Kolkata" }); }
   campuses() {
-    return Promise.resolve([{ id: CAMPUS_ID, name: "Main", code: "MAIN", timezone: "Asia/Kolkata", is_primary: true, revision: 2 }]);
+    return Promise.resolve(this.options.no_campus
+      ? []
+      : [{ id: CAMPUS_ID, name: "Main", code: "MAIN", timezone: "Asia/Kolkata", is_primary: true, revision: 2 }]);
   }
   resolveTarget(_school: string, _campus: string, type: "teacher_unavailable" | "space_unavailable") {
+    this.resolveTargetCalls += 1;
     return Promise.resolve(type === "teacher_unavailable" ? {
       id: AGENT_ID, label: "Test teacher", type, effective_ref: user.id,
       user_id: user.id, person_id: PERSON_ID, revision: 3,
@@ -93,9 +103,14 @@ class FakeScenarioRepository {
   snapshot(input: {
     captured_at: string;
     horizon_to: string;
+    campus_id: string | null;
     scenario_id: string;
+    run_id: string;
+    target: CampusScenarioRepositorySnapshot["target"];
     behaviour_policy_version_id: string | null;
   }): Promise<CampusScenarioRepositorySnapshot> {
+    this.lastSnapshotTarget = input.target;
+    this.lastSnapshotCampusId = input.campus_id;
     const teacherAgentId = this.options.teacher_agent_id === undefined
       ? AGENT_ID
       : this.options.teacher_agent_id;
@@ -107,11 +122,11 @@ class FakeScenarioRepository {
         kind: "campus_operations_snapshot",
         version: 1,
         school_id: SCHOOL_ID,
-        campus_id: CAMPUS_ID,
+        campus_id: input.campus_id,
         timezone: "Asia/Kolkata",
         captured_at: input.captured_at,
         horizon: { from: input.captured_at, to: input.horizon_to },
-        sessions: [{
+        sessions: this.options.empty_sessions ? [] : [{
           occurrence_key: "session-1",
           occurrence_date: this.sessionStart.slice(0, 10),
           starts_at: this.sessionStart,
@@ -133,20 +148,25 @@ class FakeScenarioRepository {
           evidence_hash: "b".repeat(64),
         },
       },
-      target: {
-        id: AGENT_ID, label: "Test teacher", type: "teacher_unavailable",
-        effective_ref: user.id, user_id: user.id, person_id: PERSON_ID, revision: 3,
-      },
+      target: input.target,
       configuration_snapshot: [],
       identities: teacherAgentId ? [{
-        human: { kind: "human", human_agent_id: AGENT_ID, person_id: PERSON_ID },
+        source: { kind: "human", human_agent_id: AGENT_ID, person_id: PERSON_ID },
         delegates: [],
-        persona: {
-          kind: "scenario_persona",
-          scenario_persona_id: `${input.scenario_id}:human:${AGENT_ID}`,
+        counterpart: {
+          kind: "scenario_counterpart",
+          scenario_counterpart_id: `${input.scenario_id}:run:${input.run_id}:agent:${AGENT_ID}`,
           scenario_id: input.scenario_id,
-          source_human_agent_id: AGENT_ID,
+          run_id: input.run_id,
+          namespace_id: `scenario:${input.scenario_id}:run:${input.run_id}`,
+          source_agent_id: AGENT_ID,
+          source_agent_kind: "human",
+          source_agent_revision: 3,
           behaviour_policy_version_id: input.behaviour_policy_version_id,
+          readiness: input.behaviour_policy_version_id ? "modelled" : "passive",
+          readiness_reason: input.behaviour_policy_version_id
+            ? "approved_human_behaviour_policy"
+            : "human_intent_not_modelled",
         },
       }] : [],
       source_revisions: {
@@ -157,7 +177,14 @@ class FakeScenarioRepository {
       approved_behaviour_policy: input.behaviour_policy_version_id
         ? this.approvedScenarioPolicy()
         : null,
-      counts: { sessions: 1, spaces: 1, teachers: 1, enrolments: 25 },
+      counts: {
+        sessions: this.options.empty_sessions ? 0 : 1,
+        spaces: 1,
+        teachers: this.options.empty_sessions ? 0 : 1,
+        agents: 1,
+        agent_kinds: { human: 1, team: 0, device: 0, integration: 0, software: 0 },
+        enrolments: this.options.empty_sessions ? 0 : 25,
+      },
     });
   }
 }
@@ -167,10 +194,72 @@ function fixture(authorized = true, options: FakeScenarioOptions = {}) {
   const end = new Date(start.getTime() + 45 * 60 * 1_000);
   const repository = new FakeScenarioRepository(start.toISOString(), end.toISOString(), authorized, options);
   const service = new CampusScenarioService(repository as unknown as CampusScenarioRepository);
-  return { service, start: start.toISOString(), end: end.toISOString() };
+  return { service, repository, start: start.toISOString(), end: end.toISOString() };
 }
 
 describe("Campus scenario API service", () => {
+  it("captures every active Model Core agent kind as an isolated counterpart", () => {
+    const mappings = buildScenarioIdentityMappings({
+      scenario_id: "scenario-1",
+      run_id: "run-1",
+      behaviour_policy_version_id: POLICY_VERSION_ID,
+      agents: [
+        { id: "human-1", agent_kind: "human", person_id: "person-1", external_ref: null, revision: 1 },
+        { id: "team-1", agent_kind: "team", person_id: null, external_ref: "team:office", revision: 2 },
+        { id: "device-1", agent_kind: "device", person_id: null, external_ref: "device:gate-a", revision: 3 },
+        { id: "integration-1", agent_kind: "integration", person_id: null, external_ref: "integration:calendar", revision: 4 },
+        { id: "software-1", agent_kind: "software", person_id: null, external_ref: "software:coverage", revision: 5 },
+      ],
+    });
+
+    expect(mappings).toHaveLength(5);
+    expect(mappings.map((mapping) => "source" in mapping ? mapping.source.kind : "legacy"))
+      .toEqual(["human", "team", "device", "integration", "software"]);
+    const human = mappings[0];
+    const device = mappings[2];
+    expect(human && "counterpart" in human
+      ? human.counterpart.behaviour_policy_version_id
+      : null).toBe(POLICY_VERSION_ID);
+    expect(human && "counterpart" in human ? human.counterpart : null).toMatchObject({
+      run_id: "run-1",
+      namespace_id: "scenario:scenario-1:run:run-1",
+      source_agent_revision: 1,
+      readiness: "modelled",
+    });
+    expect(device && "counterpart" in device
+      ? device.counterpart.behaviour_policy_version_id
+      : "unexpected").toBeNull();
+    expect(device && "counterpart" in device ? device.counterpart.readiness : null).toBe("unsupported");
+  });
+
+  it("fails closed on malformed or duplicate source-agent identity records", () => {
+    const capture = (agents: Parameters<typeof buildScenarioIdentityMappings>[0]["agents"]) => (
+      buildScenarioIdentityMappings({
+        scenario_id: "scenario-1",
+        run_id: "run-1",
+        behaviour_policy_version_id: null,
+        agents,
+      })
+    );
+
+    expect(() => capture([
+      { id: "human-1", agent_kind: "human", person_id: null, external_ref: null, revision: 1 },
+    ])).toThrow("person ID is missing");
+    expect(() => capture([
+      { id: "device-1", agent_kind: "device", person_id: null, external_ref: " ", revision: 1 },
+    ])).toThrow("external reference is missing");
+    expect(() => capture([
+      { id: "team-1", agent_kind: "team", person_id: "person-1", external_ref: "team:office", revision: 1 },
+    ])).toThrow("has a person identity");
+    expect(() => capture([
+      { id: "same", agent_kind: "human", person_id: "person-1", external_ref: null, revision: 1 },
+      { id: "same", agent_kind: "software", person_id: null, external_ref: "software:1", revision: 1 },
+    ])).toThrow("duplicate source agent");
+    expect(() => capture([
+      { id: "unknown-1", agent_kind: "robot", person_id: null, external_ref: "robot:1", revision: 1 },
+    ])).toThrow("unsupported agent kind");
+  });
+
   it("keeps catalogue identities endpoint-effective and uses the class home space only as fallback", () => {
     const source = readFileSync(
       new URL("../src/campus-scenarios/campus-scenario.repository.ts", import.meta.url),
@@ -264,6 +353,30 @@ describe("Campus scenario API service", () => {
     expect(response.run.side_effect_policy).toEqual({
       mode: "sink_only", production_writes: false, production_messages: false, production_connectors: false,
     });
+    expect(response.run.execution_environment).toMatchObject({
+      mode: "simulation",
+      run_id: response.run.id,
+      virtual_clock: { time_zone: "Asia/Kolkata" },
+      source_snapshot_at: response.run.snapshot_at,
+      expires_at: response.run.expires_at,
+    });
+    expect(response.run.execution_environment.namespace_id).toMatch(/^scenario:/);
+    expect(response.run.projection_capabilities.application_parity).toBe(false);
+    expect(response.run.projection_capabilities).toEqual({
+      application_parity: false,
+      supported: ["campus_performance"],
+      unsupported: ["today", "timetable", "attendance", "requests", "notifications", "campus_view"],
+    });
+    expect(response.run.run_local_counterpart_coverage).toEqual({
+      scope: "captured_active_model_core_agents",
+      source_agent_count: 1,
+      counterpart_count: 1,
+      coverage: "complete",
+      counterparts_by_kind: { human: 1, team: 0, device: 0, integration: 0, software: 0 },
+      readiness: { modelled: 0, passive: 1, unsupported: 0 },
+      behaviour_parity: false,
+      explanation: expect.stringContaining("run-local snapshot"),
+    });
     expect(response.run.metrics.find((metric) => metric.key === "affected_sessions")?.scenario.p50).toBe(1);
     expect(response.run.metrics.find((metric) => metric.key === "uncovered_sessions")?.scenario.p50).toBe(1);
     expect(response.run.metrics.find((metric) => metric.key === "modelled_positive_response_rate_percent")?.availability).toBe("unavailable");
@@ -273,8 +386,51 @@ describe("Campus scenario API service", () => {
     expect(response.run.metrics.find((metric) => metric.key === "modelled_response_acceptances")?.scenario.p50).toBeNull();
 
     expect((await service.get(user, SCHOOL_ID, response.run.id)).run.id).toBe(response.run.id);
+    await expect(service.resolveAuthorizedRun({
+      actor_id: user.id,
+      institution_id: SCHOOL_ID,
+      run_id: response.run.id,
+    })).resolves.toMatchObject({
+      institution_id: SCHOOL_ID,
+      run_id: response.run.id,
+      namespace_id: response.run.execution_environment.namespace_id,
+      time_zone: "Asia/Kolkata",
+    });
     expect(await service.discard(user, SCHOOL_ID, response.run.id)).toMatchObject({ discarded: true });
+    await expect(service.resolveAuthorizedRun({
+      actor_id: user.id,
+      institution_id: SCHOOL_ID,
+      run_id: response.run.id,
+    })).resolves.toBeNull();
     await expect(service.get(user, SCHOOL_ID, response.run.id)).rejects.toThrow("not found or expired");
+  });
+
+  it("creates a truthful snapshot-only Simulation when the campus has no future targets", async () => {
+    const { service, repository } = fixture(true, { empty_sessions: true, no_campus: true });
+    const response = await service.create(user, SCHOOL_ID, {
+      kind: "baseline_snapshot",
+      horizon_days: 30,
+    });
+
+    expect(repository.resolveTargetCalls).toBe(0);
+    expect(repository.lastSnapshotTarget).toBeNull();
+    expect(repository.lastSnapshotCampusId).toBeNull();
+    expect(response.run).toMatchObject({
+      scenario_kind: "baseline_snapshot",
+      intervention: null,
+      projection_capabilities: {
+        application_parity: false,
+        supported: ["campus_performance"],
+        unsupported: expect.arrayContaining(["attendance", "today"]),
+      },
+      source_snapshot: { counts: { sessions: 0, teachers: 0 } },
+    });
+    expect(response.run.metrics.find((metric) => metric.key === "scheduled_sessions")?.baseline.p50).toBe(0);
+    expect(response.run.metrics.find((metric) => metric.key === "scheduled_sessions")?.scenario.p50).toBe(0);
+    expect(response.run.assumptions).toContain(
+      "Attendance behaviour and outcomes are not modelled by this adapter.",
+    );
+    expect(response.run.unsupported_domains).toContain("attendance_outcomes");
   });
 
   it("uses an explicit cohort policy for ranges without inventing a teacher assignment", async () => {
@@ -291,6 +447,11 @@ describe("Campus scenario API service", () => {
     expect(response.run.metrics.find((metric) => metric.key === "unresolved_intervention_sessions")?.scenario.p50).toBe(1);
     expect(response.run.unsupported_domains).toContain("resource_allocation");
     expect(response.run.uncertainty_status).toBe("calibrated_ensemble");
+    expect(response.run.run_local_counterpart_coverage.readiness).toEqual({
+      modelled: 1,
+      passive: 0,
+      unsupported: 0,
+    });
   });
 
   it("requires an active institution administrator", async () => {
@@ -298,6 +459,11 @@ describe("Campus scenario API service", () => {
     await expect(service.create(user, SCHOOL_ID, {
       horizon_days: 7,
       intervention: { type: "teacher_unavailable", target_id: AGENT_ID, starts_at: start, ends_at: end },
+    })).rejects.toBeInstanceOf(ForbiddenException);
+    await expect(service.resolveAuthorizedRun({
+      actor_id: user.id,
+      institution_id: SCHOOL_ID,
+      run_id: "00000000-0000-4000-8000-000000000009",
     })).rejects.toBeInstanceOf(ForbiddenException);
   });
 
@@ -320,6 +486,11 @@ describe("Campus scenario API service", () => {
     expect(response.run.metrics.find((metric) => metric.key === "uncovered_sessions")?.availability).toBe("partial");
     expect(response.run.metrics.find((metric) => metric.key === "teacher_conflict_sessions")?.availability).toBe("partial");
     expect(response.run.metrics.find((metric) => metric.key === "over_capacity_sessions")?.availability).toBe("partial");
+    expect(response.run.run_local_counterpart_coverage).toMatchObject({
+      source_agent_count: 1,
+      counterpart_count: 0,
+      coverage: "partial",
+    });
   });
 
   it("evicts the oldest completed transient run instead of locking an institution", async () => {

@@ -1,0 +1,3 @@
+/** Shared declaration-only contracts used by the universal frontend.
+ * Keep domain authority and HTTP execution with the owning services. */
+export interface DirectoryStudent {id:string;name:string;admission_number:string;avatar_url:string;date_of_birth:string;has_account:boolean;enrollment_id:string|null;class_section_id:string|null;term_id:string|null;term_name:string|null;class_name:string|null;roll_number:number|null;enrolled_on:string|null;enrollment_revision:number|null;guardians:Array<{id:string;name:string;phone:string;relationship:string;has_account:boolean;avatar_url?:string|null}>}

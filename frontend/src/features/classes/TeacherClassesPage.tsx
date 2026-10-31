@@ -11,14 +11,14 @@ import { clockLabel } from "../calendar/monthGrid";
 import { activityLabel, useClassUpdates } from "./classUpdates";
 import "./classes.css";
 
-export default function TeacherClassesPage() {
+export function AssignedClassesPage() {
   const { date, setDate, home } = useClasses();
   const classes = home.data?.classes ?? [];
   const auth = useAuth();
   const member = currentStaffMembership(auth.memberships);
   const day = useQuery({ queryKey: ["school", "day-plans", "teacher", member?.school_id, date], queryFn: () => getTeacherDay(member!.school_id, date), enabled: Boolean(member?.school_id) && hasStaffPermission(member, "timetable.view") && classes.length > 0 });
   const updates = useClassUpdates(date, classes.length > 0);
-  return <OperationsShell portal="teacher" active="more" title="My classes">
+  return <OperationsShell active="areas" title="Classes" backTo="/areas/people">
     <div className="classes-workspace">
       <DateNavigation date={date} view="day" compact onDateChange={setDate} />
       {home.isPending ? <ClassLoadState loading label="Loading your classes" />
@@ -34,7 +34,7 @@ export default function TeacherClassesPage() {
               const activity = updates.data?.results.filter(item => item.class_section_id === cls.class_section_id) ?? [];
               const label = activityLabel(activity);
               return <li key={cls.class_section_id}>
-              <Link className="classes-row" to={`/teacher/classes/${encodeURIComponent(cls.class_section_id)}?date=${date}`}>
+              <Link className="classes-row" to={`/areas/people/classes/${encodeURIComponent(cls.class_section_id)}?date=${date}`}>
                 <span className="classes-monogram" aria-hidden="true">{cls.grade}{cls.section}</span>
                 <span className="classes-row__content"><strong>{cls.class_name}</strong>
                   <span>{[cls.subjects?.filter(Boolean).join(", "), `${cls.student_count} students`].filter(Boolean).join(" · ")}</span>
@@ -44,10 +44,12 @@ export default function TeacherClassesPage() {
                 </span>
                 <ChevronRight size={20} aria-hidden="true" />
               </Link>
-              {label ? <Link className="classes-activity-link" to={`/teacher/classes/${encodeURIComponent(cls.class_section_id)}?date=${date}&section=notes`}><Bell size={15} aria-hidden="true" /><span>{label}{(activity[0]?.total ?? 0) > activity.length ? " · more updates" : ""}</span><ChevronRight size={16} aria-hidden="true" /></Link> : null}
+              {label ? <Link className="classes-activity-link" to={`/areas/people/classes/${encodeURIComponent(cls.class_section_id)}?date=${date}&section=notes`}><Bell size={15} aria-hidden="true" /><span>{label}{(activity[0]?.total ?? 0) > activity.length ? " · more updates" : ""}</span><ChevronRight size={16} aria-hidden="true" /></Link> : null}
             </li>; })}
           </ul>
         </>}
     </div>
   </OperationsShell>;
 }
+
+export default AssignedClassesPage;

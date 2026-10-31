@@ -21,8 +21,8 @@ describe('verified analytics charts',()=>{
     expect(findCapabilities('Give me analytics about Aarav Sharma',tools)[0]?.name).toBe('principal_analytics');
     const cap=tools.find(c=>c.name==='principal_analytics')!;
     expect(verificationScreen(cap,{topic:'results',period:'30'},scope,{student:{id:'learner'},class_id:'class'})).toContain('student_id=learner');
-    expect(verificationScreen(cap,{chart:'results_distribution',period:'90',group_by:'class'},scope,{})).toBe('/principal/insights/results?period=90&compare=class');
-    expect(verificationScreen(tools.find(c=>c.name==='insights')!,{chart:'attendance_trend'}, {...scope,portal:'parent',studentId:'child'},{})).toBe('/parent/insights/attendance?period=term&student_id=child');
+    expect(verificationScreen(cap,{chart:'results_distribution',period:'90',group_by:'class'},scope,{})).toBe('/areas/insights/results?scope=institution&period=90&compare=class');
+    expect(verificationScreen(tools.find(c=>c.name==='insights')!,{chart:'attendance_trend'}, {...scope,portal:'parent',studentId:'child'},{})).toBe('/areas/insights/attendance?scope=dependent&student_id=child&period=term');
     for(const portal of ['parent','student','teacher'] as const)expect(availableCapabilities({...scope,portal}).some(c=>c.name==='principal_analytics')).toBe(false);
     expect(()=>cap.schema.parse({sql:'SELECT *',chart:'attendance_trend'})).toThrow();
   });

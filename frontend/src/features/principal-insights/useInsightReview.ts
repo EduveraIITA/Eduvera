@@ -2,10 +2,12 @@ import { useQuery } from "@tanstack/react-query";
 import { useParams, useSearchParams } from "react-router-dom";
 import { schoolDateToday } from "../../lib/schoolTime";
 import { useAuth } from "../auth/AuthContext";
+import { useExecutionEnvironment } from "../simulation/ExecutionEnvironmentContext";
+import { executionEnvironmentQueryKey } from "../simulation/executionEnvironmentQueryKey";
 import { getPrincipalInsights } from "./api";
 
 export function useInsightReview() {
-  const auth = useAuth(), [params] = useSearchParams();
+  const auth = useAuth(), environment = useExecutionEnvironment(), [params] = useSearchParams();
   const { studentId } = useParams<{ studentId?: string }>();
   const schoolId = auth.user?.active_school_id ?? auth.memberships.find(member => member.role === "admin")?.school_id;
   const date = params.get("date") || schoolDateToday();
@@ -15,7 +17,7 @@ export function useInsightReview() {
   const threshold = Number.isInteger(raw) && raw >= 1 && raw <= 99 ? raw : 50;
   const allowed = Boolean(schoolId && auth.memberships.some(member => member.school_id === schoolId && member.role === "admin"));
   const query = useQuery({
-    queryKey: ["principal-insights", schoolId, date, days, classId, threshold, studentId ?? "overview", auth.user?.id],
+    queryKey: executionEnvironmentQueryKey(environment, ["principal-insights", schoolId, date, days, classId, threshold, studentId ?? "overview", auth.user?.id]),
     queryFn: () => studentId
       ? getPrincipalInsights(schoolId!, date, days, classId, threshold, studentId)
       : getPrincipalInsights(schoolId!, date, days, classId, threshold),

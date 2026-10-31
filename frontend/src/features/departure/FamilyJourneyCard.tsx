@@ -1,5 +1,6 @@
 import { Bus,Check,Clock3,MapPin } from "lucide-react";
 import type { FamilyJourney,MapConfig } from "./api";
+import { ProductIcon } from "../../components/ProductIcon";
 import { RideMapPanel } from "./RideMapPanel";
 
 export function journeyMessage(journey:FamilyJourney) {
@@ -21,7 +22,7 @@ export function FamilyJourneyCard({journey,map,focused=false}:{journey:FamilyJou
   return <section id={`attention-family-journey-${journey.id}`} tabIndex={focused?-1:undefined} className={`ride-card${focused?" is-attention-target":""}`} aria-label={`${inbound?"To school":"From school"} journey`}>
     {visible?<RideMapPanel location={{latitude:journey.latitude!,longitude:journey.longitude!,accuracy_metres:journey.accuracy_metres??"0",observed_at:journey.observed_at!}} map={map} fresh={journey.location_fresh}/>:null}
     <div className="ride-information">
-      <div className="ride-heading"><span className="ride-icon"><Bus size={23}/></span><div><h2>{journey.route_name}</h2><p>{journey.vehicle_label||journey.provider_name||journey.route_code}</p></div><span className={`departure-state departure-state--${state}`}>{status}</span></div>
+      <div className="ride-heading"><span className="ride-icon"><ProductIcon name="transport" size={28}/></span><div><h2>{journey.route_name}</h2><p>{journey.vehicle_label||journey.provider_name||journey.route_code}</p></div><span className={`departure-state departure-state--${state}`}>{status}</span></div>
       <dl className="ride-facts"><div><dt><MapPin size={16}/>Your stop</dt><dd>{journey.stop_name}</dd></div><div><dt><Clock3 size={16}/>{inbound?"To school":"From school"}</dt><dd>{journey.scheduled_departure_time.slice(0,5)} <small>scheduled</small></dd></div></dl>
       {!visible?<p className={`ride-message ${["exception","cancelled"].includes(state)?"is-concern":""}`}>{journeyMessage(journey)}</p>:null}
       <ol className="ride-milestones" aria-label="Recorded journey progress">

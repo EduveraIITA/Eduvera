@@ -1,3 +1,4 @@
+import { applicationNow } from "../simulation/applicationTime";
 import type {
   AttendanceCalendarStatus,
   ParentAttendanceData,
@@ -213,7 +214,7 @@ function indiaMinutesNow() {
     hour: "2-digit",
     minute: "2-digit",
     hourCycle: "h23",
-  }).formatToParts(new Date());
+  }).formatToParts(applicationNow());
   return Number(parts.find((part) => part.type === "hour")?.value ?? 0) * 60 +
     Number(parts.find((part) => part.type === "minute")?.value ?? 0);
 }
@@ -224,7 +225,7 @@ function indiaDateToday() {
     year: "numeric",
     month: "2-digit",
     day: "2-digit",
-  }).formatToParts(new Date());
+  }).formatToParts(applicationNow());
   const value = (type: string) => parts.find((part) => part.type === type)?.value ?? "";
   return `${value("year")}-${value("month")}-${value("day")}`;
 }
@@ -324,7 +325,7 @@ export function adaptParentHome(response: ParentHomeResponse): ParentHomeData {
       rollNumber: child.rollNumber,
       studentId: response.student.admission_number,
       termLabel: `${response.student.current_enrollment.term.name} - ${response.student.current_enrollment.term.academic_year}`,
-      dateLabel: new Intl.DateTimeFormat("en-IN", { timeZone: "Asia/Kolkata", weekday: "long", day: "numeric", month: "long" }).format(new Date()),
+      dateLabel: new Intl.DateTimeFormat("en-IN", { timeZone: "Asia/Kolkata", weekday: "long", day: "numeric", month: "long" }).format(applicationNow()),
       attendancePercent: attendance,
       attendanceRecorded: hasAttendance,
       attendanceThreshold: response.semester_metrics.attendance_threshold ?? 85,

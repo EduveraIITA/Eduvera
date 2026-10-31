@@ -3,8 +3,9 @@ import { useEffect, useId, useRef } from 'react';
 import { createPortal } from 'react-dom';
 import { CircleAlert, X } from 'lucide-react';
 import { deliveryPending, type ReadyInvitation } from './api';
+import './onboarding.css';
 
-export function InvitationReceipt({invite,onClose}:{invite:ReadyInvitation;onClose:()=>void}) {
+export function InvitationReceipt({invite,onClose,personLabel,invitationCreated=false}:{invite:ReadyInvitation;onClose:()=>void;personLabel?:string;invitationCreated?:boolean}) {
   const sent=invite.delivery==='email_accepted';
   const pending=deliveryPending(invite.delivery);
   const popup=sent||pending;
@@ -38,8 +39,10 @@ export function InvitationReceipt({invite,onClose}:{invite:ReadyInvitation;onClo
       {sent?<svg viewBox="0 0 48 48" fill="none"><circle cx="24" cy="24" r="21"/><path d="m14 24 7 7 14-14"/></svg>:pending?<LoaderCircle className="invitation-confirmation__spinner" size={32}/>:<CircleAlert size={32}/>}
     </div>
     <div className="invitation-confirmation__message" role={popup?'status':'alert'} aria-atomic="true">
-      <h2 id={titleId}>{sent?'Invitation sent':pending?'Sending invitation…':invite.delivery==='unknown'?'Email not confirmed':'Invitation not sent'}</h2>
+      <h2 id={titleId}>{sent?'Invitation sent':pending?'Sending invitation…':invite.delivery==='unknown'?'Email not confirmed':invitationCreated?'Invitation created':'Invitation not sent'}</h2>
+      {personLabel?<p>{personLabel}</p>:null}
       <p id={emailId}>{invite.email}</p>
+      {invitationCreated&&!sent&&!pending?<p className="invitation-confirmation__help">App access remains pending until the recipient accepts.</p>:null}
       {pending?<p className="invitation-confirmation__help">Sending in the background. You can close this and continue.</p>:!sent?<p className="invitation-confirmation__help">{invite.delivery==='failed'?'We couldn’t confirm the email was sent. Check the email settings, then resend from the list.':invite.delivery==='unknown'?'Check the recipient’s inbox before resending to avoid duplicate emails.':invite.delivery==='cancelled'?'This invitation expired, was replaced, accepted or revoked.':'Email sending is unavailable. Enable invitation emails, then resend from the list.'}</p>:null}
     </div>
     <button ref={closeButtonRef} type="button" className="invitation-confirmation__close" aria-label="Dismiss invitation notification" onClick={onClose}><X size={18}/></button>

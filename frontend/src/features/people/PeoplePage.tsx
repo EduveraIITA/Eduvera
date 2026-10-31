@@ -11,6 +11,10 @@ import { GuardianAuthorityPanel } from "./GuardianAuthorityPanel";
 import { StudentEnrollmentLifecycle } from "./StudentEnrollmentLifecycle";
 import type { EnrollmentOption } from "./api";
 import "./people.css";
+import { PEOPLE_IMPORT_PATH, PEOPLE_RECORDS_PATH, PEOPLE_WORKSPACE_PATH } from "./peopleRoutes";
+import { LegacyPersonRedirect } from "./LegacyPersonRedirect";
+import { useExecutionEnvironment } from "../simulation/ExecutionEnvironmentContext";
+import { executionEnvironmentQueryKey } from "../simulation/executionEnvironmentQueryKey";
 
 const alphabet = "ABCDEFGHIJKLMNOPQRSTUVWXYZ".split("");
 
@@ -63,27 +67,34 @@ function StudentProfile({student,schoolId,options,onManage}:{student:DirectorySt
   </section>;
 }
 
-export default function PeoplePage() {
+export function WorkspacePeopleRecordsRoute() {
+  const auth = useAuth(), [params] = useSearchParams();
+  const schoolId = params.get("school") ?? auth.user?.active_school_id ?? auth.memberships.find(member => member.role === "admin" || member.permissions?.includes("sis.manage"))?.school_id ?? "";
+  const studentId = params.get("student");
+  if (studentId && !params.has("guardian") && params.get("context") !== "learning") return <LegacyPersonRedirect schoolId={schoolId} sourceId={studentId} kind="student" />;
+  return <EnrollmentRecordsRoute />;
+}
+function EnrollmentRecordsRoute() {
   const auth = useAuth();
-  const schools = auth.memberships.filter((membership) => membership.role === "admin" || (membership.role === "staff" && membership.permissions?.includes("sis.manage")));
+  const schools = auth.memberships.filter((membership) => membership.role === "admin" || membership.permissions?.includes("sis.manage"));
   const [selected, setSelected] = useState("");
   const [params] = useSearchParams();
   const schoolId = selected || schools.find(school=>school.school_id===params.get("school"))?.school_id || schools[0]?.school_id;
-  const portal=auth.hasPortal("principal")?"principal":"teacher";
   const backParams = new URLSearchParams(params);
   if(params.has("guardian")) backParams.delete("guardian");
   else {backParams.delete("student");backParams.delete("student_key");backParams.delete("create");}
   const detail = params.has("student") || params.has("create") || params.has("guardian");
-  return <OperationsShell portal={portal} active="more" title={params.has("guardian")?"Guardian permissions":params.has("student")?"Student profile":params.has("create")?"Add student":"Students & guardians"} subtitle="School records" schoolName={schools.find((school) => school.school_id === schoolId)?.school_name} backTo={detail?`/${portal}/students${backParams.size?`?${backParams}`:""}`:`/${portal}/more`} contentHasHeading>
+  return <OperationsShell active="areas" title={params.has("guardian")?"Guardian permissions":params.has("student")?"Student profile":params.has("create")?"Add student":"Students & guardians"} subtitle="People records" schoolName={schools.find((school) => school.school_id === schoolId)?.school_name} backTo={detail?`${PEOPLE_RECORDS_PATH}${backParams.size?`?${backParams}`:""}`:PEOPLE_WORKSPACE_PATH}>
     <div className="operations-stack">
       {schools.length > 1 ? <label className="people-school">School<select value={schoolId} onChange={(event) => setSelected(event.target.value)}>{schools.map((school) => <option key={school.school_id} value={school.school_id}>{school.school_name}</option>)}</select></label> : null}
-      {schoolId ? <Directory key={schoolId} schoolId={schoolId} /> : <p role="alert">An active school administrator membership is required.</p>}
+      {schoolId ? <Directory key={schoolId} schoolId={schoolId} /> : <p role="alert">Active student-record access is required.</p>}
     </div>
   </OperationsShell>;
 }
 
 function Directory({ schoolId }: { schoolId: string }) {
-  const auth=useAuth();const portal=auth.hasPortal("principal")?"principal":"teacher";
+  const auth=useAuth();
+  const environment=useExecutionEnvironment();
   const [params,setParams] = useSearchParams();
   const [search, setSearch] = useState("");
   const [submitted, setSubmitted] = useState("");
@@ -91,21 +102,22 @@ function Directory({ schoolId }: { schoolId: string }) {
   const adding=params.get("create")==="student";
   const setAdding=(value:boolean)=>setParams(current=>{const next=new URLSearchParams(current);if(value)next.set("create","student");else next.delete("create");return next;},{replace:!value});
   const [saved, setSaved] = useState("");
-  const authorityId=auth.hasPortal("principal")?params.get("guardian"):null;
+  const canManageGuardianAuthority=auth.memberships.some(member=>member.school_id===schoolId&&(member.role==="admin"||member.permissions?.includes("sis.manage")));
+  const authorityId=canManageGuardianAuthority?params.get("guardian"):null;
   const setAuthorityId=(id:string|null)=>setParams(current=>{const next=new URLSearchParams(current);if(id)next.set("guardian",id);else next.delete("guardian");return next;},{replace:id===null});
   const profileId=params.get("student");
-  const profileQuery=useQuery({queryKey:["school","people","profile",schoolId,profileId,params.get("student_key")],queryFn:()=>listStudents(schoolId,params.get("student_key")??""),enabled:Boolean(profileId)});
+  const profileQuery=useQuery({queryKey:executionEnvironmentQueryKey(environment,["school","people","profile",schoolId,profileId,params.get("student_key")]),queryFn:()=>listStudents(schoolId,params.get("student_key")??""),enabled:Boolean(profileId)});
   const profile=profileQuery.data?.results.find(student=>student.id===profileId);
-  const profileLink=(student:DirectoryStudent)=>{const next=new URLSearchParams(params);next.set("school",schoolId);next.set("student",student.id);next.set("student_key",student.admission_number);return `/${portal}/students?${next}`;};
+  const profileLink=(student:DirectoryStudent)=>{const next=new URLSearchParams(params);next.set("school",schoolId);next.set("student",student.id);next.set("student_key",student.admission_number);next.set("context","learning");return `${PEOPLE_RECORDS_PATH}?${next}`;};
 
   useEffect(() => {
     const timer = window.setTimeout(() => setSubmitted(search.trim()), 250);
     return () => window.clearTimeout(timer);
   }, [search]);
 
-  const options = useQuery({ queryKey: ["school", "people", "options", schoolId], queryFn: () => enrollmentOptions(schoolId) });
+  const options = useQuery({ queryKey: executionEnvironmentQueryKey(environment,["school", "people", "options", schoolId]), queryFn: () => enrollmentOptions(schoolId) });
   const query = useInfiniteQuery({
-    queryKey: ["school", "people", "students", schoolId, submitted, initial],
+    queryKey: executionEnvironmentQueryKey(environment,["school", "people", "students", schoolId, submitted, initial]),
     queryFn: async ({ pageParam }) => {
       const page = await listStudents(schoolId, submitted, pageParam, initial);
       if (!initial || page.results.every((student) => student.name.toUpperCase().startsWith(initial))) return page;
@@ -138,7 +150,7 @@ function Directory({ schoolId }: { schoolId: string }) {
   };
 
   if(authorityId) return <GuardianAuthorityPanel key={authorityId} schoolId={schoolId} id={authorityId} onClose={()=>setAuthorityId(null)}/>;
-  if(profileId) return profileQuery.isPending ? <p role="status">Loading student…</p> : profileQuery.isError ? <p role="alert">Student details could not load. <button type="button" onClick={()=>void profileQuery.refetch()}>Try again</button></p> : profile ? <StudentProfile student={profile} schoolId={schoolId} options={options.data?.results??[]} onManage={auth.hasPortal("principal")?setAuthorityId:undefined}/> : <p role="status">Student not found in this institution. Return to the directory to select a student.</p>;
+  if(profileId) return profileQuery.isPending ? <p role="status">Loading student…</p> : profileQuery.isError ? <p role="alert">Student details could not load. <button type="button" onClick={()=>void profileQuery.refetch()}>Try again</button></p> : profile ? <StudentProfile student={profile} schoolId={schoolId} options={options.data?.results??[]} onManage={canManageGuardianAuthority?setAuthorityId:undefined}/> : <p role="status">Student not found in this institution. Return to the directory to select a student.</p>;
   if(adding) return options.isPending ? <p role="status">Loading enrollment options…</p> : options.data?.results.length ? <EnrollmentForm schoolId={schoolId} options={options.data.results} onCancel={()=>setAdding(false)} onSaved={(name)=>{setSaved(name);setAdding(false);setInitial(undefined);setSearch(name);setSubmitted(name);}}/> : <p role="alert">Enrollment options are unavailable. Set up an active term and class, then try again.</p>;
 
   return <>
@@ -146,9 +158,9 @@ function Directory({ schoolId }: { schoolId: string }) {
       <div className="people-authority-actions">
         <button type="button" className="people-primary" disabled={!options.data?.results.length || adding} onClick={() => { setAdding(true); setSaved(""); }}><Plus size={17} />Add student</button>
         <details className="people-actions-menu"><summary aria-label="Student actions"><MoreHorizontal size={20}/></summary><nav aria-label="Student actions">
-        <Link className="people-secondary" to={`/${portal}/students/import?school=${schoolId}`}>Import</Link>
-        {auth.memberships.some(member => member.school_id === schoolId && (member.role === "admin" || member.permissions?.includes("members.invite"))) ? <Link className="people-secondary" to={`/${portal}/invitations?from=students&role=guardian&school=${schoolId}`}>Invite</Link> : null}
-        <Link className="people-secondary" to={`/${portal}/administration?section=promotion&school=${schoolId}`}>Promote class</Link>
+        <Link className="people-secondary" to={`${PEOPLE_IMPORT_PATH}?school=${schoolId}`}>Import</Link>
+        {auth.memberships.some(member => member.school_id === schoolId && (member.role === "admin" || member.permissions?.includes("members.invite"))) ? <Link className="people-secondary" to={`/more/setup/people/invitations?from=students&role=guardian&school=${schoolId}`}>Invite</Link> : null}
+        <Link className="people-secondary" to={`/more/setup/institution/promotion?school=${schoolId}`}>Promote class</Link>
         </nav></details>
       </div>
     </header>
@@ -177,3 +189,6 @@ function Directory({ schoolId }: { schoolId: string }) {
     </section>
   </>;
 }
+
+/** Temporary source alias while old bookmarks become redirects. */
+export default function PeoplePage() { return <WorkspacePeopleRecordsRoute />; }

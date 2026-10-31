@@ -2,6 +2,8 @@ import { useMemo, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { ArrowRight, Check, ChevronDown, History, MoveRight, UserMinus } from "lucide-react";
 import { commitEnrollmentChange, getEnrollmentLifecycle, reviewEnrollmentChange, type DirectoryStudent, type EnrollmentChangeAction, type EnrollmentChangeReview, type EnrollmentOption } from "./api";
+import { useExecutionEnvironment } from "../simulation/ExecutionEnvironmentContext";
+import { executionEnvironmentQueryKey } from "../simulation/executionEnvironmentQueryKey";
 
 const actionCopy:Record<EnrollmentChangeAction,{label:string;description:string;confirm:string}>={
   move_class:{label:"Move to another class",description:"Keep this term and move the student to a different class today.",confirm:"Move student"},
@@ -13,8 +15,8 @@ const exitLabels={class_move:"Moved class",withdrawn:"Withdrawn",transferred_out
 function formatDate(value:string|null){return value?new Date(`${value}T00:00:00`).toLocaleDateString("en-IN",{day:"numeric",month:"short",year:"numeric"}):"Not recorded";}
 
 export function StudentEnrollmentLifecycle({schoolId,student,options}:{schoolId:string;student:DirectoryStudent;options:EnrollmentOption[]}) {
-  const client=useQueryClient();
-  const lifecycle=useQuery({queryKey:["school","people","lifecycle",schoolId,student.id],queryFn:()=>getEnrollmentLifecycle(schoolId,student.id)});
+  const client=useQueryClient(),environment=useExecutionEnvironment();
+  const lifecycle=useQuery({queryKey:executionEnvironmentQueryKey(environment,["school","people","lifecycle",schoolId,student.id]),queryFn:()=>getEnrollmentLifecycle(schoolId,student.id)});
   const [editing,setEditing]=useState(false);const [action,setAction]=useState<EnrollmentChangeAction>("move_class");
   const [targetId,setTargetId]=useState("");const [roll,setRoll]=useState("");const [reason,setReason]=useState("");
   const [review,setReview]=useState<EnrollmentChangeReview|null>(null);const [saved,setSaved]=useState("");
@@ -29,7 +31,7 @@ export function StudentEnrollmentLifecycle({schoolId,student,options}:{schoolId:
   const commit=useMutation({mutationFn:()=>commitEnrollmentChange(review!.id),onSuccess:async(result)=>{
     setSaved(result.action==="move_class"?"Class movement recorded.":result.action==="withdraw"?"Withdrawal recorded.":"Transfer-out recorded.");
     setReview(null);setEditing(false);setReason("");setTargetId("");setRoll("");
-    await Promise.all([client.invalidateQueries({queryKey:["school","people"]}),client.invalidateQueries({queryKey:["school","people","lifecycle",schoolId,student.id]})]);
+    await Promise.all([["school","people"],["people.participants",schoolId],["people.person-groups",schoolId],["people.group-catalogue",schoolId]].map(key=>client.invalidateQueries({queryKey:executionEnvironmentQueryKey(environment,key)})));
   }});
   const chooseTarget=(id:string)=>{setTargetId(id);const target=targets.find(option=>option.class_section_id===id);setRoll(target?String(target.next_roll):"");};
   if(lifecycle.isPending) return <section className="people-enrollment" aria-label="Enrollment"><p role="status">Loading enrollment history…</p></section>;

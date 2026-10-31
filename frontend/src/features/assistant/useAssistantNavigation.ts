@@ -27,7 +27,10 @@ export function useAssistantNavigation() {
     } else void update();
   };
   const go = (to: string, options?: NavigateOptions, after?: () => void) => {
-    const selector = /^\/(teacher|principal|parent|student)\/assistant(?:[/?#]|$)/.test(to) ? ".assistant-page" : ".assistant-dock";
+    const selector = to.startsWith('/areas/assistant/conversation')
+      || /^\/(teacher|principal|parent|student)\/assistant(?:[/?#]|$)/.test(to)
+      ? ".assistant-page"
+      : ".assistant-dock";
     transition(selector, () => { void navigate(to, options); }, after);
   };
   return { go, fromLink: (event: MouseEvent<HTMLAnchorElement>, to: string, options?: NavigateOptions) => {

@@ -18,7 +18,8 @@ export async function institutionSnapshot(db: DatabaseService, scope: Institutio
     sql<{ teaching: number; non_teaching: number }>`
       SELECT count(*) FILTER(WHERE staff_kind='teaching')::int AS teaching,
         count(*) FILTER(WHERE staff_kind='non_teaching')::int AS non_teaching
-      FROM staff_profiles WHERE school_id=${school}::uuid AND status='active' AND joined_on<=${today}::date`.execute(db),
+      FROM staff_profiles WHERE school_id=${school}::uuid AND status='active'
+        AND (joined_on<=${today}::date OR (joined_on IS NULL AND created_at::date<=${today}::date))`.execute(db),
   ]);
   const classes = classResult.rows.sort((a,b) => a.name.localeCompare(b.name, undefined, { numeric: true }));
   const students = classes.reduce((sum, row) => sum+row.students, 0);

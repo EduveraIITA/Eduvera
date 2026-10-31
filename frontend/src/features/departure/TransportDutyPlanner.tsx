@@ -1,3 +1,4 @@
+import { applicationNow } from "../simulation/applicationTime";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { CalendarDays, Check, ChevronLeft, ChevronRight, RefreshCw, Repeat2, UserRoundCheck } from "lucide-react";
 import { useEffect, useMemo, useState, type FormEvent } from "react";
@@ -14,7 +15,7 @@ import {
 import { executePendingTransportCommand } from "./pendingTransportCommand";
 
 import { TemporalInput } from "../../components/forms/TemporalInput";
-const indiaToday=()=>new Intl.DateTimeFormat("en-CA",{timeZone:"Asia/Kolkata"}).format(new Date());
+const indiaToday=()=>new Intl.DateTimeFormat("en-CA",{timeZone:"Asia/Kolkata"}).format(applicationNow());
 const read=(form:FormData,key:string)=>{const value=form.get(key);return typeof value==="string"?value.trim():"";};
 const iso=(value:Date)=>`${value.getFullYear()}-${String(value.getMonth()+1).padStart(2,"0")}-${String(value.getDate()).padStart(2,"0")}`;
 const addDays=(value:Date,days:number)=>new Date(value.getFullYear(),value.getMonth(),value.getDate()+days);

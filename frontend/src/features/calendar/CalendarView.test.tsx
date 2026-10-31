@@ -39,15 +39,27 @@ describe("CalendarView", () => {
     expect(input.onSelect).toHaveBeenCalledWith("2026-10-09");
   });
 
-  it("uses the shared week navigation and view selector", async () => {
+  it("leads with compact daily navigation and keeps the month grid on demand", async () => {
     const input = props({ mode: "day" });
     render(<CalendarView {...input} />);
-    expect(screen.getByRole("button", { name: "Previous week" })).toBeVisible();
-    await userEvent.click(screen.getByRole("button", { name: "Next week" }));
-    expect(input.onSelect).toHaveBeenCalledWith('2026-10-17');
-    expect(screen.getByRole("group", { name: "Choose date" })).toBeVisible();
-    await userEvent.selectOptions(screen.getByRole("combobox", { name: "Calendar view" }), "month");
+    expect(screen.getByRole("button", { name: "Previous day" })).toBeVisible();
+    await userEvent.click(screen.getByRole("button", { name: "Next day" }));
+    expect(input.onSelect).toHaveBeenCalledWith('2026-10-11');
+    expect(screen.queryByRole("group", { name: "Choose date" })).not.toBeInTheDocument();
+    expect(screen.getByLabelText("Choose date", { selector: "input" })).toHaveValue("2026-10-10");
+    expect(screen.getByRole("region", { name: "Schedule for Saturday, 10 October" })).toHaveTextContent("Selected schedule");
+    await userEvent.click(screen.getByRole("button", { name: "Show month grid" }));
     expect(input.onModeChange).toHaveBeenCalledWith("month");
+  });
+
+  it("offers an explicit return to the agenda while an existing month bookmark is open", async () => {
+    const input = props();
+    render(<CalendarView {...input} />);
+    expect(screen.getByRole("group", { name: "Choose date" })).toBeVisible();
+    expect(screen.getByRole("button", { name: "Show agenda" })).toHaveAttribute("aria-expanded", "true");
+    await userEvent.click(screen.getByRole("button", { name: "Show agenda" }));
+    expect(input.onModeChange).toHaveBeenCalledWith("day");
+    expect(input.onSelect).not.toHaveBeenCalled();
   });
 
   it('keeps month selection open and delegates Today to the atomic route update', async () => {

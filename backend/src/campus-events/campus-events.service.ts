@@ -1,8 +1,11 @@
+import { executionNow } from "../campus-model-core/execution-time.runtime.js";
 import { operatingRules, type OperatingRules } from "../operating-rules/rules.js";
 import {
   BadRequestException,
   ConflictException,
   ForbiddenException,
+  HttpException,
+  Inject,
   Injectable,
   NotFoundException,
 } from "@nestjs/common";
@@ -14,6 +17,15 @@ import { DatabaseService } from "../database/database.service.js";
 import type { Database } from "../database/types.js";
 import { assertActiveSchoolStaffMember, effectiveSchoolAccess } from "../roles/authorization.js";
 import { SchoolEventService } from "../school/school-event.service.js";
+import { eventSessionAttendanceHref, eventWorkHref, relationshipEventHref } from "../workspace/canonical-application-links.js";
+import { OwnedParticipationBridge, type OwnedParticipationContext, type OwnedParticipationPerson } from "../attendance/owned-participation-bridge.service.js";
+import { ParticipationContextAuthorityRegistry } from "../attendance/participation-context-authority.js";
+import type { ParticipationCaptureSources, ParticipationStatus } from "../attendance/activity-attendance.contracts.js";
+import { DOMAIN_COMMAND_GATEWAY_PORT, type DomainCommandGatewayPort } from '../campus-model-core/domain-command-gateway.port.js';
+import { OwnedPlanFootprintBridge, type OwnedPlanOccurrence } from '../schedule-planning/owned-plan-footprint.bridge.js';
+import { ActivityPlanningService } from '../schedule-planning/activity-planning.service.js';
+import { lockSchedule } from '../day-plans/schedule.js';
+import { assertSpacesNotResidential } from '../common/campus-space-use.js';
 import {
   attendanceCommandSchema,
   cancelEventSchema,
@@ -39,7 +51,7 @@ type AttendanceValue = "not_recorded" | "present" | "late" | "excused" | "no_sho
 
 interface EventRow {
   id: string; school_id: string; event_type: CampusEventDto["event_type"]; subject_id: string | null;
-  status: CampusEventDto["status"]; title: string; description: string; venue: string;
+  status: CampusEventDto["status"]; title: string; description: string; venue: string; space_id: string | null;
   starts_at: Date; ends_at: Date; audience_mode: CampusEventDto["audience"]["mode"];
   participation_requirement: CampusEventDto["participation_requirement"];
   requires_rsvp: boolean; requires_guardian_consent: boolean; payment_required: boolean;
@@ -65,7 +77,53 @@ export class CampusEventsService {
   constructor(
     private readonly db: DatabaseService,
     private readonly events: SchoolEventService,
-  ) {}
+    private readonly participation: OwnedParticipationBridge,
+    authorities: ParticipationContextAuthorityRegistry,
+    @Inject(DOMAIN_COMMAND_GATEWAY_PORT) private readonly commands: DomainCommandGatewayPort,
+    private readonly footprints: OwnedPlanFootprintBridge,
+    private readonly planning: ActivityPlanningService,
+  ) {
+    authorities.register('event', async (tx,user,context) => {
+      // Owning writes already hold their event/session locks before entering the
+      // kernel. Read composition must not acquire them in the inverse order.
+      const {event,actor,session}=await this.sessionContext(tx,user,context.school_id,context.context_ref!,context.source_ref,false);
+      const rules=await operatingRules(tx,context.school_id),policy=await this.observationPolicy(tx,context.school_id);
+      const now=executionNow().getTime();
+      const opens=new Date(new Date(session.starts_at).getTime()-rules.event_entry_hours_before*3600000);
+      const insideWindow=now>=opens.getTime() && (actor.role==='admin'||now<=new Date(session.ends_at).getTime()+rules.event_staff_hours_after*3600000);
+      const active=event.status==='published'&&session.attendance_mode!=='none';
+      return {can_view:actor.role==='admin'||actor.assigned||actor.ownsClassTest,
+        can_record:active&&session.state==='open'&&this.canTake(actor)&&insideWindow,
+        can_review:active&&this.canTake(actor)&&insideWindow,
+        source_refs:[{kind:'current_event_responsibility',event_id:event.id,session_id:session.id,event_revision:event.revision,
+          session_revision:session.revision,administrator:actor.role==='admin',attendance_assigned:actor.attendanceAssigned,
+          class_test_responsibility:actor.ownsClassTest,observation_policy_revision:policy.revision}],
+        allowed_statuses:['present','late','excused','no_show','checked_out'],record_not_before:opens,
+        capture_window:{from:new Date(new Date(session.starts_at).getTime()-policy.observation_hours_before*3600000),
+          until:new Date(new Date(session.ends_at).getTime()+policy.observation_hours_after*3600000+1)},
+        source:{domain:'events',href:eventSessionAttendanceHref(actor.role==='admin'?'manage':'assigned',event.id,session.id),label:'Open event attendance'}};
+    });
+  }
+
+  private async participationContext(tx: Transaction<Database>, user: AuthUser, schoolId: string, eventId: string, sessionId: string) {
+    const {event,session}=await this.sessionContext(tx,user,schoolId,eventId,sessionId,true);
+    const local=(await sql<{date:string;timezone:string}>`SELECT (${session.starts_at}::timestamptz AT TIME ZONE timezone)::date::text AS date,
+      timezone FROM schools WHERE id=${schoolId}::uuid`.execute(tx)).rows[0]!;
+    const people=(await sql<OwnedParticipationPerson>`SELECT student.id AS student_id,person.id AS person_id,
+        concat_ws(' ',person.first_name,person.last_name) AS label,person.revision AS person_revision,
+        concat('event_invitation:',participant.event_id,':',participant.student_id) AS source_ref,
+        GREATEST(1,participant.rsvp_revision) AS source_revision,(participant.participation_requirement='mandatory') AS required
+      FROM campus_event_participants participant JOIN students student ON student.id=participant.student_id AND student.school_id=participant.school_id
+      JOIN school_people person ON person.id=student.person_id AND person.school_id=student.school_id
+      WHERE participant.school_id=${schoolId}::uuid AND participant.event_id=${eventId}::uuid
+        AND (NOT EXISTS(SELECT 1 FROM campus_event_session_selected_students selection WHERE selection.session_id=${sessionId}::uuid)
+          OR EXISTS(SELECT 1 FROM campus_event_session_selected_students selection WHERE selection.session_id=${sessionId}::uuid
+            AND selection.student_id=participant.student_id)) ORDER BY student.id`.execute(tx)).rows;
+    const context:OwnedParticipationContext={school_id:schoolId,source:'event',source_id:session.id,context_ref:event.id,
+      title:`${event.title} · ${session.title}`.slice(0,160),...local,starts_at:session.starts_at,ends_at:session.ends_at,space_id:session.use_event_space?event.space_id:session.space_id,
+      revision:session.revision,locked:session.state==='locked',locked_by:session.locked_by,locked_at:session.locked_at};
+    return {context,people};
+  }
 
   private async observationPolicy(db: Db, schoolId: string) {
     return (await sql<{ observation_hours_before: number; observation_hours_after: number; revision: number }>`
@@ -110,6 +168,7 @@ export class CampusEventsService {
       JOIN users account ON account.id=membership.user_id AND account.is_active
       WHERE membership.school_id=${schoolId}::uuid AND membership.user_id=${user.id}::uuid
         AND membership.is_active
+      ORDER BY CASE membership.role WHEN 'admin' THEN 0 WHEN 'staff' THEN 1 WHEN 'guardian' THEN 2 ELSE 3 END
       ${lock ? sql`FOR SHARE OF membership,account` : sql``}
     `.execute(db)).rows[0];
     if (!row) throw new NotFoundException("Campus event not found in the active school.");
@@ -124,7 +183,7 @@ export class CampusEventsService {
 
   private async eventRow(db: Db, schoolId: string, eventId: string, lock = false): Promise<EventRow> {
     const row = (await sql<EventRow>`
-      SELECT id,school_id,event_type,subject_id,status,title,description,venue,starts_at,ends_at,
+      SELECT id,school_id,event_type,subject_id,status,title,description,venue,space_id,starts_at,ends_at,
         audience_mode,participation_requirement,requires_rsvp,requires_guardian_consent,
         payment_required,payment_amount_paise,payment_due_on::text,payment_currency,
         academic_attendance_impact,revision,created_by,published_at,
@@ -157,7 +216,7 @@ export class CampusEventsService {
         WHERE assignment.school_id=${schoolId}::uuid
           AND assignment.context_kind='class' AND assignment.scope_id=${classSectionId}::uuid
           AND assignment.status='active' AND assignment.role_active AND 'events.manage'=ANY(assignment.permissions)
-          AND current_date BETWEEN assignment.starts_on AND COALESCE(assignment.ends_on,'infinity'::date)
+          AND (${executionNow()}::timestamptz AT TIME ZONE school.timezone)::date BETWEEN assignment.starts_on AND COALESCE(assignment.ends_on,'infinity'::date)
           AND (assignment.subject_id=${subjectId}::uuid
             OR (assignment.subject_id IS NULL AND EXISTS(
               SELECT 1 FROM timetable_slots slot
@@ -184,7 +243,8 @@ export class CampusEventsService {
       WHERE binding.school_id=${event.school_id}::uuid AND binding.context_kind='event' AND binding.scope_id=${event.id}::uuid
         AND binding.user_id=${user.id}::uuid AND binding.role_active
         AND (binding.source_kind='event_assignment' OR binding.status='active')
-        AND binding.starts_on<=current_date AND (binding.ends_on IS NULL OR binding.ends_on>=current_date)
+        AND (${executionNow()}::timestamptz AT TIME ZONE (SELECT timezone FROM schools WHERE id=binding.school_id))::date
+          BETWEEN binding.starts_on AND COALESCE(binding.ends_on,'infinity'::date)
     `.execute(db)).rows[0] : {
       assigned: false, organizer_assigned: false, attendance_assigned: false,
     };
@@ -319,17 +379,22 @@ export class CampusEventsService {
       payload: {
         event_id: event.id, revision: event.revision, change_kind: changeKind,
         ...extra,
-        refresh: ["campus-events", "student.home", "parent.home", "teacher.home", "principal.home", "notifications", "attention"],
+        refresh: ["campus-events", "student.home", "parent.home", "teacher.home", "principal.home", "notifications", "attention", "activities", "attendance", "workspace", "today"],
       },
       notificationUserIds: notification?.users ?? [],
       notificationPayload: notification ? {
         kind: "general", title: notification.title, body: notification.body,
-        link: `/events/${event.id}`, student_link: `/student/events/${event.id}`,
-        parent_link: `/parent/events/${event.id}`, staff_link: `/teacher/events/${event.id}`,
-        admin_link: `/principal/events/${event.id}`, event_id: event.id,
+        // Generic event broadcasts do not identify one authoritative learner
+        // relationship. Family recipients therefore land at the neutral Area;
+        // exact self/dependent links are emitted by the relationship-specific
+        // cancellation and finance producers below.
+        link: "/areas/events", student_link: "/areas/events",
+        parent_link: "/areas/events", staff_link: eventWorkHref("assigned", event.id),
+        admin_link: eventWorkHref("manage", event.id), event_id: event.id,
         ...notification.metadata,
       } : null,
     });
+    return (await sql<{id:string}>`SELECT id FROM event_outbox WHERE school_id=${event.school_id}::uuid AND idempotency_key=${key}`.execute(db)).rows[0]!.id;
   }
 
   private async enqueueCancellationAttention(db: Db, event: EventRow, body: string): Promise<Set<string>> {
@@ -365,7 +430,10 @@ export class CampusEventsService {
           kind: "general",
           title: `${event.title} cancelled`,
           body,
-          parent_link: `/parent/events/${event.id}?student_id=${recipient.student_id}&focus=status&event_revision=${event.revision}`,
+          parent_link: relationshipEventHref("dependent", recipient.student_id, event.id, [
+            ["focus", "status"],
+            ["event_revision", event.revision],
+          ]),
           event_id: event.id,
           student_id: recipient.student_id,
           attention_eligible: true,
@@ -414,6 +482,14 @@ export class CampusEventsService {
     excludeEventId?: string,
   ) {
     await this.validatePaymentTerms(db, input);
+    const spaces=[...new Set([input.space_id,...input.sessions.map(session=>session.use_event_space?input.space_id:session.space_id)].filter((id):id is string=>Boolean(id)))];
+    if(spaces.length){
+      const valid=(await sql<{id:string}>`SELECT space.id FROM campus_spaces space JOIN institution_campuses campus
+       ON campus.id=space.campus_id AND campus.school_id=space.school_id WHERE space.school_id=${input.school_id}::uuid
+        AND space.id=ANY(${spaces}::uuid[]) AND space.status='active' AND campus.status='active' FOR SHARE OF space,campus`.execute(db)).rows;
+      if(valid.length!==spaces.length)throw new BadRequestException('Choose current event and session locations from this institution.');
+      await assertSpacesNotResidential(db,input.school_id,spaces);
+    }
     const classIds = input.audience.class_section_ids;
     const studentIds = input.audience.student_ids;
     const sessionStudentIds = [...new Set(input.sessions.flatMap((session) => session.participant_student_ids))];
@@ -577,7 +653,7 @@ export class CampusEventsService {
       ORDER BY name,student.id
     `.execute(this.db)).rows : [];
     const staff = role === "admin" ? (await sql<{ user_id: string; name: string }>`
-      SELECT membership.user_id,concat_ws(' ',account.first_name,account.last_name) AS name
+      SELECT DISTINCT membership.user_id,concat_ws(' ',account.first_name,account.last_name) AS name
       FROM school_memberships membership JOIN users account ON account.id=membership.user_id AND account.is_active
       WHERE membership.school_id=${schoolId}::uuid AND membership.role IN ('staff','admin') AND membership.is_active
       ORDER BY name,membership.user_id
@@ -608,12 +684,21 @@ export class CampusEventsService {
       HAVING count(scope.class_section_id)>0
       ORDER BY subject.name,subject.id
     `.execute(this.db)).rows;
-    return { class_sections: classes, students, staff, subjects };
+    const canChoosePlaces=role==='admin'||classes.length>0||(await sql<{allowed:boolean}>`SELECT EXISTS(SELECT 1 FROM staff_role_bindings binding
+      WHERE binding.school_id=${schoolId}::uuid AND binding.user_id=${user.id}::uuid AND binding.context_kind='event'
+       AND binding.role_active AND(binding.source_kind='event_assignment' OR binding.status='active') AND 'events.manage'=ANY(binding.permissions)
+       AND (${executionNow()}::timestamptz AT TIME ZONE(SELECT timezone FROM schools WHERE id=${schoolId}::uuid))::date
+         BETWEEN binding.starts_on AND coalesce(binding.ends_on,'infinity'::date)) AS allowed`.execute(this.db)).rows[0]?.allowed;
+    const places=canChoosePlaces?(await sql<{id:string;name:string;campus_id:string;campus_name:string}>`SELECT space.id,space.name,space.campus_id,campus.name AS campus_name
+      FROM campus_spaces space JOIN institution_campuses campus ON campus.id=space.campus_id AND campus.school_id=space.school_id
+      WHERE space.school_id=${schoolId}::uuid AND space.status='active' AND campus.status='active' ORDER BY campus.name,space.name,space.id`.execute(this.db)).rows:[];
+    return { class_sections: classes, students, staff, subjects, places };
   }
 
   async list(user: AuthUser, query: Record<string, string | undefined>): Promise<CampusEventListDto> {
     const input = z.object({
       school_id: uuid,
+      campus_id: uuid.optional(),
       from: z.iso.datetime({ offset: true }).optional(),
       to: z.iso.datetime({ offset: true }).optional(),
       status: eventStatus.optional(),
@@ -622,6 +707,7 @@ export class CampusEventsService {
       limit: z.coerce.number().int().min(1).max(100).default(30),
     }).parse(query);
     const role = await this.membership(this.db, user, input.school_id);
+    if(input.campus_id){const campus=await this.db.selectFrom('institution_campuses').select('id').where('school_id','=',input.school_id).where('id','=',input.campus_id).where('status','=','active').executeTakeFirst();if(!campus)throw new NotFoundException('Campus not found in this institution.');}
     if (input.student_id && new Set<MemberRole>(["student", "guardian"]).has(role)) {
       const allowed = (await sql<{ ok: boolean }>`SELECT EXISTS(
         SELECT 1 FROM students student WHERE student.school_id=${input.school_id}::uuid AND student.id=${input.student_id}::uuid
@@ -632,12 +718,18 @@ export class CampusEventsService {
       ) AS ok`.execute(this.db)).rows[0]?.ok;
       if (!allowed) throw new NotFoundException("Student not found or no longer accessible.");
     }
-    const sortNow = new Date().toISOString();
+    const sortNow = executionNow().toISOString();
     const rows = (await sql<{ id: string }>`
       WITH visible AS (
         SELECT event.id,event.starts_at,event.ends_at
         FROM campus_events event
         WHERE event.school_id=${input.school_id}::uuid
+          AND (${input.campus_id??null}::uuid IS NULL OR EXISTS(SELECT 1 FROM campus_event_sessions located_session
+            LEFT JOIN campus_spaces located_place ON located_place.school_id=located_session.school_id
+              AND located_place.id=CASE WHEN located_session.use_event_space THEN event.space_id ELSE located_session.space_id END
+            WHERE located_session.school_id=event.school_id AND located_session.event_id=event.id
+             AND(CASE WHEN located_session.use_event_space THEN event.space_id ELSE located_session.space_id END IS NULL
+              OR located_place.campus_id=${input.campus_id??null}::uuid AND located_place.status='active')))
           AND (${input.from ?? null}::timestamptz IS NULL OR event.ends_at>=${input.from ?? null}::timestamptz)
           AND (${input.to ?? null}::timestamptz IS NULL OR event.starts_at<=${input.to ?? null}::timestamptz)
           AND (${input.status ?? null}::text IS NULL OR event.status=${input.status ?? null})
@@ -706,11 +798,11 @@ export class CampusEventsService {
     const studentIds = (await sql<{ id: string }>`SELECT student_id AS id FROM campus_event_selected_students WHERE event_id=${event.id}::uuid ORDER BY student_id`.execute(db)).rows.map((r) => r.id);
     const sessions = (await sql<{
       id: string; title: string; session_type: "general" | "rehearsal" | "departure" | "activity" | "return";
-      venue: string; starts_at: Date; ends_at: Date; attendance_mode: "none" | "check_in" | "check_in_out";
+      venue: string; space_id:string|null;use_event_space:boolean; starts_at: Date; ends_at: Date; attendance_mode: "none" | "check_in" | "check_in_out";
       state: "open" | "locked"; revision: number; recorded: string; present: string; late: string;
       excused: string; no_show: string; checked_out: string; expected: string; selected_ids: string[];
     }>`
-      SELECT session.id,session.title,session.session_type,session.venue,session.starts_at,session.ends_at,
+      SELECT session.id,session.title,session.session_type,session.venue,session.space_id,session.use_event_space,session.starts_at,session.ends_at,
         session.attendance_mode,session.state,session.revision,
         count(DISTINCT roster.student_id)::text AS expected,
         COALESCE((SELECT array_agg(selected.student_id ORDER BY selected.student_id)
@@ -742,7 +834,7 @@ export class CampusEventsService {
       WHERE session.event_id=${event.id}::uuid
       GROUP BY session.id ORDER BY session.starts_at,session.id
     `.execute(db)).rows.map((row) => ({
-      id: row.id, title: row.title, session_type: row.session_type, venue: row.venue,
+      id: row.id, title: row.title, session_type: row.session_type, venue: row.venue,space_id:row.space_id,use_event_space:row.use_event_space,
       starts_at: iso(row.starts_at)!, ends_at: iso(row.ends_at)!, attendance_mode: row.attendance_mode,
       state: row.state, revision: row.revision, participant_student_ids: row.selected_ids,
       counts: {
@@ -891,11 +983,11 @@ export class CampusEventsService {
       FROM campus_event_staff staff JOIN users account ON account.id=staff.user_id
       WHERE staff.event_id=${event.id}::uuid ORDER BY name,staff.role,staff.user_id
     `.execute(db)).rows;
-    const familyOpen = event.status === "published" && Date.now() < new Date(event.starts_at).getTime();
+    const familyOpen = event.status === "published" && executionNow().getTime() < new Date(event.starts_at).getTime();
     const rules = await operatingRules(db, event.school_id);
     const canTake = this.canTake(actor) && sessions.some((session) => {
       if (event.status !== "published" || session.attendance_mode === "none" || session.state !== "open") return false;
-      const now = Date.now();
+      const now = executionNow().getTime();
       if (now < Date.parse(session.starts_at) - rules.event_entry_hours_before * 60 * 60 * 1000) return false;
       return actor.role === "admin" || now <= Date.parse(session.ends_at) + rules.event_staff_hours_after * 60 * 60 * 1000;
     });
@@ -945,7 +1037,7 @@ export class CampusEventsService {
     }));
     return {
       id: event.id, school_id: event.school_id, event_type: event.event_type, subject_id: event.subject_id,
-      status: event.status, title: event.title, description: event.description, venue: event.venue,
+      status: event.status, title: event.title, description: event.description, venue: event.venue,space_id:event.space_id,
       starts_at: iso(event.starts_at)!, ends_at: iso(event.ends_at)!,
       audience: {
         mode: event.audience_mode,
@@ -993,9 +1085,9 @@ export class CampusEventsService {
       },
       permissions: {
         can_edit: draftEditor, can_publish: draftPublisher,
-        can_cancel: event.status === "published" && Date.now() < new Date(event.starts_at).getTime()
+        can_cancel: event.status === "published" && executionNow().getTime() < new Date(event.starts_at).getTime()
           && (actor.role === "admin" || actor.ownsClassTest),
-        can_complete: event.status === "published" && Date.now() >= new Date(event.ends_at).getTime()
+        can_complete: event.status === "published" && executionNow().getTime() >= new Date(event.ends_at).getTime()
           && trackedSessionsReady && actor.role === "admin",
         can_manage_policy: event.status === "draft" && actor.role === "admin",
         can_manage_audience: event.status === "draft" && (actor.role === "admin" || actor.ownsClassTest),
@@ -1052,8 +1144,8 @@ export class CampusEventsService {
     for (const session of input.sessions) {
       const sessionId = session.id ?? randomUUID();
       await sql`
-        INSERT INTO campus_event_sessions(id,school_id,event_id,title,session_type,venue,starts_at,ends_at,attendance_mode)
-        VALUES(${sessionId}::uuid,${input.school_id}::uuid,${eventId}::uuid,${session.title},${session.session_type},${session.venue},
+        INSERT INTO campus_event_sessions(id,school_id,event_id,title,session_type,venue,space_id,use_event_space,starts_at,ends_at,attendance_mode)
+        VALUES(${sessionId}::uuid,${input.school_id}::uuid,${eventId}::uuid,${session.title},${session.session_type},${session.venue},${session.space_id??null}::uuid,${session.use_event_space??false},
           ${session.starts_at}::timestamptz,${session.ends_at}::timestamptz,${session.attendance_mode})
       `.execute(db);
       if (session.participant_student_ids.length) await sql`
@@ -1118,13 +1210,13 @@ export class CampusEventsService {
       const definition = input;
       await this.validateRelations(db, definition, req.authUser);
       const event = (await sql<EventRow>`
-        INSERT INTO campus_events(school_id,event_type,subject_id,title,description,venue,starts_at,ends_at,audience_mode,
+        INSERT INTO campus_events(school_id,event_type,subject_id,title,description,venue,space_id,starts_at,ends_at,audience_mode,
           participation_requirement,requires_rsvp,requires_guardian_consent,payment_required,payment_amount_paise,payment_due_on,payment_currency,created_by)
-        VALUES(${input.school_id}::uuid,${input.event_type},${input.subject_id}::uuid,${input.title},${input.description},${input.venue},
+        VALUES(${input.school_id}::uuid,${input.event_type},${input.subject_id}::uuid,${input.title},${input.description},${input.venue},${input.space_id??null}::uuid,
           ${input.starts_at}::timestamptz,${input.ends_at}::timestamptz,${input.audience.mode},${input.participation_requirement},
           ${input.requires_rsvp},${input.requires_guardian_consent},${input.payment_required},${input.payment_amount_paise},
           ${input.payment_due_on}::date,${input.payment_currency},${req.authUser.id}::uuid)
-        RETURNING id,school_id,event_type,subject_id,status,title,description,venue,starts_at,ends_at,audience_mode,
+        RETURNING id,school_id,event_type,subject_id,status,title,description,venue,space_id,starts_at,ends_at,audience_mode,
           participation_requirement,requires_rsvp,requires_guardian_consent,payment_required,payment_amount_paise,
           payment_due_on::text,payment_currency,academic_attendance_impact,
           revision,created_by,published_at,cancelled_at,cancellation_reason,cancellation_internal_reason
@@ -1169,7 +1261,7 @@ export class CampusEventsService {
         : input;
       await this.validateRelations(db, definition, req.authUser, event.id);
       await sql`UPDATE campus_events SET event_type=${input.event_type},subject_id=${input.subject_id}::uuid,title=${input.title},
-        description=${input.description},venue=${input.venue},starts_at=${input.starts_at}::timestamptz,ends_at=${input.ends_at}::timestamptz,
+        description=${input.description},venue=${input.venue},space_id=${input.space_id??null}::uuid,starts_at=${input.starts_at}::timestamptz,ends_at=${input.ends_at}::timestamptz,
         audience_mode=${input.audience.mode},participation_requirement=${input.participation_requirement},requires_rsvp=${input.requires_rsvp},
         requires_guardian_consent=${input.requires_guardian_consent},payment_required=${input.payment_required},
         payment_amount_paise=${input.payment_amount_paise},payment_due_on=${input.payment_due_on}::date,payment_currency=${input.payment_currency},
@@ -1218,19 +1310,50 @@ export class CampusEventsService {
     return this.eventAction(req, eventValue, body, "discard");
   }
 
+  private async projectPlan(db:Transaction<Database>,req:AuthenticatedRequest,event:EventRow,state:'expected'|'cancelled') {
+    const sessions=(await sql<{id:string;attendance_mode:string}>`SELECT id,attendance_mode FROM campus_event_sessions
+      WHERE school_id=${event.school_id}::uuid AND event_id=${event.id}::uuid ORDER BY starts_at,id`.execute(db)).rows;
+    const occurrences:OwnedPlanOccurrence[]=[];
+    for(const session of sessions){
+      const {context,people}=await this.participationContext(db,req.authUser,event.school_id,event.id,session.id);
+      occurrences.push({source_id:session.id,source_revision:context.revision,title:context.title,local_date:context.date,
+        starts_at:new Date(context.starts_at).toISOString(),ends_at:new Date(context.ends_at).toISOString(),timezone:context.timezone,
+        attendance_mode:session.attendance_mode==='none'?'none':'roll_call',space_id:context.space_id,
+        people:people.map(person=>({...person,role:'participant' as const,attendance_expected:session.attendance_mode!=='none'}))});
+    }
+    const projection=await this.footprints.record(db,{school_id:event.school_id,actor_user_id:req.authUser.id,source:'event',plan_id:event.id,
+      context_id:event.id,title:event.title,revision:event.revision,state,occurred_at:executionNow().toISOString(),correlation_id:req.requestId,occurrences});
+    if(state==='expected'){
+      const timezone=occurrences[0]?.timezone??'UTC';
+      const dates=(await sql<{from:string;until:string}>`SELECT (${event.starts_at}::timestamptz AT TIME ZONE ${timezone})::date::text AS "from",
+        (${event.ends_at}::timestamptz AT TIME ZONE ${timezone})::date::text AS until`.execute(db)).rows[0]!;
+      const overlay=event.event_type==='class_test'&&event.subject_id?{subject_id:event.subject_id,
+        class_ids:(await sql<{id:string}>`SELECT class_section_id AS id FROM campus_event_class_sections WHERE event_id=${event.id}::uuid`.execute(db)).rows.map(row=>row.id)}:undefined;
+      await this.planning.validateOwnedPublication(db,event.school_id,'event',event.id,dates.from,dates.until,overlay);
+      for(const session of sessions.filter(item=>item.attendance_mode!=='none')){
+        const participation=await this.participationContext(db,req.authUser,event.school_id,event.id,session.id);
+        await this.participation.prepare(db,req.authUser,participation.context,participation.people);
+      }
+    }
+    return projection;
+  }
+
   private async eventAction(req: AuthenticatedRequest, eventValue: string, body: unknown, operation: "publish" | "cancel" | "complete" | "discard") {
     const eventId = uuid.parse(eventValue);
     const input = operation === "cancel" ? cancelEventSchema.parse(body) : eventActionSchema.parse(body);
     const requestHash = hash({ operation, eventId, input });
-    return this.db.transaction().execute(async (db) => {
+    const refused:{error:HttpException|null}={error:null};
+    const result=await this.db.transaction().execute(async (db) => {
+      await lockSchedule(db,input.school_id);
+      await this.membership(db,req.authUser,input.school_id,true);
       // Look up the durable command before the aggregate. A successful draft
       // discard deletes that aggregate, but the same command key must still
       // replay its original result rather than degrade into a 404.
       const prior = await this.priorCommand<unknown>(db, input.school_id, req.authUser.id, input.idempotency_key, operation, requestHash);
-      if (prior) return prior;
+      if (prior&&operation==='discard') return prior;
       const event = await this.eventRow(db, input.school_id, eventId, true);
       const actor = await this.access(db, req.authUser, event, true);
-      const organizerMayManage = actor.organizerAssigned && event.status === "draft";
+      const organizerMayManage = actor.organizerAssigned && (event.status === "draft"||Boolean(prior));
       const lifecycleAllowed = operation === "complete"
         ? actor.role === "admin"
         : operation === "cancel"
@@ -1247,7 +1370,27 @@ export class CampusEventsService {
               ? "A school administrator must cancel a published event."
               : "You cannot manage this event lifecycle.");
       }
+      if(prior){
+        if(typeof prior==='object'&&'event_command_refusal' in prior){
+          const failure=(prior as {event_command_refusal:{response:string|Record<string,unknown>;status_code:number}}).event_command_refusal;
+          refused.error=new HttpException(failure.response,failure.status_code);return undefined;
+        }
+        return prior;
+      }
       if (event.revision !== input.expected_revision) throw new ConflictException("This event changed. Reload the current revision.");
+      const command=await this.commands.prepareDomainCommand(db,{school_id:event.school_id,actor_user_id:req.authUser.id,
+        command_type:`events.event.${operation}`,handler_key:`campus_events.event_${operation}`,handler_version:1,source_domain:'events',
+        target:{kind:'campus_event',domain:'events',domain_id:event.id,label:event.title,lifecycle_state:event.status==='draft'?'planned':'active',
+          source_revision:event.revision,metadata:{}},current_revision:event.revision,expected_revision:input.expected_revision,
+        capability:'events.manage',purpose:`campus_event_${operation}`,requested_at:executionNow().toISOString(),correlation_id:req.requestId,
+        causation_id:null,idempotency_key:`campus-event:${req.authUser.id}:${input.idempotency_key}`,operating_rule_version_ref:null,configuration_refs:[],
+        authority_attestation:{evaluator_domain:'events',decision:'allowed',reason_codes:['current_event_lifecycle_responsibility'],
+          authority_source_refs:[{event_id:event.id,event_revision:event.revision,administrator:actor.role==='admin',
+            organizer_assigned:actor.organizerAssigned,class_test_responsibility:actor.ownsClassTest}],operating_rule_refs:[],valid_until:null},
+        safe_context:{event_id:event.id,event_type:event.event_type,operation,expected_revision:input.expected_revision,request_hash:requestHash}});
+      if(command.status!=='ready')throw new ConflictException('The event command has already completed. Refresh the event before continuing.');
+      await sql`SAVEPOINT event_lifecycle_effects`.execute(db);
+      try{
       if (operation === "publish") {
         const definition = await this.definitionInput(db, event);
         await this.validateRelations(db, definition, req.authUser, event.id);
@@ -1257,12 +1400,15 @@ export class CampusEventsService {
         await this.audit(db, req, "campus_event.discarded", event.school_id, event.id, { revision: event.revision });
         await sql`DELETE FROM campus_events WHERE id=${event.id}::uuid`.execute(db);
         const result = { id: event.id, discarded: true };
+        await this.commands.completeDomainCommand(db,{school_id:event.school_id,command_id:command.command_id,terminal_state:'accepted',code:'campus_event_discarded',
+          explanation:'The unpublished event draft was discarded.',resulting_revision:event.revision+1,domain_event_id:null,metadata:{event_id:event.id},completed_at:executionNow().toISOString()});
+        await sql`RELEASE SAVEPOINT event_lifecycle_effects`.execute(db);
         await this.saveCommand(db, input.school_id, req.authUser.id, input.idempotency_key, operation, requestHash, result);
         return result;
       }
       if (operation === "publish") {
         if (event.status !== "draft") throw new ConflictException("Only a draft event can be published.");
-        if (new Date(event.starts_at).getTime() <= Date.now()) throw new ConflictException("An event must be published before it starts.");
+        if (new Date(event.starts_at).getTime() <= executionNow().getTime()) throw new ConflictException("An event must be published before it starts.");
         const sessionCount = Number((await sql<{ value: string }>`SELECT count(*)::text AS value FROM campus_event_sessions WHERE event_id=${event.id}::uuid`.execute(db)).rows[0]?.value ?? 0);
         if (!sessionCount) throw new BadRequestException("Add at least one event session before publishing.");
         const students = await this.rosterStudentIds(db, event);
@@ -1306,29 +1452,30 @@ export class CampusEventsService {
             FROM posted WHERE participant.event_id=${event.id}::uuid AND participant.student_id=posted.student_id
           `.execute(db);
         }
-        await sql`UPDATE campus_events SET status='published',published_by=${req.authUser.id}::uuid,published_at=now(),
-          revision=revision+1,updated_at=now() WHERE id=${event.id}::uuid`.execute(db);
+        await sql`UPDATE campus_events SET status='published',published_by=${req.authUser.id}::uuid,published_at=${executionNow()}::timestamptz,
+          revision=revision+1,updated_at=${executionNow()}::timestamptz WHERE id=${event.id}::uuid`.execute(db);
       } else if (operation === "cancel") {
         if (event.status !== "published") throw new ConflictException("Only a published event can be cancelled.");
-        if (Date.now() >= new Date(event.starts_at).getTime()) {
+        if (executionNow().getTime() >= new Date(event.starts_at).getTime()) {
           throw new ConflictException("This event has already started. Use the separately reviewed event-abort and reconciliation workflow; cancellation cannot rewrite an event in progress.");
         }
         const cancellation = input as z.infer<typeof cancelEventSchema>;
-        await sql`UPDATE campus_events SET status='cancelled',cancelled_by=${req.authUser.id}::uuid,cancelled_at=now(),
+        await sql`UPDATE campus_events SET status='cancelled',cancelled_by=${req.authUser.id}::uuid,cancelled_at=${executionNow()}::timestamptz,
           cancellation_internal_reason=${cancellation.internal_reason},cancellation_reason=${cancellation.audience_notice},
-          revision=revision+1,updated_at=now() WHERE id=${event.id}::uuid`.execute(db);
+          revision=revision+1,updated_at=${executionNow()}::timestamptz WHERE id=${event.id}::uuid`.execute(db);
       } else {
         if (event.status !== "published") throw new ConflictException("Only a published event can be completed.");
-        if (Date.now() < new Date(event.ends_at).getTime()) throw new ConflictException("An event cannot be completed before it ends.");
+        if (executionNow().getTime() < new Date(event.ends_at).getTime()) throw new ConflictException("An event cannot be completed before it ends.");
         const openTracked = Number((await sql<{ value: string }>`SELECT count(*)::text AS value FROM campus_event_sessions
           WHERE event_id=${event.id}::uuid AND attendance_mode<>'none' AND state<>'locked'`.execute(db)).rows[0]?.value ?? 0);
         if (openTracked) throw new ConflictException("Lock every attendance-tracked session before completing the event.");
-        await sql`UPDATE campus_events SET status='completed',completed_by=${req.authUser.id}::uuid,completed_at=now(),
-          revision=revision+1,updated_at=now() WHERE id=${event.id}::uuid`.execute(db);
+        await sql`UPDATE campus_events SET status='completed',completed_by=${req.authUser.id}::uuid,completed_at=${executionNow()}::timestamptz,
+          revision=revision+1,updated_at=${executionNow()}::timestamptz WHERE id=${event.id}::uuid`.execute(db);
       }
       const updated = await this.eventRow(db, input.school_id, event.id);
       const auditAction = operation === "publish" ? "campus_event.published"
         : operation === "cancel" ? "campus_event.cancelled" : "campus_event.completed";
+      const temporal=operation==='publish'||operation==='cancel'?await this.projectPlan(db,req,updated,operation==='cancel'?'cancelled':'expected'):null;
       const financeReconciliationRequired = operation === "cancel"
         ? await this.financeReconciliationCount(db, event.id)
         : 0;
@@ -1345,14 +1492,14 @@ export class CampusEventsService {
       const guardianCancellationRecipients = operation === "cancel"
         ? await this.enqueueCancellationAttention(db, updated, (input as z.infer<typeof cancelEventSchema>).audience_notice)
         : new Set<string>();
-      await this.enqueue(db, updated, label, `campus-event:${event.id}:${label}:${updated.revision}`, {
+      const domainEventId=await this.enqueue(db, updated, label, `campus-event:${event.id}:${label}:${updated.revision}`, {
         users: audience.filter((userId) => !guardianCancellationRecipients.has(userId)), title: `${event.title} ${label}`, body: operation === "cancel"
           ? (input as z.infer<typeof cancelEventSchema>).audience_notice
           : `${event.title} has been ${label}.`,
         ...(operation === "cancel" ? {
           metadata: {
-            staff_link: `/teacher/events/${event.id}?focus=status&event_revision=${updated.revision}`,
-            admin_link: `/principal/events/${event.id}?focus=status&event_revision=${updated.revision}`,
+            staff_link: eventWorkHref("assigned", event.id, [["focus", "status"], ["event_revision", updated.revision]]),
+            admin_link: eventWorkHref("manage", event.id, [["focus", "status"], ["event_revision", updated.revision]]),
             attention_eligible: true,
             attention_module: "events",
             attention_source_kind: "event_cancellation",
@@ -1363,9 +1510,27 @@ export class CampusEventsService {
         } : {}),
       });
       const result = await this.dto(db, req.authUser, updated, actor);
+      await this.commands.completeDomainCommand(db,{school_id:event.school_id,command_id:command.command_id,terminal_state:'accepted',code:`campus_event_${label}`,
+        explanation:`The authorized event lifecycle action was ${label}.`,resulting_revision:updated.revision,domain_event_id:domainEventId,
+        metadata:{event_id:event.id,temporal_event_id:temporal?.event_id??null},completed_at:executionNow().toISOString()});
+      await sql`RELEASE SAVEPOINT event_lifecycle_effects`.execute(db);
       await this.saveCommand(db, input.school_id, req.authUser.id, input.idempotency_key, operation, requestHash, result);
       return result;
+      }catch(error){
+        if(!(error instanceof HttpException)||![400,403,409,422].includes(error.getStatus()))throw error;
+        await sql`ROLLBACK TO SAVEPOINT event_lifecycle_effects`.execute(db);
+        await sql`RELEASE SAVEPOINT event_lifecycle_effects`.execute(db);
+        await this.commands.completeDomainCommand(db,{school_id:event.school_id,command_id:command.command_id,
+          terminal_state:error.getStatus()===409?'conflicted':'rejected',code:'campus_event_invariant_refused',
+          explanation:'The owning event rules refused this lifecycle action. No event changes were committed.',resulting_revision:event.revision,
+          domain_event_id:null,metadata:{event_id:event.id,status_code:error.getStatus()},completed_at:executionNow().toISOString()});
+        await this.saveCommand(db,input.school_id,req.authUser.id,input.idempotency_key,operation,requestHash,
+          {event_command_refusal:{status_code:error.getStatus(),response:error.getResponse()}});
+        refused.error=error;return undefined;
+      }
     });
+    if(refused.error)throw refused.error;
+    return result;
   }
 
   private async definitionInput(db: Db, event: EventRow): Promise<z.infer<typeof createEventSchema>> {
@@ -1374,8 +1539,8 @@ export class CampusEventsService {
       class_section_ids: (await sql<{ id: string }>`SELECT class_section_id AS id FROM campus_event_class_sections WHERE event_id=${event.id}::uuid`.execute(db)).rows.map((r) => r.id),
       student_ids: (await sql<{ id: string }>`SELECT student_id AS id FROM campus_event_selected_students WHERE event_id=${event.id}::uuid`.execute(db)).rows.map((r) => r.id),
     };
-    const sessions = (await sql<{ id: string; title: string; session_type: "general" | "rehearsal" | "departure" | "activity" | "return"; venue: string; starts_at: Date; ends_at: Date; attendance_mode: "none" | "check_in" | "check_in_out"; participant_student_ids: string[] }>`
-      SELECT session.id,session.title,session.session_type,session.venue,session.starts_at,session.ends_at,session.attendance_mode,
+    const sessions = (await sql<{ id: string; title: string; session_type: "general" | "rehearsal" | "departure" | "activity" | "return"; venue: string;space_id:string|null;use_event_space:boolean; starts_at: Date; ends_at: Date; attendance_mode: "none" | "check_in" | "check_in_out"; participant_student_ids: string[] }>`
+      SELECT session.id,session.title,session.session_type,session.venue,session.space_id,session.use_event_space,session.starts_at,session.ends_at,session.attendance_mode,
         COALESCE(array_agg(selected.student_id ORDER BY selected.student_id) FILTER(WHERE selected.student_id IS NOT NULL),ARRAY[]::uuid[]) AS participant_student_ids
       FROM campus_event_sessions session LEFT JOIN campus_event_session_selected_students selected ON selected.session_id=session.id
       WHERE session.event_id=${event.id}::uuid GROUP BY session.id ORDER BY session.starts_at,session.id
@@ -1384,7 +1549,7 @@ export class CampusEventsService {
     const staff = (await sql<{ user_id: string; role: "organizer" | "duty_staff" | "attendance_taker" }>`SELECT user_id,role FROM campus_event_staff WHERE event_id=${event.id}::uuid`.execute(db)).rows;
     return createEventSchema.parse({
       school_id: event.school_id, idempotency_key: randomUUID(), event_type: event.event_type, subject_id: event.subject_id,
-      title: event.title, description: event.description, venue: event.venue, starts_at: iso(event.starts_at)!, ends_at: iso(event.ends_at)!,
+      title: event.title, description: event.description, venue: event.venue,space_id:event.space_id, starts_at: iso(event.starts_at)!, ends_at: iso(event.ends_at)!,
       audience, participation_requirement: event.participation_requirement, requires_rsvp: event.requires_rsvp,
       requires_guardian_consent: event.requires_guardian_consent, payment_required: event.payment_required,
       payment_amount_paise: event.payment_amount_paise, payment_due_on: event.payment_due_on, payment_currency: event.payment_currency,
@@ -1411,7 +1576,7 @@ export class CampusEventsService {
   }
 
   private ensureFamilyResponseOpen(event: EventRow) {
-    if (event.status !== "published" || Date.now() >= new Date(event.starts_at).getTime()) {
+    if (event.status !== "published" || executionNow().getTime() >= new Date(event.starts_at).getTime()) {
       throw new ConflictException("Responses close when the published event starts.");
     }
   }
@@ -1625,9 +1790,9 @@ export class CampusEventsService {
     const actor = await this.access(db, user, event, lock);
     const session = (await sql<{
       id: string; title: string; session_type: "general" | "rehearsal" | "departure" | "activity" | "return";
-      starts_at: Date; ends_at: Date; attendance_mode: "none" | "check_in" | "check_in_out";
-      state: "open" | "locked"; revision: number;
-    }>`SELECT id,title,session_type,starts_at,ends_at,attendance_mode,state,revision FROM campus_event_sessions
+      starts_at: Date; ends_at: Date;space_id:string|null;use_event_space:boolean; attendance_mode: "none" | "check_in" | "check_in_out";
+      state: "open" | "locked"; revision: number; locked_by: string|null; locked_at: Date|null;
+    }>`SELECT id,title,session_type,starts_at,ends_at,space_id,use_event_space,attendance_mode,state,revision,locked_by,locked_at FROM campus_event_sessions
       WHERE school_id=${schoolId}::uuid AND event_id=${eventId}::uuid AND id=${sessionId}::uuid ${lock ? sql`FOR UPDATE` : sql``}`.execute(db)).rows[0];
     if (!session) throw new NotFoundException("Event session not found.");
     return { event, actor, session };
@@ -1645,7 +1810,7 @@ export class CampusEventsService {
     if (session.attendance_mode === "none") return "attendance_not_enabled";
     if (session.state !== "open") return "register_locked";
     if (!this.canTake(actor)) return "not_attendance_taker";
-    const now = Date.now();
+    const now = executionNow().getTime();
     if (now < new Date(session.starts_at).getTime() - rules.event_entry_hours_before * 60 * 60 * 1000) return "attendance_window_not_open";
     if (actor.role !== "admin" && now > new Date(session.ends_at).getTime() + rules.event_staff_hours_after * 60 * 60 * 1000) {
       return "outside_attendance_window";
@@ -1664,7 +1829,7 @@ export class CampusEventsService {
     if (session.attendance_mode === "none") return "attendance_not_enabled";
     if (session.state !== "open") return "register_locked";
     if (!this.canTake(actor)) return "not_attendance_taker";
-    const now = Date.now();
+    const now = executionNow().getTime();
     const endsAt = new Date(session.ends_at).getTime();
     if (now < endsAt) return "session_not_ended";
     if (actor.role !== "admin" && now > endsAt + rules.event_staff_hours_after * 60 * 60 * 1000) return "lock_window_closed";
@@ -1811,7 +1976,7 @@ export class CampusEventsService {
         JOIN users actor ON actor.id=history.changed_by
         WHERE history.school_id=${schoolId}::uuid AND history.event_id=${event.id}::uuid
           AND history.session_id=${session.id}::uuid
-        ORDER BY history.id DESC LIMIT 500
+        ORDER BY history.created_at DESC,abs(history.id) DESC LIMIT 500
       `.execute(db)).rows.map((row) => ({
         ...row,
         previous_checked_in_at: iso(row.previous_checked_in_at),
@@ -1839,7 +2004,7 @@ export class CampusEventsService {
       if (event.status !== "published" || session.attendance_mode === "none") throw new ConflictException("Attendance is unavailable for this event session.");
       if (session.state !== "open") throw new ConflictException("Reopen this locked event register before correcting it.");
       if (session.revision !== input.expected_revision) throw new ConflictException("This event register changed. Reload its current revision.");
-      const now = new Date();
+      const now = executionNow();
       const observationPolicy = await this.observationPolicy(db, input.school_id);
       const rules = await operatingRules(db, input.school_id);
       if (now.getTime() < new Date(session.starts_at).getTime() - rules.event_entry_hours_before * 60 * 60 * 1000) {
@@ -1885,7 +2050,7 @@ export class CampusEventsService {
         id: string; student_id: string; status: AttendanceValue; note: string; revision: number;
         readiness_contradiction_note: string | null; checked_in_at: Date | null; checked_out_at: Date | null;
       }>`SELECT id,student_id,status,note,revision,readiness_contradiction_note,checked_in_at,checked_out_at FROM campus_event_attendance_records
-        WHERE session_id=${session.id}::uuid AND student_id=ANY(${input.records.map((row) => row.student_id)}::uuid[]) FOR UPDATE`.execute(db)).rows;
+        WHERE session_id=${session.id}::uuid AND student_id=ANY(${input.records.map((row) => row.student_id)}::uuid[])`.execute(db)).rows;
       const existing = new Map(existingRows.map((row) => [row.student_id, row]));
       const changes = input.records.filter((row) => {
         const before = existing.get(row.student_id);
@@ -1900,6 +2065,10 @@ export class CampusEventsService {
       if (changes.some((row) => existing.has(row.student_id)) && (!input.reason || input.reason.trim().length < 3)) {
         throw new BadRequestException("Explain every attendance correction or clear action.");
       }
+      const {context,people}=await this.participationContext(db,req.authUser,input.school_id,eventId,sessionId);
+      const personByStudent=new Map(people.map(person=>[person.student_id,person.person_id]));
+      const canonical:Array<{student_id:string;status:ParticipationStatus|null;remarks:string;details:Record<string,unknown>}>=[];
+      const capture:Record<string,ParticipationCaptureSources[string]>={};
       for (const row of changes) {
         const before = existing.get(row.student_id);
         const participant = eligibility.get(row.student_id)!;
@@ -1942,28 +2111,16 @@ export class CampusEventsService {
           ? observedAt
           : row.status === "checked_out" ? before!.checked_in_at : null;
         const checkedOut = row.status === "checked_out" ? observedAt : null;
-        const record = before ? (await sql<{ id: string; revision: number }>`
-          UPDATE campus_event_attendance_records SET status=${row.status},note=${row.note},
-            readiness_contradiction_note=${row.readiness_contradiction_note},checked_in_at=${checkedIn},checked_out_at=${checkedOut},
-            revision=revision+1,marked_by=${req.authUser.id}::uuid,marked_at=clock_timestamp(),updated_at=clock_timestamp()
-          WHERE id=${before.id}::uuid RETURNING id,revision
-        `.execute(db)).rows[0]! : (await sql<{ id: string; revision: number }>`
-          INSERT INTO campus_event_attendance_records(school_id,event_id,session_id,student_id,status,note,
-            readiness_contradiction_note,checked_in_at,checked_out_at,marked_by,marked_at,updated_at)
-          VALUES(${event.school_id}::uuid,${event.id}::uuid,${session.id}::uuid,${row.student_id}::uuid,${row.status},${row.note},
-            ${row.readiness_contradiction_note},${checkedIn},${checkedOut},${req.authUser.id}::uuid,clock_timestamp(),clock_timestamp())
-          RETURNING id,revision
-        `.execute(db)).rows[0]!;
-        await sql`INSERT INTO campus_event_attendance_revisions(school_id,event_id,session_id,student_id,attendance_record_id,
-          previous_status,new_status,previous_note,new_note,previous_readiness_contradiction_note,new_readiness_contradiction_note,
-          previous_checked_in_at,new_checked_in_at,previous_checked_out_at,new_checked_out_at,
-          reason,revision,changed_by,request_id)
-          VALUES(${event.school_id}::uuid,${event.id}::uuid,${session.id}::uuid,${row.student_id}::uuid,${record.id}::uuid,
-            ${before?.status ?? null},${row.status},${before?.note ?? null},${row.note},
-            ${before?.readiness_contradiction_note ?? null},${row.readiness_contradiction_note},${before?.checked_in_at ?? null},${checkedIn},
-            ${before?.checked_out_at ?? null},${checkedOut},${before ? input.reason! : "Initial event attendance mark."},${record.revision},
-            ${req.authUser.id}::uuid,${req.requestId}::uuid)`.execute(db);
+        canonical.push({student_id:row.student_id,status:row.status==='not_recorded'?null:row.status,remarks:row.note,
+          details:{readiness_contradiction_note:row.readiness_contradiction_note,checked_in_at:iso(checkedIn),checked_out_at:iso(checkedOut),
+            previous_readiness_contradiction_note:before?.readiness_contradiction_note??null,
+            previous_checked_in_at:iso(before?.checked_in_at??null),previous_checked_out_at:iso(before?.checked_out_at??null),
+            observation_policy:observationPolicy,operating_rules:rules}});
+        if(observedAt)capture[personByStudent.get(row.student_id)!]={capture_channel:'human_roll_call',observed_at:observedAt,
+          evidence_refs:[`event_session:${session.id}`,`event_readiness:${participant.consent_effective}:${participant.checklist_ready}`]};
       }
+      await this.participation.save(db,req.authUser,context,people,canonical,
+        {...req,headers:{...req.headers,'idempotency-key':input.idempotency_key}},input.reason,capture);
       if (changes.length) await sql`UPDATE campus_event_sessions SET revision=revision+1,updated_at=now() WHERE id=${session.id}::uuid`.execute(db);
       const revision = changes.length ? session.revision + 1 : session.revision;
       await this.audit(db, req, "campus_event.attendance_saved", event.school_id, event.id, { session_id: session.id, revision, changed_count: changes.length, observation_policy: observationPolicy, operating_rules: rules });
@@ -2006,10 +2163,16 @@ export class CampusEventsService {
         `.execute(db)).rows.map((row) => row.status);
         const disabled = this.lockDisabledReason(event, actor, session, statuses, await operatingRules(db, input.school_id));
         if (disabled) throw new ConflictException(`This event register cannot be locked (${disabled}).`);
+        const {context,people}=await this.participationContext(db,req.authUser,input.school_id,eventId,sessionId);
+        await this.participation.lifecycle(db,req.authUser,context,people,'finalize',
+          {...req,headers:{...req.headers,'idempotency-key':input.idempotency_key}},input.reason);
         await sql`UPDATE campus_event_sessions SET state='locked',revision=revision+1,locked_by=${req.authUser.id}::uuid,
           locked_at=now(),lock_reason=${input.reason},updated_at=now() WHERE id=${session.id}::uuid`.execute(db);
       } else {
         if (session.state !== "locked") throw new ConflictException("This event register is already open.");
+        const {context,people}=await this.participationContext(db,req.authUser,input.school_id,eventId,sessionId);
+        await this.participation.lifecycle(db,req.authUser,context,people,'reopen',
+          {...req,headers:{...req.headers,'idempotency-key':input.idempotency_key}},input.reason);
         await sql`UPDATE campus_event_sessions SET state='open',revision=revision+1,locked_by=NULL,locked_at=NULL,lock_reason=NULL,
           reopened_by=${req.authUser.id}::uuid,reopened_at=now(),reopen_reason=${input.reason},updated_at=now() WHERE id=${session.id}::uuid`.execute(db);
       }

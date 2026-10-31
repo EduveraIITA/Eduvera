@@ -6,7 +6,7 @@ import { longDateLabel, monthDateLabel, shortDateLabel, shiftDatePeriod, type Da
 import './date-navigation.css';
 
 import { TemporalInput } from "../forms/TemporalInput";
-export function DateViewSelect<T extends DateView>({ value, onChange, label, options }: {
+export function DateViewSelect<T extends string>({ value, onChange, label, options }: {
   value: T; onChange: (view: T) => void; label: string; options: readonly T[];
 }) {
   return <label className="date-view-select"><span className="sr-only">{label}</span>
@@ -19,10 +19,10 @@ export function DateViewSelect<T extends DateView>({ value, onChange, label, opt
  * Returning false from onDateChange keeps unsaved-work guards authoritative.
  * onToday, when supplied, updates date and view atomically (e.g. URL state).
  */
-export function DateNavigation({ date, view, onDateChange, onViewChange, onToday, compact = false, today = schoolDateToday(), getDayInfo, children }: {
+export function DateNavigation({ date, view, onDateChange, onViewChange, onToday, compact = false, showDates = true, today = schoolDateToday(), getDayInfo, toolbarTools, children }: {
   date: string; view: DateView; onDateChange: (date: string) => void | boolean;
   onViewChange?: (view: 'day' | 'month') => void; onToday?: () => void;
-  compact?: boolean; today?: string; getDayInfo?: (date: string) => DateDayInfo; children?: ReactNode;
+  compact?: boolean; showDates?: boolean; today?: string; getDayInfo?: (date: string) => DateDayInfo; toolbarTools?: ReactNode; children?: ReactNode;
 }) {
   const id = useId();
   const dateInput = useRef<HTMLInputElement>(null);
@@ -35,7 +35,7 @@ export function DateNavigation({ date, view, onDateChange, onViewChange, onToday
   };
   const headingLabel = view === 'year' ? date.slice(0, 4) : compact && !expanded ? shortDateLabel(date) : monthDateLabel(date);
   return <div className={`date-navigation${compact ? ' date-navigation--compact' : ''}`} onKeyDown={event => {
-    if (event.key === 'Escape' && expanded && event.target !== dateInput.current) { event.preventDefault(); onViewChange?.('day'); dateInput.current?.focus(); }
+    if (event.key === 'Escape' && expanded && onViewChange && event.target !== dateInput.current) { event.preventDefault(); onViewChange('day'); dateInput.current?.focus(); }
   }}>
     <div className="date-navigation__toolbar">
       <label className="date-navigation__heading">
@@ -48,14 +48,15 @@ export function DateNavigation({ date, view, onDateChange, onViewChange, onToday
         <button type="button" aria-label={`Next ${period}`} onClick={() => onDateChange(shiftDatePeriod(date, period, 1))}><ChevronRight size={18} aria-hidden="true" /></button>
       </div>
     </div>
-    <div id={id} hidden={view === 'year' || (compact && !expanded)}>
-      {view !== 'year' && (!compact || expanded) ? <>
+    {toolbarTools}
+    <div id={id} hidden={!showDates || view === 'year' || (compact && !expanded)}>
+      {showDates && view !== 'year' && (!compact || expanded) ? <>
         <DateGrid date={date} today={today} view={view} onChange={onDateChange} getDayInfo={getDayInfo} />
         {children}
         <span className="sr-only" aria-live="polite">{longDateLabel(date)}{date === today ? ', today' : ''}</span>
-        <button className="date-navigation__toggle" type="button" aria-label={expanded ? 'Collapse calendar' : 'Expand calendar'} aria-expanded={expanded} aria-controls={id} onClick={toggle}>
+        {onViewChange ? <button className="date-navigation__toggle" type="button" aria-label={expanded ? 'Collapse calendar' : 'Expand calendar'} aria-expanded={expanded} aria-controls={id} onClick={toggle}>
           {expanded ? <ChevronUp size={18} aria-hidden="true" /> : <ChevronDown size={18} aria-hidden="true" />}
-        </button>
+        </button> : null}
       </> : null}
     </div>
   </div>;

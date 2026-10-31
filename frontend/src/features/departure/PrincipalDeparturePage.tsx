@@ -1,3 +1,4 @@
+import { applicationNow } from "../simulation/applicationTime";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Bus, CheckCircle2, ChevronRight, Clock3, MapPin, Route, ShieldCheck, UserRoundCheck } from "lucide-react";
 import { useEffect, useState, type FormEvent } from "react";
@@ -16,13 +17,13 @@ import { TransportAttention } from "./TransportAttention";
 import "./departure.css";
 
 import { TemporalInput } from "../../components/forms/TemporalInput";
-const today=()=>new Intl.DateTimeFormat("en-CA",{timeZone:"Asia/Kolkata"}).format(new Date());
+const today=()=>new Intl.DateTimeFormat("en-CA",{timeZone:"Asia/Kolkata"}).format(applicationNow());
 const value=(form:FormData,key:string)=>{const entry=form.get(key);return typeof entry==="string"?entry.trim():"";};
 const modeLabel=(mode:DepartureMode)=>({guardian_pickup:"Guardian pickup",authorized_collector:"Authorized collector",independent_departure:"Independent departure",school_transport:"School bus",external_transport:"External transport"}[mode]);
 const expectedRevision=(value:string|null)=>{const revision=Number(value);return Number.isInteger(revision)&&revision>0?revision:null;};
 
-export default function PrincipalDeparturePage(){
-  const auth=useAuth(); const member=auth.memberships.find(item=>item.role==="admin"&&item.school_id===auth.user?.active_school_id)??auth.memberships.find(item=>item.role==="admin"); const schoolId=member?.school_id??""; const client=useQueryClient();
+export function WorkspaceDepartureManagementPage(){
+  const auth=useAuth(); const member=auth.memberships.find(item=>item.school_id===auth.user?.active_school_id)??auth.memberships[0]; const schoolId=auth.user?.active_school_id??member?.school_id??""; const client=useQueryClient();
   const [params,setParams]=useSearchParams();
   const focusedRequestId=params.get("request");
   const focusedSwapId=params.get("swap");
@@ -39,7 +40,7 @@ export default function PrincipalDeparturePage(){
   const edit=params.get("edit"); const panel=(["policy","route","assign","trip","authority","plan","office"].includes(edit??"")?edit:null) as Panel|null;
   const pageParams=(id?:string)=>{const next=new URLSearchParams();if(id)next.set("section",id);return next;};
   const setPanel=(next:Panel|null)=>{const value=pageParams(section?.id);if(next)value.set("edit",next);setParams(value);};
-  const pageLink=(id?:string)=>{const next=pageParams(id);return `/principal/departure${next.size?`?${next}`:""}`;};
+  const pageLink=(id?:string)=>{const next=pageParams(id);return `/areas/departure/manage${next.size?`?${next}`:""}`;};
   const [error,setError]=useState("");
   useEffect(()=>{
     const targetId=focusedRequestId?`attention-departure-request-${focusedRequestId}`:focusedSwapId?`attention-duty-swap-${focusedSwapId}`:focusedPlanId?`attention-departure-plan-${focusedPlanId}`:null;
@@ -52,7 +53,7 @@ export default function PrincipalDeparturePage(){
     return()=>window.cancelAnimationFrame(frame);
   },[focusedRequestId,focusedSwapId,focusedPlanId,query.data?.requests.length,query.data?.swaps.length,query.data?.plans.length]);
   const run=useMutation({mutationFn:async(fn:()=>Promise<unknown>)=>fn(),onSuccess:async()=>{setPanel(null);setError("");await Promise.all([client.invalidateQueries({queryKey:["departure"]}),client.invalidateQueries({queryKey:["attention"]}),client.invalidateQueries({queryKey:["requests"]})]);},onError:cause=>{setError(cause instanceof Error?cause.message:"The change could not be saved.");void client.invalidateQueries({queryKey:["departure"]});}});
-  if(!schoolId)return <LiveRouteError error={new Error("Institution administrator access is required.")} onRetry={auth.refresh}/>; if(query.isPending)return <ScreenLoading/>; if(query.error||!query.data)return <LiveRouteError error={query.error??new Error("Departure operations are unavailable.")} onRetry={query.refetch}/>;
+  if(!schoolId)return <LiveRouteError error={new Error("Current departure coordination access is required.")} onRetry={auth.refresh}/>; if(query.isPending)return <ScreenLoading/>; if(query.error||!query.data)return <LiveRouteError error={query.error??new Error("Departure operations are unavailable.")} onRetry={query.refetch}/>;
   const data=query.data; const activeTrips=data.trips.filter(item=>["boarding","in_progress"].includes(item.state));
   const focusedPlan=focusedPlanId?data.plans.find(item=>item.id===focusedPlanId):undefined;
   const planTargetMatches=Boolean(focusedPlan
@@ -67,7 +68,7 @@ export default function PrincipalDeparturePage(){
     && data.swaps.some(item=>item.id===focusedSwapId&&item.status==="accepted"&&item.revision===focusedSwapRevision));
   const staleSwapAttention=Boolean(attentionNotificationId&&focusedSwapId&&!exactSwapAttention);
   const submitRoute=(event:FormEvent<HTMLFormElement>)=>{event.preventDefault();const f=new FormData(event.currentTarget);const names=value(f,"stops").split("\n").map(item=>item.trim()).filter(Boolean);run.mutate(()=>createTransportRoute(schoolId,{code:value(f,"code"),name:value(f,"name"),vehicle_label:value(f,"vehicle_label"),provider_name:value(f,"provider_name"),service_kind:value(f,"service_kind"),stops:names.map((name,index)=>({direction:value(f,"direction"),sequence:index+1,name}))}));};
-  return <OperationsShell portal="principal" active="more" title={panel?"Edit transport":section?.name??"Transport & pickup"} schoolName={data.school.name} backTo={panel?pageLink(section?.id):section?pageLink():"/principal/more"}>
+  return <OperationsShell active="areas" title={panel?"Edit transport":section?.name??"Transport & pickup"} schoolName={data.school.name} backTo={panel?pageLink(section?.id):section?pageLink():"/areas/departure"}>
     {exactSwapAttention?<AttentionOpenAcknowledgement/>:null}
     {staleSwapAttention?<AttentionTargetUnavailable message="This duty change changed after the alert was created. It was not marked as opened."/>:null}
     <div className="departure-page departure-page--ops">
@@ -84,7 +85,7 @@ export default function PrincipalDeparturePage(){
     {section?.id==="roster"&&!panel&&!tripTargetWrongSection?<TransportDutyPlanner schoolId={schoolId} actorId={auth.user?.id??""} data={data} focusSwapId={focusedSwapId} focusTripId={focusedTripId}/>:null}
 
     {section?.id==="settings"&&!panel?<section className="departure-panel"><div className="departure-action-grid">
-      <Link to={`/principal/administration?school=${schoolId}&section=rules&rule=departure`}><ShieldCheck/><span><strong>Operating rules</strong><small>Modes, cutoff and privacy</small></span><ChevronRight/></Link>
+      <Link to={`/more/setup/institution/operating-rules?school=${schoolId}&rule=departure`}><ShieldCheck/><span><strong>Operating rules</strong><small>Modes, cutoff and privacy</small></span><ChevronRight/></Link>
       <button onClick={()=>setPanel("route")}><Route/><span><strong>New route</strong><small>Stops and vehicle</small></span><ChevronRight/></button>
       <button onClick={()=>setPanel("assign")} disabled={!data.routes.length}><UserRoundCheck/><span><strong>Assign learner</strong><small>Route and stop</small></span><ChevronRight/></button>
       <button onClick={()=>setPanel("trip")} disabled={!data.routes.length}><Bus/><span><strong>Create trip</strong><small>Freeze dated roster</small></span><ChevronRight/></button>
@@ -94,7 +95,7 @@ export default function PrincipalDeparturePage(){
     </div></section>:null}
 
     {panel?<section className="departure-panel departure-editor"><header><div><span>Setup</span><h2>{panel==="policy"?"Departure operating rules":panel==="route"?"Create transport route":panel==="assign"?"Assign learner to route":panel==="trip"?"Create dated trip":panel==="authority"?"Verify collection authority":panel==="office"?"Record assisted request":"Set dated departure plan"}</h2></div><button onClick={()=>setPanel(null)} aria-label="Close">×</button></header>
-      {panel==="policy"?<Link className="departure-primary" to={`/principal/administration?school=${schoolId}&section=rules&rule=departure`}>Open departure operating rules</Link>:null}
+      {panel==="policy"?<Link className="departure-primary" to={`/more/setup/institution/operating-rules?school=${schoolId}&rule=departure`}>Open departure operating rules</Link>:null}
       {panel==="route"?<form className="departure-form" onSubmit={submitRoute}><label>Route code<input name="code" required maxLength={32}/></label><label>Route name<input name="name" required maxLength={120}/></label><label>Direction<select name="direction"><option value="from_institution">From institution</option><option value="to_institution">To institution</option></select></label><label>Service<select name="service_kind"><option value="institution_managed">Institution managed</option><option value="contracted">Contracted</option></select></label><label>Vehicle<input name="vehicle_label" placeholder="Bus 14 · DL 01 AB 1234"/></label><label>Provider<input name="provider_name" placeholder="School or contractor"/></label><label className="departure-span">Stops, one per line<textarea name="stops" required minLength={2} rows={5}/></label><button className="departure-primary" disabled={run.isPending}>Create route</button></form>:null}
       {panel==="assign"?<TransportAssignmentForm data={data} pending={run.isPending} onSubmit={payload=>run.mutate(()=>assignTransportStudent(schoolId,payload))}/>:null}
       {panel==="trip"?<form className="departure-form" onSubmit={e=>{e.preventDefault();const f=new FormData(e.currentTarget);run.mutate(()=>createTransportTrip(schoolId,{route_id:value(f,"route_id"),service_date:value(f,"service_date"),direction:value(f,"direction"),scheduled_departure_time:value(f,"departure_time"),assigned_collector_user_id:value(f,"collector"),backup_collector_user_id:value(f,"backup")||null}));}}><label>Route<select name="route_id">{data.routes.map(item=><option value={item.id} key={item.id}>{item.name}</option>)}</select></label><label>Date<TemporalInput name="service_date" type="date" defaultValue={today()} required/></label><label>Direction<select name="direction"><option value="from_institution">From institution</option><option value="to_institution">To institution</option></select></label><label>Departure time<TemporalInput name="departure_time" type="time" defaultValue="15:30" required/></label><label>Assigned collector<select name="collector">{data.collectors.map(item=><option value={item.id} key={item.id}>{item.name}</option>)}</select></label><label>Backup collector<select name="backup"><option value="">No backup</option>{data.collectors.map(item=><option value={item.id} key={item.id}>{item.name}</option>)}</select></label><button className="departure-primary">Create trip and roster</button></form>:null}
@@ -104,7 +105,7 @@ export default function PrincipalDeparturePage(){
       {error?<p className="departure-error" role="alert">{error}</p>:null}
     </section>:null}
 
-    {section?.id==="trips"&&!panel?<section className="departure-panel"><header><div><h2>Recent trips</h2></div><MapPin size={21}/></header>{data.trips.length?<div className="departure-trip-list">{data.trips.map(trip=><article key={trip.id}><span className={`departure-state departure-state--${trip.state}`}>{trip.state.replaceAll("_"," ")}</span><div><Link to={`/principal/departure/journeys/${trip.id}`}><strong>{trip.route_name}</strong><ChevronRight size={16}/></Link><small>{trip.service_date} · {trip.vehicle_label||trip.route_code} · {trip.collector_name}</small></div><div><strong>{trip.dropped_count}/{trip.roster_count}</strong><small>handovers recorded</small></div></article>)}</div>:<p className="departure-empty">No trips have been created.</p>}</section>:null}
+    {section?.id==="trips"&&!panel?<section className="departure-panel"><header><div><h2>Recent trips</h2></div><MapPin size={21}/></header>{data.trips.length?<div className="departure-trip-list">{data.trips.map(trip=><article key={trip.id}><span className={`departure-state departure-state--${trip.state}`}>{trip.state.replaceAll("_"," ")}</span><div><Link to={`/areas/departure/manage/journeys/${trip.id}`}><strong>{trip.route_name}</strong><ChevronRight size={16}/></Link><small>{trip.service_date} · {trip.vehicle_label||trip.route_code} · {trip.collector_name}</small></div><div><strong>{trip.dropped_count}/{trip.roster_count}</strong><small>handovers recorded</small></div></article>)}</div>:<p className="departure-empty">No trips have been created.</p>}</section>:null}
 
     {section?.id==="pickup"&&!panel&&!planTargetUnavailable?<><section className="departure-panel"><header><div><h2>Upcoming handovers</h2></div><CheckCircle2 size={21}/></header>{data.plans.length?<div className="departure-plan-list">{data.plans.map(plan=>{const focused=plan.id===focusedPlanId&&planTargetMatches;return <article key={plan.id} id={focused?`attention-departure-plan-${plan.id}`:undefined} tabIndex={focused?-1:undefined} className={focused?"is-attention-target":undefined}><div><strong>{plan.student_name}</strong><small>{plan.service_date} · {modeLabel(plan.mode)}{plan.collector_name?` · ${plan.collector_name}`:""}</small>{focused&&plan.state!=="exception"?<p className="departure-attention-resolution">This exception is no longer pending.</p>:null}</div><span className={`departure-state departure-state--${plan.state}`}>{plan.state}</span>{plan.mode!=="school_transport"&&plan.state==="planned"?<button onClick={()=>run.mutate(()=>departurePlanAction(schoolId,plan.id,"ready",plan.revision,"Departure checks complete"))}>Mark ready</button>:null}{plan.mode!=="school_transport"&&plan.state==="ready"?<HandoverForm plan={plan} pending={run.isPending} onSave={input=>run.mutateAsync(()=>recordDepartureHandover(schoolId,plan.id,input))}/>:null}</article>;})}</div>:<p className="departure-empty">No dated plans in the next seven days.</p>}</section>
 
@@ -113,6 +114,8 @@ export default function PrincipalDeparturePage(){
     {error&&!panel?<p className="departure-error" role="alert">{error}</p>:null}
   </div></OperationsShell>;
 }
+
+export default WorkspaceDepartureManagementPage;
 
 
 function OfficeRequestForm({data,submit}:{data:Awaited<ReturnType<typeof getDepartureWorkspace>>;submit:(payload:Record<string,unknown>)=>void}){

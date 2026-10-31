@@ -23,7 +23,11 @@ export interface CampusViewDayOccurrence {
   space_id: string;
   title: string;
   slot_type: "class" | "break" | "activity";
-  class_label: string;
+  class_label: string | null;
+  /** Private identities for the anonymous motion projection; never public roster data. */
+  class_entity_id: string | null;
+  responsible_person_id: string | null;
+  expected_includes_responsible: boolean;
   subject_label: string | null;
   responsible_agent_id: string | null;
   teacher_label: string | null;
@@ -33,6 +37,12 @@ export interface CampusViewDayOccurrence {
   source_domain: string;
   source_record_id: string;
   source_revision: number;
+  planning_origin?: "academic" | "activity" | null;
+}
+
+export interface CampusViewMotionParticipant {
+  occurrence_id: string;
+  person_id: string;
 }
 
 export interface CampusViewGateActivity {
@@ -125,11 +135,15 @@ export class CampusViewRepository {
     return (await sql<CampusViewDayOccurrence>`SELECT occurrence.id::text AS id,
         occurrence.logical_occurrence_key AS occurrence_id,
         space.id::text AS space_id,occurrence.title,occurrence.slot_type,
-        class_entity.label AS class_label,subject_entity.label AS subject_label,
+        class_entity.label AS class_label,class_entity.id::text AS class_entity_id,subject_entity.label AS subject_label,
         responsible.id::text AS responsible_agent_id,responsible.label AS teacher_label,
-        COALESCE(roster.expected_count,0)::int AS expected_count,
+        responsible_person.id::text AS responsible_person_id,
+        CASE WHEN occurrence.class_entity_id IS NULL THEN COALESCE(participants.includes_responsible,false)
+          ELSE COALESCE(roster.includes_responsible,false) END AS expected_includes_responsible,
+        CASE WHEN occurrence.class_entity_id IS NULL THEN COALESCE(participants.expected_count,0)
+          ELSE COALESCE(roster.expected_count,0) END::int AS expected_count,
         occurrence.starts_at,occurrence.ends_at,
-        source.source_domain,source.source_record_id,source.source_revision
+        source.source_domain,source.source_record_id,source.source_revision,version.planning_origin
       FROM campus_model_schedule_occurrences occurrence
       LEFT JOIN campus_model_entities space_entity ON space_entity.id=occurrence.space_entity_id
         AND space_entity.school_id=occurrence.school_id
@@ -168,24 +182,69 @@ export class CampusViewRepository {
           )
         ORDER BY candidate.id LIMIT 1
       ) space ON true
-      JOIN campus_model_entities class_entity ON class_entity.id=occurrence.class_entity_id
+      LEFT JOIN campus_model_entities class_entity ON class_entity.id=occurrence.class_entity_id
+        AND class_entity.school_id=occurrence.school_id
       LEFT JOIN campus_model_entities subject_entity ON subject_entity.id=occurrence.subject_entity_id
+        AND subject_entity.school_id=occurrence.school_id
       LEFT JOIN campus_model_agents responsible ON responsible.id=occurrence.responsible_agent_id
         AND responsible.school_id=occurrence.school_id AND responsible.status='active'
+      LEFT JOIN school_people responsible_person ON responsible_person.id=responsible.person_id
+        AND responsible_person.school_id=occurrence.school_id AND responsible_person.retired_at IS NULL
       JOIN campus_model_events source ON source.id=occurrence.change_event_id
         AND source.school_id=occurrence.school_id
+      LEFT JOIN schedule_versions version ON version.school_id=occurrence.school_id
+        AND source.source_domain='timetable' AND version.id::text=source.source_record_id
       LEFT JOIN LATERAL (
-        SELECT count(*)::int AS expected_count
+        SELECT count(DISTINCT participant.participant_entity_id)::int AS expected_count,
+          bool_or(person_entity.domain='people' AND person_entity.kind='person'
+            AND person_entity.domain_id=responsible_person.id::text) AS includes_responsible
+        FROM campus_model_occurrence_participants participant
+        LEFT JOIN campus_model_entities person_entity ON person_entity.id=participant.participant_entity_id
+          AND person_entity.school_id=participant.school_id
+          AND person_entity.realm_id=participant.realm_id
+          AND person_entity.environment_namespace_id=participant.environment_namespace_id
+        WHERE participant.school_id=occurrence.school_id
+          AND participant.realm_id=occurrence.realm_id
+          AND participant.environment_namespace_id=occurrence.environment_namespace_id
+          AND participant.occurrence_id=occurrence.id AND participant.required
+      ) participants ON true
+      LEFT JOIN LATERAL (
+        SELECT count(*)::int AS expected_count,
+          bool_or(student.person_id=responsible_person.id) AS includes_responsible
         FROM enrollments enrollment
+        LEFT JOIN students student ON student.id=enrollment.student_id AND student.school_id=occurrence.school_id
         WHERE enrollment.class_section_id=class_entity.domain_id::uuid
           AND enrollment.is_active
       ) roster ON true
       WHERE occurrence.school_id=${schoolId}::uuid AND occurrence.state='expected'
+        AND occurrence.claim_kind='exclusive'
         AND occurrence.recorded_until IS NULL
-        AND (occurrence.starts_at AT TIME ZONE ${timezone})::date=
-          (${asOf}::timestamptz AT TIME ZONE ${timezone})::date
+        AND occurrence.starts_at<(((${asOf}::timestamptz AT TIME ZONE ${timezone})::date+1)::timestamp AT TIME ZONE ${timezone})
+        AND occurrence.ends_at>(((${asOf}::timestamptz AT TIME ZONE ${timezone})::date)::timestamp AT TIME ZONE ${timezone})
       ORDER BY occurrence.starts_at,occurrence.period_number,space.name,occurrence.id
       LIMIT 240`.execute(this.db)).rows;
+  }
+
+  /** One bounded private read for occurrence IDs already authorized by dayOccurrences.
+   * No account, name, contact, dependent or inferred class roster is selected. */
+  async motionParticipants(schoolId: string, occurrenceIds: readonly string[]): Promise<CampusViewMotionParticipant[]> {
+    if (!occurrenceIds.length) return [];
+    return (await sql<CampusViewMotionParticipant>`SELECT DISTINCT occurrence.id::text AS occurrence_id,
+        person.id::text AS person_id,occurrence.starts_at
+      FROM campus_model_schedule_occurrences occurrence
+      JOIN campus_model_occurrence_participants participant ON participant.occurrence_id=occurrence.id
+        AND participant.school_id=occurrence.school_id AND participant.realm_id=occurrence.realm_id
+        AND participant.environment_namespace_id=occurrence.environment_namespace_id AND participant.required
+      JOIN campus_model_entities entity ON entity.id=participant.participant_entity_id
+        AND entity.school_id=participant.school_id AND entity.realm_id=participant.realm_id
+        AND entity.environment_namespace_id=participant.environment_namespace_id
+        AND entity.domain='people' AND entity.kind='person' AND entity.lifecycle_state='active'
+      JOIN school_people person ON person.id::text=entity.domain_id
+        AND person.school_id=occurrence.school_id AND person.retired_at IS NULL
+      WHERE occurrence.school_id=${schoolId}::uuid AND occurrence.id=ANY(${occurrenceIds.slice(0, 240)}::uuid[])
+        AND occurrence.state='expected' AND occurrence.claim_kind='exclusive' AND occurrence.recorded_until IS NULL
+      ORDER BY occurrence.starts_at,occurrence.id::text,person.id::text
+      LIMIT 1025`.execute(this.db)).rows;
   }
 
   /**

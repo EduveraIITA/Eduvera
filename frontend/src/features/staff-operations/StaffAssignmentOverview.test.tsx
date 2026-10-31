@@ -72,7 +72,7 @@ describe("staff assignment overview", () => {
     expect(screen.queryByText("Attendance reviewer")).not.toBeInTheDocument();
     await user.click(screen.getByRole("button", { name: "Assign Class teacher" }));
     expect(onAssign).toHaveBeenCalledWith(teacher);
-    expect(screen.getByRole("link", { name: "Journey roster: Transport attendant" })).toHaveAttribute("href", "/principal/departure");
+    expect(screen.getByRole("link", { name: "Journey roster: Transport attendant" })).toHaveAttribute("href", "/areas/departure/manage");
     expect(screen.queryByRole("button", { name: "Assign Transport attendant" })).not.toBeInTheDocument();
   });
 
@@ -139,7 +139,7 @@ describe("staff assignment overview", () => {
     await user.click(screen.getByLabelText("Internal examiner, 2 assignments"));
     await user.click(screen.getByRole("button", { name: "Manage assignment: Hindi practical" }));
     expect(onManage).toHaveBeenCalledWith(second);
-    expect(screen.getByRole("link", { name: "Open work: Hindi practical" })).toHaveAttribute("href", "/principal/assessments?assessment=exam-2");
+    expect(screen.getByRole("link", { name: "Open work: Hindi practical" })).toHaveAttribute("href", "/areas/assessments/manage?assessment=exam-2");
   });
 
   it("recovers from no search matches and disables direct grants for inactive staff", async () => {

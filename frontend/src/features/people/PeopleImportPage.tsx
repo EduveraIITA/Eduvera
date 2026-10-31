@@ -9,19 +9,19 @@ import {ImportUpload} from "./ImportUpload";
 import {ImportReview} from "./ImportReview";
 import "./people.css";
 import "./people-import.css";
+import { PEOPLE_IMPORT_PATH, PEOPLE_RECORDS_PATH } from "./peopleRoutes";
 const displayDate=(value:string)=>new Intl.DateTimeFormat("en-IN",{dateStyle:"medium",timeStyle:"short"}).format(new Date(value));
-export default function PeopleImportPage(){
-  const auth=useAuth();const schools=auth.memberships.filter(m=>m.role==='admin'||(m.role==='staff'&&m.permissions?.includes('sis.manage')));const [params,setParams]=useSearchParams();
+export function WorkspacePeopleImportRoute(){
+  const auth=useAuth();const schools=auth.memberships.filter(m=>m.role==='admin'||m.permissions?.includes('sis.manage'));const [params,setParams]=useSearchParams();
   const schoolId=schools.find(s=>s.school_id===params.get('school'))?.school_id||schools[0]?.school_id;const id=params.get('import');const uploading=params.get('create')==='import';
-  const portal=auth.hasPortal("principal")?"principal":"teacher";
   const listParams=()=>new URLSearchParams(schoolId?{school:schoolId}:{});
   const open=(importId:string)=>{const next=listParams();next.set('import',importId);setParams(next);};
   const finishUpload=(importId:string)=>{const next=listParams();next.set('import',importId);setParams(next,{replace:true});};
   const close=()=>setParams(listParams(),{replace:true});
-  const historyPath=`/${portal}/students/import?${new URLSearchParams(schoolId?{school:schoolId}:{})}`;
-  return <OperationsShell portal={portal} active="more" title={id?'Import review':uploading?'New import':'Student imports'} schoolName={schools.find(s=>s.school_id===schoolId)?.school_name} backTo={id||uploading?historyPath:`/${portal}/students`} contentHasHeading><div className="operations-stack">
+  const historyPath=`${PEOPLE_IMPORT_PATH}?${new URLSearchParams(schoolId?{school:schoolId}:{})}`;
+  return <OperationsShell active="areas" title={id?'Import review':uploading?'New import':'Student imports'} subtitle="People records" schoolName={schools.find(s=>s.school_id===schoolId)?.school_name} backTo={id||uploading?historyPath:PEOPLE_RECORDS_PATH}><div className="operations-stack">
     {schools.length>1?<label className="people-school">School<select value={schoolId} onChange={e=>setParams({school:e.target.value},{replace:true})}>{schools.map(s=><option key={s.school_id} value={s.school_id}>{s.school_name}</option>)}</select></label>:null}
-    {schoolId?(id?<ImportWorkspace key={id} schoolId={schoolId} id={id} onNew={close}/>:<ImportStart key={schoolId} schoolId={schoolId} onOpen={open} uploading={uploading} onUpload={()=>setParams({school:schoolId,create:'import'})} onUploaded={finishUpload} onCancel={close}/>):<p role="alert">An active school administrator membership is required.</p>}
+    {schoolId?(id?<ImportWorkspace key={id} schoolId={schoolId} id={id} onNew={close}/>:<ImportStart key={schoolId} schoolId={schoolId} onOpen={open} uploading={uploading} onUpload={()=>setParams({school:schoolId,create:'import'})} onUploaded={finishUpload} onCancel={close}/>):<p role="alert">Active student-record access is required.</p>}
   </div></OperationsShell>;
 }
 function ImportStart({schoolId,onOpen,uploading,onUpload,onUploaded,onCancel}:{schoolId:string;onOpen:(id:string)=>void;uploading:boolean;onUpload:()=>void;onUploaded:(id:string)=>void;onCancel:()=>void}){
@@ -42,7 +42,7 @@ function ImportStart({schoolId,onOpen,uploading,onUpload,onUploaded,onCancel}:{s
 function ImportWorkspace({schoolId,id,onNew}:{schoolId:string;id:string;onNew:()=>void}){
   const client=useQueryClient();const query=useQuery({queryKey:["school","people","import",schoolId,id],queryFn:()=>getImport(schoolId,id),retry:false});
   async function reload(){const result=await query.refetch();if(result.error)throw result.error;}
-  async function committed(){await Promise.all([["school","people"],["teacher-home"],["teacher-attendance"],["principal-home"],["principal-register"],["school","parent"]].map(queryKey=>client.invalidateQueries({queryKey})));await reload();}
+  async function committed(){await client.invalidateQueries();await reload();}
   if(query.isPending)return <section className="people-panel import-skeleton" role="status" aria-label="Checking import rows"><span/><span/><span/></section>;
   if(query.isError)return <section className="people-panel"><p role="alert" className="people-error">{query.error.message}</p><button className="people-secondary" onClick={()=>void query.refetch()}>Try again</button></section>;
   const job=query.data;
@@ -51,10 +51,12 @@ function ImportWorkspace({schoolId,id,onNew}:{schoolId:string;id:string;onNew:()
   </>;
 }
 function ImportResult({schoolId,job,onNew}:{schoolId:string;job:ImportDetail;onNew:()=>void}){
-  const auth=useAuth();
   const receipt=job.receipt;
   return <section className="people-panel import-result"><CheckCircle2 size={28}/><h2>{receipt?'Enrollment complete':job.state==='expired'?'Draft expired':'Draft discarded'}</h2>
-    {receipt?<><p>{receipt.students} students are enrolled with complete guardian links. No attendance marks or login permissions were added.</p><dl className="import-metrics"><div><dt>Students</dt><dd>{receipt.students}</dd></div><div><dt>New guardians</dt><dd>{receipt.guardians_created}</dd></div><div><dt>Existing guardians</dt><dd>{receipt.guardians_reused}</dd></div><div><dt>Skipped</dt><dd>{receipt.skipped}</dd></div></dl>{receipt.registers_reopened?<p className="people-warning">{receipt.registers_reopened} submitted registers returned to draft for the revised roster.</p>:null}<div className="import-actions"><Link className="people-primary" to={auth.hasPortal("principal")?"/principal/students":"/teacher/students"}>Open student directory</Link><a className="people-secondary" href={importReportUrl(schoolId,job.id)} download><Download size={17}/>Enrollment receipt</a></div></>:<p>Uploaded personal details have been cleared. No students were enrolled from this draft.</p>}
+    {receipt?<><p>{receipt.students} enrollment {receipt.students === 1 ? "record saved" : "records saved"}. Guardian links were added only where chosen. No attendance marks or login permissions were added.</p><dl className="import-metrics"><div><dt>Students</dt><dd>{receipt.students}</dd></div><div><dt>New guardians</dt><dd>{receipt.guardians_created}</dd></div><div><dt>Existing guardians</dt><dd>{receipt.guardians_reused}</dd></div><div><dt>Skipped</dt><dd>{receipt.skipped}</dd></div></dl>{receipt.registers_reopened?<p className="people-warning">{receipt.registers_reopened} submitted registers returned to draft for the revised roster.</p>:null}<div className="import-actions"><Link className="people-primary" to="/areas/people/participants">Open People</Link><a className="people-secondary" href={importReportUrl(schoolId,job.id)} download><Download size={17}/>Enrollment receipt</a></div></>:<p>Uploaded personal details have been cleared. No students were enrolled from this draft.</p>}
     <button className="people-secondary" onClick={onNew}>Back to imports</button>
   </section>;
 }
+
+/** Temporary source alias while old bookmarks become redirects. */
+export default function PeopleImportPage(){return <WorkspacePeopleImportRoute/>;}

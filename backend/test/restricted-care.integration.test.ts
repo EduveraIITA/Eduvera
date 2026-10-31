@@ -2,13 +2,19 @@ import { spawn, type ChildProcess } from "node:child_process";
 import { randomUUID } from "node:crypto";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { Pool } from "pg";
+import { Kysely, PostgresDialect } from "kysely";
 import { hashPassword } from "../src/auth/password.js";
+import type { DatabaseService } from "../src/database/database.service.js";
+import type { Database } from "../src/database/types.js";
+import { linkFixtureStaffIdentity } from "./fixture-human-identity.test-support.js";
+import { CampusModelCoreService } from "../src/campus-model-core/campus-model-core.service.js";
 
 const isolated = process.env.TEST_DATABASE_ISOLATED === "true";
 const suite = isolated ? describe : describe.skip;
 
 suite("restricted care workflow against disposable PostgreSQL", () => {
   const pool = new Pool({ connectionString: process.env.DATABASE_URL, max: 2 });
+  const database = new Kysely<Database>({ dialect: new PostgresDialect({ pool }) }) as DatabaseService;
   const port = 8035;
   const base = `http://127.0.0.1:${port}`;
   const suffix = randomUUID();
@@ -29,6 +35,7 @@ suite("restricted care workflow against disposable PostgreSQL", () => {
   let caseId: string;
 
   async function request(cookies: Map<string, string>, path: string, body?: unknown, method = body === undefined ? "GET" : "POST") {
+    if (method === "POST" && path.includes("restricted-care/cases/") && body && typeof body === "object") body = { command_id: randomUUID(), ...body };
     const headers: Record<string, string> = { Cookie: [...cookies].map(([key, value]) => `${key}=${value}`).join("; ") };
     if (body !== undefined) headers["Content-Type"] = "application/json";
     if (cookies.get("csrftoken")) headers["X-CSRFToken"] = cookies.get("csrftoken")!;
@@ -53,6 +60,7 @@ suite("restricted care workflow against disposable PostgreSQL", () => {
     const school = await pool.query("INSERT INTO schools(name,code) VALUES('Restricted Care Test Institution',$1) RETURNING id", [`care-${suffix.slice(0, 12)}`]);
     schoolId = school.rows[0].id;
     await pool.query("INSERT INTO school_memberships(user_id,school_id,role) VALUES($1,$5,'admin'),($2,$5,'admin'),($3,$5,'staff'),($4,$5,'admin')", [primaryId, alternateId, reporterId, unrelatedAdmin.rows[0].id, schoolId]);
+    for (const userId of [primaryId, alternateId, reporterId, unrelatedAdmin.rows[0].id]) await linkFixtureStaffIdentity(database, { school_id: schoolId, user_id: userId, owner_user_id: primaryId });
     server = spawn(process.execPath, ["dist/main.js"], { env: { ...process.env, PORT: String(port), HOST: "127.0.0.1", NODE_ENV: "test", COOKIE_SECRET: "restricted-care-test-cookie-secret-over-32-chars", RESTRICTED_CASE_ENCRYPTION_KEY: "restricted-care-test-encryption-key-separate-2026", RATE_LIMIT_STORE: "memory", LOG_LEVEL: "error" }, stdio: "ignore" });
     let ready = false;
     for (let attempt = 0; attempt < 100; attempt += 1) { try { if ((await fetch(`${base}/healthz`)).ok) { ready = true; break; } } catch { /* starting */ } await new Promise((resolve) => setTimeout(resolve, 50)); }
@@ -126,5 +134,37 @@ suite("restricted care workflow against disposable PostgreSQL", () => {
     const serialized = JSON.stringify(outbox.rows);
     expect(serialized).not.toContain("exact words");
     expect(serialized).not.toContain("police diary reference");
+  });
+
+  it("contributes the real care route without canonical workspace assignments and removes it when native access ends", async () => {
+    const assignments = await pool.query("SELECT count(*)::int AS count FROM campus_responsibility_assignments WHERE school_id=$1", [schoolId]);
+    expect(assignments.rows[0].count).toBe(0);
+    const manifest = await request(primaryCookies, "workspace/");
+    expect(manifest.status, JSON.stringify(manifest.data)).toBe(200);
+    const careArea = manifest.data.areas.find((area: { key: string }) => area.key === "care");
+    expect(careArea.surfaces).toEqual([expect.objectContaining({ key: "concerns", href: "/areas/care/concerns" })]);
+    expect(careArea.capabilities).toContain("restricted_care.assigned.view");
+    expect(JSON.stringify(careArea)).not.toContain(caseId);
+    expect(JSON.stringify(careArea)).not.toContain("exact words");
+
+    await pool.query("UPDATE school_memberships SET is_active=false WHERE school_id=$1 AND user_id=$2", [schoolId, reporterId]);
+    const inactive = await request(reporterCookies, "workspace/");
+    if (inactive.status === 200) expect(inactive.data.areas.some((area: { key: string }) => area.key === "care")).toBe(false);
+    else expect([400, 403]).toContain(inactive.status);
+    expect((await request(reporterCookies, path("workspace"))).status).toBe(403);
+    await pool.query("UPDATE school_memberships SET is_active=true WHERE school_id=$1 AND user_id=$2", [schoolId, reporterId]);
+
+    const core = new CampusModelCoreService(database), at = new Date().toISOString();
+    await database.transaction().execute(async tx => {
+      const identity = await core.resolveAccountEndpoint(tx, { school_id: schoolId, user_id: reporterId, at });
+      if (!identity.acting) throw new Error("Synthetic reporting account endpoint must initially be active.");
+      await core.closeAccountEndpoint(tx, { school_id: schoolId, endpoint_id: identity.endpoint_id, actor_user_id: primaryId, expected_revision: 1,
+        effective_at: at, disposition: "revoked", reason: "Synthetic care discovery endpoint revocation check.", source_domain: "staff_operations",
+        source_record_id: reporterId, source_revision: 1, idempotency_key: `care-http-revoke:${reporterId}` });
+    });
+    const revoked = await request(reporterCookies, "workspace/");
+    if (revoked.status === 200) expect(revoked.data.areas.some((area: { key: string }) => area.key === "care")).toBe(false);
+    else expect([400, 403]).toContain(revoked.status);
+    expect((await request(reporterCookies, path(`cases/${caseId}`))).status).toBe(403);
   });
 });

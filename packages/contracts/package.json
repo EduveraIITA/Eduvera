@@ -1,0 +1,12 @@
+{
+  "name": "@thatcampus/contracts",
+  "private": true,
+  "version": "1.0.0",
+  "type": "module",
+  "description": "Shared ThatCampus wire contracts and platform-neutral validation",
+  "dependencies": {
+    "fflate": "0.8.3",
+    "read-excel-file": "9.3.12",
+    "saxen": "11.2.0"
+  }
+}

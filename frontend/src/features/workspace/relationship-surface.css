@@ -1,0 +1,112 @@
+.relationship-picker {
+  display: grid;
+  width: min(100%, 620px);
+  margin-inline: auto;
+  gap: 18px;
+  padding: 12px 0 32px;
+}
+
+.relationship-picker > header {
+  display: grid;
+  gap: 5px;
+  padding-inline: 2px;
+}
+
+.relationship-picker > header > span {
+  color: var(--thatcampus-brand);
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: .08em;
+  text-transform: uppercase;
+}
+
+.relationship-picker h2 {
+  margin: 0;
+  color: var(--thatcampus-ink);
+  font-size: clamp(26px, 8vw, 34px);
+  line-height: 1.14;
+  letter-spacing: -.04em;
+}
+
+.relationship-picker > header > p,
+.relationship-picker__note {
+  margin: 0;
+  color: var(--thatcampus-ink-secondary);
+  font-size: 13px;
+  line-height: 1.55;
+}
+
+.relationship-picker__list {
+  display: grid;
+  overflow: hidden;
+  border: 1px solid var(--thatcampus-border);
+  border-radius: var(--thatcampus-radius-card);
+  background: var(--thatcampus-surface);
+  box-shadow: var(--thatcampus-shadow-card);
+}
+
+.relationship-picker__list > a {
+  display: grid;
+  min-height: 72px;
+  padding: 12px 14px;
+  grid-template-columns: 40px minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 12px;
+  color: var(--thatcampus-ink);
+  text-decoration: none;
+}
+
+.relationship-picker__list > a + a {
+  border-top: 1px solid var(--thatcampus-border);
+}
+
+.relationship-picker__list > a:focus-visible {
+  z-index: 1;
+  outline: 3px solid color-mix(in srgb, var(--thatcampus-brand) 34%, transparent);
+  outline-offset: -3px;
+}
+
+.relationship-picker__icon {
+  display: grid;
+  width: 40px;
+  height: 40px;
+  place-items: center;
+  border-radius: var(--thatcampus-radius-control);
+  color: var(--thatcampus-brand);
+  background: var(--thatcampus-brand-soft);
+}
+
+.relationship-picker__copy {
+  display: grid;
+  min-width: 0;
+  gap: 2px;
+}
+
+.relationship-picker__copy strong {
+  overflow: hidden;
+  font-size: 15px;
+  line-height: 1.35;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.relationship-picker__copy small {
+  display: -webkit-box;
+  overflow: hidden;
+  color: var(--thatcampus-ink-secondary);
+  font-size: 12px;
+  line-height: 1.4;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+}
+
+.relationship-picker__note {
+  padding-inline: 2px;
+  font-size: 11px;
+}
+
+@media (hover: hover) {
+  .relationship-picker__list > a:hover {
+    background: var(--thatcampus-surface-soft);
+  }
+}

@@ -10,6 +10,7 @@ import { GoogleAuthService } from "../src/auth/google-auth.service.js";
 import { AuthService } from "../src/auth/auth.service.js";
 import { AuthController } from "../src/auth/auth.controller.js";
 import type { RolesService } from "../src/roles/roles.service.js";
+import { ProgressiveWorkspaceProvisioner } from "../src/institution-onboarding/progressive-workspace.provisioner.js";
 vi.mock("../src/config.js", async importOriginal => {
   const actual = await importOriginal<typeof ConfigModule>();
   return { ...actual, config: () => ({ ...actual.config(), GOOGLE_CLIENT_ID: "test-client" }) };
@@ -21,10 +22,13 @@ suite("Google account linking and MFA with isolated PostgreSQL", () => {
   let audit: AuditService;
   const ids: string[] = [];
   const request = { ip: "127.0.0.1", headers: {} } as FastifyRequest;
-  beforeAll(() => { db = new DatabaseService(); audit = new AuditService(db); google = new GoogleAuthService(db, audit); });
+  const progressive = new ProgressiveWorkspaceProvisioner({ linkAccountEndpoint: () => Promise.resolve(undefined) } as never);
+  beforeAll(() => { db = new DatabaseService(); audit = new AuditService(db); google = new GoogleAuthService(db, audit, progressive); });
   afterEach(() => vi.restoreAllMocks());
   afterAll(async () => {
-    for (const id of ids) await db.deleteFrom("users").where("id", "=", id).execute();
+    // Canonical private-campus identity/audit rows must not be physically pruned
+    // by a partial authentication fixture cleanup. This suite is admitted only
+    // against a disposable isolated database, retired by the test harness.
     await db.destroy();
   });
   async function proof(overrides: Record<string, unknown> = {}) {
@@ -34,11 +38,12 @@ suite("Google account linking and MFA with isolated PostgreSQL", () => {
     vi.spyOn(OAuth2Client.prototype, "verifyIdToken").mockResolvedValue(new LoginTicket("", claims) as never);
     return { nonce, claims, body: { credential: "synthetic-token" } };
   }
-  it("creates a verified account without any school access and rejects replay", async () => {
+  it("creates a verified account with one private provisional workspace and rejects replay", async () => {
     const p = await proof();
     const user = await google.login(p.body, p.nonce, request); ids.push(user.id);
     expect(user.email_verified_at).toBeTruthy();
-    expect(await db.selectFrom("school_memberships").select("id").where("user_id", "=", user.id).execute()).toEqual([]);
+    expect(await db.selectFrom("school_memberships").select(["school_id", "role"]).where("user_id", "=", user.id).execute())
+      .toEqual([{ school_id: user.active_school_id, role: "admin" }]);
     await expect(google.login(p.body, p.nonce, request)).rejects.toThrow(/already used/);
   });
   it("links existing accounts without changing role and retains stable subject after email changes", async () => {
@@ -68,7 +73,7 @@ suite("Google account linking and MFA with isolated PostgreSQL", () => {
     await sql`INSERT INTO auth_mfa_factors(user_id,encrypted_secret,secret_iv,secret_tag,status,confirmed_at)
       VALUES(${user.id}::uuid,${Buffer.alloc(16)},${Buffer.alloc(12)},${Buffer.alloc(16)},'active',now())`.execute(db);
     const next = await proof({ sub: p.claims.sub, email: p.claims.email });
-    const auth = new AuthService(db, audit, {} as RolesService);
+    const auth = new AuthService(db, audit, {} as RolesService, progressive);
     const createSession = vi.spyOn(auth, "createSession");
     const controller = new AuthController(auth, audit, google);
     const req = { ...request, body: next.body, cookies: { google_signin_nonce: "signed" }, unsignCookie: () => ({ valid: true, value: next.nonce }) };

@@ -1,4 +1,5 @@
 import type { AgentChartData } from './agentApi';
+import { InfoSummary } from '../../components/InfoSummary';
 import { AttendanceTrend,DonutChart,shortDate } from '../analytics/AnalyticsCharts';
 import '../analytics/analytics.css';
 
@@ -23,6 +24,6 @@ export function AgentChart({chart,compact=false}:{chart:AgentChartData;compact?:
         :<AgentBars chart={chart} compact={compact}/>}
     {points.length<chart.total?<p className="agent-chart__more">{compact?`${chart.total-points.length} more in full chat`:`Showing ${points.length} of ${chart.total}`}</p>:null}
     {compact&&chart.note.startsWith('Subject attendance')?<p className="agent-chart__note">Estimated from daily attendance</p>:null}
-    {!compact?<details className="agent-chart__details"><summary>Data and method</summary><p className="agent-chart__note">{chart.note}</p><div className="analytics-table-wrap"><table><caption>{chart.title}</caption><thead><tr><th scope="col">Item</th><th scope="col">Value</th><th scope="col">Basis</th></tr></thead><tbody>{chart.points.map((p,i)=><tr key={i}><th scope="row">{p.label}</th><td>{value(p.value)}</td><td>{p.detail}</td></tr>)}</tbody></table></div></details>:null}
+    {!compact?<details className="agent-chart__details"><InfoSummary>Data and method</InfoSummary><p className="agent-chart__note">{chart.note}</p><div className="analytics-table-wrap"><table><caption>{chart.title}</caption><thead><tr><th scope="col">Item</th><th scope="col">Value</th><th scope="col">Basis</th></tr></thead><tbody>{chart.points.map((p,i)=><tr key={i}><th scope="row">{p.label}</th><td>{value(p.value)}</td><td>{p.detail}</td></tr>)}</tbody></table></div></details>:null}
   </section>;
 }

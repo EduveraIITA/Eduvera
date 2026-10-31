@@ -1,4 +1,5 @@
 import type { QueryClient, QueryKey } from "@tanstack/react-query";
+import { feeQueryInvalidations } from "../office/feeQueryKeys";
 
 const STAFF_OPERATION_EVENT_TYPES = [
   "staff.responsibility.offered",
@@ -33,7 +34,16 @@ const RESTRICTED_CARE_EVENT_TYPES = [
 ] as const;
 
 export const SCHOOL_EVENT_TYPES = [
+  "campus_assets.updated",
+  "campus_scenes.updated",
+  "campus_scenes.draft_saved",
+  "campus_scenes.published",
+  "campus_scenes.reopened",
+  "campus_scenes.image_uploaded",
+  "organization.structure.updated",
   "gate.visitor.updated",
+  "gate.visit_arrangement.updated",
+  "gate.visit_shared.updated",
   "departure.updated",
   "transport.updated",
   "staff.access.updated",
@@ -42,6 +52,7 @@ export const SCHOOL_EVENT_TYPES = [
   "coordination.updated",
   "diary.updated",
   "attendance.updated",
+  "attendance.participation.updated",
   "attendance.register.draft",
   "attendance.register.submitted",
   "attendance.register.locked",
@@ -52,10 +63,17 @@ export const SCHOOL_EVENT_TYPES = [
   "leave.updated",
   "timetable.updated",
   "calendar.updated",
+  "campus_dates.published",
+  "campus_dates.corrected",
+  "campus_dates.cancelled",
   "administration.updated",
   "institution.setup.updated",
   "campus_event.updated",
   "fees.updated",
+  "resources.updated",
+  "facilities.updated",
+  "accommodation.updated",
+  "dining.updated",
   "assessment.updated",
   "academic_report.updated",
   "teacher_feedback.updated",
@@ -70,7 +88,11 @@ export const SCHOOL_EVENT_TYPES = [
 export type SchoolEventType = (typeof SCHOOL_EVENT_TYPES)[number];
 
 export const REFRESH_TARGETS = [
+  "campus-assets",
+  "campus-scenes",
+  "organization",
   "gate",
+  "gate-visits",
   "departure",
   "staff.access",
   "staff-operations",
@@ -84,11 +106,20 @@ export const REFRESH_TARGETS = [
   "teacher-feedback",
   "day-plans",
   "people",
+  "people.participants",
+  "activities",
+  "activities.catalogue",
+  "attendance",
+  "workspace",
+  "today",
   "coordination",
   "student.home",
   "student.attendance",
   "student.eligibility",
   "student.diary",
+  "learning-assignments",
+  "teaching-sessions",
+  "finance-arrangements",
   "student.leave",
   "student.timetable",
   "parent.home",
@@ -111,6 +142,10 @@ export const REFRESH_TARGETS = [
   "notifications",
   "campus-events",
   "fees",
+  "resources",
+  "facilities",
+  "accommodation",
+  "dining",
   "notices",
   "requests",
   "attention",
@@ -132,12 +167,27 @@ export interface SchoolEventEnvelope {
   id: string;
   type: string;
   created_at: string;
+  school_id?: string;
+  namespace_id?: string;
   payload: SchoolEventPayload;
+}
+
+export interface SchoolEventScope {
+  institutionId?: string;
+  namespaceId?: string;
+}
+
+/** Foreign-context events must be ignored, not turned into a full cache refresh. */
+export function schoolEventMatchesScope(envelope: SchoolEventEnvelope, scope: SchoolEventScope): boolean {
+  return (!scope.institutionId || envelope.school_id === scope.institutionId)
+    && (!scope.namespaceId || envelope.namespace_id === scope.namespaceId);
 }
 
 export interface QueryInvalidation {
   queryKey: QueryKey;
   exact?: boolean;
+  /** A domain root below the selected Live/run cache prefix. */
+  environmentScoped?: boolean;
 }
 
 interface EventResolution {
@@ -156,7 +206,16 @@ function eventDefaults<T extends readonly SchoolEventType[]>(
 }
 
 const defaultsByType = {
+  "campus_assets.updated": ["campus-assets"],
+  "campus_scenes.updated": ["campus-scenes", "campus-view"],
+  "campus_scenes.draft_saved": ["campus-scenes"],
+  "campus_scenes.published": ["campus-scenes"],
+  "campus_scenes.reopened": ["campus-scenes"],
+  "campus_scenes.image_uploaded": ["campus-scenes"],
+  "organization.structure.updated": ["organization"],
   "gate.visitor.updated": ["gate", "notifications"],
+  "gate.visit_arrangement.updated": ["gate-visits", "workspace", "attention"],
+  "gate.visit_shared.updated": ["gate-visits", "workspace", "attention"],
   "departure.updated": ["departure", "student.home", "parent.home", "teacher.home", "principal.home"],
   "transport.updated": ["departure", "student.home", "parent.home", "teacher.home", "principal.home"],
   "staff.access.updated": ["staff.access","teacher.home","teacher.attendance","principal.home"],
@@ -177,6 +236,7 @@ const defaultsByType = {
     "principal.attendance-history",
     "notifications",
   ],
+  "attendance.participation.updated": ["activities", "attendance", "workspace", "today"],
   "attendance.register.draft": ["teacher.home", "teacher.attendance", "principal.home", "principal.attendance", "principal.attendance-history"],
   "attendance.register.submitted": ["teacher.home", "teacher.attendance", "principal.home", "principal.attendance", "principal.attendance-history"],
   "attendance.register.locked": ["teacher.home", "teacher.attendance", "principal.home", "principal.attendance", "principal.attendance-history"],
@@ -195,10 +255,17 @@ const defaultsByType = {
     "principal.timetable",
   ],
   "calendar.updated": ["calendar", "day-plans", "student.home", "student.timetable", "parent.home", "parent.timetable", "teacher.home", "principal.home", "principal.timetable", "notifications"],
+  "campus_dates.published": ["calendar"],
+  "campus_dates.corrected": ["calendar"],
+  "campus_dates.cancelled": ["calendar"],
   "administration.updated": ["principal.administration", "principal.timetable", "principal.home", "teacher.home", "student.home", "student.timetable", "parent.home", "parent.timetable"],
   "institution.setup.updated": ["principal.administration", "campus-view"],
   "campus_event.updated": ["campus-events", "student.home", "parent.home", "teacher.home", "principal.home", "notifications"],
   "fees.updated": ["fees", "campus-events", "parent.home"],
+  "resources.updated": ["resources", "workspace", "attention"],
+  "facilities.updated": ["facilities", "workspace", "attention"],
+  "accommodation.updated": ["accommodation", "workspace", "attention"],
+  "dining.updated": ["dining", "workspace", "attention", "calendar"],
   "assessment.updated": ["assessments", "teacher.home", "principal.home"],
   "academic_report.updated": ["academic-reports", "teacher.home", "principal.home"],
   "teacher_feedback.updated": ["teacher-feedback", "principal.home"],
@@ -216,12 +283,14 @@ const defaultsByType = {
 // This keeps the event contract additive without turning the model core into a
 // second writable source of truth.
 const dependentProjectionsByType: Partial<Record<SchoolEventType, readonly RefreshTarget[]>> = {
+  "diary.updated": ["learning-assignments", "teaching-sessions", "workspace"],
   "gate.visitor.updated": ["campus-view"],
   "departure.updated": ["campus-view"],
   "transport.updated": ["campus-view"],
-  "staff.access.updated": ["institution-activation", "campus-view"],
-  "day_plan.updated": ["teacher.class-updates", "calendar", "campus-view"],
+  "staff.access.updated": ["institution-activation", "campus-view", "teaching-sessions", "facilities", "accommodation", "dining"],
+  "day_plan.updated": ["teacher.class-updates", "calendar", "campus-view", "teaching-sessions"],
   "people.updated": [
+    "staff-operations",
     "student.home",
     "student.attendance",
     "student.eligibility",
@@ -231,6 +300,9 @@ const dependentProjectionsByType: Partial<Record<SchoolEventType, readonly Refre
     "calendar",
     "institution-activation",
     "campus-view",
+    "facilities",
+    "accommodation",
+    "dining",
   ],
   "attendance.updated": ["attendance-model", "attendance-continuity", "campus-view"],
   "attendance.register.draft": ["attendance-model", "attendance-continuity", "campus-view"],
@@ -240,18 +312,43 @@ const dependentProjectionsByType: Partial<Record<SchoolEventType, readonly Refre
   "attendance.register.reopened": ["attendance-model", "attendance-continuity", "campus-view"],
   "attendance.register.overdue": ["attendance-model", "attendance-continuity", "campus-view"],
   "leave.updated": ["principal.student-leave"],
-  "timetable.updated": ["calendar", "institution-activation", "campus-view"],
+  "timetable.updated": ["calendar", "institution-activation", "campus-view", "activities", "workspace", "teaching-sessions"],
   "calendar.updated": ["campus-view"],
   "administration.updated": ["calendar", "institution-activation", "campus-view"],
-  "institution.setup.updated": ["campus-view"],
-  "campus_event.updated": ["calendar", "campus-view"],
+  "institution.setup.updated": ["campus-view", "accommodation", "dining", "campus-scenes"],
+  "campus_event.updated": ["calendar", "campus-view", "activities", "attendance", "workspace", "today"],
   // Parent Home owns a fee-ledger projection. Older fee producers may send a
   // narrower explicit refresh list, so this dependent projection is additive.
-  "fees.updated": ["parent.home", "principal.home"],
-  "assessment.updated": ["calendar"],
+  "fees.updated": ["parent.home", "principal.home", "finance-arrangements", "workspace"],
+  "resources.updated": ["resources", "workspace", "attention", "accommodation", "campus-view"],
+  "facilities.updated": ["facilities", "workspace", "attention", "campus-view"],
+  "accommodation.updated": ["accommodation", "workspace", "attention"],
+  "dining.updated": ["calendar", "workspace"],
+  "assessment.updated": ["calendar", "activities", "attendance", "workspace", "today"],
 };
 
 export const FULL_SYNC_INVALIDATIONS: readonly QueryInvalidation[] = [
+  { queryKey: ["gate-visits"], environmentScoped: true },
+  { queryKey: ["campus-scenes"], environmentScoped: true },
+  { queryKey: ["dining"], environmentScoped: true },
+  { queryKey: ["accommodation"], environmentScoped: true },
+  { queryKey: ["facilities"], environmentScoped: true },
+  { queryKey: ["resources"], environmentScoped: true },
+  { queryKey: ["teaching-sessions"], environmentScoped: true },
+  { queryKey: ["learning-assignments"], environmentScoped: true },
+  { queryKey: ["finance-arrangements"], environmentScoped: true },
+  { queryKey: ["activities"], environmentScoped: true },
+  { queryKey: ["people.participants"], environmentScoped: true },
+  { queryKey: ["people.participation-groups"], environmentScoped: true },
+  { queryKey: ["people.connections"], environmentScoped: true },
+  { queryKey: ["people.person-groups"], environmentScoped: true },
+  { queryKey: ["people.group-catalogue"], environmentScoped: true },
+  { queryKey: ["responsibility-workspace"] },
+  { queryKey: ["responsibility-attendance"] },
+  { queryKey: ["organization"] },
+  { queryKey: ["timetable"] },
+  { queryKey: ["assigned-classes"] },
+  { queryKey: ["assigned-class"] },
   { queryKey: ["gate"] },
   { queryKey: ["gate-admin"] },
   { queryKey: ["gate-approvals"] },
@@ -282,14 +379,12 @@ export const FULL_SYNC_INVALIDATIONS: readonly QueryInvalidation[] = [
   { queryKey: ["principal-timetable"] },
   { queryKey: ["office", "administration"] },
   { queryKey: ["institution-setup"] },
-  { queryKey: ["invitations"] },
+  { queryKey: ["invitations"], environmentScoped: true },
   { queryKey: ["operating-rules"] },
   { queryKey: ["workflow-rules"] },
-  { queryKey: ["office", "fees"] },
-  { queryKey: ["office", "family-fees"] },
-  { queryKey: ["office", "fee-students"] },
-  { queryKey: ["office", "fee-gateway-review"] },
+  ...feeQueryInvalidations,
   { queryKey: ["calendar"] },
+  { queryKey: ["calendar"], environmentScoped: true },
   { queryKey: ["notifications"] },
   { queryKey: ["campus-events"] },
   { queryKey: ["campus-event"] },
@@ -302,7 +397,7 @@ export const FULL_SYNC_INVALIDATIONS: readonly QueryInvalidation[] = [
   { queryKey: ["requests"] },
   { queryKey: ["attention"] },
   { queryKey: ["chat"] },
-  { queryKey: ["campus-view"] },
+  { queryKey: ["campus-view"], environmentScoped: true },
 ];
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -348,9 +443,12 @@ export function decodeSchoolEvent(data: string, expectedType: SchoolEventType): 
   if (!isRecord(value)) return null;
   if (typeof value.id !== "string" || typeof value.type !== "string" || value.type !== expectedType) return null;
   if (typeof value.created_at !== "string") return null;
+  if (!isOptionalString(value.school_id) || !isOptionalString(value.namespace_id)) return null;
   const payload = parsePayload(value.payload);
   if (!payload) return null;
-  return { id: value.id, type: value.type, created_at: value.created_at, payload };
+  return { id: value.id, type: value.type, created_at: value.created_at,
+    ...(value.school_id === undefined ? {} : { school_id: value.school_id }),
+    ...(value.namespace_id === undefined ? {} : { namespace_id: value.namespace_id }), payload };
 }
 
 function parentInvalidations(area: "home" | "attendance" | "diary" | "leave" | "timetable", studentId?: string) {
@@ -391,13 +489,38 @@ function scopedOperationsInvalidation(
 
 function invalidationsForTarget(target: RefreshTarget, payload: SchoolEventPayload, userId?: string): QueryInvalidation[] {
   switch (target) {
+    case "campus-assets": return [{ queryKey: ["campus-view"], environmentScoped: true }];
+    case "teaching-sessions": return [{ queryKey: ["teaching-sessions"], environmentScoped: true }];
+    case "learning-assignments": return [{ queryKey: ["learning-assignments"], environmentScoped: true }];
+    case "finance-arrangements": return [{ queryKey: ["finance-arrangements"], environmentScoped: true }];
+    case "activities":
+    case "activities.catalogue": return [{ queryKey: ["activities"], environmentScoped: true }];
+    case "people.participants": return [
+      { queryKey: ["people.participants"], environmentScoped: true },
+      { queryKey: ["people.participation-groups"], environmentScoped: true },
+      { queryKey: ["people.connections"], environmentScoped: true },
+      { queryKey: ["people.person-groups"], environmentScoped: true },
+      { queryKey: ["people.group-catalogue"], environmentScoped: true },
+    ];
+    case "attendance": return [
+      { queryKey: ["activities"], environmentScoped: true },
+      { queryKey: ["teacher-attendance"] },
+      { queryKey: ["principal-register"] },
+      { queryKey: ["principal-register-history"] },
+      { queryKey: ["attendance-model"] },
+      { queryKey: ["attendance-continuity"] },
+    ];
+    case "workspace":
+    case "today": return [{ queryKey: ["responsibility-workspace"] }];
     case "departure": return [{ queryKey: ["departure"] }];
     case "staff.access": return [{queryKey:["staff-operations"]},{queryKey:["roles"]},{queryKey:["assessments"]},{queryKey:["academic-reports"]}];
     case "staff-operations":
     case "principal.staff":
     case "teacher.leave": return [{ queryKey: ["staff-operations"] }];
     case "gate": return [{ queryKey: ["gate"] }, { queryKey: ["gate-admin"] }, { queryKey: ["gate-approvals"] }];
+    case "gate-visits": return [{ queryKey: ["gate-visits"], environmentScoped: true }];
     case "governance": return [{ queryKey: ["governance"] }];
+    case "organization": return [{ queryKey: ["organization"] }];
     case "restricted-care": return [{ queryKey: ["restricted-care"] }];
     case "institution-activation": return [{ queryKey: ["institution-activation"] }];
     case "assessments": return [{ queryKey: ["assessments"] }, { queryKey: ["assessment-detail"] }];
@@ -405,13 +528,19 @@ function invalidationsForTarget(target: RefreshTarget, payload: SchoolEventPaylo
     case "teacher-feedback": return [{ queryKey: ["teacher-feedback"] }];
     case "day-plans": return [{ queryKey: ["school", "day-plans"] }];
     case "people": return [
+      { queryKey: ["people.participants"], environmentScoped: true },
+      { queryKey: ["people.participation-groups"], environmentScoped: true },
+      { queryKey: ["people.connections"], environmentScoped: true },
+      { queryKey: ["people.person-groups"], environmentScoped: true },
+      { queryKey: ["people.group-catalogue"], environmentScoped: true },
+      { queryKey: ["activities"], environmentScoped: true },
       { queryKey: ["school", "people"] },
       { queryKey: ["school", "parent"] },
       { queryKey: ["school", "accessible-students"] },
       { queryKey: ["gate-students"] },
       { queryKey: ["office", "fee-students"] },
       { queryKey: ["campus-event-consent-authorities"] },
-      { queryKey: ["invitations"] },
+      { queryKey: ["invitations"], environmentScoped: true },
       { queryKey: ["notice-references"] },
     ];
     case "coordination": return [{ queryKey: ["school", "coordination"] }];
@@ -450,19 +579,21 @@ function invalidationsForTarget(target: RefreshTarget, payload: SchoolEventPaylo
     case "principal.administration": return [
       { queryKey: ["office", "administration"] },
       { queryKey: ["institution-setup"] },
-      { queryKey: ["invitations"] },
+      { queryKey: ["invitations"], environmentScoped: true },
       { queryKey: ["operating-rules"] },
       { queryKey: ["workflow-rules"] },
       { queryKey: ["chat", "policy"] },
       { queryKey: ["notice-references"] },
     ];
     case "fees": return [
-      { queryKey: ["office", "fees"] },
-      { queryKey: ["office", "family-fees"] },
-      { queryKey: ["office", "fee-gateway-review"] },
+      ...feeQueryInvalidations,
       { queryKey: ["campus-event-finance"] },
     ];
-    case "calendar": return [{ queryKey: ["calendar"] }];
+    case "resources": return [{ queryKey: ["resources"], environmentScoped: true }];
+    case "facilities": return [{ queryKey: ["facilities"], environmentScoped: true }];
+    case "accommodation": return [{ queryKey: ["accommodation"], environmentScoped: true }];
+    case "dining": return [{ queryKey: ["dining"], environmentScoped: true }];
+    case "calendar": return [{ queryKey: ["calendar"] }, { queryKey: ["calendar"], environmentScoped: true }];
     case "notifications": return [{ queryKey: userId ? ["notifications", userId] : ["notifications"] }];
     case "campus-events": return [
       { queryKey: ["campus-events"] },
@@ -475,14 +606,15 @@ function invalidationsForTarget(target: RefreshTarget, payload: SchoolEventPaylo
     case "requests": return [{ queryKey: ["requests"] }];
     case "attention": return [{ queryKey: ["attention"] }];
     case "messages": return [{ queryKey: ["chat"] }];
-    case "campus-view": return [{ queryKey: ["campus-view"] }];
+    case "campus-scenes": return [{ queryKey: ["campus-scenes"], environmentScoped: true }];
+    case "campus-view": return [{ queryKey: ["campus-view"], environmentScoped: true }];
   }
 }
 
 function deduplicateInvalidations(invalidations: readonly QueryInvalidation[]): QueryInvalidation[] {
   const unique = new Map<string, QueryInvalidation>();
   for (const invalidation of invalidations) {
-    const key = `${invalidation.exact === true ? "exact" : "prefix"}:${JSON.stringify(invalidation.queryKey)}`;
+    const key = `${invalidation.environmentScoped ? "environment" : "legacy"}:${invalidation.exact === true ? "exact" : "prefix"}:${JSON.stringify(invalidation.queryKey)}`;
     unique.set(key, invalidation);
   }
   return [...unique.values()];
@@ -520,8 +652,12 @@ export function resolveSchoolEvent(
   // Requests and Attention are server-owned projections over many domains. Any
   // accepted school event may complete, create, or reprioritise an exact item.
   // Refresh both so an already-open queue and its navigation badges cannot drift.
-  invalidations.push({ queryKey: ["requests"] });
-  invalidations.push({ queryKey: ["attention"] });
+  // A public informational date cannot create/complete owned work. Refreshing
+  // queues for each annual publication would add requests without new facts.
+  if (!expectedType.startsWith('campus_dates.')) {
+    invalidations.push({ queryKey: ["requests"] });
+    invalidations.push({ queryKey: ["attention"] });
+  }
   return { envelope, invalidations: deduplicateInvalidations(invalidations), usedFallback: false };
 }
 
@@ -531,7 +667,8 @@ export interface InvalidationBatcher {
   cancel: () => void;
 }
 
-export function createInvalidationBatcher(queryClient: QueryClient, delayMs = 75): InvalidationBatcher {
+export function createInvalidationBatcher(queryClient: QueryClient, delayMs = 75,
+  environmentQueryPrefix: QueryKey = ["execution-environment", "live"]): InvalidationBatcher {
   const pending = new Map<string, QueryInvalidation>();
   let timer: ReturnType<typeof setTimeout> | undefined;
 
@@ -540,13 +677,15 @@ export function createInvalidationBatcher(queryClient: QueryClient, delayMs = 75
     timer = undefined;
     const invalidations = [...pending.values()];
     pending.clear();
-    await Promise.all(invalidations.map(({ queryKey, exact }) => queryClient.invalidateQueries({ queryKey, exact })));
+    await Promise.all(invalidations.map(({ queryKey, exact, environmentScoped }) => queryClient.invalidateQueries({
+      queryKey: environmentScoped ? [...environmentQueryPrefix, ...queryKey] : queryKey, exact,
+    })));
   };
 
   return {
     enqueue(invalidations) {
       for (const invalidation of invalidations) {
-        const key = `${invalidation.exact === true ? "exact" : "prefix"}:${JSON.stringify(invalidation.queryKey)}`;
+        const key = `${invalidation.environmentScoped ? "environment" : "legacy"}:${invalidation.exact === true ? "exact" : "prefix"}:${JSON.stringify(invalidation.queryKey)}`;
         pending.set(key, invalidation);
       }
       if (!timer && pending.size > 0) timer = setTimeout(() => void flush(), delayMs);

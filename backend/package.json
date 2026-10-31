@@ -7,19 +7,22 @@
   "license": "UNLICENSED",
   "scripts": {
     "directory:import": "node --import tsx src/institutions/import-directory.ts",
-    "build": "tsc -p tsconfig.build.json",
-    "start": "node dist/main.js",
+    "build": "npm run simulation:conformance && tsc -p tsconfig.build.json",
+    "start": "node --env-file-if-exists=.env dist/main.js",
     "dev": "tsx watch src/main.ts",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "lint": "eslint . --max-warnings=0",
     "test": "npm run build --silent && vitest run",
-    "test:ci": "vitest run",
+    "test:fast": "vitest run --mode fast",
+    "test:ci": "npm run simulation:conformance && vitest run",
     "test:watch": "vitest",
-    "db:migrate": "node --import tsx src/database/migrate.ts",
+    "db:migrate": "node --env-file-if-exists=.env --import tsx src/database/migrate.ts",
+    "db:audit": "node --import tsx src/database/audit-structure.ts",
     "db:generate": "python3 scripts/generate_school_data.py",
-    "db:seed": "python3 scripts/generate_school_data.py --load && npm run db:seed:roles && npm run db:seed:departure && npm run db:seed:governance-authority && npm run db:seed:staff-leave-coordination && npm run db:seed:transport-duty-coordination && npm run db:seed:assessment-invigilation-coordination && npm run db:seed:attendance-completion-coordination && npm run db:seed:access-roles && npm run db:seed:campus-lab",
+    "db:seed": "python3 scripts/generate_school_data.py --load && npm run db:seed:roles && npm run db:seed:human-agents && npm run db:seed:departure && npm run db:seed:governance-authority && npm run db:seed:staff-leave-coordination && npm run db:seed:transport-duty-coordination && npm run db:seed:assessment-invigilation-coordination && npm run db:seed:attendance-completion-coordination && npm run db:seed:access-roles && npm run db:seed:campus-lab",
     "db:seed:access-roles": "DEMO_MODE=true node --import tsx src/database/seed-access-roles.ts",
     "db:seed:roles": "DEMO_MODE=true node --import tsx src/database/seed-roles.ts",
+    "db:seed:human-agents": "DEMO_MODE=true node --import tsx src/database/seed-human-agent-identities.ts",
     "db:seed:departure": "DEMO_MODE=true node --import tsx src/database/seed-departure.ts",
     "db:seed:governance-authority": "DEMO_MODE=true SEED_GOVERNANCE_AUTHORITY=true node --import tsx src/database/seed-governance-authority.ts",
     "db:seed:staff-leave-coordination": "DEMO_MODE=true SEED_STAFF_LEAVE_COORDINATION=true node --import tsx src/database/seed-staff-leave-coordination.ts",
@@ -27,7 +30,10 @@
     "db:seed:assessment-invigilation-coordination": "DEMO_MODE=true SEED_ASSESSMENT_INVIGILATION_COORDINATION=true node --import tsx src/database/seed-assessment-invigilation-coordination.ts",
     "db:seed:attendance-completion-coordination": "DEMO_MODE=true SEED_ATTENDANCE_COMPLETION_COORDINATION=true node --env-file-if-exists=.env --import tsx src/database/seed-attendance-completion-coordination.ts",
     "db:seed:campus-lab": "DEMO_MODE=true SEED_CAMPUS_LAB=true node --env-file-if-exists=.env --import tsx src/database/seed-campus-lab.ts",
-    "test:seed": "python3 -m unittest discover -s scripts -p 'test_*.py' -v"
+    "test:seed": "python3 -m unittest discover -s scripts -p 'test_*.py' -v",
+    "simulation:conformance": "node --import tsx scripts/verify-simulation-conformance.ts",
+    "simulation:conformance:audit": "node --import tsx scripts/verify-simulation-conformance.ts --json",
+    "simulation:conformance:update": "node --import tsx scripts/verify-simulation-conformance.ts --write"
   },
   "dependencies": {
     "@fastify/compress": "^8.3.0",
@@ -49,6 +55,7 @@
     "pg": "^8.16.3",
     "reflect-metadata": "^0.2.2",
     "rxjs": "^7.8.2",
+    "sharp": "^0.35.5",
     "zod": "^4.1.5"
   },
   "devDependencies": {

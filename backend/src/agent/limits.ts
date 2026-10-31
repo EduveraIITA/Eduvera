@@ -57,7 +57,9 @@ export async function reserveModelCall(db: DatabaseService, runId: string, input
       COALESCE(sum(reserved_micros) FILTER (WHERE created_at >= date_trunc('day',now() AT TIME ZONE 'UTC') AT TIME ZONE 'UTC'),0)::bigint AS day,
       COALESCE(sum(reserved_micros),0)::bigint AS month,
       count(*) FILTER (WHERE run_id=${runId}::uuid)::int AS calls
-      FROM agent_model_usage WHERE created_at >= date_trunc('month',now() AT TIME ZONE 'UTC') AT TIME ZONE 'UTC'`.execute(tx)).rows[0]!;
+      FROM (SELECT reserved_micros,created_at,run_id FROM agent_model_usage
+        UNION ALL SELECT reserved_micros,created_at,NULL::uuid AS run_id FROM campus_scene_import_runs) usage
+      WHERE created_at >= date_trunc('month',now() AT TIME ZONE 'UTC') AT TIME ZONE 'UTC'`.execute(tx)).rows[0]!;
     if (Number(usage.day) + reserve > limits.dailyMicros || Number(usage.month) + reserve > limits.monthlyMicros || usage.calls >= agentExecutionLimits().modelCalls) throw new AgentLimitError();
     await sql`INSERT INTO agent_model_usage(run_id,input_tokens,max_output_tokens,reserved_micros)
       VALUES(${runId}::uuid,${inputTokens},${outputTokens},${reserve})`.execute(tx);

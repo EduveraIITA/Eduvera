@@ -1,5 +1,6 @@
 import { sql, type Kysely, type Transaction } from "kysely";
 import type { Database } from "../database/types.js";
+import { executionNow } from "../campus-model-core/execution-time.runtime.js";
 
 export interface AttendanceClassWorkspace {
   class_section_id: string;
@@ -41,7 +42,7 @@ export async function attendanceDayPolicy(
     actor_scheduled: boolean;
     submitted_by_name: string | null;
   }>`
-    SELECT ${date}::date <= (now() AT TIME ZONE school.timezone)::date AS completed,
+    SELECT ${date}::date <= (${executionNow()}::timestamptz AT TIME ZONE school.timezone)::date AS completed,
       EXISTS (
         SELECT 1 FROM effective_school_schedule(${schoolId}::uuid,${date}::date) slot
         WHERE slot.class_section_id=${classId}::uuid AND slot.term_id=${termId}::uuid
@@ -139,13 +140,13 @@ export async function attendanceWorkspace(
         )
       END AS submission_authorized,
       COALESCE(l.instructional_slots,0)>0 AS instructional,
-      ${date}::date <= (now() AT TIME ZONE school.timezone)::date AS date_open,
-      (${date}::date <= (now() AT TIME ZONE school.timezone)::date
+      ${date}::date <= (${executionNow()}::timestamptz AT TIME ZONE school.timezone)::date AS date_open,
+      (${date}::date <= (${executionNow()}::timestamptz AT TIME ZONE school.timezone)::date
         AND COALESCE(l.instructional_slots,0)>0
         AND COALESCE(r.student_count,0)>0
         AND (${role}='admin' OR COALESCE(l.substitute,false) OR staff_has_class_permission(${schoolId}::uuid,${userId}::uuid,'attendance.record',cs.id,${date}::date))) AS can_mark,
       CASE
-        WHEN ${date}::date > (now() AT TIME ZONE school.timezone)::date THEN 'Attendance opens on the selected date.'
+        WHEN ${date}::date > (${executionNow()}::timestamptz AT TIME ZONE school.timezone)::date THEN 'Attendance opens on the selected date.'
         WHEN COALESCE(l.instructional_slots,0)=0 THEN 'No attendance is required because this class has no scheduled lesson.'
         WHEN COALESCE(r.student_count,0)=0 THEN 'No enrolled students require attendance for this date.'
         WHEN ${role}<>'admin' AND NOT COALESCE(l.substitute,false) AND NOT staff_has_class_permission(${schoolId}::uuid,${userId}::uuid,'attendance.record',cs.id,${date}::date) THEN 'Your assignment does not allow recording attendance for this class on this date.'

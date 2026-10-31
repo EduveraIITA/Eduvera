@@ -1,0 +1,199 @@
+.timetable-workspace {
+  display: grid;
+  width: min(100%, 1160px);
+  margin-inline: auto;
+  gap: 24px;
+}
+
+.timetable-workspace__content {
+  min-width: 0;
+}
+
+.timetable-workspace-context {
+  display: grid;
+  min-width: 0;
+  min-height: 68px;
+  padding: 16px var(--thatcampus-row-inset);
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 12px;
+  border-bottom: 1px solid var(--thatcampus-border);
+  border-radius: var(--thatcampus-radius-row);
+  background: var(--thatcampus-surface);
+}
+
+.timetable-workspace-context__icon {
+  display: grid;
+  width: 40px;
+  height: 40px;
+  place-items: center;
+  border-radius: var(--thatcampus-radius-control);
+  color: var(--thatcampus-logo-green);
+  background: var(--thatcampus-logo-green-soft);
+}
+
+.timetable-workspace-context__copy {
+  display: grid;
+  min-width: 0;
+  gap: 2px;
+}
+
+.timetable-workspace-context__copy small {
+  color: var(--thatcampus-ink-secondary);
+  font-size: 13px;
+  font-weight: 500;
+}
+
+.timetable-workspace-context__copy strong {
+  overflow: hidden;
+  color: var(--thatcampus-ink);
+  font-size: 16px;
+  line-height: 1.4;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.timetable-workspace-context__copy > span {
+  overflow: hidden;
+  color: var(--thatcampus-ink-secondary);
+  font-size: 14px;
+  line-height: 1.5;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.timetable-workspace-context__actions {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+.timetable-workspace-context__actions > a {
+  display: inline-flex;
+  min-height: 44px;
+  padding: 0 13px;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid transparent;
+  box-shadow: var(--thatcampus-shadow-control);
+  border-radius: var(--thatcampus-radius-control);
+  color: var(--thatcampus-brand);
+  background: var(--thatcampus-surface);
+  font-size: 14px;
+  font-weight: 600;
+  text-decoration: none;
+}
+
+.timetable-workspace-context label {
+  position: relative;
+  display: flex;
+  min-width: 170px;
+  align-items: center;
+}
+
+.timetable-workspace-context select {
+  width: 100%;
+  min-height: 44px;
+  padding: 0 36px 0 12px;
+  appearance: none;
+  border: 1px solid var(--thatcampus-border);
+  border-radius: var(--thatcampus-radius-control);
+  color: var(--thatcampus-ink);
+  background: var(--thatcampus-surface);
+  font: inherit;
+  font-size: 16px;
+  font-weight: 500;
+}
+
+.timetable-workspace-context label > svg {
+  position: absolute;
+  right: 12px;
+  color: var(--thatcampus-ink-secondary);
+  pointer-events: none;
+}
+
+.timetable-workspace-context select:focus-visible,
+.timetable-workspace-context__actions > a:focus-visible,
+.timetable-workspace-error button:focus-visible {
+  outline: 2px solid var(--thatcampus-brand);
+  outline-offset: 2px;
+}
+
+.timetable-workspace-loading,
+.timetable-workspace-error {
+  display: grid;
+  min-height: 220px;
+  padding: 28px;
+  align-content: center;
+  justify-items: center;
+  gap: 10px;
+  border: 1px solid var(--thatcampus-border);
+  border-radius: var(--thatcampus-radius-card);
+  color: var(--thatcampus-ink-secondary);
+  background: var(--thatcampus-surface);
+  text-align: center;
+}
+
+.timetable-workspace-loading > span {
+  width: min(100%, 440px);
+  height: 16px;
+  border-radius: var(--thatcampus-radius-pill);
+  background: var(--thatcampus-surface-strong);
+}
+
+.timetable-workspace-loading > span:nth-child(2) { width: min(78%, 340px); }
+.timetable-workspace-loading > span:nth-child(3) { width: min(62%, 260px); }
+
+.timetable-workspace-loading p,
+.timetable-workspace-error p {
+  margin: 4px 0 0;
+  font-size: 14px;
+  line-height: 1.5;
+}
+
+.timetable-workspace-error strong {
+  color: var(--thatcampus-ink);
+  font-size: 16px;
+}
+
+.timetable-workspace-error button {
+  min-height: 44px;
+  padding: 0 15px;
+  border: 0;
+  border-radius: var(--thatcampus-radius-control);
+  color: var(--thatcampus-on-action);
+  background: var(--thatcampus-action);
+  font: inherit;
+  font-size: 14px;
+  font-weight: 600;
+}
+
+@media (max-width: 620px) {
+  .timetable-workspace-context {
+    grid-template-columns: auto minmax(0, 1fr);
+  }
+
+  .timetable-workspace-context__actions {
+    grid-column: 1 / -1;
+    justify-content: stretch;
+  }
+
+  .timetable-workspace-context__actions > a {
+    flex: 0 0 auto;
+  }
+
+  .timetable-workspace-context__actions label {
+    flex: 1 1 auto;
+    min-width: 0;
+  }
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  .timetable-workspace-context select,
+  .timetable-workspace-context__actions > a,
+  .timetable-workspace-error button {
+    transition: border-color 140ms ease, background-color 140ms ease;
+  }
+}

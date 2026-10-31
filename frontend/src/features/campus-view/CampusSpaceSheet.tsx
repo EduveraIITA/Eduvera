@@ -1,17 +1,15 @@
 import { CalendarClock, CheckCircle2, ChevronRight, DoorOpen, Eye, Radio, Sparkles, UserRoundCheck, X } from "lucide-react";
 import { useEffect, useMemo, useRef } from "react";
 import { Link } from "react-router-dom";
-import { activeAssertion } from "./geometry";
+import { activeSpaceAssertion, campusDateFormatter } from "./campusSceneRecords";
 import type { CampusAssertion, CampusViewSpace, CampusViewZoneOverlay } from "./types";
 
-const stamp = new Intl.DateTimeFormat("en-IN", { day: "numeric", month: "short", hour: "numeric", minute: "2-digit" });
-
-function AssertionRow({ assertion }: { assertion: CampusAssertion }) {
+function AssertionRow({ assertion, stamp }: { assertion: CampusAssertion; stamp: Intl.DateTimeFormat }) {
   const Icon = assertion.dimension === "accepted" ? CheckCircle2 : assertion.dimension === "observed" ? Radio : CalendarClock;
   const timing = assertion.observed_at || assertion.valid_from;
   const dimensionLabel = assertion.dimension === "accepted" ? "Accepted record" : assertion.dimension === "observed" ? "Observed point" : "Expected plan";
   const spatialLabel = assertion.spatial_claim === "bounded_space_presence"
-    ? "Current room evidence"
+    ? assertion.freshness === "fresh" ? "Current bounded space evidence" : "Historical bounded space evidence"
     : assertion.spatial_claim === "point_observation_only"
       ? "Point evidence only"
       : assertion.spatial_claim === "expected_context_only" ? "Expected location only" : null;
@@ -22,10 +20,11 @@ function AssertionRow({ assertion }: { assertion: CampusAssertion }) {
   </li>;
 }
 
-export function CampusSpaceSheet({ space, overlay, onClose }: { space: CampusViewSpace; overlay?: CampusViewZoneOverlay; onClose: () => void }) {
+export function CampusSpaceSheet({ space, overlay, timezone = "UTC", onClose }: { space: CampusViewSpace; overlay?: CampusViewZoneOverlay; timezone?: string; onClose: () => void }) {
   const dialog = useRef<HTMLDialogElement>(null);
   const title = useRef<HTMLHeadingElement>(null);
-  const assertion = activeAssertion(space);
+  const assertion = activeSpaceAssertion(space);
+  const stamp = useMemo(() => campusDateFormatter(timezone, true), [timezone]);
   const expectedNow = space.expected_now[0];
   const gateToday = space.gate_activity_today;
   const assertions = useMemo(() => [
@@ -53,21 +52,21 @@ export function CampusSpaceSheet({ space, overlay, onClose }: { space: CampusVie
         <Sparkles size={18} aria-hidden="true" /><div><strong>{overlay.source_label}</strong><p>{overlay.source_detail}</p></div>
       </section> : null}
       {expectedNow ? <section className="campus-space-sheet__context" aria-label="Current timetable expectation">
-        <UserRoundCheck size={18} aria-hidden="true" /><div><strong>{expectedNow.teacher ? `${expectedNow.teacher.label} is expected here` : "Teacher is not assigned"}</strong><p>{expectedNow.class_label} · {expectedNow.subject_label || expectedNow.title}. This comes from the published timetable; it does not prove physical presence.</p></div>
+        <UserRoundCheck size={18} aria-hidden="true" /><div><strong>{expectedNow.teacher ? `${expectedNow.teacher.label} is expected here` : "Scheduled activity"}</strong><p>{[expectedNow.class_label, expectedNow.subject_label || expectedNow.title].filter(Boolean).join(" · ")}. Source: {expectedNow.source.label}. This expectation does not prove physical presence.</p>{expectedNow.source.target_path ? <Link to={expectedNow.source.target_path}>Open activity source</Link> : null}</div>
       </section> : null}
       {gateToday ? <section className="campus-space-sheet__context is-gate" aria-label="Today's accepted gate observations">
         <DoorOpen size={18} aria-hidden="true" /><div><strong>{gateToday.entries} in · {gateToday.exits} out today</strong><p>{gateToday.accepted_points} accepted point observations. These record boundary movements, not anyone's current location.</p></div>
       </section> : null}
       <section className="campus-space-sheet__why" aria-labelledby="campus-space-why-title">
         <div><Eye size={17} aria-hidden="true" /><h3 id="campus-space-why-title">Why this is shown</h3></div>
-        {assertions.length ? <ul>{assertions.map((item) => <AssertionRow key={`${item.dimension}:${item.id}`} assertion={item} />)}</ul> : <p>{overlay?.explanation ?? "No schedule, device or accepted record currently places anyone in this space. ThatCampus leaves the state unknown."}</p>}
+        {assertions.length ? <ul>{assertions.map((item) => <AssertionRow key={`${item.dimension}:${item.id}`} assertion={item} stamp={stamp} />)}</ul> : <p>{overlay?.explanation ?? (expectedNow ? "The published assignment is an expectation, not observed presence." : "No schedule, device or accepted record currently places anyone in this space. ThatCampus leaves the state unknown.")}</p>}
       </section>
       {overlay?.people.length ? <section className="campus-space-sheet__people" aria-labelledby="campus-space-people-title">
         <h3 id="campus-space-people-title">{overlay.people_heading ?? "People in this projection"}</h3>
         <ul>{overlay.people.slice(0, 8).map((person) => <li key={person.id}>{person.avatar_url ? <img src={person.avatar_url} alt="" /> : <span>{person.name.slice(0, 1)}</span>}<div><strong>{person.name}</strong><small>{person.descriptor}</small></div></li>)}</ul>
         {overlay.people.length > 8 ? <p>{overlay.people_more_label ?? `+ ${overlay.people.length - 8} more`}</p> : null}
       </section> : null}
-      <footer><Link to="/principal/administration?section=campus">Edit campus setup <ChevronRight size={16} /></Link></footer>
+      <footer><Link to="/more/setup/institution/campus">Edit campus setup <ChevronRight size={16} /></Link></footer>
     </div>
   </dialog>;
 }

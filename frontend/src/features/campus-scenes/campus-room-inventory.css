@@ -1,0 +1,10 @@
+.campus-room-inventory { min-width: 0; padding-block: 16px; border-top: 1px solid var(--thatcampus-border); }
+.campus-room-inventory h3 { margin: 0 0 12px; font-size: 14px; }
+.campus-room-inventory dl { margin: 0; display: grid; gap: 12px; }
+.campus-room-inventory dl > div { display: flex; align-items: baseline; justify-content: space-between; gap: 16px; }
+.campus-room-inventory dt { min-width: 0; overflow-wrap: anywhere; font-size: 13px; }
+.campus-room-inventory dt small { display: block; margin-top: 3px; color: var(--thatcampus-ink-secondary); font-size: 11px; }
+.campus-room-inventory dd { margin: 0; flex: 0 0 auto; font-size: 14px; font-weight: 650; font-variant-numeric: tabular-nums; }
+.campus-room-inventory dd span { color: var(--thatcampus-ink-secondary); font-size: 12px; font-weight: 400; }
+.campus-room-inventory p { margin: 8px 0; color: var(--thatcampus-ink-secondary); font-size: 12px; line-height: 1.5; }
+.campus-room-inventory .campus-scene-pagination { margin-top: 12px; }

@@ -11,5 +11,6 @@ import { TransportDutyModelBridgeService } from "./transport-duty-model-bridge.s
   imports:[SchoolModule,CampusModelCoreModule,GovernanceModule],
   controllers: [DepartureCoordinationController],
   providers: [DepartureCoordinationService,TransportRetentionService,TransportDutyModelBridgeService],
+  exports: [TransportRetentionService],
 })
 export class DepartureCoordinationModule {}

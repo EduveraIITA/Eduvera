@@ -44,6 +44,22 @@ suite('gate lifecycle, account provisioning and current authority',()=>{
   await expect(service.gatekeeper(guard,school,{name:'Wrong access',username:'wrong.guard'})).rejects.toThrow(/administrator/);
   await expect(service.issuePass(guard,school,{student_id:student,kind:'student'})).rejects.toThrow(/Guardian/);
  });
+ it('lists each active host account once across campus memberships without merging equal names',async()=>{
+  const tag=randomUUID();
+  const sameName=await query("INSERT INTO users(username,email,password_hash,first_name,last_name,role) VALUES($1,$2,'x','Gate','Admin','staff') RETURNING *",['same.'+tag,'same.'+tag+'@example.test']);
+  const inactive=await query("INSERT INTO users(username,email,password_hash,first_name,last_name,role,is_active) VALUES($1,$2,'x','Inactive','Host','staff',false) RETURNING *",['inactive.'+tag,'inactive.'+tag+'@example.test']);
+  await query("INSERT INTO school_memberships(user_id,school_id,role) VALUES($1,$2,'staff'),($3,$2,'staff'),($4,$2,'staff')",[admin.id,school,sameName.id,inactive.id]);
+  try {
+   const hosts=(await service.workspace(admin,school)).hosts;
+   expect(hosts.filter(host=>host.id===admin.id)).toHaveLength(1);
+   expect(hosts.filter(host=>host.id===sameName.id)).toHaveLength(1);
+   expect(hosts.filter(host=>host.name==='Gate Admin').map(host=>host.id).sort()).toEqual([admin.id,sameName.id].sort());
+   expect(hosts.some(host=>host.id===outsider.id||host.id===inactive.id)).toBe(false);
+  } finally {
+   await query("DELETE FROM school_memberships WHERE user_id=$1 AND school_id=$2 AND role='staff'",[admin.id,school]);
+   await query("DELETE FROM users WHERE id=ANY($1::uuid[])",[[sameName.id,inactive.id]]);
+  }
+ });
  it('records entry once for the same command and never changes classroom attendance',async()=>{
   const command={student_id:student,direction:'in',command_id:randomUUID(),identity_verified:true};
   const first=await service.movement(guard,school,command);expect(await service.movement(guard,school,command)).toEqual(first);
@@ -73,6 +89,22 @@ suite('gate lifecycle, account provisioning and current authority',()=>{
   const bounded=await service.students(guard,school,'SearchBound');
   expect(bounded).toHaveLength(30);expect(bounded[0]?.name).toBe('SearchBound 001');expect(bounded[29]?.name).toBe('SearchBound 030');
  });
+ it('records idempotent staff boundary movements without changing classroom attendance',async()=>{
+  const tag=randomUUID();
+  const staffPerson=(await query("INSERT INTO school_people(school_id,first_name,last_name) VALUES($1,'Neha','Gate Test') RETURNING id",[school])).id;
+  const profile=(await query(`WITH staff_fixture_input(school_id,person_id,staff_code,first_name,last_name,email,staff_kind,designation,employment_type,joined_on,status) AS (VALUES ($1,$2,$3,'Neha','Gate Test',$4,'teaching','Science Teacher','full_time',CURRENT_DATE,'active')) INSERT INTO staff_profiles(school_id,person_id,staff_code,staff_kind,designation,employment_type,joined_on,status) SELECT input.school_id::uuid,input.person_id::uuid,input.staff_code,input.staff_kind,input.designation,input.employment_type,input.joined_on::date,input.status FROM staff_fixture_input input RETURNING id`,[school,staffPerson,'GT-'+tag.slice(0,8),tag+'@example.test'])).id;
+  expect(await service.staff(guard,school,'Neha')).toMatchObject([{id:profile,name:'Neha Gate Test',direction:null}]);
+  const entry={staff_profile_id:profile,direction:'in',command_id:randomUUID(),identity_verified:true} as const;
+  const saved=await service.staffMovement(guard,school,entry);
+  expect(await service.staffMovement(guard,school,entry)).toEqual(saved);
+  await expect(service.staffMovement(guard,school,{...entry,command_id:randomUUID()})).rejects.toThrow(/Movement changed/);
+  await service.staffMovement(guard,school,{...entry,direction:'out',command_id:randomUUID()});
+  expect(await service.staffProfile(guard,school,profile)).toMatchObject({id:profile,direction:'out'});
+  expect((await query('SELECT count(*)::int count FROM gate_staff_events WHERE staff_profile_id=$1',[profile])).count).toBe(2);
+  expect((await query('SELECT count(*)::int count FROM attendance_records WHERE student_id=$1',[student])).count).toBe(0);
+  expect((await service.workspace(guard,school)).activity.some(item=>item.kind==='staff'&&item.person_id===profile)).toBe(true);
+  await expect(service.staff(outsider,school,'Neha')).rejects.toThrow(/permission/);
+ });
  it('blocks exit without a pickup pass and rejects QR from another institution',async()=>{
   await expect(service.movement(guard,school,{student_id:student,direction:'out',command_id:randomUUID(),identity_verified:true})).rejects.toThrow(/pickup QR/);
   const pass=await service.issuePass(admin,school,{student_id:student,kind:'pickup'});
@@ -96,7 +128,8 @@ suite('gate lifecycle, account provisioning and current authority',()=>{
   expect(events.enqueueUserEvent).toHaveBeenCalled();
  });
  it('requires visitor approval and allows QR check-in and checkout only in order',async()=>{
-  const visitor=await service.visitor(guard,school,{name:'Visitor Test',phone:'9876543210',purpose:'Meeting principal',host_user_id:admin.id});
+  const visitor=await service.visitor(guard,school,{name:'Visitor Test',phone:'9876543210',host_user_id:admin.id});
+  expect(visitor.purpose).toBe('');
   await expect(service.visitorAction(guard,school,visitor.id,'in')).rejects.toThrow(/not ready/);
   await expect(service.visitorAction(guard,school,visitor.id,'approve')).rejects.toThrow(/requested host/);
   await service.visitorAction(admin,school,visitor.id,'approve');

@@ -2,7 +2,14 @@ import { Body, Controller, Delete, Get, HttpCode, Module, Param, Post, Query, Re
 import { CampusModelCoreModule } from "../campus-model-core/campus-model-core.module.js";
 import type { AuthenticatedRequest } from "../common/request.js";
 import { SchoolModule } from "../school/school.module.js";
+import { ResponsibilityAttendanceWorkspaceController } from "../attendance/responsibility-attendance-workspace.controller.js";
+import { ResponsibilityAttendanceRepository } from "../attendance/responsibility-attendance.repository.js";
+import { ResponsibilityAttendanceWorkspaceService } from "../attendance/responsibility-attendance-workspace.service.js";
+import { ResponsibilityClassWorkspaceController } from "../attendance/responsibility-class-workspace.controller.js";
+import { ResponsibilityClassWorkspaceService } from "../attendance/responsibility-class-workspace.service.js";
+import { WorkspaceModule } from "../workspace/workspace.module.js";
 import { AttendanceModelService } from "./attendance-model.service.js";
+import { ActivityAttendanceKernelModule } from "../attendance/activity-attendance-kernel.module.js";
 
 @Controller("api/v1/attendance-model")
 class AttendanceModelController {
@@ -43,7 +50,7 @@ class AttendanceModelController {
 
   @Post("sessions/:sessionId/qr")
   issueQr(@Req() request: AuthenticatedRequest, @Param("sessionId") sessionId: string) {
-    return this.attendance.issueQr(request.authUser, sessionId);
+    return this.attendance.issueQr(request.authUser, sessionId, request);
   }
 
   @Post("sessions/:sessionId/evidence/:evidenceId/decision")
@@ -63,5 +70,10 @@ class AttendanceModelController {
   }
 }
 
-@Module({ imports: [SchoolModule, CampusModelCoreModule], controllers: [AttendanceModelController], providers: [AttendanceModelService], exports: [AttendanceModelService] })
+@Module({
+  imports: [SchoolModule, CampusModelCoreModule, ActivityAttendanceKernelModule, WorkspaceModule],
+  controllers: [AttendanceModelController, ResponsibilityAttendanceWorkspaceController, ResponsibilityClassWorkspaceController],
+  providers: [AttendanceModelService, ResponsibilityAttendanceRepository, ResponsibilityAttendanceWorkspaceService, ResponsibilityClassWorkspaceService],
+  exports: [AttendanceModelService],
+})
 export class AttendanceModelModule {}

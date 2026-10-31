@@ -1,4 +1,4 @@
-import { BadRequestException, ConflictException, ForbiddenException, Inject, Injectable, NotFoundException, Optional } from '@nestjs/common';
+import { BadRequestException, ConflictException, ForbiddenException, HttpException, Inject, Injectable, NotFoundException } from '@nestjs/common';
 import { createHash, randomUUID } from 'node:crypto';
 import { sql, type Transaction } from 'kysely';
 import type { AuthenticatedRequest, AuthUser } from '../common/request.js';
@@ -12,6 +12,9 @@ import type { PlanDb } from '../day-plans/contracts.js';
 import { uuid } from '../day-plans/contracts.js';
 import { action, start, save, year, localConflicts, type Version, type Period } from './contracts.js';
 import { TEMPORAL_CONTEXT_PORT, type TemporalContextPort } from '../campus-model-core/temporal-context.port.js';
+import { DOMAIN_COMMAND_GATEWAY_PORT, type DomainCommandGatewayPort } from '../campus-model-core/domain-command-gateway.port.js';
+import { executionNow } from '../campus-model-core/execution-time.runtime.js';
+import { ActivityPlanningService, retainedRefusal } from './activity-planning.service.js';
 import {
   STAFF_COVERAGE_RECONCILIATION_PORT,
   type StaffCoverageReconciliationPort,
@@ -30,7 +33,9 @@ export class SchedulePlanningService {
     private readonly events:SchoolEventService,
     private readonly school:SchoolService,
     @Inject(STAFF_COVERAGE_RECONCILIATION_PORT) private readonly coverage:StaffCoverageReconciliationPort,
-    @Optional() @Inject(TEMPORAL_CONTEXT_PORT) private readonly temporal?:TemporalContextPort,
+    @Inject(TEMPORAL_CONTEXT_PORT) private readonly temporal:TemporalContextPort,
+    @Inject(DOMAIN_COMMAND_GATEWAY_PORT) private readonly commandGateway:DomainCommandGatewayPort,
+    private readonly activities:ActivityPlanningService,
   ) {}
 
   async screen(user:AuthUser,term?:string) {
@@ -39,8 +44,8 @@ export class SchedulePlanningService {
     if(!schoolId) throw new ForbiddenException('Select an institution with administrator access.');
     await authorize(this.db,user,schoolId,'admin');
     const data=await this.school.principalTimetableScreen(user,term);
-    const versions=(await sql<Version>`SELECT * FROM schedule_versions WHERE school_id=${schoolId}::uuid AND term_id=${data.selected_term_id}::uuid AND state<>'discarded' ORDER BY starts_on DESC,created_at DESC`.execute(this.db)).rows;
-    const periods=(await sql<Period & {version_id:string}>`SELECT p.* FROM schedule_periods p JOIN schedule_versions v ON v.id=p.version_id WHERE v.school_id=${schoolId}::uuid AND v.term_id=${data.selected_term_id}::uuid AND v.state<>'discarded' ORDER BY p.weekday,p.period_number`.execute(this.db)).rows;
+    const versions=(await sql<Version>`SELECT * FROM schedule_versions WHERE school_id=${schoolId}::uuid AND term_id=${data.selected_term_id}::uuid AND planning_origin='academic' AND state<>'discarded' ORDER BY starts_on DESC,created_at DESC`.execute(this.db)).rows;
+    const periods=(await sql<Period & {version_id:string}>`SELECT p.* FROM schedule_periods p JOIN schedule_versions v ON v.id=p.version_id WHERE v.school_id=${schoolId}::uuid AND v.term_id=${data.selected_term_id}::uuid AND v.planning_origin='academic' AND v.state<>'discarded' ORDER BY p.weekday,p.period_number`.execute(this.db)).rows;
     const selected=data.terms.find(t=>t.id===data.selected_term_id);
     const on=selected?[String(selected.starts_on),[data.school_date,String(selected.ends_on)].sort()[0]!].sort().at(-1)!:data.school_date;
     const coverage=data.coverage.map(row=>{
@@ -55,17 +60,59 @@ export class SchedulePlanningService {
 
   private async command<T>(req:AuthenticatedRequest,input:{school_id:string;idempotency_key:string},identity:unknown,run:(db:Transaction<Database>)=>Promise<T>) {
     const hash=createHash('sha256').update(JSON.stringify(identity)).digest('hex');
-    return this.db.transaction().execute(async db=>{
+    const refused:{error:HttpException|null}={error:null};
+    const result=await this.db.transaction().execute(async db=>{
       await sql`SET LOCAL statement_timeout='30s'`.execute(db);
       await sql`SET LOCAL lock_timeout='5s'`.execute(db);
       await lockSchedule(db,input.school_id);
       await authorize(db,req.authUser,input.school_id,'admin',true);
       const old=(await sql<{request_hash:string;result:T}>`SELECT request_hash,result FROM day_plan_commands WHERE school_id=${input.school_id}::uuid AND actor_id=${req.authUser.id}::uuid AND command_key=${input.idempotency_key}::uuid`.execute(db)).rows[0];
-      if(old) { if(old.request_hash!==hash) throw new ConflictException('This retry belongs to a different action.'); return old.result; }
-      const result=await run(db);
-      await sql`INSERT INTO day_plan_commands(school_id,actor_id,command_key,request_hash,result) VALUES(${input.school_id}::uuid,${req.authUser.id}::uuid,${input.idempotency_key}::uuid,${hash},${JSON.stringify(result)}::jsonb)`.execute(db);
-      return result;
+      if(old) {
+        if(old.request_hash!==hash) throw new ConflictException('This retry belongs to a different action.');
+        if(retainedRefusal(old.result)) { refused.error=new HttpException(old.result.activity_command_refusal.response,old.result.activity_command_refusal.status_code);return undefined as T; }
+        return old.result;
+      }
+      const intent=identity as {kind?:string;id?:string;expected_revision?:number};
+      const target=intent.id?(await sql<{revision:number}>`SELECT revision FROM schedule_versions WHERE school_id=${input.school_id}::uuid AND id=${intent.id}::uuid`.execute(db)).rows[0]:null;
+      const prepared=await this.commandGateway.prepareDomainCommand(db,{
+        school_id:input.school_id,actor_user_id:req.authUser.id,command_type:intent.kind??'schedule.change',
+        handler_key:'schedule_planning.academic',handler_version:2,source_domain:'timetable',
+        target:{kind:intent.id?'schedule':'institution',domain:intent.id?'timetable':'institutions',domain_id:intent.id??input.school_id,
+          label:intent.id?'Academic timetable':'Institution timetable planning',lifecycle_state:'active',source_revision:target?.revision??1,metadata:{}},
+        current_revision:target?.revision??0,expected_revision:intent.expected_revision??0,capability:'schedule.manage',purpose:'academic_timetable_planning',
+        requested_at:executionNow().toISOString(),correlation_id:req.requestId,causation_id:null,idempotency_key:`academic-schedule:${req.authUser.id}:${input.idempotency_key}`,
+        operating_rule_version_ref:null,configuration_refs:[],authority_attestation:{evaluator_domain:'timetable',decision:'allowed',reason_codes:['current_administrator_timetable_authority'],
+          authority_source_refs:[{school_id:input.school_id,user_id:req.authUser.id,action:'schedule.manage'}],operating_rule_refs:[],valid_until:null},safe_context:{intent:identity},
+      });
+      if(prepared.status==='completed')throw new ConflictException('This academic timetable command was already completed. Refresh the retained draft.');
+      await sql`SAVEPOINT academic_planning_effects`.execute(db);
+      try {
+        const result=await run(db);
+        const outcome=result as {id?:string;revision?:number};
+        const sourceId=outcome.id??intent.id;
+        const domainEvent=sourceId?(await sql<{id:string}>`SELECT id FROM event_outbox WHERE school_id=${input.school_id}::uuid
+          AND idempotency_key LIKE ${`schedule:${sourceId}:${req.requestId}:%`} ORDER BY created_at DESC LIMIT 1`.execute(db)).rows[0]:null;
+        await this.commandGateway.completeDomainCommand(db,{school_id:input.school_id,command_id:prepared.command_id,terminal_state:'accepted',code:'academic_schedule_changed',
+          explanation:'The owning academic timetable domain accepted this change.',resulting_revision:outcome.revision??null,domain_event_id:domainEvent?.id??null,
+          metadata:{schedule_id:outcome.id??intent.id??null},completed_at:executionNow().toISOString()});
+        await sql`RELEASE SAVEPOINT academic_planning_effects`.execute(db);
+        await sql`INSERT INTO day_plan_commands(school_id,actor_id,command_key,request_hash,result) VALUES(${input.school_id}::uuid,${req.authUser.id}::uuid,${input.idempotency_key}::uuid,${hash},${JSON.stringify(result)}::jsonb)`.execute(db);
+        return result;
+      } catch(error) {
+        if(!(error instanceof HttpException)||![400,403,409,422].includes(error.getStatus()))throw error;
+        await sql`ROLLBACK TO SAVEPOINT academic_planning_effects`.execute(db);
+        await this.commandGateway.completeDomainCommand(db,{school_id:input.school_id,command_id:prepared.command_id,
+          terminal_state:error.getStatus()===409?'conflicted':'rejected',code:'academic_schedule_refused',explanation:error.message.slice(0,500),
+          resulting_revision:null,domain_event_id:null,metadata:{http_status:error.getStatus()},completed_at:executionNow().toISOString()});
+        await sql`RELEASE SAVEPOINT academic_planning_effects`.execute(db);
+        const envelope={activity_command_refusal:{status_code:error.getStatus(),response:error.getResponse()}};
+        await sql`INSERT INTO day_plan_commands(school_id,actor_id,command_key,request_hash,result) VALUES(${input.school_id}::uuid,${req.authUser.id}::uuid,${input.idempotency_key}::uuid,${hash},${JSON.stringify(envelope)}::jsonb)`.execute(db);
+        refused.error=error;
+        return undefined as T;
+      }
     });
+    if(refused.error)throw refused.error;
+    return result;
   }
   private async audit(db:PlanDb,req:AuthenticatedRequest,school:string,id:string,kind:string,metadata:Record<string,unknown>) {
     await db.insertInto('audit_events').values({school_id:school,actor_id:req.authUser.id,action:`schedule.${kind}`,target_type:'schedule',target_id:id,request_id:req.requestId,ip_hash:null,metadata}).execute();
@@ -73,7 +120,6 @@ export class SchedulePlanningService {
     await this.events.enqueueUserEvent(db,{schoolId:school,eventType:'timetable.updated',aggregateType:'schedule',aggregateId:id,audienceUserIds:admins,idempotencyKey:`schedule:${id}:${req.requestId}:${kind}`,payload:{refresh:['principal.timetable'],change_kind:kind}});
   }
   private async projectPublishedSchedule(db:Transaction<Database>,req:AuthenticatedRequest,id:string,revision:number) {
-    if(!this.temporal)return;
     const rows=(await sql<PublishedScheduleProjectionRow>`
       SELECT version.school_id,school.timezone,version.published_at,version.class_section_id,
         concat('Class ',section.grade,section.section) AS class_label,
@@ -228,6 +274,9 @@ export class SchedulePlanningService {
         FROM periods a JOIN periods b ON a.date=b.date AND a.id<>b.id AND a.starts_at<b.ends_at AND b.starts_at<a.ends_at
         WHERE a.class_section_id=${v.class_section_id}::uuid AND (a.class_section_id=b.class_section_id OR (a.teacher_user_id IS NOT NULL AND a.teacher_user_id=b.teacher_user_id) OR (a.slot_type<>'break' AND b.slot_type<>'break' AND trim(a.room)<>'' AND lower(trim(a.room))=lower(trim(b.room)))) LIMIT 1`.execute(db)).rows[0];
       if(conflict)throw new ConflictException(`Resolve the ${conflict.type} clash on ${conflict.date}, period ${conflict.period_number}, before publishing.`);
+      // The same participant/space/leave engine validates all purposes, including
+      // class periods and a person's duties or training elsewhere on campus.
+      await this.activities.validateAcademicPublication(db,v.school_id,v.class_section_id,v.starts_on,v.ends_on,id);
       // Project the frozen term baseline before the dated change. Otherwise the
       // Model Core has no expected plan outside this new version's date range.
       if(frozenBaselineId)await this.projectPublishedSchedule(db,req,frozenBaselineId,1);
@@ -245,16 +294,17 @@ export class SchedulePlanningService {
       await sql`
         WITH recipients AS (
           SELECT membership.user_id,'principal'::text AS portal,NULL::uuid AS student_id,
-            ${`/principal/timetable/day?school=${v.school_id}&date=${v.starts_on}&class=${v.class_section_id}&schedule_id=${id}&schedule_revision=${publishedRevision}`}::text AS link
+            ${`/areas/timetable/planning/day?school=${v.school_id}&date=${v.starts_on}&class=${v.class_section_id}&schedule_id=${id}&schedule_revision=${publishedRevision}`}::text AS link
           FROM school_memberships membership JOIN users account ON account.id=membership.user_id AND account.is_active
           WHERE membership.school_id=${v.school_id}::uuid AND membership.role='admin' AND membership.is_active
           UNION ALL
-          SELECT membership.user_id,'teacher',NULL::uuid,${`/teacher/timetable?date=${v.starts_on}&schedule_id=${id}&schedule_revision=${publishedRevision}`}::text
+          SELECT membership.user_id,'teacher',NULL::uuid,${`/areas/timetable/schedule?date=${v.starts_on}&schedule_id=${id}&schedule_revision=${publishedRevision}`}::text
           FROM school_memberships membership JOIN users account ON account.id=membership.user_id AND account.is_active
           WHERE membership.school_id=${v.school_id}::uuid AND membership.role='staff' AND membership.is_active
             AND EXISTS(SELECT 1 FROM schedule_periods period WHERE period.version_id=${id}::uuid AND period.teacher_user_id=membership.user_id)
           UNION ALL
-          SELECT student.user_id,'student',student.id,${`/student/timetable?date=${v.starts_on}`}::text
+          SELECT student.user_id,'student',student.id,
+            '/areas/timetable/schedule?scope=self&student_id='||student.id::text||'&date='||${v.starts_on}::text
           FROM enrollments enrollment JOIN students student ON student.id=enrollment.student_id
           JOIN users account ON account.id=student.user_id AND account.is_active
           JOIN school_memberships membership ON membership.user_id=student.user_id
@@ -262,7 +312,7 @@ export class SchedulePlanningService {
           WHERE enrollment.class_section_id=${v.class_section_id}::uuid AND enrollment.term_id=${v.term_id}::uuid AND enrollment.is_active
           UNION ALL
           SELECT parent.user_id,'parent',enrollment.student_id,
-            '/parent/timetable?date='||${v.starts_on}::text||'&student_id='||enrollment.student_id::text||
+            '/areas/timetable/schedule?scope=dependent&student_id='||enrollment.student_id::text||'&date='||${v.starts_on}::text||
               '&schedule_id='||${id}::text||'&schedule_revision='||${publishedRevision}::text
           FROM enrollments enrollment
           JOIN guardian_relationships relationship ON relationship.student_id=enrollment.student_id AND relationship.school_id=${v.school_id}::uuid

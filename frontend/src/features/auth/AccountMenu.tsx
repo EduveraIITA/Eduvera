@@ -3,6 +3,7 @@ import { ArrowRight, CircleUserRound, LogOut, ShieldCheck } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 import { profileAvatar } from "../../lib/profileAvatars";
 import { useOptionalAuth } from "./AuthContext";
+import { accountRoleLabel } from "./accountRoleLabel";
 import "./auth.css";
 
 export interface AccountMenuProps {
@@ -91,14 +92,14 @@ export function AccountMenu({ buttonClassName, ariaLabel, iconSize = 21, onOpen 
             <span>
               <b>{displayName}</b>
               <small>{auth.user.email}</small>
-              <small className="account-menu__role"><ShieldCheck size={8} /> {auth.user.role}</small>
+              <small className="account-menu__role"><ShieldCheck size={12} aria-hidden="true" /> {accountRoleLabel(auth.user, auth.memberships)}</small>
             </span>
           </div>
           {error ? <span className="account-menu__error" role="alert">{error}</span> : null}
-          <button className="account-menu__logout account-menu__link" role="menuitem" type="button" onClick={() => { const origin=window.location.pathname+window.location.search; setOpen(false); void navigate(`/account/profile?from=${encodeURIComponent(origin)}`, { state: { accountReturnTo: origin, accountCanPop: true } }); }}>
+          <button className="account-menu__logout account-menu__link" role="menuitem" type="button" onClick={() => { const origin=window.location.pathname+window.location.search+window.location.hash; setOpen(false); void navigate(`/account/profile?from=${encodeURIComponent(origin)}`, { state: { accountReturnTo: origin, accountCanPop: true } }); }}>
             <CircleUserRound size={16} /> Profile <ArrowRight size={14} />
           </button>
-          <button className="account-menu__logout account-menu__link" role="menuitem" type="button" onClick={() => { const origin=window.location.pathname+window.location.search; setOpen(false); void navigate(`/account/security?from=${encodeURIComponent(origin)}`, { state: { accountReturnTo: origin, accountCanPop: true } }); }}>
+          <button className="account-menu__logout account-menu__link" role="menuitem" type="button" onClick={() => { const origin=window.location.pathname+window.location.search+window.location.hash; setOpen(false); void navigate(`/account/security?from=${encodeURIComponent(origin)}`, { state: { accountReturnTo: origin, accountCanPop: true } }); }}>
             <ShieldCheck size={16} /> Account security <ArrowRight size={14} />
           </button>
           <button className="account-menu__logout" role="menuitem" type="button" disabled={pending} onClick={() => void signOut()}>

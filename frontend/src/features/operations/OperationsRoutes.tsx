@@ -1,4 +1,5 @@
-import { useCallback } from "react";
+import { applicationNow } from "../simulation/applicationTime";
+import { useCallback, useRef } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Navigate, useSearchParams } from "react-router-dom";
 import { ThatCampusLoader } from "../../components/ThatCampusLoader";
@@ -9,11 +10,15 @@ import {
 import { PrincipalTimetablePage } from "../../pages/operations/TimetableBuilderPage";
 import { OperationsShell } from "../../pages/operations/OperationsShell";
 import {
-  TeacherAttendancePage,
   TeacherHomePage,
   TeacherTimetablePage,
 } from "../../pages/operations/TeacherPages";
 import { AttendanceWorkspacePage } from "../../pages/operations/AttendanceWorkspacePage";
+import type { AttendanceWorkspaceResponsibility } from "../../pages/operations/AttendanceWorkspacePage";
+import { ActivityAttendanceWorkspace } from "../activities/ActivityAttendanceWorkspace";
+import type { UnsavedChangesNavigationGuard } from "../navigation/useUnsavedChangesGuard";
+import { ResponsibilityAttendanceWorkspace } from "../attendance/ResponsibilityAttendanceWorkspace";
+import { AcademicAttendanceRegister } from "../attendance/AcademicAttendanceRegister";
 import { ApiError } from "../../lib/api";
 import { useAuth } from "../auth/AuthContext";
 import { useAttention } from "../attention/useAttention";
@@ -38,8 +43,10 @@ import {
   deleteSchoolClosure,
   deleteTimetableSlot,
   getAttendanceContinuityWorkspace,
+  getAttendanceRegister,
   getAttendanceRegisterHistory,
   getAttendanceModelWorkspace,
+  getResponsibilityAttendanceWorkspace,
   getPrincipalHome,
   getPrincipalTimetable,
   getTeacherAttendance,
@@ -61,9 +68,16 @@ import {
   type TeacherAttendanceSaveInput,
 } from "./api";
 
-async function attendanceWithOfflineFallback(ownerId: string, classSectionId: string, date: string) {
+async function attendanceWithOfflineFallback(
+  ownerId: string,
+  classSectionId: string,
+  date: string,
+  canonical = false,
+) {
   try {
-    const live = await getTeacherAttendance(classSectionId, date);
+    const live = canonical
+      ? await getAttendanceRegister(classSectionId, date)
+      : await getTeacherAttendance(classSectionId, date);
     await cacheAttendanceSnapshot(ownerId, live).catch(() => undefined);
     const queued = await readQueuedAttendanceCapture(ownerId, classSectionId, date).catch(() => null);
     return queued ? applyQueuedCapture(live, queued) : live;
@@ -94,7 +108,7 @@ async function submitAttendanceWithContinuity(
     ...input,
     source,
     device_id: input.device_id ?? deviceId,
-    observed_at: input.observed_at ?? new Date().toISOString(),
+    observed_at: input.observed_at ?? applicationNow().toISOString(),
     roster_fingerprint: input.roster_fingerprint ?? screen.continuity_snapshot.roster_fingerprint,
     roster_captured_at: input.roster_captured_at ?? screen.continuity_snapshot.captured_at,
     roster_expires_at: input.roster_expires_at ?? screen.continuity_snapshot.expires_at,
@@ -105,7 +119,7 @@ async function submitAttendanceWithContinuity(
     ownerId,
     classSectionId,
     date,
-    createdAt: new Date().toISOString(),
+    createdAt: applicationNow().toISOString(),
     input: captureInput,
     screen,
   };
@@ -181,9 +195,18 @@ export function TeacherTimetableRoute() {
   return <TeacherTimetablePage data={query.data} />;
 }
 
-export function TeacherAttendanceRoute() {
+interface OperationalAttendanceRouteProps {
+  readonly responsibility?: AttendanceWorkspaceResponsibility;
+  readonly embedded?: boolean;
+  readonly photoCaptureAllowed?: boolean;
+  /** Canonical responsibility workspace transport; omitted by legacy bookmarks. */
+  readonly workspaceSurface?: "registers" | "coordination";
+  readonly onBeforeLeaveChange?: (guard: UnsavedChangesNavigationGuard | null) => void;
+}
+
+export function TeacherAttendanceRoute({ responsibility, embedded = false, photoCaptureAllowed, workspaceSurface, onBeforeLeaveChange }: OperationalAttendanceRouteProps = {}) {
   const auth = useAuth();
-  const attention = useAttention("teacher");
+  const attention = useAttention(workspaceSurface ? null : "teacher");
   const [params, setParams] = useSearchParams();
   const queryClient = useQueryClient();
   const date = params.get("date") ?? schoolDateToday();
@@ -194,17 +217,22 @@ export function TeacherAttendanceRoute() {
   const model = useQuery({
     queryKey: ["attendance-model", date],
     queryFn: () => getAttendanceModelWorkspace(date),
-    enabled: !detailOpen,
+    enabled: !detailOpen && !workspaceSurface,
   });
   const home = useQuery({
     queryKey: ["teacher-home", date],
     queryFn: () => getTeacherHome(date),
-    enabled: !detailOpen,
+    enabled: !detailOpen && !workspaceSurface,
+  });
+  const responsibilityWorkspace = useQuery({
+    queryKey: ["responsibility-attendance", workspaceSurface, date],
+    queryFn: () => getResponsibilityAttendanceWorkspace(workspaceSurface!, date),
+    enabled: !detailOpen && workspaceSurface === "registers",
   });
 
   const query = useQuery({
     queryKey: attendanceKey,
-    queryFn: () => sessionId ? getSessionAttendance(sessionId) : attendanceWithOfflineFallback(auth.user!.id, classId!, date),
+    queryFn: () => sessionId ? getSessionAttendance(sessionId) : attendanceWithOfflineFallback(auth.user!.id, classId!, date, Boolean(workspaceSurface)),
     enabled: detailOpen,
   });
   const setDate = (next: string) => {
@@ -214,17 +242,37 @@ export function TeacherAttendanceRoute() {
     setParams(updated, { replace: true });
   };
 
+  if (!detailOpen && workspaceSurface === "registers") {
+    if (responsibilityWorkspace.isPending) return <Loading />;
+    if (responsibilityWorkspace.error) return <Failure error={responsibilityWorkspace.error} />;
+    return <AttendanceWorkspacePage
+      portal="teacher"
+      responsibility={responsibility}
+      embedded={embedded}
+      classes={responsibilityWorkspace.data.registers}
+      date={date}
+      onDateChange={setDate}
+    />;
+  }
   if (!detailOpen && (home.isPending || model.isPending)) return <Loading />;
   if (!detailOpen && (home.error || model.error)) return <Failure error={(home.error ?? model.error)!} />;
   if (!detailOpen && home.data && model.data) {
     const classes = model.data.mode === "scheduled_session" ? model.data.registers : model.data.mode === "none" ? [] : home.data.classes;
-    return <AttendanceWorkspacePage portal="teacher" classes={classes} date={date} onDateChange={setDate} attention={{ data: attention.data, isError: attention.isError, isPending: attention.isPending }} />;
+    return <AttendanceWorkspacePage
+      portal="teacher"
+      responsibility={responsibility}
+      embedded={embedded}
+      classes={classes}
+      date={date}
+      onDateChange={setDate}
+      attention={{ data: attention.data, isError: attention.isError, isPending: attention.isPending }}
+    />;
   }
   if (query.isPending) return <Loading />;
   if (query.error) return <Failure error={query.error} />;
 
   const refresh = async () => {
-    const latest = sessionId ? await getSessionAttendance(sessionId) : await attendanceWithOfflineFallback(auth.user!.id, classId!, date);
+    const latest = sessionId ? await getSessionAttendance(sessionId) : await attendanceWithOfflineFallback(auth.user!.id, classId!, date, Boolean(workspaceSurface));
     queryClient.setQueryData(attendanceKey, latest);
     return latest;
   };
@@ -236,19 +284,24 @@ export function TeacherAttendanceRoute() {
       queryClient.invalidateQueries({ queryKey: ["principal-home"] }),
       queryClient.invalidateQueries({ queryKey: ["attention"] }),
       queryClient.invalidateQueries({ queryKey: ["attendance-model"] }),
+      queryClient.invalidateQueries({ queryKey: ["responsibility-attendance"] }),
     ]);
     return updated;
   };
 
   return (
-    <TeacherAttendancePage
+    <AcademicAttendanceRegister
       key={`${query.data.session?.id ?? query.data.class.id}-${date}-${params.get('student_id')??''}`}
       initialStudentId={params.get('student_id')??undefined}
       data={query.data}
+      responsibility={responsibility}
+      embedded={embedded}
+      photoCaptureAllowed={photoCaptureAllowed}
       date={date}
       onDateChange={setDate}
       onSave={save}
       onRefresh={refresh}
+      onBeforeLeaveChange={onBeforeLeaveChange}
       onDecideEvidence={sessionId ? (evidenceId, input) => decideSessionAttendanceEvidence(sessionId, evidenceId, input) : undefined}
     />
   );
@@ -262,9 +315,9 @@ export function PrincipalHomeRoute() {
   return <PrincipalHomePage data={query.data} date={date} onDateChange={setDate} />;
 }
 
-export function PrincipalAttendanceRoute() {
+export function PrincipalAttendanceRoute({ responsibility, embedded = false, photoCaptureAllowed, workspaceSurface, onBeforeLeaveChange }: OperationalAttendanceRouteProps = {}) {
   const auth = useAuth();
-  const attention = useAttention("principal");
+  const attention = useAttention(workspaceSurface ? null : "principal");
   const [params, setParams] = useSearchParams();
   const queryClient = useQueryClient();
   const date = params.get("date") ?? schoolDateToday();
@@ -277,21 +330,27 @@ export function PrincipalAttendanceRoute() {
   const model = useQuery({
     queryKey: ["attendance-model", date],
     queryFn: () => getAttendanceModelWorkspace(date),
-    enabled: !detailOpen,
+    enabled: !detailOpen && !workspaceSurface,
   });
   const home = useQuery({
     queryKey: ["principal-home", date],
     queryFn: () => getPrincipalHome(date),
-    enabled: !detailOpen,
+    enabled: !detailOpen && !workspaceSurface,
   });
   const continuity = useQuery({
     queryKey: ["attendance-continuity", date, reviewCaseId ?? "queue"],
     queryFn: () => getAttendanceContinuityWorkspace(date, reviewCaseId),
-    enabled: !detailOpen,
+    enabled: !detailOpen && !workspaceSurface,
+  });
+  const responsibilityKey = ["responsibility-attendance", workspaceSurface, date, reviewCaseId ?? "queue"] as const;
+  const responsibilityWorkspace = useQuery({
+    queryKey: responsibilityKey,
+    queryFn: () => getResponsibilityAttendanceWorkspace(workspaceSurface!, date, reviewCaseId),
+    enabled: !detailOpen && workspaceSurface === "coordination",
   });
   const roster = useQuery({
     queryKey: registerKey,
-    queryFn: () => sessionId ? getSessionAttendance(sessionId) : attendanceWithOfflineFallback(auth.user!.id, classId!, date),
+    queryFn: () => sessionId ? getSessionAttendance(sessionId) : attendanceWithOfflineFallback(auth.user!.id, classId!, date, Boolean(workspaceSurface)),
     enabled: detailOpen,
   });
   const loadHistory = useCallback(() => queryClient.fetchQuery({
@@ -319,21 +378,25 @@ export function PrincipalAttendanceRoute() {
         queryClient.invalidateQueries({ queryKey: historyKey }),
         queryClient.invalidateQueries({ queryKey: ["attention"] }),
         queryClient.invalidateQueries({ queryKey: ["attendance-model"] }),
+        queryClient.invalidateQueries({ queryKey: ["responsibility-attendance"] }),
       ]);
       return updated;
     };
 
     return (
-      <TeacherAttendancePage
+      <AcademicAttendanceRegister
         key={`${roster.data.session?.id ?? roster.data.class.id}-${date}-${params.get('student_id')??''}`}
         initialStudentId={params.get('student_id')??undefined}
         portal="principal"
+        responsibility={responsibility}
+        embedded={embedded}
+        photoCaptureAllowed={photoCaptureAllowed}
         initialCaptureSource={params.get("source") === "paper" ? "paper" : "live_app"}
         data={roster.data}
         date={date}
         onDateChange={setDate}
         onRefresh={async () => {
-          const latest = sessionId ? await getSessionAttendance(sessionId) : await attendanceWithOfflineFallback(auth.user!.id, classId!, date);
+          const latest = sessionId ? await getSessionAttendance(sessionId) : await attendanceWithOfflineFallback(auth.user!.id, classId!, date, Boolean(workspaceSurface));
           queryClient.setQueryData(registerKey, latest);
           return latest;
         }}
@@ -341,34 +404,84 @@ export function PrincipalAttendanceRoute() {
         onLock={() => storeResult(sessionId ? lockSessionAttendance(sessionId) : lockAttendanceRegister(classId!, date))}
         onUnlock={(reason) => storeResult(sessionId ? unlockSessionAttendance(sessionId, reason) : unlockAttendanceRegister(classId!, date, reason))}
         onLoadHistory={loadHistory}
+        onBeforeLeaveChange={onBeforeLeaveChange}
         onDecideEvidence={sessionId ? (evidenceId, input) => storeResult(decideSessionAttendanceEvidence(sessionId, evidenceId, input)) : undefined}
       />
     );
   }
-  if (home.isPending || model.isPending) return <Loading />;
-  if (home.error || model.error) return <Failure error={(home.error ?? model.error)!} />;
-  const classes = model.data?.mode === "scheduled_session" ? model.data.registers : model.data?.mode === "none" ? [] : home.data.classes;
+  if (workspaceSurface === "coordination") {
+    if (responsibilityWorkspace.isPending) return <Loading />;
+    if (responsibilityWorkspace.error) return <Failure error={responsibilityWorkspace.error} />;
+  } else {
+    if (home.isPending || model.isPending) return <Loading />;
+    if (home.error || model.error) return <Failure error={(home.error ?? model.error)!} />;
+  }
+  const classes = workspaceSurface === "coordination"
+    ? responsibilityWorkspace.data!.registers
+    : model.data?.mode === "scheduled_session" ? model.data.registers : model.data?.mode === "none" ? [] : home.data!.classes;
+  const continuityData = workspaceSurface === "coordination" ? responsibilityWorkspace.data!.continuity ?? undefined : continuity.data;
   return <AttendanceWorkspacePage
     portal="principal"
+    responsibility={responsibility}
+    embedded={embedded}
     classes={classes}
     date={date}
     onDateChange={setDate}
     attention={{ data: attention.data, isError: attention.isError, isPending: attention.isPending }}
     initialReviewCaseId={reviewCaseId}
-    continuity={continuity.data}
-    continuityLoading={continuity.isPending}
-    continuityError={continuity.error ?? null}
+    continuity={continuityData}
+    continuityLoading={workspaceSurface === "coordination" ? responsibilityWorkspace.isPending : continuity.isPending}
+    continuityError={workspaceSurface === "coordination" ? responsibilityWorkspace.error ?? null : continuity.error ?? null}
     onContinuityDecision={async (caseId, decision, reason, expectedRevision) => {
       const updated = await decideAttendanceReconciliation(caseId, { decision, reason, expected_revision: expectedRevision });
-      queryClient.setQueryData(["attendance-continuity", date, reviewCaseId ?? "queue"], updated);
+      if (workspaceSurface === "coordination") {
+        queryClient.setQueryData(responsibilityKey, (current: typeof responsibilityWorkspace.data) => current
+          ? { ...current, continuity: updated }
+          : current);
+      } else {
+        queryClient.setQueryData(["attendance-continuity", date, reviewCaseId ?? "queue"], updated);
+      }
       await Promise.all([
         queryClient.invalidateQueries({ queryKey: ["principal-home"] }),
         queryClient.invalidateQueries({ queryKey: ["teacher-home"] }),
         queryClient.invalidateQueries({ queryKey: ["principal-register"] }),
         queryClient.invalidateQueries({ queryKey: ["attention"] }),
+        queryClient.invalidateQueries({ queryKey: ["responsibility-attendance"] }),
       ]);
     }}
   />;
+}
+
+export function ResponsibilityAttendanceRegistersRoute() {
+  const [params] = useSearchParams();
+  const beforeLeave = useRef<UnsavedChangesNavigationGuard | null>(null);
+  const registerBeforeLeave = useCallback((guard: UnsavedChangesNavigationGuard | null) => { beforeLeave.current = guard; }, []);
+  const academicDetail = params.has("class_section_id") || params.has("session_id");
+  return <ResponsibilityAttendanceWorkspace selection={{ kind: "registers" }} beforeBack={(intent) => beforeLeave.current?.(intent)}>
+    {({ surface, institutionId }) => academicDetail ? <TeacherAttendanceRoute
+      responsibility="record"
+      embedded
+      workspaceSurface="registers"
+      photoCaptureAllowed={surface.capabilities.includes("photo.use")}
+      onBeforeLeaveChange={registerBeforeLeave}
+    /> : <ActivityAttendanceWorkspace schoolId={institutionId} embedded onBeforeLeaveChange={registerBeforeLeave} />}
+  </ResponsibilityAttendanceWorkspace>;
+}
+
+export function ResponsibilityAttendanceCoordinationRoute() {
+  const [params] = useSearchParams();
+  const beforeLeave = useRef<UnsavedChangesNavigationGuard | null>(null);
+  const registerBeforeLeave = useCallback((guard: UnsavedChangesNavigationGuard | null) => { beforeLeave.current = guard; }, []);
+  const academicDetail = params.has("class_section_id") || params.has("session_id") || params.has("review_case") || params.get("source") === "continuity";
+  return <ResponsibilityAttendanceWorkspace selection={{ kind: "coordination" }} beforeBack={(intent) => beforeLeave.current?.(intent)}>
+    {({ surface, institutionId }) => academicDetail ? <PrincipalAttendanceRoute
+      responsibility="coordinate"
+      embedded
+      workspaceSurface="coordination"
+      photoCaptureAllowed={surface.capabilities.includes("photo.use")}
+      onBeforeLeaveChange={registerBeforeLeave}
+    /> : <ActivityAttendanceWorkspace schoolId={institutionId} coordinate embedded onBeforeLeaveChange={registerBeforeLeave} />}
+  </ResponsibilityAttendanceWorkspace>;
 }
 
 export { ScheduleSettingsRoute as PrincipalTimetableRoute } from "../schedule-planning/ScheduleSettingsRoute";

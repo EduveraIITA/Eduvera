@@ -15,6 +15,11 @@ export class CalendarIntegrationsController {
     const result=await this.calendars.export(request,query);return reply.header('Cache-Control','private, no-store')
       .header('Content-Disposition',`attachment; filename="${result.filename}"`).type('text/calendar; charset=utf-8').send(result.body);
   }
+  @Get('subscriptions/:id/preview.ics') async preview(@Req() request:AuthenticatedRequest,@Param('id') id:string,@Res() reply:FastifyReply){
+    const body=await this.calendars.preview(request,id);
+    return reply.header('Cache-Control','private, no-store').header('X-Evidence-Mode','simulation')
+      .header('Content-Disposition','attachment; filename="thatcampus-simulation-calendar.ics"').type('text/calendar; charset=utf-8').send(body);
+  }
   @Public() @SkipCsrf() @Get('subscriptions/:token/feed.ics') async feed(@Req() request:FastifyRequest,@Param('token') token:string,@Res() reply:FastifyReply){
     const body=await this.calendars.feed(token);const etag=`"${createHash('sha256').update(body).digest('base64url')}"`;
     if(request.headers['if-none-match']===etag)return reply.status(304).send();

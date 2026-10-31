@@ -6,7 +6,9 @@ import { useEffect, useState, type FormEvent } from "react";
 import { Link, Navigate, useLocation, useNavigate, useSearchParams } from "react-router-dom";
 import { apiFetch } from "../../lib/api";
 import { AuthLayout, BackToLogin } from "./AuthPages";
-import { useAuth } from "./AuthContext";
+import { authDestination, useAuth } from "./AuthContext";
+import { safeAccountReturnTarget } from "./accountReturnTarget";
+import { OnboardingFrame } from "../onboarding/OnboardingFrame";
 import "./account-security.css";
 import "./account-navigation.css";
 
@@ -18,12 +20,16 @@ async function publicMutation<T>(path: string, body: unknown) {
   return apiFetch<T>(path, { method: "POST", body: JSON.stringify(body) });
 }
 
-export function AccountSecurityPage() {
+export function AccountSecurityPage({ presentation = "standalone" }: { presentation?: "standalone" | "workspace" } = {}) {
   const auth = useAuth();
   const navigate = useNavigate();
   const location = useLocation();
   const queryClient = useQueryClient();
   const [params] = useSearchParams();
+  const origin = params.get("from") ?? "";
+  const isOnboardingConfirmation = origin === "/onboarding/start"
+    || auth.onboarding?.status === "workspace_required"
+    || auth.onboarding?.status === "purpose_required";
   const [token, setToken] = useState(params.get("token") ?? window.sessionStorage.getItem("omnischool:development-verification-token") ?? "");
   const [setup, setSetup] = useState<Enrollment | null>(null);
   const [qr, setQr] = useState("");
@@ -32,7 +38,11 @@ export function AccountSecurityPage() {
   const [message, setMessage] = useState("");
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
-  const mfa = useQuery({ queryKey: ["account", "mfa"], queryFn: () => apiFetch<MfaStatus>("/api/v1/auth/mfa/") });
+  const mfa = useQuery({
+    queryKey: ["account", "mfa"],
+    queryFn: () => apiFetch<MfaStatus>("/api/v1/auth/mfa/"),
+    enabled: auth.status === "authenticated" && !isOnboardingConfirmation,
+  });
 
   useEffect(() => {
     if (!setup) return;
@@ -82,15 +92,35 @@ export function AccountSecurityPage() {
 
   const verified = auth.user?.email_verified === true;
   const mfaActive = mfa.data?.status === "active";
-  const origin = params.get("from") ?? "";
-  const safeOrigin = /^(?:\/(?:principal|teacher|parent|student)(?:\/[^?#]*)?(?:\?[^#]*)?|\/account\/profile(?:\?[^#]*)?)$/.test(origin) ? origin : "/";
-  const backTarget = safeOrigin;
-  const continueTarget = auth.setupRequired ? "/principal/activation" : safeOrigin;
+  const safeOrigin = safeAccountReturnTarget(origin);
+  const backTarget = safeOrigin ?? authDestination(auth);
+  const continueTarget = backTarget;
   const returnState=location.state as {accountReturnTo?:unknown;accountCanPop?:unknown}|null;
-  const canPopBack=returnState?.accountReturnTo===backTarget&&returnState.accountCanPop===true;
-  return <main className="security-page">
-    <header className="security-header"><button type="button" aria-label="Back" onClick={()=>{if(canPopBack)void navigate(-1);else void navigate(backTarget,{replace:true});}}><ArrowLeft size={21}/></button><div><h1>Account security</h1><p>{auth.user?.email}</p></div></header>
-    <section className="security-summary" aria-label="Security progress"><div><ShieldCheck/><span><strong>{verified && mfaActive ? "Protected" : "Action needed"}</strong><small>{Number(verified)+Number(mfaActive)} of 2 checks</small></span></div></section>
+  const canPopBack=Boolean(safeOrigin)&&safeAccountReturnTarget(returnState?.accountReturnTo)===safeOrigin&&returnState?.accountCanPop===true;
+  if (isOnboardingConfirmation) return <OnboardingFrame onLogout={() => void auth.logout()} step="Secure your account">
+    <h1>{verified ? "Email confirmed" : "Confirm your email"}</h1>
+    <p className="campus-start__lead">{verified ? <><strong>{auth.user?.email}</strong> is ready. Choose the first campus task you want to run.</> : <>Confirm <strong>{auth.user?.email}</strong> before choosing your first campus task.</>}</p>
+    {error ? <p className="campus-start__error" role="alert">{error}</p> : null}
+    {message ? <p className="campus-start__note" role="status">{message}</p> : null}
+    {!verified ? <>
+      <button className="campus-start__secondary" type="button" onClick={() => void requestVerification()} disabled={busy}>
+        {busy ? <LoaderCircle className="auth-spin" /> : <MailCheck size={19} />} Send verification email
+      </button>
+      <form onSubmit={confirmVerification} aria-busy={busy}>
+        <label className="campus-start__field">Verification token
+          <input value={token} onChange={(event) => setToken(event.target.value)} autoComplete="one-time-code" required />
+          <small>Use the verification link in your email, or paste its secure token here.</small>
+        </label>
+        <button className="campus-start__primary" disabled={busy || token.trim().length < 32}>Confirm email</button>
+      </form>
+    </> : <>
+      <div className="campus-start__success" aria-hidden="true"><CheckCircle2 size={30} /></div>
+      <Link className="campus-start__primary" to="/onboarding/start">Continue</Link>
+      <p className="campus-start__note">You can add an authenticator later from Account security.</p>
+    </>}
+  </OnboardingFrame>;
+  const content = <>
+    <section className="security-summary" aria-label="Security progress"><div><ShieldCheck/><span><strong>{verified ? (mfaActive ? "Protected" : "Email secured") : "Action needed"}</strong><small>{verified ? (mfaActive ? "Email verified · two-step active" : "Email verified · two-step optional") : "Verify your email to continue"}</small></span></div></section>
     {error ? <p className="security-alert" role="alert">{error}</p> : null}
     {message ? <p className="security-message" role="status">{message}</p> : null}
     <section className={`security-card ${verified ? "is-complete" : ""}`}>
@@ -98,22 +128,49 @@ export function AccountSecurityPage() {
       {!verified ? <><button className="security-primary" type="button" onClick={()=>void requestVerification()} disabled={busy}>{busy ? <LoaderCircle className="auth-spin"/> : <MailCheck/>} Send verification email</button><form onSubmit={confirmVerification}><label>Verification token<input value={token} onChange={(event)=>setToken(event.target.value)} autoComplete="one-time-code" required/></label><button className="security-secondary" disabled={busy || token.trim().length<32}>Confirm email</button></form></> : <p className="security-complete-copy">Verified email: <strong>{auth.user?.email}</strong></p>}
     </section>
     <section className={`security-card ${mfaActive ? "is-complete" : ""}`}>
-      <header><span><KeyRound/></span><div><h2>Two-step verification</h2><p>Authenticator app required at sign-in.</p></div>{mfaActive ? <CheckCircle2 aria-label="Complete"/> : null}</header>
+      <header><span><KeyRound/></span><div><h2>Two-step verification</h2><p>Optional extra protection with an authenticator app.</p></div>{mfaActive ? <CheckCircle2 aria-label="Complete"/> : null}</header>
       {mfa.isPending ? <p>Checking status…</p> : mfaActive ? <p className="security-complete-copy">Active · {mfa.data?.recovery_codes_remaining} unused recovery codes</p> : !verified ? <p className="security-disabled"><LockKeyhole/> Verify your email first.</p> : setup ? <div className="mfa-setup">{qr ? <img src={qr} alt="Authenticator setup QR code"/> : null}<p>Scan the QR code or enter this setup key:</p><code>{setup.secret}</code><form onSubmit={confirmMfa}><label>Six-digit authenticator code<input value={code} onChange={(event)=>setCode(event.target.value)} inputMode="numeric" pattern="[0-9]{6}" autoComplete="one-time-code" required/></label><button className="security-primary" disabled={busy}>Activate two-step verification</button></form></div> : <button className="security-primary" type="button" onClick={()=>void beginMfa()} disabled={busy}><KeyRound/> Set up authenticator</button>}
       {recoveryCodes.length ? <div className="recovery-codes" role="status"><h3>Save these recovery codes</h3><p>Each code works once. They will not be shown again.</p><div>{recoveryCodes.map((item)=><code key={item}>{item}</code>)}</div><button className="security-secondary" type="button" onClick={()=>void navigator.clipboard.writeText(recoveryCodes.join("\n"))}><Clipboard/> Copy codes</button></div> : null}
     </section>
-    {verified && mfaActive ? <Link className="security-continue" to={continueTarget}>Continue →</Link> : null}
+    {verified && presentation==="standalone" ? <Link className="security-continue" to={continueTarget}>Continue →</Link> : null}
+  </>;
+  if(presentation==="workspace") return <div className="security-page security-page--workspace">{content}</div>;
+  return <main className="security-page">
+    <header className="security-header"><button type="button" aria-label="Back" onClick={()=>{if(canPopBack)void navigate(-1);else void navigate(backTarget,{replace:true});}}><ArrowLeft size={21}/></button><div><h1>Account security</h1><p>{auth.user?.email}</p></div></header>
+    {content}
   </main>;
 }
 
 export function ForgotPasswordPage() {
   const [email,setEmail]=useState(""); const [busy,setBusy]=useState(false); const [sent,setSent]=useState(false); const [error,setError]=useState("");
   async function submit(event:FormEvent){event.preventDefault();setBusy(true);setError("");try{await publicMutation("/api/v1/auth/password-reset/request/",{email:email.trim()});setSent(true);}catch(cause){setError((cause as Error).message);}finally{setBusy(false);}}
-  return <AuthLayout eyebrow="Account recovery" title="Reset your password" description="We’ll send a time-limited reset link if the email belongs to an active account.">{sent?<div className="auth-success"><CheckCircle2/><h3>Check your email</h3><p>If an active account matches, a reset link is on its way.</p><BackToLogin/></div>:<form className="auth-form" onSubmit={submit}>{error?<div className="auth-alert" role="alert">{error}</div>:null}<label className="auth-field"><span>Email address</span><div className="auth-input-wrap"><MailCheck/><input type="email" value={email} onChange={event=>setEmail(event.target.value)} autoComplete="email" required autoFocus/></div></label><button className="auth-primary-button" disabled={busy}>{busy?<><LoaderCircle className="auth-spin"/> Sending…</>:"Send reset link"}</button><BackToLogin/></form>}</AuthLayout>;
+  return <AuthLayout eyebrow="Account recovery" title={sent?"Check your email":"Reset your password"} description={sent?"If an active account matches, a reset link is on its way.":"Enter your account email to request a time-limited reset link."}>
+    {sent?<div className="auth-success" role="status"><CheckCircle2 aria-hidden="true"/><p>Check your inbox and spam folder, then follow the link to choose a new password.</p><BackToLogin/></div>
+      :<form className="auth-form" onSubmit={submit} aria-busy={busy}>
+        {error?<div className="auth-alert" role="alert">{error}</div>:null}
+        <label className="auth-field"><span>Email address</span><div className="auth-input-wrap"><MailCheck aria-hidden="true"/><input type="email" value={email} onChange={event=>setEmail(event.target.value)} autoComplete="email" required autoFocus/></div></label>
+        <button className="auth-primary-button" disabled={busy}>{busy?<><LoaderCircle className="auth-spin"/> Sending…</>:"Send reset link"}</button>
+        <BackToLogin/>
+      </form>}
+  </AuthLayout>;
 }
 
 export function ResetPasswordPage() {
   const [params]=useSearchParams();const [token,setToken]=useState(params.get("token")??"");const [password,setPassword]=useState("");const [confirm,setConfirm]=useState("");const [busy,setBusy]=useState(false);const [done,setDone]=useState(false);const [error,setError]=useState("");
+  const [tokenDetailsOpen,setTokenDetailsOpen]=useState(!params.get("token"));
   async function submit(event:FormEvent){event.preventDefault();setError("");if(password!==confirm){setError("The passwords do not match.");return;}setBusy(true);try{await publicMutation("/api/v1/auth/password-reset/confirm/",{token:token.trim(),password});setDone(true);}catch(cause){setError((cause as Error).message);}finally{setBusy(false);}}
-  return <AuthLayout eyebrow="Account recovery" title="Choose a new password" description="The reset link is single-use and signs out every existing session.">{done?<div className="auth-success"><CheckCircle2/><h3>Password updated</h3><p>Sign in again on every device using your new password.</p><BackToLogin/></div>:<form className="auth-form" onSubmit={submit}>{error?<div className="auth-alert" role="alert">{error}</div>:null}<label className="auth-field"><span>Reset token</span><div className="auth-input-wrap"><KeyRound/><input value={token} onChange={event=>setToken(event.target.value)} required/></div></label><label className="auth-field"><span>New password</span><div className="auth-input-wrap"><LockKeyhole/><input type="password" value={password} onChange={event=>setPassword(event.target.value)} minLength={12} autoComplete="new-password" required/></div></label><label className="auth-field"><span>Confirm password</span><div className="auth-input-wrap"><LockKeyhole/><input type="password" value={confirm} onChange={event=>setConfirm(event.target.value)} minLength={12} autoComplete="new-password" required/></div></label><button className="auth-primary-button" disabled={busy}>{busy?<><LoaderCircle className="auth-spin"/> Updating…</>:"Update password"}</button><BackToLogin/></form>}</AuthLayout>;
+  return <AuthLayout eyebrow="Account recovery" title={done?"Password updated":"Choose a new password"} description={done?"Your previous sessions are signed out.":"This single-use reset signs out every existing session."}>
+    {done?<div className="auth-success" role="status"><CheckCircle2 aria-hidden="true"/><p>Sign in again on every device using your new password.</p><BackToLogin/></div>
+      :<form className="auth-form" onSubmit={submit} aria-busy={busy}>
+        {error?<div className="auth-alert" role="alert">{error}</div>:null}
+        <div className="auth-field"><label htmlFor="reset-password">New password</label><div className="auth-input-wrap"><LockKeyhole aria-hidden="true"/><input id="reset-password" type="password" value={password} onChange={event=>setPassword(event.target.value)} minLength={12} autoComplete="new-password" aria-describedby="reset-password-help" required autoFocus/></div><small id="reset-password-help">Use at least 12 characters with upper- and lowercase letters, a number and a symbol.</small></div>
+        <label className="auth-field"><span>Confirm password</span><div className="auth-input-wrap"><LockKeyhole aria-hidden="true"/><input type="password" value={confirm} onChange={event=>setConfirm(event.target.value)} minLength={12} autoComplete="new-password" required/></div></label>
+        <details className="auth-entry-details" open={tokenDetailsOpen} onToggle={event=>setTokenDetailsOpen(event.currentTarget.open)}><summary>Reset link details</summary>
+          <label className="auth-field"><span>Reset token</span><div className="auth-input-wrap"><KeyRound aria-hidden="true"/><input value={token} onChange={event=>setToken(event.target.value)} onInvalid={()=>setTokenDetailsOpen(true)} autoComplete="off" required/></div></label>
+        </details>
+        <button className="auth-primary-button" disabled={busy}>{busy?<><LoaderCircle className="auth-spin"/> Updating…</>:"Update password"}</button>
+        <Link className="auth-entry-recovery" to="/forgot-password">Request a new reset link</Link>
+        <BackToLogin/>
+      </form>}
+  </AuthLayout>;
 }

@@ -1,6 +1,7 @@
 import { apiFetch } from "../../lib/api";
 
 export type NoticePortal = "parent" | "teacher" | "principal";
+export type NoticeWorkspaceScope = "responsibility" | "dependent";
 export type NoticeStatus = "draft" | "published" | "cancelled";
 export type NoticeResponseMode = "information" | "acknowledgement" | "choice";
 export type NoticePriority = "urgent" | "high" | "normal";
@@ -64,12 +65,32 @@ export function getNotices(portal: NoticePortal, options: { schoolId?: string; s
   }));
 }
 
+export function getWorkspaceNotices(scope: NoticeWorkspaceScope, options: { schoolId?: string; studentId?: string; status?: NoticeStatus } = {}) {
+  return apiFetch<{ scope: NoticeWorkspaceScope; school_id: string; student_id: string | null; attention: NoticeAttentionSummary; results: NoticeSummary[] }>(withQuery("/api/v1/notices", {
+    scope, school_id: options.schoolId, student_id: options.studentId, status: options.status,
+  }));
+}
+
 export function getNotice(portal: NoticePortal, noticeId: string, studentId?: string) {
   return apiFetch<NoticeDetail>(withQuery(`/api/v1/notices/${encodeURIComponent(noticeId)}`, { portal, student_id: studentId }));
 }
 
+export function getWorkspaceNotice(scope: NoticeWorkspaceScope, noticeId: string, studentId?: string) {
+  return apiFetch<NoticeDetail>(withQuery(`/api/v1/notices/${encodeURIComponent(noticeId)}`, { scope, student_id: studentId }));
+}
+
+export interface NoticeReferences {
+  school_id: string;
+  classes: Array<{ id: string; name: string }>;
+  audience_kinds?: NoticeAudience["kind"][];
+}
+
 export function getNoticeReferences(portal: "teacher" | "principal", schoolId?: string) {
-  return apiFetch<{ school_id: string; classes: Array<{ id: string; name: string }> }>(withQuery("/api/v1/notices/references", { portal, school_id: schoolId }));
+  return apiFetch<NoticeReferences>(withQuery("/api/v1/notices/references", { portal, school_id: schoolId }));
+}
+
+export function getWorkspaceNoticeReferences(schoolId?: string) {
+  return apiFetch<NoticeReferences>(withQuery("/api/v1/notices/references", { scope: "responsibility", school_id: schoolId }));
 }
 
 export function createNotice(schoolId: string, input: NoticeContent, idempotencyKey = noticeCommandKey()) {

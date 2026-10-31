@@ -1,0 +1,16 @@
+.attendance-history-stream { display: grid; gap: 20px; min-width: 0; padding: 20px; color: var(--thatcampus-ink); font-size: 16px; line-height: 1.5; }
+.attendance-history-context { display: grid; gap: 4px; margin: 0; color: var(--thatcampus-ink-secondary); font-size: 14px; }
+.attendance-history-stream > ol { display: grid; gap: 24px; margin: 0; padding: 0; list-style: none; }
+.attendance-history-stream > ol > li { display: grid; gap: 6px; min-width: 0; padding-bottom: 20px; border-bottom: 1px solid var(--thatcampus-border); }
+.attendance-history-stream strong { font-size: 16px; font-weight: 650; overflow-wrap: anywhere; }
+.attendance-history-stream time { color: var(--thatcampus-ink-secondary); font-size: 14px; }
+.attendance-history-stream p { margin: 0; overflow-wrap: anywhere; }
+.attendance-history-stream button { min-height: 44px; padding: 8px 12px; border: 1px solid transparent; border-radius: var(--thatcampus-radius-control); background: var(--thatcampus-surface-soft); color: var(--thatcampus-ink); box-shadow: var(--thatcampus-shadow-control); font-size: 14px; }
+.attendance-history-stream :is(button, summary):focus-visible { outline: 2px solid var(--thatcampus-brand); outline-offset: 3px; }
+.attendance-history-evidence > summary, .attendance-history-audit > summary { width: fit-content; max-width: 100%; min-height: 44px; padding-block: 10px; color: var(--thatcampus-brand); cursor: pointer; font-size: 14px; font-weight: 600; overflow-wrap: anywhere; }
+.attendance-history-evidence > ul { display: grid; gap: 16px; margin: 12px 0; padding-left: 20px; }
+.attendance-history-evidence > ul > li { padding-block: 8px; }
+.attendance-history-caption { color: var(--thatcampus-ink-secondary); font-size: 14px; }
+.attendance-history-audit dl { display: grid; gap: 12px; margin: 0; padding: 12px var(--thatcampus-row-inset); border-radius: var(--thatcampus-radius-row); background: var(--thatcampus-surface-soft); font-size: 14px; }
+.attendance-history-audit dt { color: var(--thatcampus-ink-secondary); }
+.attendance-history-audit dd { margin: 2px 0 0; overflow-wrap: anywhere; }

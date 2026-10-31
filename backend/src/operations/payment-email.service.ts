@@ -5,6 +5,7 @@ import type { Database } from '../database/types.js';
 import { config } from '../config.js';
 import { sendTransactionalEmail } from '../common/email-transport.js';
 import { paymentEmail, paymentReceiptPdf, type PaymentDocument } from './payment-receipt.js';
+import { executionEnvironmentStorage } from '../campus-model-core/execution-time.runtime.js';
 
 export async function enqueuePaymentEmail(db: DatabaseService | Transaction<Database>, orderId: string, paymentId: string, state: PaymentDocument['state']) {
  await sql`INSERT INTO fee_payment_emails(order_id,provider_payment_id,payment_state) VALUES(${orderId}::uuid,${paymentId},${state}) ON CONFLICT DO NOTHING`.execute(db);
@@ -25,14 +26,16 @@ export async function readPaymentDocument(db: DatabaseService, orderId: string) 
 @Injectable()
 export class PaymentEmailService implements OnModuleInit, OnModuleDestroy {
  private timer?: ReturnType<typeof setInterval>;
- private busy=false;
+ private readonly busy=new Set<string>();
  private readonly logger=new Logger(PaymentEmailService.name);
  constructor(private readonly db: DatabaseService) {}
  onModuleInit(){this.timer=setInterval(()=>void this.deliverPending(),15_000).unref();}
  onModuleDestroy(){if(this.timer)clearInterval(this.timer);}
  async deliverPending() {
-  if(this.busy || !config().INVITATION_EMAIL_ENABLED) return;
-  this.busy=true;
+  const environment=executionEnvironmentStorage.getStore();const namespace=environment?.namespace_id??'live';
+  const simulated=environment?.kind==='simulation';
+  if(this.busy.has(namespace) || (!simulated&&!config().INVITATION_EMAIL_ENABLED)) return;
+  this.busy.add(namespace);
   try {
    // A crash/timeout after SMTP acceptance has an unknown outcome. Never silently resend.
    await sql`UPDATE fee_payment_emails SET delivery_state='unknown',updated_at=now() WHERE delivery_state='sending' AND updated_at<now()-interval '5 minutes'`.execute(this.db);
@@ -48,13 +51,14 @@ export class PaymentEmailService implements OnModuleInit, OnModuleDestroy {
      else {
       const document={...data,state:job.payment_state,providerPayment:job.provider_payment_id};
       const attachments=job.payment_state==='captured' ? [{filename:`ThatCampus-test-receipt-${data.receipt}.pdf`,contentType:'application/pdf',content:(await paymentReceiptPdf(document)).toString('base64')}] : [];
-      await sendTransactionalEmail({to:data.email,senderName:'ThatCampus · Pathyakram',...paymentEmail(document,config().PUBLIC_URL!,data.student_id,data.invoice_id),attachments});
-      outcome='accepted';
+      await sendTransactionalEmail({to:data.email,senderName:'ThatCampus · Pathyakram',...paymentEmail(document,simulated?'https://simulation.invalid':config().PUBLIC_URL!,data.student_id,data.invoice_id),attachments});
+      // Preserve the native delivery-state enum without asserting SMTP acceptance.
+      outcome=simulated?'skipped':'accepted';
      }
     } catch {this.logger.warn('Payment email acceptance unconfirmed; receipt remains available in the app.');}
     await sql`UPDATE fee_payment_emails SET delivery_state=${outcome},updated_at=now() WHERE id=${job.id}::uuid`.execute(this.db);
    }
   } catch {this.logger.warn('Payment email queue unavailable; queued messages will be checked again.');}
-  finally {this.busy=false;}
+  finally {this.busy.delete(namespace);}
  }
 }

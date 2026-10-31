@@ -1,0 +1,53 @@
+.campus-personal, .campus-personal-message { display: grid; gap: 12px; min-width: 0; padding: 16px; border: 1px solid var(--thatcampus-border); border-radius: var(--thatcampus-radius-card); background: var(--thatcampus-surface-row); color: var(--thatcampus-ink); }
+.campus-personal :is(h2, h3, p), .campus-personal-message p { margin: 0; }
+.campus-personal :is(h2, h3), .campus-personal-place-activities h3 { overflow-wrap: anywhere; }
+.campus-personal-heading, .campus-personal-focus { display: flex; align-items: center; justify-content: space-between; gap: 12px; min-width: 0; }
+.campus-personal-heading .campus-scene-eyebrow { margin: 0; }
+.campus-personal-refresh { min-height: 44px; padding: 8px; margin: -8px -8px -8px 0; color: var(--thatcampus-action); font-size: 14px; font-weight: 600; background: transparent; }
+.campus-personal-focus h2 { min-width: 0; }
+.campus-personal-focus > button { color: var(--thatcampus-positive); }
+.campus-personal h2 { font-size: 18px; line-height: 1.35; letter-spacing: -.02em; }
+.campus-personal-time { display: flex; align-items: start; gap: 8px; color: var(--thatcampus-ink-secondary); font-size: 14px; line-height: 1.5; overflow-wrap: anywhere; }
+.campus-personal-time svg { flex: 0 0 auto; }
+.campus-personal-place { font-size: 14px; overflow-wrap: anywhere; }
+.campus-personal-actions { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; }
+.campus-personal-actions .campus-scene-button { max-width: 100%; padding-inline: 12px; overflow-wrap: anywhere; }
+.campus-personal-choice, .campus-personal-directions label { display: grid; gap: 8px; min-width: 0; font-size: 14px; font-weight: 600; }
+.campus-personal :is(select) { width: 100%; min-width: 0; min-height: 44px; padding: 10px 12px; border: 1px solid var(--thatcampus-border); border-radius: var(--thatcampus-radius-control); background: var(--thatcampus-surface); color: var(--thatcampus-ink); font: inherit; font-size: 16px; }
+.campus-personal-provenance { min-width: 0; color: var(--thatcampus-ink-secondary); font-size: 12px; line-height: 1.5; }
+.campus-personal-provenance summary { min-height: 44px; align-content: center; cursor: pointer; font-size: 14px; }
+.campus-personal-provenance p + p, .campus-personal-provenance label + p { margin-top: 8px; }
+.campus-personal-empty { display: grid; gap: 8px; }
+.campus-personal-empty p, .campus-personal-directions > p, .campus-personal-place-activities p { font-size: 14px; line-height: 1.5; color: var(--thatcampus-ink-secondary); }
+.campus-personal-directions { display: grid; gap: 8px; min-width: 0; padding-top: 12px; border-top: 1px solid var(--thatcampus-border); }
+.campus-personal-directions h3 { display: flex; align-items: center; gap: 8px; font-size: 16px; }
+.campus-personal-directions h3 svg { flex: 0 0 auto; }
+.campus-personal-directions .campus-personal-check { display: flex; align-items: start; gap: 12px; min-height: 44px; font-weight: 400; }
+.campus-personal-check input { width: 20px; height: 20px; flex: 0 0 20px; margin: 0; accent-color: var(--thatcampus-action); }
+.campus-personal-route-options { display: grid; gap: 8px; min-width: 0; }
+.campus-personal-route-options > p { color: var(--thatcampus-ink-secondary); font-size: 12px; line-height: 1.5; }
+.campus-personal-route-options-toggle { display: flex; align-items: center; justify-content: space-between; gap: 12px; min-width: 0; min-height: 44px; padding: 4px 0; background: transparent; color: var(--thatcampus-ink); text-align: left; }
+.campus-personal-route-options-toggle > span { display: grid; gap: 4px; min-width: 0; overflow-wrap: anywhere; }
+.campus-personal-route-options-toggle strong { font-size: 14px; }
+.campus-personal-route-options-toggle small { color: var(--thatcampus-ink-secondary); font-size: 12px; line-height: 1.5; }
+.campus-personal-route-options-toggle > svg { flex: 0 0 auto; }
+.campus-personal-route-result { display: grid; gap: 4px; padding: 12px; border-radius: var(--thatcampus-radius-control); background: var(--thatcampus-brand-soft); font-size: 14px; line-height: 1.5; }
+.campus-personal-route-notice { padding: 12px; border-radius: var(--thatcampus-radius-control); background: var(--thatcampus-surface-strong); font-size: 14px; line-height: 1.5; }
+.campus-personal-arrival { display: flex; align-items: start; gap: 8px; min-width: 0; min-height: 44px; padding: 4px 0; background: transparent; color: var(--thatcampus-ink); font-size: 14px; line-height: 1.5; text-align: left; }
+.campus-personal-arrival > svg { flex: 0 0 auto; margin-top: 2px; }
+.campus-personal-arrival > span { display: grid; gap: 4px; min-width: 0; flex: 1; }
+.campus-personal-arrival strong, .campus-personal-route-result strong { overflow-wrap: anywhere; }
+.campus-personal-arrival small { color: var(--thatcampus-ink-secondary); font-size: 12px; overflow-wrap: anywhere; }
+.campus-personal-place-activities { display: grid; gap: 8px; min-width: 0; padding-top: 12px; border-top: 1px solid var(--thatcampus-border); }
+.campus-personal-place-activities h3 { margin: 0; font-size: 16px; }
+.campus-personal-place-activities ul { display: grid; gap: 0; margin: 0; padding: 0; list-style: none; }
+.campus-personal-place-activities li { min-width: 0; }
+.campus-personal-place-activities li strong { overflow-wrap: anywhere; }
+.campus-personal-activity-link { display: flex; align-items: center; justify-content: space-between; gap: 12px; min-width: 0; min-height: 44px; padding: 8px 0; color: var(--thatcampus-ink); font-size: 14px; text-decoration: none; }
+.campus-personal-activity-link > span { display: grid; gap: 4px; min-width: 0; }
+.campus-personal-activity-link small { color: var(--thatcampus-ink-secondary); font-size: 12px; line-height: 1.5; overflow-wrap: anywhere; }
+.campus-personal-activity-link > svg { flex: 0 0 auto; }
+.campus-personal-more-activities > summary { min-height: 44px; align-content: center; cursor: pointer; color: var(--thatcampus-action); font-size: 14px; font-weight: 600; }
+.campus-personal :is(button, select, summary, a, input, h2):focus-visible, .campus-personal-place-activities :is(a, summary):focus-visible, .campus-personal-route-result:focus-visible { outline: 3px solid var(--thatcampus-action); outline-offset: 3px; }
+@media (min-width: 768px) { .campus-personal { padding: 20px; } }
+@media (forced-colors: active) { .campus-personal-route-result { border: 1px solid CanvasText; } }

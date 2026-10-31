@@ -1,0 +1,28 @@
+import { Link } from "react-router-dom";
+import { CollectionView } from "../../components/CollectionView";
+import { invoiceDescription, invoicePersonLabel, paymentIsActive, rupees, type Payment } from "./api";
+import { feeDate } from "./FamilyFeeRecords";
+import type { FeeBatchResult } from "./feeBatchApi";
+import type { PersonFeeInvoice } from "./personFeesApi";
+
+export function FeeCollectionDetail({ batch, invoices, payments, complete, view, onView, chargeHref, receiptHref, onCorrect, canCorrect, stale, onRefresh }: {
+  batch: FeeBatchResult; invoices: PersonFeeInvoice[]; payments: Payment[]; complete: boolean; view: "people" | "receipts"; onView: (view: "people" | "receipts") => void;
+  chargeHref: (invoice: PersonFeeInvoice) => string; receiptHref: (payment: Payment) => string; onCorrect: () => void; canCorrect: boolean; stale: boolean; onRefresh: () => void;
+}) {
+  const invoiceIds = new Set(invoices.map(invoice => invoice.id)), receipts = payments.filter(payment => invoiceIds.has(payment.invoice_id));
+  const activeReceipts = receipts.filter(paymentIsActive), cancelled = invoices.filter(invoice => invoice.charge_state === "cancelled").length;
+  return <>
+    <section className="fee-collection-summary" aria-label="Collection summary">
+    <header className="fee-collection-heading"><div><p>{batch.person_count} {batch.person_count === 1 ? "person" : "people"}{cancelled ? ` · ${complete ? "" : "At least "}${cancelled} cancelled` : ""} · {batch.reference}</p><small>{invoices.some(invoice => invoice.corrections?.length) ? "Originally " : ""}{rupees(batch.amount_paise)} per person</small></div>{canCorrect ? <button className="is-secondary fee-collection-correct" aria-label="Correct charges" type="button" disabled={!complete || stale} onClick={onCorrect}>Correct</button> : null}</header>
+    <section className="fee-collection-balances" aria-label="Collection balance"><div><span>Outstanding</span><strong>{complete ? rupees(invoices.reduce((sum, invoice) => sum + invoice.balance_paise, 0)) : "Unavailable"}</strong></div><div><span>Received</span><strong>{complete ? rupees(activeReceipts.reduce((sum, payment) => sum + payment.amount_paise, 0)) : "Unavailable"}</strong></div></section>
+    </section>
+    {!complete ? <p role="alert">Some recorded charges are unavailable in the current ledger. <button type="button" className="is-secondary" onClick={onRefresh}>Refresh records</button></p> : null}
+    <nav className="fee-collection-tabs" aria-label="Collection records"><button type="button" className="is-secondary" aria-pressed={view === "people"} onClick={() => onView("people")}>People · {batch.person_count}</button><button type="button" className="is-secondary" aria-pressed={view === "receipts"} onClick={() => onView("receipts")}>Receipts{complete ? ` · ${receipts.length}` : ""}</button></nav>
+    {view === "receipts" && complete && receipts.length ? <p className="person-fee-caption">{activeReceipts.length} active{receipts.some(payment => payment.status === "reversed") ? ` · ${receipts.filter(payment => payment.status === "reversed").length} reversed` : ""}{receipts.some(payment => payment.status === "replaced") ? ` · ${receipts.filter(payment => payment.status === "replaced").length} replaced` : ""}</p> : null}
+    {view === "people" ? <CollectionView items={invoices} namespace="collection_people" label="people" searchLabel="Find a person" searchPlaceholder="Person or reference" searchText={invoice => `${invoicePersonLabel(invoice)} ${invoice.reference} ${invoiceDescription(invoice)}`} empty={<p className="person-fee-caption">{complete ? "No people in this collection." : "People are unavailable until the ledger is refreshed."}</p>}>
+      {visible => <div className="person-fee-records">{visible.map(invoice => <Link key={invoice.id} className="person-fee-charge-row" to={chargeHref(invoice)}><div><strong>{invoicePersonLabel(invoice)}</strong><small>{invoice.reference} · <span className="person-fee-date">{invoice.charge_state === "cancelled" ? "Cancelled" : `Due ${feeDate(invoice.collection_due_on ?? invoice.effective_due_on ?? invoice.due_on)}`}</span></small>{invoiceDescription(invoice) !== batch.description ? <span>{invoiceDescription(invoice)}</span> : null}</div><div><strong>{rupees(invoice.balance_paise)}</strong><small>{invoice.charge_state === "cancelled" ? "Cancelled" : invoice.balance_paise > 0 ? "Outstanding" : "No outstanding balance"}</small></div></Link>)}</div>}
+    </CollectionView> : <CollectionView items={receipts} namespace="collection_receipts" label="receipts" searchLabel="Find a receipt" searchPlaceholder="Person or payment reference" searchText={payment => `${invoices.find(invoice => invoice.id === payment.invoice_id)?.beneficiary.name ?? ""} ${payment.reference} ${payment.method}`} empty={<p className="person-fee-caption">{complete ? "No receipts recorded for this collection." : "Receipt records are unavailable until the ledger is refreshed."}</p>}>
+      {visible => <div className="person-fee-records">{visible.map(payment => <Link key={payment.id} className="person-fee-charge-row" to={receiptHref(payment)}><div><strong>{invoicePersonLabel(invoices.find(invoice => invoice.id === payment.invoice_id)!)}</strong><span>{payment.reference}</span><small>{paymentIsActive(payment) ? payment.replaces_payment_id ? "Active replacement receipt" : "Active receipt" : payment.status === "replaced" ? "Replaced receipt" : "Reversed receipt"} · {feeDate(payment.created_at)}</small></div><div><strong>{rupees(payment.amount_paise)}</strong><small>{paymentIsActive(payment) ? "Received" : "History only"}</small></div></Link>)}</div>}
+    </CollectionView>}
+  </>;
+}

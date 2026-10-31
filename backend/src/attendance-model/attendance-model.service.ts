@@ -1,15 +1,17 @@
-import { BadRequestException, ConflictException, ForbiddenException, Inject, Injectable, NotFoundException, Optional } from "@nestjs/common";
-import { createHash, randomBytes } from "node:crypto";
+import { executionNow } from "../campus-model-core/execution-time.runtime.js";
+import { BadRequestException, ConflictException, ForbiddenException, Inject, Injectable, NotFoundException } from "@nestjs/common";
+import { createHash, randomBytes, randomUUID } from "node:crypto";
 import { sql, type Kysely, type Transaction } from "kysely";
 import { z } from "zod";
 import type { AuthenticatedRequest, AuthUser } from "../common/request.js";
-import { recordAttendanceModelObservations } from "../attendance/attendance-model-observation.js";
-import { CAMPUS_MODEL_CORE_PORT, type CampusModelCorePort } from "../campus-model-core/campus-model-core.port.js";
-import { OBSERVATION_INGRESS_PORT, type ObservationIngressPort } from "../campus-model-core/observation-ingress.port.js";
 import { DatabaseService } from "../database/database.service.js";
 import type { Database } from "../database/types.js";
 import { operatingRules } from "../operating-rules/rules.js";
 import { SchoolEventService } from "../school/school-event.service.js";
+import { ActivityAttendanceService } from "../attendance/activity-attendance.service.js";
+import { AcademicParticipationBridge } from "../attendance/academic-participation-bridge.service.js";
+import { DOMAIN_COMMAND_GATEWAY_PORT, type DomainCommandGatewayPort } from "../campus-model-core/domain-command-gateway.port.js";
+import { DOMAIN_EVENT_JOURNAL_PORT, type DomainEventJournalPort } from "../campus-model-core/domain-event-journal.port.js";
 
 type Db = Kysely<Database> | Transaction<Database>;
 const datePattern = /^\d{4}-\d{2}-\d{2}$/;
@@ -19,7 +21,7 @@ const sessionSaveSchema = z.object({
     student_id: z.string().uuid(),
     status: z.enum(["present", "absent", "late", "excused"]),
     remarks: z.string().trim().max(500).optional().default(""),
-  })).min(1).max(250),
+  })).min(1).max(2000),
   expected_revision: z.number().int().min(0),
   photo_session_id: z.string().uuid().optional(),
   reason: z.string().trim().min(3).max(500).optional(),
@@ -46,72 +48,11 @@ export class AttendanceModelService {
   constructor(
     private readonly db: DatabaseService,
     private readonly events: SchoolEventService,
-    @Inject(CAMPUS_MODEL_CORE_PORT) private readonly campusModelCore: CampusModelCorePort,
-    @Optional() @Inject(OBSERVATION_INGRESS_PORT) private readonly observationIngress?: ObservationIngressPort,
+    private readonly participation: ActivityAttendanceService,
+    private readonly academic: AcademicParticipationBridge,
+    @Inject(DOMAIN_COMMAND_GATEWAY_PORT) private readonly commandGateway: DomainCommandGatewayPort,
+    @Inject(DOMAIN_EVENT_JOURNAL_PORT) private readonly domainJournal: DomainEventJournalPort,
   ) {}
-
-  private recordModelCommand(
-    db: Transaction<Database>,
-    input: {
-      session: SessionRow;
-      actorUserId: string;
-      commandType: string;
-      idempotencyKey: string;
-      correlationId: string;
-      expectedRevision: number;
-      resultingRevision: number;
-      operatingRuleRevision: number;
-      domainEventId: string;
-      outcomeCode: string;
-      explanation: string;
-      metadata?: Record<string, unknown>;
-    },
-  ) {
-    return this.campusModelCore.recordAcceptedChange(db, {
-      school_id: input.session.school_id,
-      actor_user_id: input.actorUserId,
-      command_type: input.commandType,
-      target: { domain: "attendance", domain_id: input.session.id },
-      idempotency_key: input.idempotencyKey,
-      correlation_id: input.correlationId,
-      causation_id: null,
-      expected_revision: input.expectedRevision,
-      authority_evidence: [
-        `attendance_session_register:${input.session.id}`,
-        `institution_operating_rules:${input.operatingRuleRevision}`,
-      ],
-      operating_rule_version_ref: `institution_operating_rules:${input.operatingRuleRevision}`,
-      source_domain: "attendance",
-      safe_context: {
-        class_section_id: input.session.class_section_id,
-        subject_id: input.session.subject_id,
-        session_date: input.session.session_date,
-        period_number: input.session.period_number,
-      },
-      entities: [{
-        kind: "attendance_register",
-        domain: "attendance",
-        domain_id: input.session.id,
-        label: input.session.title,
-        lifecycle_state: "active",
-        source_revision: input.resultingRevision,
-        metadata: {
-          class_section_id: input.session.class_section_id,
-          subject_id: input.session.subject_id,
-          session_date: input.session.session_date,
-          period_number: input.session.period_number,
-        },
-      }],
-      relationships: [],
-      outcome: {
-        code: input.outcomeCode,
-        explanation: input.explanation,
-        resulting_revision: input.resultingRevision,
-        metadata: input.metadata ?? {},
-      },
-      domain_event_id: input.domainEventId,
-    });
-  }
 
   private async membership(db: Db, user: AuthUser, roles: Array<"staff" | "admin">, schoolId?: string): Promise<Membership> {
     const scoped = schoolId ?? user.active_school_id ?? null;
@@ -169,7 +110,7 @@ export class AttendanceModelService {
         count(entry.id)::int AS marked_count,
         count(entry.id) FILTER(WHERE entry.status IN ('present','late'))::int AS attending_count,
         count(entry.id) FILTER(WHERE entry.status='absent')::int AS absent_count,
-        (${date}::date <= (now() AT TIME ZONE school.timezone)::date) AS date_open,
+        (${date}::date <= (${executionNow()}::timestamptz AT TIME ZONE school.timezone)::date) AS date_open,
         (${member.role}='admin' OR register.scheduled_teacher_id=${user.id}::uuid OR
           staff_has_resource_permission(${member.school_id}::uuid,${user.id}::uuid,'attendance.record','class',register.class_section_id,register.session_date) OR
           staff_has_resource_permission(${member.school_id}::uuid,${user.id}::uuid,'attendance.record','institution',${member.school_id}::uuid,register.session_date)) AS authorized
@@ -210,12 +151,96 @@ export class AttendanceModelService {
     };
   }
 
-  private async sessionRow(db: Db, sessionId: string, forUpdate = false): Promise<SessionRow> {
+  /**
+   * Responsibility-native register projection used by the canonical Attendance
+   * workspace. The caller supplies already-authorized, effective scopes; this
+   * method never infers visibility from a membership role or job title.
+   */
+  async responsibilityWorkspace(input: {
+    school_id: string;
+    date: string;
+    current_local_date: string;
+    view_all: boolean;
+    record_all: boolean;
+    view_class_ids: readonly string[];
+    record_class_ids: readonly string[];
+  }) {
+    const date = dateSchema.parse(input.date);
+    const policy = await operatingRules(this.db, input.school_id);
+    if (policy.attendance_academic_mode !== "scheduled_session") {
+      return {
+        mode: policy.attendance_academic_mode,
+        campus_mode: policy.attendance_campus_mode,
+        capture_channels: policy.attendance_academic_channels,
+        registers: [],
+      };
+    }
+    await this.materialize(this.db, input.school_id, date);
+    const result = await sql<any>`SELECT register.id AS session_id,register.class_section_id,
+        register.schedule_slot_id,register.scheduled_teacher_id,teacher.username AS scheduled_teacher_username,
+        'Class '||section.grade||section.section AS class_name,section.grade,section.section,
+        COALESCE(NULLIF(register.room,''),section.room_number) AS room_number,
+        register.term_id,term.name AS term_name,term.academic_year,register.subject_id,subject.name AS subject_name,
+        register.period_number,register.starts_at::text,register.ends_at::text,register.room,
+        register.state,register.revision,register.submitted_at,register.auto_finalize_at,
+        register.finalization_policy_revision,register.finalization_source,
+        CASE WHEN submitter.id IS NULL THEN NULL ELSE trim(concat_ws(' ',submitter.first_name,submitter.last_name)) END AS submitted_by_name,
+        CASE WHEN teacher.id IS NULL THEN ARRAY[]::text[] ELSE ARRAY[trim(concat_ws(' ',teacher.first_name,teacher.last_name))] END AS assigned_teachers,
+        count(enrollment.student_id)::int AS student_count,count(entry.id)::int AS marked_count,
+        count(entry.id) FILTER(WHERE entry.status IN ('present','late'))::int AS attending_count,
+        count(entry.id) FILTER(WHERE entry.status='absent')::int AS absent_count,
+        (${date}::date<=${input.current_local_date}::date) AS date_open,
+        (${input.record_all} OR register.class_section_id=ANY(${sql.val([...input.record_class_ids])}::uuid[])) AS authorized
+      FROM attendance_session_registers register
+      JOIN class_sections section ON section.id=register.class_section_id
+      JOIN academic_terms term ON term.id=register.term_id
+      JOIN subjects subject ON subject.id=register.subject_id
+      LEFT JOIN users teacher ON teacher.id=register.scheduled_teacher_id
+      LEFT JOIN users submitter ON submitter.id=register.submitted_by
+      LEFT JOIN enrollments enrollment ON enrollment.class_section_id=register.class_section_id
+        AND enrollment.term_id=register.term_id AND enrollment.is_active
+        AND enrollment.enrolled_on<=register.session_date
+        AND (enrollment.inactive_from IS NULL OR enrollment.inactive_from>register.session_date)
+      LEFT JOIN attendance_session_entries entry ON entry.session_id=register.id AND entry.student_id=enrollment.student_id
+      WHERE register.school_id=${input.school_id}::uuid AND register.session_date=${date}::date
+        AND (${input.view_all} OR register.class_section_id=ANY(${sql.val([...input.view_class_ids])}::uuid[]))
+      GROUP BY register.id,section.id,term.id,subject.id,teacher.id,submitter.id
+      ORDER BY register.starts_at,section.grade,section.section,register.period_number`.execute(this.db);
+    return {
+      mode: policy.attendance_academic_mode,
+      campus_mode: policy.attendance_campus_mode,
+      capture_channels: policy.attendance_academic_channels,
+      registers: result.rows.map((row: any) => ({
+        ...row,
+        attendance_scope: "scheduled_session" as const,
+        starts_at: row.starts_at,
+        ends_at: row.ends_at,
+        periods_today: 1,
+        subjects: [row.subject_name],
+        assignment_kind: "regular" as const,
+        submission_status: row.state === "submitted" || row.state === "locked"
+          ? row.state
+          : Number(row.marked_count) ? "in_progress" : "not_started",
+        submission_authorized: true,
+        instructional: true,
+        can_mark: Boolean(row.date_open && row.authorized && Number(row.student_count)),
+        availability_reason: !row.date_open
+          ? "Attendance opens on the selected date."
+          : !row.authorized
+            ? "Your current responsibility allows review, but not recording attendance for this session."
+            : !Number(row.student_count)
+              ? "No enrolled students require attendance for this session."
+              : null,
+      })),
+    };
+  }
+
+  private async sessionRow(db: Db, sessionId: string): Promise<SessionRow> {
     const result = await sql<SessionRow>`SELECT id,school_id,class_section_id,term_id,subject_id,schedule_slot_id,
       session_date::text,period_number,starts_at::text,ends_at::text,title,room,scheduled_teacher_id,
       state,revision,submitted_by,submitted_at,auto_finalize_at,finalization_policy_revision,finalization_source,
       locked_by,locked_at,reopened_by,reopened_at,reopen_reason
-      FROM attendance_session_registers WHERE id=${sessionId}::uuid ${forUpdate ? sql`FOR UPDATE` : sql``}`.execute(db);
+      FROM attendance_session_registers WHERE id=${sessionId}::uuid`.execute(db);
     const row = result.rows[0];
     if (!row) throw new NotFoundException("Attendance session not found.");
     return row;
@@ -251,12 +276,12 @@ export class AttendanceModelService {
         term.name AS term_name,term.academic_year,term.starts_on::text,term.ends_on::text,
         subject.name AS subject_name,school.timezone,
         CASE WHEN actor.id IS NULL THEN NULL ELSE trim(concat_ws(' ',actor.first_name,actor.last_name)) END AS submitted_by_name,
-        ${session.session_date}::date <= (now() AT TIME ZONE school.timezone)::date AS date_open
+        ${session.session_date}::date <= (${executionNow()}::timestamptz AT TIME ZONE school.timezone)::date AS date_open
       FROM class_sections section JOIN academic_terms term ON term.id=${session.term_id}::uuid
       JOIN subjects subject ON subject.id=${session.subject_id}::uuid JOIN schools school ON school.id=${session.school_id}::uuid
       LEFT JOIN users actor ON actor.id=${session.submitted_by}::uuid WHERE section.id=${session.class_section_id}::uuid`.execute(db);
     const info = context.rows[0];
-    const capturedAt = new Date().toISOString();
+    const capturedAt = executionNow().toISOString();
     return {
       attendance_scope: "scheduled_session" as const,
       session: { id: session.id, subject_id: session.subject_id, subject_name: info.subject_name, period_number: session.period_number, starts_at: session.starts_at, ends_at: session.ends_at },
@@ -280,188 +305,18 @@ export class AttendanceModelService {
   async save(user: AuthUser, sessionIdValue: string, body: unknown, request: AuthenticatedRequest) {
     const sessionId = z.string().uuid().parse(sessionIdValue);
     const input = sessionSaveSchema.parse(body);
-    const rawKey = request.headers["idempotency-key"];
-    const idempotencyKey = Array.isArray(rawKey) ? rawKey[0] : rawKey;
-    if (!idempotencyKey || !/^[A-Za-z0-9._:-]{8,128}$/.test(idempotencyKey)) throw new BadRequestException("A valid Idempotency-Key header is required.");
-    const requestHash = createHash("sha256").update(JSON.stringify({ sessionId, ...input, records: [...input.records].sort((a,b) => a.student_id.localeCompare(b.student_id)) })).digest("hex");
     return this.db.transaction().execute(async (db) => {
-      await sql`SELECT pg_advisory_xact_lock(hashtextextended(${`attendance-session:${sessionId}`},0))`.execute(db);
-      const session = await this.sessionRow(db, sessionId, true);
-      const member = await this.membership(db, user, ["staff", "admin"], session.school_id);
-      if (!await this.canRecord(db, member, user.id, session)) throw new ForbiddenException("This subject session is not assigned to you.");
-      const policy = await operatingRules(db, session.school_id);
+      const session = await this.sessionRow(db,sessionId);
+      const member = await this.membership(db,user,["staff","admin"],session.school_id);
+      if (!await this.canRecord(db,member,user.id,session)) throw new ForbiddenException("This subject session is not assigned to you.");
+      const policy = await operatingRules(db,session.school_id);
       if (policy.attendance_academic_mode !== "scheduled_session") throw new ConflictException("Subject-session attendance is not enabled.");
-      const duplicate = await sql<{ request_hash: string; result_body: any }>`SELECT request_hash,result_body FROM attendance_session_submissions
-        WHERE school_id=${session.school_id}::uuid AND submitted_by=${user.id}::uuid AND idempotency_key=${idempotencyKey}`.execute(db);
-      if (duplicate.rows[0]) {
-        if (duplicate.rows[0].request_hash !== requestHash) throw new ConflictException("This Idempotency-Key was used for different attendance data.");
-        return duplicate.rows[0].result_body;
-      }
-      if (session.revision !== input.expected_revision) throw new ConflictException("This register changed after it was opened. Refresh before submitting.");
-      if (session.state === "locked") throw new ForbiddenException("This attendance register is final.");
-      const roster = await sql<{ student_id: string }>`SELECT enrollment.student_id FROM enrollments enrollment
-        JOIN students student ON student.id=enrollment.student_id AND student.school_id=${session.school_id}::uuid
-        WHERE enrollment.class_section_id=${session.class_section_id}::uuid AND enrollment.term_id=${session.term_id}::uuid
-          AND enrollment.is_active AND enrollment.enrolled_on<=${session.session_date}::date
-        ORDER BY enrollment.student_id FOR SHARE OF enrollment,student`.execute(db);
-      const rosterIds = new Set(roster.rows.map((row) => row.student_id));
-      if (input.records.length !== rosterIds.size || input.records.some((record) => !rosterIds.has(record.student_id)) || new Set(input.records.map((record) => record.student_id)).size !== input.records.length) throw new BadRequestException("Mark every enrolled student once before submitting this subject register.");
-      const previousResult = await sql<any>`SELECT * FROM attendance_session_entries WHERE session_id=${session.id}::uuid FOR UPDATE`.execute(db);
-      const previous = new Map(previousResult.rows.map((row: any) => [row.student_id as string,row]));
-      const changed = input.records.filter((record) => { const before = previous.get(record.student_id); return !before || before.status !== record.status || before.remarks !== record.remarks; });
-      if (changed.some((record) => previous.has(record.student_id)) && !input.reason) throw new BadRequestException("Add a reason when correcting recorded attendance.");
-      let photo: { id: string; analysis_summary: any; observed_at: Date } | undefined;
-      if (input.photo_session_id) {
-        const photoResult = await sql<{ id: string; analysis_summary: any; observed_at: Date; state: string; expires_at: Date }>`SELECT id,analysis_summary,observed_at,state,expires_at
-          FROM photo_attendance_sessions WHERE id=${input.photo_session_id}::uuid AND school_id=${session.school_id}::uuid
-            AND class_section_id=${session.class_section_id}::uuid AND date=${session.session_date}::date
-            AND attendance_session_id=${session.id}::uuid FOR UPDATE`.execute(db);
-        const candidate = photoResult.rows[0];
-        if (!candidate) throw new BadRequestException("The selected photo analysis does not belong to this subject register.");
-        if (candidate.expires_at < new Date()) throw new ConflictException("The photo analysis expired. Capture a new photo or continue manually.");
-        if (candidate.state !== "analyzed") throw new ConflictException("This photo analysis has already been applied or discarded.");
-        photo = candidate;
-      }
-      const photoMatched = new Set<string>(Array.isArray(photo?.analysis_summary?.matched_student_ids) ? photo.analysis_summary.matched_student_ids : []);
-      const revision = session.revision + 1;
-      const now = new Date();
-      const autoFinalizeAt = policy.attendance_finalization_mode === "automatic" ? new Date(now.getTime() + policy.attendance_auto_finalize_minutes * 60_000) : null;
-      await sql`UPDATE attendance_session_registers SET state='submitted',revision=${revision},submitted_by=${user.id}::uuid,
-        submitted_at=${now},auto_finalize_at=${autoFinalizeAt},finalization_policy_revision=${policy.revision},finalization_source=NULL,updated_at=${now}
-        WHERE id=${session.id}::uuid`.execute(db);
-      const submission = await sql<{ id: string }>`INSERT INTO attendance_session_submissions(school_id,session_id,submitted_by,idempotency_key,request_hash,request_id,register_revision,records_count,changed_count,capture_source,source_photo_session_id)
-        VALUES(${session.school_id}::uuid,${session.id}::uuid,${user.id}::uuid,${idempotencyKey},${requestHash},${request.requestId}::uuid,${revision},${input.records.length},${changed.length},${photo ? "camera_assisted" : "staff_roll_call"},${photo?.id ?? null}::uuid) RETURNING id`.execute(db);
-      const changedRevisions: Array<{
-        revisionId: string;
-        entryId: string;
-        studentId: string;
-        status: "present" | "absent" | "late" | "excused";
-        remarks: string;
-        previousStatus: "present" | "absent" | "late" | "excused" | null;
-        captureSource: string;
-        observedAt: Date;
-        cameraMatched: boolean;
-      }> = [];
-      for (const record of changed) {
-        const before = previous.get(record.student_id);
-        const cameraMatched = Boolean(photo && record.status === "present" && photoMatched.has(record.student_id));
-        const captureChannel = cameraMatched ? "camera_assisted" : "staff_roll_call";
-        const observedAt = cameraMatched ? photo!.observed_at : now;
-        const saved = await sql<{ id: string }>`INSERT INTO attendance_session_entries(school_id,session_id,student_id,status,remarks,capture_channel,observed_at,recorded_by,revision,updated_at)
-          VALUES(${session.school_id}::uuid,${session.id}::uuid,${record.student_id}::uuid,${record.status},${record.remarks},${captureChannel},${observedAt},${user.id}::uuid,${revision},${now})
-          ON CONFLICT(session_id,student_id) DO UPDATE SET status=excluded.status,remarks=excluded.remarks,capture_channel=excluded.capture_channel,observed_at=excluded.observed_at,recorded_by=excluded.recorded_by,revision=excluded.revision,updated_at=excluded.updated_at RETURNING id`.execute(db);
-        const savedRevision = await sql<{ id: string }>`INSERT INTO attendance_session_entry_revisions(school_id,session_id,entry_id,submission_id,student_id,previous_status,new_status,previous_remarks,new_remarks,capture_channel,reason,changed_by,request_id,register_revision)
-          VALUES(${session.school_id}::uuid,${session.id}::uuid,${saved.rows[0]!.id}::uuid,${submission.rows[0]!.id}::uuid,${record.student_id}::uuid,${before?.status ?? null},${record.status},${before?.remarks ?? null},${record.remarks},${captureChannel},${before ? input.reason! : cameraMatched ? 'Teacher accepted the camera-assisted presence suggestion.' : 'Initial subject register submission'},${user.id}::uuid,${request.requestId}::uuid,${revision}) RETURNING id`.execute(db);
-        changedRevisions.push({
-          revisionId: savedRevision.rows[0]!.id,
-          entryId: saved.rows[0]!.id,
-          studentId: record.student_id,
-          status: record.status,
-          remarks: record.remarks,
-          previousStatus: before?.status ?? null,
-          captureSource: captureChannel,
-          observedAt,
-          cameraMatched,
-        });
-        if (cameraMatched) {
-          await sql`INSERT INTO attendance_session_evidence(school_id,session_id,student_id,capture_channel,state,observed_at,submitted_by,provider_reference,metadata,decided_by,decided_at,decision_note)
-            VALUES(${session.school_id}::uuid,${session.id}::uuid,${record.student_id}::uuid,'camera_assisted','accepted',${observedAt},${user.id}::uuid,${photo!.id}::text,
-              ${JSON.stringify({ photo_session_id: photo!.id })}::jsonb,${user.id}::uuid,${now},'Accepted during full-register photo review.')
-            ON CONFLICT(session_id,student_id,capture_channel) WHERE state<>'rejected' DO UPDATE SET state='accepted',observed_at=excluded.observed_at,
-              provider_reference=excluded.provider_reference,metadata=excluded.metadata,decided_by=excluded.decided_by,decided_at=excluded.decided_at,decision_note=excluded.decision_note,updated_at=now()`.execute(db);
-        }
-      }
-      if (photo) {
-        await sql`UPDATE photo_attendance_sessions SET state='applied',applied_at=${now},applied_session_submission_id=${submission.rows[0]!.id}::uuid,updated_at=${now}
-          WHERE id=${photo.id}::uuid`.execute(db);
-      }
-      await this.refreshSubjectAggregate(db, session.school_id, session.term_id, session.subject_id);
-      await sql`INSERT INTO attendance_session_audits(school_id,session_id,actor_id,action,metadata)
-        VALUES(${session.school_id}::uuid,${session.id}::uuid,${user.id}::uuid,'register.submitted',${JSON.stringify({ revision, changed: changed.length, records: input.records.length, source: photo ? "camera_assisted" : "staff_roll_call", photo_session_id: photo?.id ?? null })}::jsonb)`.execute(db);
-      const attendanceEvents = changedRevisions.length
-        ? await this.events.enqueueAttendanceUpdates(db, {
-          schoolId: session.school_id,
-          classSectionId: session.class_section_id,
-          termId: session.term_id,
-          date: session.session_date,
-          sessionId: session.id,
-          requestId: request.requestId,
-          suppressNotifications: true,
-          records: changedRevisions.map((record) => ({
-            id: record.entryId,
-            student_id: record.studentId,
-            status: record.status,
-            remarks: record.remarks,
-            previous_status: record.previousStatus,
-            revision,
-          })),
-        })
-        : { studentEventIds: new Map<string, string>(), classEventId: null };
-      const registerEventId = await this.events.enqueueRegisterEvent(db, {
-        schoolId: session.school_id,
-        classSectionId: session.class_section_id,
-        termId: session.term_id,
-        date: session.session_date,
-        sessionId: session.id,
-        requestId: request.requestId,
-        state: "submitted",
-        revision,
-        actorId: user.id,
-      });
-      await recordAttendanceModelObservations({
-        ingress: this.observationIngress,
-        transaction: db,
-        schoolId: session.school_id,
-        classSectionId: session.class_section_id,
-        date: session.session_date,
-        sessionId: session.id,
-        actorUserId: user.id,
-        sourceType: "attendance.session",
-        sourceRef: submission.rows[0]!.id,
-        state: "accepted",
-        receivedAt: now,
-        participationScope: "scheduled_session",
-        records: changedRevisions.map((record) => {
-          const domainEventId = attendanceEvents.studentEventIds.get(record.studentId);
-          if (!domainEventId) throw new ConflictException("The subject attendance evidence chain could not be retained.");
-          return {
-            studentId: record.studentId,
-            sourceRecordId: record.revisionId,
-            status: record.status,
-            observedAt: record.observedAt,
-            captureSource: record.captureSource,
-            evidenceRefs: [
-              `attendance_session_entry_revision:${record.revisionId}`,
-              `attendance_session_submission:${submission.rows[0]!.id}`,
-              ...(record.cameraMatched && photo ? [`photo_attendance_session:${photo.id}`] : []),
-            ],
-            domainEventId,
-            decisionProvenance: record.cameraMatched ? "human_accepted_camera_suggestion" : "human_attendance_decision",
-          };
-        }),
-      });
-      await this.recordModelCommand(db, {
-        session,
-        actorUserId: user.id,
-        commandType: "attendance.register.submit",
-        idempotencyKey: `attendance-register-submit:${submission.rows[0]!.id}`,
-        correlationId: request.requestId,
-        expectedRevision: session.revision,
-        resultingRevision: revision,
-        operatingRuleRevision: policy.revision,
-        domainEventId: registerEventId,
-        outcomeCode: "submitted",
-        explanation: "The authorized staff member submitted the complete subject attendance register.",
-        metadata: {
-          submission_id: submission.rows[0]!.id,
-          records_count: input.records.length,
-          changed_count: changed.length,
-          finalization_mode: policy.attendance_finalization_mode,
-          auto_finalize_at: autoFinalizeAt?.toISOString() ?? null,
-        },
-      });
-      const result = await this.screenFromDb(db, user, session.id);
-      await sql`UPDATE attendance_session_submissions SET result_body=${JSON.stringify(result)}::jsonb WHERE id=${submission.rows[0]!.id}::uuid`.execute(db);
+      const accepted = await this.academic.saveSessionRecordsInTransaction(db,user,session.school_id,sessionId,input,request);
+      if ("legacy_result" in accepted) return accepted.legacy_result as Awaited<ReturnType<AttendanceModelService['screenFromDb']>>;
+      const result = await this.screenFromDb(db,user,sessionId);
+      await this.academic.retainLegacyResult(db,{command_id: accepted.command_id,school_id: session.school_id,
+        source_kind: "scheduled_session",source_id: sessionId,request_hash: accepted.request_hash,
+        result_body: result,records_count: input.records.length,photo_session_id: input.photo_session_id});
       return result;
     });
   }
@@ -470,38 +325,17 @@ export class AttendanceModelService {
     const sessionId = z.string().uuid().parse(sessionIdValue);
     const input = z.object({ reason: z.string().trim().min(3).max(500).optional() }).strict().parse(body ?? {});
     if (!locked && !input.reason) throw new BadRequestException("A reason is required to reopen a final register.");
-    return this.db.transaction().execute(async (db) => {
-      await sql`SELECT pg_advisory_xact_lock(hashtextextended(${`attendance-session:${sessionId}`},0))`.execute(db);
-      const session = await this.sessionRow(db, sessionId, true);
-      await this.membership(db, user, ["admin"], session.school_id);
-      if ((locked && session.state === "locked") || (!locked && session.state !== "locked")) return this.screenFromDb(db, user, sessionId);
-      if (locked && session.state !== "submitted") throw new BadRequestException("Submit the subject register before finalizing it.");
-      const revision = Number(session.revision) + 1;
-      const now = new Date();
-      if (locked) {
-        await sql`UPDATE attendance_session_registers SET state='locked',revision=${revision},locked_by=${user.id}::uuid,
-          locked_at=${now},auto_finalize_at=NULL,finalization_source='manual',updated_at=${now} WHERE id=${sessionId}::uuid`.execute(db);
-      } else {
-        await sql`UPDATE attendance_session_registers SET state='submitted',revision=${revision},locked_by=NULL,locked_at=NULL,
-          reopened_by=${user.id}::uuid,reopened_at=${now},reopen_reason=${input.reason!},auto_finalize_at=NULL,
-          finalization_policy_revision=NULL,finalization_source=NULL,updated_at=${now} WHERE id=${sessionId}::uuid`.execute(db);
-      }
-      await sql`INSERT INTO attendance_session_audits(school_id,session_id,actor_id,action,metadata)
-        VALUES(${session.school_id}::uuid,${sessionId}::uuid,${user.id}::uuid,${locked ? 'register.locked' : 'register.reopened'},
-          ${JSON.stringify({ revision, reason: input.reason ?? null, request_id: request.requestId })}::jsonb)`.execute(db);
-      await this.events.enqueueRegisterEvent(db, {
-        schoolId: session.school_id,
-        classSectionId: session.class_section_id,
-        termId: session.term_id,
-        date: session.session_date,
-        sessionId,
-        requestId: request.requestId,
-        state: locked ? "locked" : "unlocked",
-        revision,
-        actorId: user.id,
-        action: locked ? "locked" : "reopened",
-      });
-      return this.screenFromDb(db, user, sessionId);
+    return this.db.transaction().execute(async(db) => {
+      const session = await this.sessionRow(db,sessionId);
+      await this.membership(db,user,["admin"],session.school_id);
+      const prepared = await this.academic.prepareSessionInTransaction(db,user,session.school_id,sessionId,true);
+      const current = (await sql<{state:string;revision:number}>`SELECT state,revision FROM activity_attendance_registers
+        WHERE id=${prepared.register_id}::uuid FOR UPDATE`.execute(db)).rows[0]!;
+      if ((locked&&current.state==='locked') || (!locked&&current.state!=='locked')) return this.screenFromDb(db,user,sessionId);
+      const commandRequest = {...request,headers:{...request.headers,"idempotency-key":request.headers["idempotency-key"] ?? `legacy-lifecycle:${request.requestId}`}} as AuthenticatedRequest;
+      await this.participation.transition(user,session.school_id,prepared.register_id,locked ? "finalize" : "reopen",
+        {expected_revision:current.revision,...(input.reason ? {reason:input.reason} : {})},commandRequest,db);
+      return this.screenFromDb(db,user,sessionId);
     });
   }
 
@@ -530,7 +364,7 @@ export class AttendanceModelService {
     return { date: session.session_date, class: screen.class, register: screen.register, submissions: submissions.rows, revisions: revisions.rows };
   }
 
-  private async refreshSubjectAggregate(db: Db, schoolId: string, termId: string, subjectId: string) {
+  async refreshSubjectAggregate(db: Db, schoolId: string, termId: string, subjectId: string) {
     await sql`INSERT INTO subject_attendance(student_id,subject_id,term_id,classes_held,classes_attended,classes_excused)
       SELECT enrollment.student_id,${subjectId}::uuid,${termId}::uuid,
         count(register.id) FILTER(WHERE register.state IN ('submitted','locked'))::int,
@@ -547,354 +381,90 @@ export class AttendanceModelService {
         classes_attended=excluded.classes_attended,classes_excused=excluded.classes_excused`.execute(db);
   }
 
-  async issueQr(user: AuthUser, sessionIdValue: string) {
-    const session = await this.sessionRow(this.db, z.string().uuid().parse(sessionIdValue));
-    const member = await this.membership(this.db, user, ["staff", "admin"], session.school_id);
-    if (!await this.canRecord(this.db, member, user.id, session)) throw new ForbiddenException("This subject session is not assigned to you.");
-    const policy = await operatingRules(this.db, session.school_id);
-    if (!policy.attendance_academic_channels.includes("student_qr") || policy.attendance_self_check_in_mode === "disabled") throw new ConflictException("Student QR check-in is not enabled.");
-    const token = randomBytes(32).toString("base64url");
-    const hash = createHash("sha256").update(token).digest("hex");
-    const expiresAt = new Date(Date.now() + 2 * 60_000);
-    await sql`INSERT INTO attendance_qr_challenges(school_id,session_id,token_hash,issued_by,expires_at)
-      VALUES(${session.school_id}::uuid,${session.id}::uuid,${hash},${user.id}::uuid,${expiresAt})`.execute(this.db);
-    return { token, expires_at: expiresAt.toISOString(), session_id: session.id };
-  }
-
-  async selfCheckIn(user: AuthUser, tokenValue: unknown, request: AuthenticatedRequest) {
-    const token = z.string().min(32).max(128).parse(tokenValue);
-    const hash = createHash("sha256").update(token).digest("hex");
-    return this.db.transaction().execute(async (db) => {
-      const challenge = await sql<{
-        challenge_id: string; expires_at: Date; revoked_at: Date | null;
-        session_id: string; school_id: string; class_section_id: string; term_id: string; subject_id: string;
-        session_date: string; starts_at: string; ends_at: string; revision: number;
-        state: "draft" | "submitted" | "locked";
-      }>`SELECT challenge.id AS challenge_id,challenge.expires_at,challenge.revoked_at,
-          register.id AS session_id,register.school_id,register.class_section_id,register.term_id,register.subject_id,
-          register.session_date::text,register.starts_at::text,register.ends_at::text,register.revision,register.state
-        FROM attendance_qr_challenges challenge JOIN attendance_session_registers register ON register.id=challenge.session_id
-        WHERE challenge.token_hash=${hash} FOR UPDATE OF challenge`.execute(db);
-      const row = challenge.rows[0];
-      if (!row || row.revoked_at || new Date(row.expires_at).getTime() < Date.now()) throw new BadRequestException("This QR check-in has expired.");
-      await sql`SELECT pg_advisory_xact_lock(hashtextextended(${`attendance-session:${row.session_id}`},0))`.execute(db);
-      const lockedSession = await this.sessionRow(db, row.session_id, true);
-      if (lockedSession.state === "locked") throw new ForbiddenException("This attendance register is final.");
-      row.state = lockedSession.state;
-      row.revision = lockedSession.revision;
-      const policy = await operatingRules(db, row.school_id);
-      if (!policy.attendance_academic_channels.includes("student_qr") || policy.attendance_self_check_in_mode === "disabled") throw new ConflictException("Student QR check-in is not enabled.");
-      const student = await sql<{ id: string }>`SELECT student.id FROM students student JOIN enrollments enrollment ON enrollment.student_id=student.id
-        WHERE student.user_id=${user.id}::uuid AND student.school_id=${row.school_id}::uuid
-          AND enrollment.class_section_id=${row.class_section_id}::uuid AND enrollment.term_id=${row.term_id}::uuid
-          AND enrollment.is_active AND enrollment.enrolled_on<=${row.session_date}::date`.execute(db);
-      if (!student.rows[0]) throw new ForbiddenException("This check-in is not for your current class.");
-      const inWindow = await sql<{ valid: boolean }>`SELECT now() BETWEEN
-        ((${row.session_date}::date+${row.starts_at}::time) AT TIME ZONE school.timezone) - make_interval(mins=>${policy.attendance_session_open_before_minutes})
-        AND ((${row.session_date}::date+${row.ends_at}::time) AT TIME ZONE school.timezone) + make_interval(mins=>${policy.attendance_session_close_after_minutes}) AS valid
-        FROM schools school WHERE school.id=${row.school_id}::uuid`.execute(db);
-      if (!inWindow.rows[0]?.valid) throw new BadRequestException("Check-in is outside this session’s attendance window.");
-      const existing = await sql<{ id: string }>`SELECT id FROM attendance_session_entries WHERE session_id=${row.session_id}::uuid AND student_id=${student.rows[0].id}::uuid FOR UPDATE`.execute(db);
-      const automatic = policy.attendance_self_check_in_mode === "automatic" && !existing.rows[0];
-      const observedAt = new Date();
-      const evidenceRuleSnapshot = {
-        operating_rule_revision: policy.revision,
-        self_check_in_mode: policy.attendance_self_check_in_mode,
-        session_open_before_minutes: policy.attendance_session_open_before_minutes,
-        session_close_after_minutes: policy.attendance_session_close_after_minutes,
-      };
-      const evidence = await sql<{ id: string; state: "accepted" | "pending"; observed_at: Date }>`INSERT INTO attendance_session_evidence(school_id,session_id,student_id,capture_channel,state,observed_at,submitted_by,provider_reference,metadata,decided_by,decided_at,decision_note)
-        VALUES(${row.school_id}::uuid,${row.session_id}::uuid,${student.rows[0].id}::uuid,'student_qr',${automatic ? 'accepted' : 'pending'},${observedAt},${user.id}::uuid,${row.challenge_id}::text,${JSON.stringify(evidenceRuleSnapshot)}::jsonb,NULL,${automatic ? observedAt : null},${automatic ? 'Accepted by the configured automatic QR rule.' : ''})
-        ON CONFLICT(session_id,student_id,capture_channel) WHERE state<>'rejected' DO UPDATE SET
-          state=CASE WHEN attendance_session_evidence.state='accepted' THEN attendance_session_evidence.state ELSE excluded.state END,
-          observed_at=CASE WHEN attendance_session_evidence.state='accepted' THEN attendance_session_evidence.observed_at ELSE excluded.observed_at END,
-          submitted_by=CASE WHEN attendance_session_evidence.state='accepted' THEN attendance_session_evidence.submitted_by ELSE excluded.submitted_by END,
-          provider_reference=CASE WHEN attendance_session_evidence.state='accepted' THEN attendance_session_evidence.provider_reference ELSE excluded.provider_reference END,
-          metadata=CASE WHEN attendance_session_evidence.state='accepted' THEN attendance_session_evidence.metadata ELSE excluded.metadata END,
-          decided_by=CASE WHEN attendance_session_evidence.state='accepted' THEN attendance_session_evidence.decided_by ELSE excluded.decided_by END,
-          decided_at=CASE WHEN attendance_session_evidence.state='accepted' THEN attendance_session_evidence.decided_at ELSE excluded.decided_at END,
-          decision_note=CASE WHEN attendance_session_evidence.state='accepted' THEN attendance_session_evidence.decision_note ELSE excluded.decision_note END,
-          updated_at=now() RETURNING id,state,observed_at`.execute(db);
-      const alreadyAccepted = !automatic && evidence.rows[0]!.state === "accepted";
-      let resultingRevision = Number(row.revision);
-      let entryRevisionId: string | null = null;
-      if (automatic) {
-        const nextRevision = Number(row.revision) + 1;
-        const saved = await sql<{ id: string }>`INSERT INTO attendance_session_entries(school_id,session_id,student_id,status,remarks,capture_channel,observed_at,recorded_by,revision)
-          VALUES(${row.school_id}::uuid,${row.session_id}::uuid,${student.rows[0].id}::uuid,'present','','student_qr',${observedAt},${user.id}::uuid,${nextRevision}) RETURNING id`.execute(db);
-        const revision = await sql<{ id: string }>`INSERT INTO attendance_session_entry_revisions(school_id,session_id,entry_id,submission_id,student_id,previous_status,new_status,previous_remarks,new_remarks,capture_channel,reason,changed_by,request_id,register_revision)
-          VALUES(${row.school_id}::uuid,${row.session_id}::uuid,${saved.rows[0]!.id}::uuid,NULL,${student.rows[0].id}::uuid,NULL,'present',NULL,'','student_qr','Accepted by the configured automatic QR rule.',${user.id}::uuid,${request.requestId}::uuid,${nextRevision}) RETURNING id`.execute(db);
-        entryRevisionId = revision.rows[0]!.id;
-        resultingRevision = nextRevision;
-        await sql`UPDATE attendance_session_registers SET revision=${nextRevision},updated_at=now() WHERE id=${row.session_id}::uuid`.execute(db);
-        await this.refreshSubjectAggregate(db,row.school_id,row.term_id,row.subject_id);
-      }
-      await sql`INSERT INTO attendance_session_audits(school_id,session_id,actor_id,action,metadata)
-        VALUES(${row.school_id}::uuid,${row.session_id}::uuid,${user.id}::uuid,${automatic ? 'qr.accepted' : alreadyAccepted ? 'qr.already_recorded' : 'qr.review_requested'},${JSON.stringify({ evidence_id: evidence.rows[0]!.id, request_id: request.requestId, ...evidenceRuleSnapshot })}::jsonb)`.execute(db);
-      const attendanceEvent = automatic
-        ? await this.events.enqueueAttendanceUpdates(db, {
-          schoolId: row.school_id,
-          classSectionId: row.class_section_id,
-          termId: row.term_id,
-          date: row.session_date,
-          sessionId: row.session_id,
-          requestId: request.requestId,
-          suppressNotifications: true,
-          records: [{
-            student_id: student.rows[0].id,
-            status: "present",
-            previous_status: null,
-            revision: resultingRevision,
-          }],
-        })
-        : null;
-      const registerEventId = await this.events.enqueueRegisterEvent(db, {
-        schoolId: row.school_id,
-        classSectionId: row.class_section_id,
-        termId: row.term_id,
-        date: row.session_date,
-        sessionId: row.session_id,
-        requestId: request.requestId,
-        state: row.state,
-        revision: resultingRevision,
-        actorId: user.id,
-        action: automatic ? "qr.accepted" : alreadyAccepted ? "qr.already_recorded" : "qr.review_requested",
-      });
-      if (alreadyAccepted) {
-        return { status: "recorded", evidence_id: evidence.rows[0]!.id, session_id: row.session_id };
-      }
-      const domainEventId = automatic
-        ? attendanceEvent?.studentEventIds.get(student.rows[0].id)
-        : registerEventId;
-      const sourceRecordId = entryRevisionId ?? `${evidence.rows[0]!.id}:${request.requestId}`;
-      if (!domainEventId) throw new ConflictException("The QR attendance evidence chain could not be retained.");
-      await recordAttendanceModelObservations({
-        ingress: this.observationIngress,
-        transaction: db,
-        schoolId: row.school_id,
-        classSectionId: row.class_section_id,
-        date: row.session_date,
-        sessionId: row.session_id,
-        actorUserId: user.id,
-        sourceType: "attendance.self_check_in",
-        sourceRef: evidence.rows[0]!.id,
-        state: automatic ? "accepted" : "pending",
-        receivedAt: observedAt,
-        participationScope: "scheduled_session",
-        records: [{
-          studentId: student.rows[0].id,
-          sourceRecordId,
-          status: "present",
-          observedAt: new Date(evidence.rows[0]!.observed_at),
-          captureSource: "student_qr",
-          evidenceRefs: [
-            `attendance_session_evidence:${evidence.rows[0]!.id}`,
-            `attendance_qr_challenge:${row.challenge_id}`,
-            ...(entryRevisionId ? [`attendance_session_entry_revision:${entryRevisionId}`] : []),
-          ],
-          domainEventId,
-          decisionProvenance: automatic ? "human_self_check_in_accepted_by_operating_rule" : "human_self_check_in_awaiting_review",
-        }],
-      });
-      if (automatic) {
-        await this.recordModelCommand(db, {
-          session: lockedSession,
-          actorUserId: user.id,
-          commandType: "attendance.self_check_in.accept_automatically",
-          idempotencyKey: `attendance-qr-auto:${evidence.rows[0]!.id}`,
-          correlationId: request.requestId,
-          expectedRevision: row.revision,
-          resultingRevision,
-          operatingRuleRevision: policy.revision,
-          domainEventId,
-          outcomeCode: "accepted_present",
-          explanation: "The student QR observation was accepted by the configured institution operating rule.",
-          metadata: {
-            evidence_id: evidence.rows[0]!.id,
-            student_id: student.rows[0].id,
-            capture_channel: "student_qr",
-          },
-        });
-      }
-      return { status: automatic ? "recorded" : "pending_review", evidence_id: evidence.rows[0]!.id, session_id: row.session_id };
-    });
-  }
-
-  async decideEvidence(
-    user: AuthUser,
-    sessionIdValue: string,
-    evidenceIdValue: string,
-    body: unknown,
-    request: AuthenticatedRequest,
-  ) {
+  async issueQr(user: AuthUser, sessionIdValue: string, request: AuthenticatedRequest) {
     const sessionId = z.string().uuid().parse(sessionIdValue);
-    const evidenceId = z.string().uuid().parse(evidenceIdValue);
-    const input = evidenceDecisionSchema.parse(body);
-    const rawKey = request.headers["idempotency-key"];
-    const idempotencyKey = Array.isArray(rawKey) ? rawKey[0] : rawKey;
-    if (!idempotencyKey || !/^[A-Za-z0-9._:-]{8,128}$/.test(idempotencyKey)) {
-      throw new BadRequestException("A valid Idempotency-Key header is required.");
-    }
-    const requestHash = createHash("sha256").update(JSON.stringify({ sessionId, evidenceId, ...input })).digest("hex");
     return this.db.transaction().execute(async (db) => {
-      await sql`SELECT pg_advisory_xact_lock(hashtextextended(${`attendance-session:${sessionId}`},0))`.execute(db);
-      const session = await this.sessionRow(db, sessionId, true);
+      let session = await this.sessionRow(db, sessionId);
       const member = await this.membership(db, user, ["staff", "admin"], session.school_id);
       if (!await this.canRecord(db, member, user.id, session)) throw new ForbiddenException("This subject session is not assigned to you.");
       if (session.state === "locked") throw new ForbiddenException("This attendance register is final.");
       const policy = await operatingRules(db, session.school_id);
-      const evidenceResult = await sql<{
-        id: string; student_id: string; capture_channel: string; state: "pending" | "accepted" | "rejected";
-        observed_at: Date; metadata: Record<string, unknown> | null;
-      }>`SELECT id,student_id,capture_channel,state,observed_at,metadata
-        FROM attendance_session_evidence
-        WHERE id=${evidenceId}::uuid AND session_id=${sessionId}::uuid AND school_id=${session.school_id}::uuid
-        FOR UPDATE`.execute(db);
-      const evidence = evidenceResult.rows[0];
-      if (!evidence) throw new NotFoundException("Attendance evidence not found.");
-      const priorMetadata = evidence.metadata ?? {};
-      if (evidence.state !== "pending") {
-        if (priorMetadata.decision_idempotency_key === idempotencyKey && priorMetadata.decision_request_hash === requestHash) {
-          return this.screenFromDb(db, user, sessionId);
-        }
-        throw new ConflictException("This attendance evidence has already been decided.");
+      const approved = (await sql<{ allowed: boolean }>`SELECT revision>0 AND updated_by IS NOT NULL AS allowed
+        FROM institution_operating_rules WHERE school_id=${session.school_id}::uuid FOR SHARE`.execute(db)).rows[0]?.allowed;
+      if (!approved || !policy.attendance_academic_channels.includes("student_qr") || policy.attendance_self_check_in_mode === "disabled") {
+        throw new ConflictException("QR check-in needs an explicitly approved current institution rule.");
       }
-      if (session.revision !== input.expected_revision) {
-        throw new ConflictException("This register changed after the evidence was opened. Refresh before deciding.");
-      }
-      const now = new Date();
-      let resultingRevision = session.revision;
-      let entryRevisionId: string | null = null;
-      let attendanceEventId: string | null = null;
-      if (input.decision === "accepted") {
-        const existing = await sql<{ id: string; status: "present" | "absent" | "late" | "excused"; remarks: string }>`SELECT id,status,remarks
-          FROM attendance_session_entries
-          WHERE session_id=${session.id}::uuid AND student_id=${evidence.student_id}::uuid
-          FOR UPDATE`.execute(db);
-        resultingRevision = session.revision + 1;
-        const entry = await sql<{ id: string }>`INSERT INTO attendance_session_entries(
-            school_id,session_id,student_id,status,remarks,capture_channel,observed_at,recorded_by,revision,updated_at)
-          VALUES(${session.school_id}::uuid,${session.id}::uuid,${evidence.student_id}::uuid,'present','',${evidence.capture_channel},${evidence.observed_at},${user.id}::uuid,${resultingRevision},${now})
-          ON CONFLICT(session_id,student_id) DO UPDATE SET status='present',remarks='',capture_channel=excluded.capture_channel,
-            observed_at=excluded.observed_at,recorded_by=excluded.recorded_by,revision=excluded.revision,updated_at=excluded.updated_at
-          RETURNING id`.execute(db);
-        const revision = await sql<{ id: string }>`INSERT INTO attendance_session_entry_revisions(
-            school_id,session_id,entry_id,submission_id,student_id,previous_status,new_status,previous_remarks,new_remarks,
-            capture_channel,reason,changed_by,request_id,register_revision)
-          VALUES(${session.school_id}::uuid,${session.id}::uuid,${entry.rows[0]!.id}::uuid,NULL,${evidence.student_id}::uuid,
-            ${existing.rows[0]?.status ?? null},'present',${existing.rows[0]?.remarks ?? null},'',${evidence.capture_channel},${input.note},
-            ${user.id}::uuid,${request.requestId}::uuid,${resultingRevision}) RETURNING id`.execute(db);
-        entryRevisionId = revision.rows[0]!.id;
-        await sql`UPDATE attendance_session_registers SET revision=${resultingRevision},updated_at=${now} WHERE id=${session.id}::uuid`.execute(db);
-        await this.refreshSubjectAggregate(db, session.school_id, session.term_id, session.subject_id);
-        const attendanceEvents = await this.events.enqueueAttendanceUpdates(db, {
-          schoolId: session.school_id,
-          classSectionId: session.class_section_id,
-          termId: session.term_id,
-          date: session.session_date,
-          sessionId: session.id,
-          requestId: request.requestId,
-          suppressNotifications: true,
-          records: [{
-            id: entry.rows[0]!.id,
-            student_id: evidence.student_id,
-            status: "present",
-            previous_status: existing.rows[0]?.status ?? null,
-            revision: resultingRevision,
-          }],
-        });
-        attendanceEventId = attendanceEvents.studentEventIds.get(evidence.student_id) ?? null;
-        if (!attendanceEventId) throw new ConflictException("The reviewed attendance evidence chain could not be retained.");
-        if (this.observationIngress) {
-          await this.observationIngress.transitionObservations(db, {
-            school_id: session.school_id,
-            source_type: "attendance.self_check_in",
-            source_ref: evidence.id,
-            state: "superseded",
-          });
-        }
-        await recordAttendanceModelObservations({
-          ingress: this.observationIngress,
-          transaction: db,
-          schoolId: session.school_id,
-          classSectionId: session.class_section_id,
-          date: session.session_date,
-          sessionId: session.id,
-          actorUserId: user.id,
-          sourceType: "attendance.self_check_in",
-          sourceRef: evidence.id,
-          state: "accepted",
-          receivedAt: now,
-          participationScope: "scheduled_session",
-          records: [{
-            studentId: evidence.student_id,
-            sourceRecordId: entryRevisionId,
-            status: "present",
-            observedAt: new Date(evidence.observed_at),
-            captureSource: evidence.capture_channel,
-            evidenceRefs: [
-              `attendance_session_evidence:${evidence.id}`,
-              `attendance_session_entry_revision:${entryRevisionId}`,
-            ],
-            domainEventId: attendanceEventId,
-            decisionProvenance: "authorized_staff_accepted_pending_evidence",
-          }],
-        });
-      } else if (this.observationIngress) {
-        await this.observationIngress.transitionObservations(db, {
-          school_id: session.school_id,
-          source_type: "attendance.self_check_in",
-          source_ref: evidence.id,
-          state: "rejected",
-        });
-      }
-      const decisionMetadata = {
-        ...priorMetadata,
-        decision_idempotency_key: idempotencyKey,
-        decision_request_hash: requestHash,
-        decision_operating_rule_revision: policy.revision,
-        resulting_register_revision: resultingRevision,
-      };
-      await sql`UPDATE attendance_session_evidence SET state=${input.decision},decided_by=${user.id}::uuid,decided_at=${now},
-        decision_note=${input.note},metadata=${JSON.stringify(decisionMetadata)}::jsonb,updated_at=${now}
-        WHERE id=${evidence.id}::uuid`.execute(db);
-      await sql`INSERT INTO attendance_session_audits(school_id,session_id,actor_id,action,metadata)
-        VALUES(${session.school_id}::uuid,${session.id}::uuid,${user.id}::uuid,${input.decision === "accepted" ? "qr.review_accepted" : "qr.review_rejected"},
-          ${JSON.stringify({ evidence_id: evidence.id, note: input.note, request_id: request.requestId, operating_rule_revision: policy.revision, resulting_revision: resultingRevision })}::jsonb)`.execute(db);
-      const registerEventId = await this.events.enqueueRegisterEvent(db, {
-        schoolId: session.school_id,
-        classSectionId: session.class_section_id,
-        termId: session.term_id,
-        date: session.session_date,
-        sessionId: session.id,
-        requestId: request.requestId,
-        state: session.state,
-        revision: resultingRevision,
-        actorId: user.id,
-        action: input.decision === "accepted" ? "qr.review_accepted" : "qr.review_rejected",
-      });
-      await this.recordModelCommand(db, {
-        session,
-        actorUserId: user.id,
-        commandType: `attendance.evidence.${input.decision}`,
-        idempotencyKey: `attendance-evidence-decision:${evidence.id}:${idempotencyKey}`,
-        correlationId: request.requestId,
-        expectedRevision: session.revision,
-        resultingRevision,
-        operatingRuleRevision: policy.revision,
-        domainEventId: registerEventId,
-        outcomeCode: input.decision,
-        explanation: input.decision === "accepted"
-          ? "Authorized staff accepted the pending attendance evidence and recorded the student present."
-          : "Authorized staff rejected the pending attendance evidence without changing the register.",
-        metadata: {
-          evidence_id: evidence.id,
-          student_id: evidence.student_id,
-          capture_channel: evidence.capture_channel,
-          attendance_event_id: attendanceEventId,
-        },
-      });
-      return this.screenFromDb(db, user, sessionId);
+      const common = await this.academic.prepareSessionInTransaction(db,user,session.school_id,session.id,true);
+      // Common truth precedes its derived legacy lifecycle row in every writer.
+      // The short-lived source must use that same lock order.
+      await sql`SELECT id FROM activity_attendance_registers WHERE id=${common.register_id}::uuid
+        AND school_id=${session.school_id}::uuid FOR UPDATE`.execute(db);
+      session=await this.sessionRow(db,sessionId);
+      if (session.state === "locked") throw new ForbiddenException("This attendance register is final.");
+      if (!await this.canRecord(db,member,user.id,session)) throw new ForbiddenException("This subject session is not assigned to you.");
+      const targetId = common.register_id;
+      const target = { kind: "attendance_register" as const,domain: "attendance",domain_id: targetId,label: session.title,
+        lifecycle_state: "active" as const,source_revision: Math.max(1,session.revision),metadata: {} };
+      const now = executionNow(), expiresAt = new Date(now.getTime()+2*60_000), challengeId = randomUUID();
+      const prepared = await this.commandGateway.prepareDomainCommand(db,{ school_id: session.school_id,actor_user_id: user.id,
+        command_type: "attendance.qr.issue",handler_key: "attendance.qr_issue",handler_version: 1,source_domain: "attendance",target,
+        current_revision: session.revision,expected_revision: session.revision,capability: "attendance:record",purpose: "issue_short_lived_own_check_in_source",
+        requested_at: now.toISOString(),correlation_id: request.requestId,causation_id: null,idempotency_key: `qr-issue:${request.requestId}`,
+        operating_rule_version_ref: `institution_operating_rules:${session.school_id}:${policy.revision}`,configuration_refs: [],
+        authority_attestation: { evaluator_domain: "attendance",decision: "allowed",reason_codes: ["current_academic_recorder"],
+          authority_source_refs: [{ session_id: session.id,register_id: targetId,school_id: session.school_id }],
+          operating_rule_refs: [{ revision: policy.revision }],valid_until: expiresAt.toISOString() },safe_context: { session_id: session.id } });
+      if (prepared.status !== "ready") throw new ConflictException("Request a fresh QR challenge.");
+      const token = randomBytes(32).toString("base64url"), hash = createHash("sha256").update(token).digest("hex");
+      await sql`INSERT INTO attendance_qr_challenges(id,school_id,session_id,token_hash,issued_by,expires_at)
+        VALUES(${challengeId}::uuid,${session.school_id}::uuid,${session.id}::uuid,${hash},${user.id}::uuid,${expiresAt})`.execute(db);
+      const eventId = await this.events.enqueueRegisterEvent(db,{ schoolId: session.school_id,classSectionId: session.class_section_id,
+        termId: session.term_id,date: session.session_date,sessionId: session.id,requestId: request.requestId,state: session.state,
+        revision: session.revision,actorId: user.id,action: "qr.issued" });
+      const event = await this.domainJournal.recordAcceptedEvent(db,{ school_id: session.school_id,source_outbox_event_id: eventId,
+        event_type: `attendance.register.${session.state}`,subject: target,actor_user_id: user.id,context: null,audience_user_ids: [user.id],
+        occurred_at: now.toISOString(),effective_from: now.toISOString(),effective_until: expiresAt.toISOString(),source_domain: "attendance",
+        source_record_id: session.id,source_revision: Math.max(1,session.revision),correlation_id: request.requestId,causation_event_id: null,
+        idempotency_key: `qr-issued:${challengeId}`,payload: { challenge_id: challengeId,session_id: session.id,expires_at: expiresAt.toISOString() } });
+      await this.commandGateway.completeDomainCommand(db,{ school_id: session.school_id,command_id: prepared.command_id,terminal_state: "accepted",
+        code: "short_lived_qr_issued",explanation: "The authorized recorder issued a short-lived source for each identified participant's own report, not attendance authority.",
+        resulting_revision: session.revision,domain_event_id: eventId,metadata: { challenge_id: challengeId,model_event_id: event.event_id },completed_at: now.toISOString() });
+      return { token,expires_at: expiresAt.toISOString(),session_id: session.id };
     });
   }
+
+  async selfCheckIn(user: AuthUser, tokenValue: unknown, request: AuthenticatedRequest) {
+    const token = z.string().min(32).max(128).parse(tokenValue), hash = createHash("sha256").update(token).digest("hex");
+    return this.db.transaction().execute(async (db) => {
+      const challenge = (await sql<{ id: string;session_id: string;school_id: string;expires_at: Date;revoked_at: Date | null }>`
+        SELECT id,session_id,school_id,expires_at,revoked_at FROM attendance_qr_challenges WHERE token_hash=${hash} FOR UPDATE`.execute(db)).rows[0];
+      if (!challenge || challenge.revoked_at || new Date(challenge.expires_at).getTime()<=executionNow().getTime()) {
+        throw new BadRequestException("This QR check-in has expired.");
+      }
+      const prepared = await this.academic.prepareSessionForParticipantInTransaction(db,user,challenge.school_id,challenge.session_id,true);
+      const policy = await operatingRules(db,challenge.school_id);
+      const window = (await sql<{ opens_at: Date;closes_at: Date }>`SELECT
+        ((${prepared.context.date}::date+session.starts_at) AT TIME ZONE school.timezone)-make_interval(mins=>${policy.attendance_session_open_before_minutes}) AS opens_at,
+        ((${prepared.context.date}::date+session.ends_at) AT TIME ZONE school.timezone)+make_interval(mins=>${policy.attendance_session_close_after_minutes}) AS closes_at
+        FROM attendance_session_registers session JOIN schools school ON school.id=session.school_id
+        WHERE session.id=${challenge.session_id}::uuid AND session.school_id=${challenge.school_id}::uuid`.execute(db)).rows[0]!;
+      const result = await this.participation.selfCheckInInTransaction(db,user,challenge.school_id,prepared.register_id,
+        {source_reference:challenge.id,window:{opens_at:window.opens_at.toISOString(),closes_at:window.closes_at.toISOString()}},request);
+      return {status:result.status,evidence_id:result.evidence_id,session_id:challenge.session_id};
+    });
+  }
+
+  async decideEvidence(
+    user: AuthUser,sessionIdValue: string,evidenceIdValue: string,body: unknown,request: AuthenticatedRequest,
+  ) {
+    const sessionId=z.string().uuid().parse(sessionIdValue),evidenceId=z.string().uuid().parse(evidenceIdValue),input=evidenceDecisionSchema.parse(body);
+    return this.db.transaction().execute(async(db) => {
+      const session=await this.sessionRow(db,sessionId);
+      const prepared=await this.academic.prepareSessionInTransaction(db,user,session.school_id,sessionId,true);
+      await this.participation.decideEvidence(user,session.school_id,prepared.register_id,evidenceId,
+        {decision:input.decision,reason:input.note,expected_revision:input.expected_revision},request,db);
+      return this.screenFromDb(db,user,sessionId);
+    });
+  }
+
 }

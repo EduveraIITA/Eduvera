@@ -1,5 +1,6 @@
 import { ChevronRight, MessageCircle } from "lucide-react";
 import { Link, useSearchParams } from "react-router-dom";
+import { InfoSummary } from "../../components/InfoSummary";
 import { ComparisonBars, numberLabel, percentageLabel } from "../analytics/AnalyticsCharts";
 import { canonicalInsightSearch, insightPath } from "../analytics/InsightNavigation";
 import { FollowupInbox } from "../coordination/FollowupInbox";
@@ -32,7 +33,7 @@ export function AttendanceChecks({ data }: { data: PrincipalInsights }) {
     </li>)}</ul> : total > 0 ? <p className="analytics-empty">The detailed list is unavailable. Refresh to try again.</p> : null}
     {total > students.length ? <p className="analytics-note">Showing {students.length} of {total}. Narrow by class to find more students.</p> : null}
     <Link className="insight-related-link" to={insightPath("principal", "recording", search)}><span><strong>Check missing attendance records</strong><small>{numberLabel(Math.max(0, data.attendance.expected - data.attendance.recorded))} student-days unrecorded in this review window</small></span><ChevronRight size={18} aria-hidden="true" /></Link>
-    <details className="analytics-details"><summary>Why these students?</summary><p className="analytics-note">Recorded attendance fell by at least 10 percentage points compared with the preceding {data.period.days} days. Each period needs at least 5 scored days and 80% recording completeness. This is a prompt to review, not a diagnosis or a disciplinary flag.</p><p className="analytics-note">Current period: {shortDate(data.period.start)} to {shortDate(data.period.end)}. Compared with {shortDate(data.period.baseline_start)} to {shortDate(data.period.baseline_end)}. Current enrolments and the effective timetable are used.</p></details>
+    <details className="analytics-details"><InfoSummary>Why these students?</InfoSummary><p className="analytics-note">Recorded attendance fell by at least 10 percentage points compared with the preceding {data.period.days} days. Each period needs at least 5 scored days and 80% recording completeness. This is a prompt to review, not a diagnosis or a disciplinary flag.</p><p className="analytics-note">Current period: {shortDate(data.period.start)} to {shortDate(data.period.end)}. Compared with {shortDate(data.period.baseline_start)} to {shortDate(data.period.baseline_end)}. Current enrolments and the effective timetable are used.</p></details>
   </div>;
 }
 
@@ -41,7 +42,7 @@ export function AttendanceStudentReview({ data, studentId }: { data: PrincipalIn
     ? data.engagement.focused_student
     : [...data.engagement.students, ...data.engagement.without_followup_students].find(item => item.id === studentId);
   if (!student) return <p className="analytics-empty">This student is not in the current review list. Go back and check the class or review period.</p>;
-  const register = `/principal/attendance?class_section_id=${student.class_id}&date=${data.period.end}`;
+  const register = `/areas/attendance/registers?class_section_id=${student.class_id}&date=${data.period.end}`;
   return <div className="attendance-review">
     <div className="attendance-review__intro"><h2>{student.name}</h2><p>{student.class_name} · {student.open_followups ? "Follow-up already open" : "No open follow-up"}</p></div>
     <section className="analytics-panel">
@@ -59,7 +60,7 @@ export function AttendanceStudentReview({ data, studentId }: { data: PrincipalIn
       {student.open_followups ? <a className="attendance-review__action" href="#attendance-followups"><MessageCircle size={18} aria-hidden="true" />Review existing follow-up</a> : <Link className="attendance-review__action" to={register}>Review {student.class_name} register<ChevronRight size={18} aria-hidden="true" /></Link>}
     </section>
     {student.open_followups ? <FollowupInbox context="staff" studentId={student.id} /> : null}
-    <details className="analytics-details"><summary>Evidence used</summary><p className="analytics-note">{student.recorded} of {student.expected} expected student-days recorded in the current window; {student.previous_recorded} of {student.previous_expected} in the previous window. Missing records are not absences. Half days count as half; excused records are excluded from the percentage. Missing homework completion records do not establish non-submission.</p></details>
+    <details className="analytics-details"><InfoSummary>Evidence used</InfoSummary><p className="analytics-note">{student.recorded} of {student.expected} expected student-days recorded in the current window; {student.previous_recorded} of {student.previous_expected} in the previous window. Missing records are not absences. Half days count as half; excused records are excluded from the percentage. Missing homework completion records do not establish non-submission.</p></details>
   </div>;
 }
 
@@ -70,6 +71,6 @@ export function RecordingCompleteness({ data }: { data: PrincipalInsights }) {
     <p className="analytics-support">{numberLabel(data.attendance.recorded)} of {numberLabel(data.attendance.expected)} student-days</p>
     <ComparisonBars label="Class recording completeness" rows={data.attendance.classes.map(cls => ({ id: cls.id, name: cls.name, value: cls.completeness, detail: `${cls.recorded} / ${cls.expected} student-days recorded` }))} />
     <p className="analytics-note">Missing records are not absences. Uses current enrolments and the effective schedule, not a frozen historical cohort. This measures recorded student-days, not submitted registers.</p>
-    <Link className="analytics-module-link" to={`/principal/attendance?date=${data.period.end}`}>Review attendance registers</Link>
+    <Link className="analytics-module-link" to={`/areas/attendance/registers?date=${data.period.end}`}>Review attendance registers</Link>
   </section>;
 }

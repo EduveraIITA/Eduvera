@@ -1,21 +1,15 @@
 import { PoweredBy } from "../../features/school/PoweredBy";
 import { useQuery } from "@tanstack/react-query";
 import { Fragment, useEffect, useRef, useState, type CSSProperties, type ReactNode } from "react";
-import { NavLink, useSearchParams } from "react-router-dom";
+import { NavLink, useLocation, useSearchParams } from "react-router-dom";
 import {
-  BookOpen,
+  BriefcaseBusiness,
   CalendarDays,
-  CalendarX2,
-  Home,
-  ListChecks,
-  MessageCircle,
-  MoreHorizontal,
+  Ellipsis,
+  LayoutGrid,
 } from "lucide-react";
 import { AccountMenu } from "../../features/auth/AccountMenu";
 import { useOptionalAuth } from "../../features/auth/AuthContext";
-import { useProFeatures } from "../../features/auth/useProFeatures";
-import { AttentionBadge, AttentionUnavailableBadge, attentionLabel } from "../../features/attention/AttentionBadge";
-import { useAttention } from "../../features/attention/useAttention";
 import { NotificationCenter } from "../../features/notifications/NotificationCenter";
 import { PortalPageTitle } from "../../features/navigation/PortalPageTitle";
 import { searchForStudentContext } from "../../features/navigation/studentContextSearch";
@@ -23,6 +17,7 @@ import { getAccessibleStudents } from "../../features/school/api";
 import { SchoolBrand } from "../../features/school/SchoolBrand";
 import { AssistantPanel, AssistantTab } from "../../features/assistant/DemoChat";
 import { useDemoChat } from "../../features/assistant/useDemoChat";
+import { useProFeatures } from "../../features/auth/useProFeatures";
 import type { ParentChildSummary, ParentPageAction } from "./parentTypes";
 import "./parent-pages.css";
 
@@ -33,12 +28,12 @@ function ChildPortrait({ name, avatarUrl }: { name: string; avatarUrl?: string }
 }
 
 const childAccentThemes = [
-  { name: "blue", primary: "#0037b0", bright: "#1d4ed8", soft: "#eff4ff", strong: "#dce9ff", fixed: "#dce1ff", gradient: "linear-gradient(132deg, #164ed0 0%, #2969e7 58%, #3d7af0 100%)", shadow: "rgba(29, 78, 216, .22)" },
-  { name: "violet", primary: "#5b279b", bright: "#7436bd", soft: "#f8f3ff", strong: "#ede2fb", fixed: "#e7d7f8", gradient: "linear-gradient(132deg, #572493 0%, #7436bd 58%, #8d53ce 100%)", shadow: "rgba(116, 54, 189, .22)" },
-  { name: "teal", primary: "#00685f", bright: "#087d71", soft: "#eef9f7", strong: "#d6f0eb", fixed: "#ccebe5", gradient: "linear-gradient(132deg, #00685f 0%, #087d71 58%, #15988a 100%)", shadow: "rgba(8, 125, 113, .22)" },
-  { name: "amber", primary: "#7b3900", bright: "#9b4a00", soft: "#fff7ed", strong: "#f9e5cc", fixed: "#f4dbbd", gradient: "linear-gradient(132deg, #7b3900 0%, #9b4a00 58%, #b9640b 100%)", shadow: "rgba(155, 74, 0, .22)" },
-  { name: "rose", primary: "#8f174a", bright: "#b1205d", soft: "#fff2f7", strong: "#f7dbe7", fixed: "#f2d0df", gradient: "linear-gradient(132deg, #8f174a 0%, #b1205d 58%, #ca3d76 100%)", shadow: "rgba(177, 32, 93, .22)" },
-  { name: "indigo", primary: "#3730a3", bright: "#4f46c7", soft: "#f3f3ff", strong: "#e2e3fb", fixed: "#d9daf8", gradient: "linear-gradient(132deg, #3730a3 0%, #4f46c7 58%, #6861db 100%)", shadow: "rgba(79, 70, 199, .22)" },
+  { name: "blue", bright: "#1d4ed8", strong: "#dce9ff" },
+  { name: "violet", bright: "#7436bd", strong: "#ede2fb" },
+  { name: "teal", bright: "#087d71", strong: "#d6f0eb" },
+  { name: "amber", bright: "#9b4a00", strong: "#f9e5cc" },
+  { name: "rose", bright: "#b1205d", strong: "#f7dbe7" },
+  { name: "indigo", bright: "#4f46c7", strong: "#e2e3fb" },
 ] as const;
 
 function childTheme(index: number, count: number) {
@@ -47,39 +42,27 @@ function childTheme(index: number, count: number) {
 
 function accentVariables(theme: (typeof childAccentThemes)[number]) {
   return {
-    "--parent-primary": theme.primary,
-    "--parent-primary-bright": theme.bright,
-    "--parent-soft": theme.soft,
-    "--parent-soft-2": theme.strong,
-    "--parent-soft-3": theme.fixed,
-    "--parent-accent-shadow": theme.shadow,
-    "--thatcampus-brand": theme.primary,
-    "--thatcampus-brand-bright": theme.bright,
-    "--thatcampus-brand-soft": theme.fixed,
-    "--thatcampus-feature-gradient": theme.gradient,
-    "--primary": theme.primary,
-    "--primary-bright": theme.bright,
-    "--primary-fixed": theme.fixed,
-    "--primary-fixed-dim": theme.strong,
-    "--surface-low": theme.soft,
-    "--surface-container": theme.strong,
+    // A child colour identifies a portrait, not the selected operating world.
+    // Actions and surfaces always inherit the app's Live / Simulation theme.
+    "--profile-accent": theme.bright,
+    "--profile-soft": theme.strong,
   } as CSSProperties;
 }
 
-const parentRoutes: Array<{
-  id: ParentRoute;
-  label: string;
-  path: string;
-  icon: typeof Home;
-}> = [
-  { id: "home", label: "Home", path: "/parent/home", icon: Home },
-  { id: "attendance", label: "Attendance", path: "/parent/attendance", icon: ListChecks },
-  { id: "leave", label: "Leave", path: "/parent/leave", icon: CalendarX2 },
-  { id: "diary", label: "Diary", path: "/parent/diary", icon: BookOpen },
-  { id: "timetable", label: "Timetable", path: "/parent/timetable", icon: CalendarDays },
-  { id: "chat", label: "Messages", path: "/parent/messages", icon: MessageCircle },
-  { id: "more", label: "More", path: "/parent/more", icon: MoreHorizontal },
-];
+const workspaceRoutes = [
+  { id: "today", label: "Today", path: "/today", icon: CalendarDays },
+  { id: "work", label: "Work", path: "/work", icon: BriefcaseBusiness },
+  { id: "areas", label: "Areas", path: "/areas", icon: LayoutGrid },
+  { id: "more", label: "More", path: "/more", icon: Ellipsis },
+] as const;
+
+function activeWorkspaceSection(pathname: string, active: ParentRoute) {
+  if (pathname === "/today") return "today";
+  if (pathname === "/work" || pathname.startsWith("/work/")) return "work";
+  if (pathname === "/more" || pathname.startsWith("/more/")) return "more";
+  if (pathname === "/areas" || pathname.startsWith("/areas/")) return "areas";
+  return active === "home" ? "today" : active === "more" ? "more" : "areas";
+}
 
 export interface ParentShellProps {
   active: ParentRoute;
@@ -115,8 +98,8 @@ export function ParentShell({
   pageTitleTrailing,
 }: ParentShellProps) {
   const auth = useOptionalAuth();
-  const navigationActive = active === "events" ? "more" : active;
-  const mobileActive = ["home", "attendance", "diary"].includes(navigationActive) ? navigationActive : "more";
+  const location = useLocation();
+  const activeSection = activeWorkspaceSection(location.pathname, active);
   const guardianSchoolName = auth?.memberships.find((membership) => membership.role === "guardian")?.school_name?.trim();
   const schoolName = guardianSchoolName || (!auth ? "School" : auth.status === "loading" ? "Loading school" : "School information unavailable");
   const [searchParams,setSearchParams] = useSearchParams();
@@ -154,13 +137,6 @@ export function ParentShell({
     ? accessibleChildren
     : childOptions?.length ? childOptions : child ? [child] : [];
   const currentChildId = selectedChildId ?? selectedStudentId ?? accessibleChildren?.[0]?.id ?? childOptions?.[0]?.id ?? child?.id;
-  const attentionStudentId = selectedChildId ?? selectedStudentId ?? accessibleChildren?.[0]?.id
-    ?? childOptions?.[0]?.id ?? child?.id;
-  const attention = useAttention("parent", attentionStudentId);
-  // An unresolved child scope must never look like a clean attention state.
-  // When a route already supplies a real child id, the attention request can
-  // still establish its own scope and remains authoritative.
-  const attentionScopeUnavailable = !attentionStudentId && auth?.status === "authenticated";
   const currentChildIndex = selectableChildren.findIndex((option) => option.id === currentChildId);
   const activeTheme = childTheme(currentChildIndex, selectableChildren.length);
   const orderedChildren = currentChildIndex < 0 ? selectableChildren : [
@@ -168,17 +144,12 @@ export function ParentShell({
   ];
   const displayedChild=selectableChildren.find((option)=>option.id===currentChildId)
     ?? (child && (!currentChildId || child.id === currentChildId) ? child : undefined);
-  const chat = useDemoChat(`${auth?.user?.id ?? "preview"}:parent:${currentChildId ?? "unavailable"}`);
+  const chat = useDemoChat(`${auth?.user?.id ?? "preview"}:workspace:${auth?.user?.active_school_id ?? ""}:${currentChildId ?? "self"}`);
   const proFeatures = useProFeatures();
   const assistantEnabled = proFeatures.enabled;
   const assistantActive = assistantEnabled && chat.active;
   const assistantOpen = assistantEnabled && chat.open;
-  const stackedTheme=(position:number)=>{
-    const option=orderedChildren[position];
-    const optionIndex=option?selectableChildren.findIndex((candidate)=>candidate.id===option.id):-1;
-    return childTheme(optionIndex,selectableChildren.length);
-  };
-  const rootAccentVariables={...accentVariables(activeTheme),"--parent-stack-secondary-gradient":stackedTheme(1).gradient,"--parent-stack-tertiary-gradient":stackedTheme(2).gradient} as CSSProperties;
+  const rootAccentVariables=accentVariables(activeTheme);
   const contextualBackTo=backTo&&selectedStudentId&&backTo.startsWith("/parent/")&&!backTo.includes("student_id=")?`${backTo}${backTo.includes("?")?"&":"?"}student_id=${encodeURIComponent(selectedStudentId)}`:backTo;
 
   const chooseChild = async (childId: string) => {
@@ -212,7 +183,7 @@ export function ParentShell({
                   {orderedChildren.slice(0, 3).map((option, index) => {
                     const optionIndex=selectableChildren.findIndex((childOption)=>childOption.id===option.id);
                     const optionTheme=childTheme(optionIndex,selectableChildren.length);
-                    return <span className="parent-child-profiles__layer" key={option.id} style={{ "--profile-layer": index,"--profile-accent":optionTheme.bright,"--profile-soft":optionTheme.strong } as CSSProperties}>
+                    return <span className="parent-child-profiles__layer" data-child-accent={optionTheme.name} key={option.id} style={{ "--profile-layer": index,"--profile-accent":optionTheme.bright,"--profile-soft":optionTheme.strong } as CSSProperties}>
                       <ChildPortrait name={option.name} avatarUrl={option.avatarUrl} />
                     </span>;
                   })}
@@ -223,6 +194,7 @@ export function ParentShell({
                       const optionTheme=childTheme(index,selectableChildren.length);
                       return (
                       <button className="parent-child-profiles__option" key={option.id} type="button"
+                        data-child-accent={optionTheme.name}
                         style={{"--profile-accent":optionTheme.bright,"--profile-soft":optionTheme.strong} as CSSProperties}
                         aria-label={`View ${option.name}'s parent dashboard`} aria-pressed={option.id === currentChildId}
                         disabled={childSwitchDisabled || option.id === currentChildId} onClick={() => void chooseChild(option.id)}>
@@ -239,7 +211,7 @@ export function ParentShell({
           </div>
         </div>
         <div className="parent-header__context">
-          <PortalPageTitle title={pageLabel} rootPath="/parent/home" backTo={contextualBackTo} onBack={onBack} beforeBack={beforeBack} trailing={pageTitleTrailing} />
+          <PortalPageTitle title={pageLabel} rootPath="/today" backTo={contextualBackTo} onBack={onBack} beforeBack={beforeBack} trailing={pageTitleTrailing} />
           {active !== "home" && active !== "events" && !institutionLevel ? <span className="parent-header__child-label">
             {presenceStatus ? <span className={presenceStatus === "in" ? "presence-dot presence-dot--in" : "presence-dot presence-dot--away"} /> : null}
             <span className="parent-header__child-name">{displayedChild
@@ -252,28 +224,20 @@ export function ParentShell({
       <main className="parent-main" inert={assistantOpen}>{children}{active === "home" ? <PoweredBy className="powered-by--home" /> : null}</main>
       {assistantEnabled ? <AssistantPanel chat={chat} context={{ portal: "parent", pageTitle: pageLabel, studentId: currentChildId }} /> : null}
 
-      {!(assistantEnabled && chat.fullPage) ? <nav className="parent-bottom-nav" aria-label="Parent portal navigation">
-        {parentRoutes.filter((item) => ["home", "attendance", "diary", "more"].includes(item.id)).map((item, index) => {
+      {!(assistantEnabled && chat.fullPage) ? <nav className="parent-bottom-nav" aria-label="Workspace">
+        {workspaceRoutes.map((item, index) => {
           const Icon = item.icon;
-          const isActive = !assistantActive && mobileActive === item.id;
-          const itemAttention = item.id === "more" ? attention.data?.summary
-            : item.id === "attendance" ? attention.data?.modules.attendance
-              : item.id === "diary" ? attention.data?.modules.diary
-                : undefined;
-          const itemAttentionLabel = attentionLabel(itemAttention);
-          const attentionUnavailable = (attention.isError || attentionScopeUnavailable)
-            && ["more", "attendance", "diary"].includes(item.id);
+          const isActive = !assistantActive && activeSection === item.id;
           return (
             <Fragment key={item.id}>
             {assistantEnabled && index === 2 ? <AssistantTab chat={chat} className="parent-nav-item" /> : null}
             <NavLink
               className={isActive ? "parent-nav-item is-active" : "parent-nav-item"}
-              to={attentionStudentId ? `${item.path}?student_id=${encodeURIComponent(attentionStudentId)}` : item.path}
-              aria-current={assistantActive ? false : isActive ? "page" : undefined}
-              aria-label={`${item.label}${attentionUnavailable ? ", attention status unavailable" : itemAttentionLabel ? `, ${itemAttentionLabel}` : ""}`}
+              to={item.path}
+              end
+              aria-current={isActive ? "page" : undefined}
             >
               <Icon size={21} strokeWidth={isActive ? 2.25 : 1.8} />
-              {attentionUnavailable ? <AttentionUnavailableBadge /> : <AttentionBadge counts={itemAttention} variant="nav" />}
               <span>{item.label}</span>
             </NavLink>
             </Fragment>

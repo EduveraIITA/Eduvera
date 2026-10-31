@@ -18,14 +18,15 @@ import { registerLifecycleLabel } from "../attendance/registerLifecycle";
 import { ConsentAuthorityDialog } from "./ConsentAuthorityDialog";
 import { OperationsEventFinancePanel } from "./EventFinancePanels";
 import { EventStatusBadge, eventAudienceLabel, eventTypeLabels, formatEventDate } from "./EventPrimitives";
-import { eventDetailSuffix, eventListHref, eventListView } from "./eventNavigation";
+import { eventDetailSuffix, eventListHref, eventListView, eventWorkspaceListHref } from "./eventNavigation";
 import type { CampusEventDto, EventFinanceParticipant, EventFinanceResponse, EventViewerParticipant } from "./types";
 import "./campus-events.css";
 
 type EventAction = "publish" | "complete" | "discard";
 
 interface OperationsEventDetailProps {
-  portal: "teacher" | "principal";
+  portal?: "teacher" | "principal";
+  workspace?: { basePath: string; kind: "manage" | "assigned" };
   schoolId: string;
   viewerUserId?: string;
   event: CampusEventDto;
@@ -37,7 +38,7 @@ interface OperationsEventDetailProps {
   onRecordRefund?: (studentId: string, input: { amount_paise: number; method: "cash" | "bank_transfer" | "cheque"; reference: string; reason: string; idempotency_key: string }) => Promise<void>;
 }
 
-export function OperationsEventDetailPage({ portal, schoolId, viewerUserId, event, finance, financeError, onAction, onCancel, onAuthorityChanged, onRecordRefund }: OperationsEventDetailProps) {
+export function OperationsEventDetailPage({ portal, workspace, schoolId, viewerUserId, event, finance, financeError, onAction, onCancel, onAuthorityChanged, onRecordRefund }: OperationsEventDetailProps) {
   const [pending, setPending] = useState<EventAction | "cancel" | null>(null);
   const [message, setMessage] = useState("");
   const [messageTone, setMessageTone] = useState<"success" | "error">("success");
@@ -45,7 +46,10 @@ export function OperationsEventDetailPage({ portal, schoolId, viewerUserId, even
   const [cancelInternalReason, setCancelInternalReason] = useState("");
   const [cancelAudienceNotice, setCancelAudienceNotice] = useState("");
   const [authorityStudent, setAuthorityStudent] = useState<EventViewerParticipant | null>(null);
-  const prefix = portal === "principal" ? "/principal" : "/teacher";
+  const legacyPortal = portal ?? "teacher";
+  const prefix = legacyPortal === "principal" ? "/principal" : "/teacher";
+  const basePath = workspace?.basePath ?? `${prefix}/events`;
+  const kind = workspace?.kind ?? (legacyPortal === "principal" ? "manage" : "assigned");
   const [params] = useSearchParams();
   const assignedDuty = event.staff.find((staff) => staff.user_id === viewerUserId);
   const dutyFocusRequested = params.get("focus") === "duty";
@@ -61,9 +65,9 @@ export function OperationsEventDetailPage({ portal, schoolId, viewerUserId, even
   const canSeeFinance = event.permissions.can_view_finance_details && event.payment_required;
   const view: "sessions" | "participants" | "finance" = params.get('view') === 'participants' ? 'participants' : params.get('view') === 'finance' && canSeeFinance ? 'finance' : 'sessions';
   const listView = eventListView(params);
-  const listBack = eventListHref(prefix, params);
+  const listBack = workspace ? eventWorkspaceListHref(basePath, params) : eventListHref(prefix, params);
   const detailContext = (nextView: "sessions" | "participants" | "finance" = view) => eventDetailSuffix(params, nextView);
-  const sectionPath = (nextView: "sessions" | "participants" | "finance") => `${prefix}/events/${event.id}${detailContext(nextView)}`;
+  const sectionPath = (nextView: "sessions" | "participants" | "finance") => `${basePath}/${event.id}${detailContext(nextView)}`;
   const tracked = event.sessions.filter((session) => session.attendance_mode !== "none");
   const locked = tracked.filter((session) => session.state === "locked").length;
   useEffect(() => {
@@ -125,7 +129,7 @@ export function OperationsEventDetailPage({ portal, schoolId, viewerUserId, even
   };
 
   return (
-    <OperationsShell portal={portal} active="events" title={event.title} subtitle="Events & activities" backTo={listBack} contentHasHeading>
+    <OperationsShell portal={workspace ? undefined : legacyPortal} active="events" title={event.title} subtitle="Events & activities" backTo={listBack}>
       <div className="campus-event-detail-page operations-stack">
         <section className={`campus-event-detail-hero campus-event-detail-hero--${event.event_type}`}>
           <div className="campus-event-detail-hero__copy">
@@ -138,7 +142,7 @@ export function OperationsEventDetailPage({ portal, schoolId, viewerUserId, even
           </div>
           {event.permissions.can_edit || event.permissions.can_publish || event.permissions.can_complete || event.permissions.can_cancel ? (
             <details className="event-actions-menu"><summary aria-label="Event actions"><MoreHorizontal size={20}/></summary><div className="campus-event-detail-actions">
-              {event.permissions.can_edit ? <Link className="campus-event-secondary" to={`${prefix}/events/${event.id}/edit${detailContext()}`}><Edit3 size={16} />Edit draft</Link> : null}
+              {event.permissions.can_edit ? <Link className="campus-event-secondary" to={`${basePath}/${event.id}/edit${detailContext()}`}><Edit3 size={16} />Edit draft</Link> : null}
               {event.permissions.can_publish ? <button className="campus-event-primary" type="button" disabled={pending !== null} onClick={() => void act("publish")}><Send size={16} />{pending === "publish" ? "Publishing..." : "Publish event"}</button> : null}
               {event.permissions.can_complete ? <button className="campus-event-primary" type="button" disabled={pending !== null} onClick={() => void act("complete")}><CheckCircle2 size={16} />{pending === "complete" ? "Completing..." : "Complete event"}</button> : null}
               {event.permissions.can_cancel ? <button className="campus-event-danger-link" type="button" onClick={() => setCancelOpen(true)}><XCircle size={16} />Cancel event</button> : null}
@@ -176,7 +180,7 @@ export function OperationsEventDetailPage({ portal, schoolId, viewerUserId, even
                 <article key={session.id}>
                   <span className={`campus-event-session-icon is-${session.state}`}>{session.state === "locked" ? <LockKeyhole size={18} /> : <CalendarCheck2 size={18} />}</span>
                   <div><strong>{session.title}</strong><small>{formatEventDate(session.starts_at)} · {session.venue}</small><span>{session.attendance_mode === "none" ? "No attendance register" : `${session.counts.recorded}/${session.counts.recorded + session.counts.not_recorded} recorded · ${registerLifecycleLabel(session.state)}`}</span></div>
-                  {session.attendance_mode !== "none" ? <Link className="campus-event-secondary" to={`${prefix}/events/${event.id}/sessions/${session.id}/attendance${listView === 'upcoming' ? '' : `?list_view=${listView}`}`}>{session.state === "locked" ? "Review register" : event.permissions.can_take_attendance ? "Open register" : "View register"}</Link> : null}
+                  {session.attendance_mode !== "none" ? <Link className="campus-event-secondary" to={`${basePath}/${event.id}/sessions/${session.id}/attendance${listView === 'upcoming' ? '' : `?list_view=${listView}`}`}>{session.state === "locked" ? "Review register" : event.permissions.can_take_attendance ? "Open register" : "View register"}</Link> : null}
                 </article>
               ))}
             </div>
@@ -188,8 +192,8 @@ export function OperationsEventDetailPage({ portal, schoolId, viewerUserId, even
           <ParticipantReadiness
             event={event}
             finance={finance}
-            portal={portal}
-            onReviewAuthority={portal === "principal" ? setAuthorityStudent : undefined}
+            kind={kind}
+            onReviewAuthority={event.permissions.can_manage_audience || event.permissions.can_manage_policy ? setAuthorityStudent : undefined}
           />
         ) : <p className="campus-event-inline-empty">No participants are visible in your assigned scope.</p>}</>:null}
         {view!=='finance' && financeError && event.payment_required ? <p className="campus-event-form-error" role="alert">Finance reconciliation could not be loaded. Do not record an offline refund until the live ledger is available.</p> : null}
@@ -215,11 +219,11 @@ export function OperationsEventDetailPage({ portal, schoolId, viewerUserId, even
   );
 }
 
-function ParticipantReadiness({ event, finance, portal, onReviewAuthority }: { event: CampusEventDto; finance?: EventFinanceResponse; portal: "teacher" | "principal"; onReviewAuthority?: (participant: EventViewerParticipant) => void }) {
+function ParticipantReadiness({ event, finance, kind, onReviewAuthority }: { event: CampusEventDto; finance?: EventFinanceResponse; kind: "manage" | "assigned"; onReviewAuthority?: (participant: EventViewerParticipant) => void }) {
   const financeByStudent = new Map(finance?.items.map((item) => [item.student_id, item]));
   return (
     <section className="campus-event-detail-panel">
-      <header><h2>{portal === "principal" ? "Participant status" : "Assigned participants"}</h2><b>{event.viewer_participants.length} shown</b></header>
+      <header><h2>{kind === "manage" ? "Participant status" : "Assigned participants"}</h2><b>{event.viewer_participants.length} shown</b></header>
       <div className="campus-event-participant-table">
         <div className="campus-event-participant-table__head"><span>Student</span><span>RSVP</span><span>Consent</span><span>Payment</span><span>Checklist</span></div>
         {event.viewer_participants.map((participant) => (

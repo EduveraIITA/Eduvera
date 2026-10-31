@@ -2,12 +2,14 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { act, cleanup, render, screen } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { SchoolEventBridge } from "./SchoolEventBridge";
+import { confirmExecutionRequestScope, EXECUTION_ENVIRONMENT_VERIFY_EVENT } from "../../lib/executionRequestScope";
+import type { ExecutionEnvironment } from "../simulation/executionEnvironment";
 
 const { apiFetchMock } = vi.hoisted(() => ({
   apiFetchMock: vi.fn<(path: string, init?: RequestInit) => Promise<unknown>>(),
 }));
 
-const auth = {
+const auth: { status: "authenticated"; user: { id: string; active_school_id?: string }; executionEnvironment?: ExecutionEnvironment } = {
   status: "authenticated" as const,
   user: { id: "user-1" },
 };
@@ -178,6 +180,8 @@ function eventData(type: string, refresh: string[], id = `event-${type}`) {
 }
 
 beforeEach(() => {
+  auth.user.active_school_id = undefined;
+  auth.executionEnvironment = undefined;
   vi.useFakeTimers();
   EventSourceMock.instances = [];
   BroadcastChannelMock.reset();
@@ -187,6 +191,7 @@ beforeEach(() => {
 });
 
 afterEach(() => {
+  confirmExecutionRequestScope(null);
   cleanup();
   Reflect.deleteProperty(navigator, "locks");
   vi.useRealTimers();
@@ -216,6 +221,70 @@ async function settleCoordination() {
 }
 
 describe("SchoolEventBridge", () => {
+  it.each(["live", "simulation"] as const)("ignores foreign campus/run %s events without refreshing or consuming their event ID", async (mode) => {
+    const namespaceId = mode === "live" ? "live:campus-a" : "scenario:a:run:one";
+    auth.user.active_school_id = "campus-a";
+    auth.executionEnvironment = mode === "live" ? { mode, institutionId: "campus-a", namespaceId }
+      : { mode, institutionId: "campus-a", namespaceId, runId: "one", virtualClock: { now: "2026-10-27T06:00:00.000Z", timeZone: "Asia/Kolkata" } };
+    const { source, invalidate } = renderBridge();
+    const envelope = { ...JSON.parse(eventData("chat.updated", ["messages"], "same-id")) as Record<string, unknown>, school_id: "campus-a", namespace_id: namespaceId };
+    act(() => {
+      source.emit("chat.updated", JSON.stringify({ ...envelope, school_id: "campus-b" }));
+      source.emit("chat.updated", JSON.stringify({ ...envelope, namespace_id: "scenario:b:run:other" }));
+      source.emit("chat.updated", eventData("chat.updated", ["messages"], "missing-scope"));
+    });
+    await act(() => vi.advanceTimersByTimeAsync(75));
+    expect(invalidate).not.toHaveBeenCalled();
+    act(() => source.emit("chat.updated", JSON.stringify(envelope)));
+    await act(() => vi.advanceTimersByTimeAsync(75));
+    expect(invalidate).toHaveBeenCalledWith({ queryKey: ["chat"], exact: undefined });
+  });
+
+  it("checks the selected scope on relayed cross-tab events too", async () => {
+    auth.user.active_school_id = "campus-a";
+    installCrossTabCoordination();
+    const leader = renderBridge();
+    await settleCoordination();
+    const follower = renderBridge();
+    await settleCoordination();
+    await act(() => vi.advanceTimersByTimeAsync(75));
+    leader.invalidate.mockClear(); follower.invalidate.mockClear();
+    const channelName = [...BroadcastChannelMock.channels.keys()][0]!;
+    const channel = new BroadcastChannelMock(channelName);
+    const envelope = { ...JSON.parse(eventData("chat.updated", ["messages"], "shared-id")) as Record<string, unknown>, school_id: "campus-b", namespace_id: "live:campus-b" };
+    channel.postMessage({ version: 1, userId: "user-1", senderTabId: "stale-tab", kind: "event", eventType: "chat.updated", envelope });
+    await settleCoordination();
+    await act(() => vi.advanceTimersByTimeAsync(75));
+    expect(leader.invalidate).not.toHaveBeenCalled(); expect(follower.invalidate).not.toHaveBeenCalled();
+    channel.postMessage({ version: 1, userId: "user-1", senderTabId: "stale-tab", kind: "event", eventType: "chat.updated",
+      envelope: { ...envelope, school_id: "campus-a", namespace_id: "live:campus-a" } });
+    await settleCoordination();
+    await act(() => vi.advanceTimersByTimeAsync(75));
+    expect(leader.invalidate).toHaveBeenCalledWith({ queryKey: ["chat"], exact: undefined });
+    expect(follower.invalidate).toHaveBeenCalledWith({ queryKey: ["chat"], exact: undefined });
+    channel.close();
+  });
+
+  it("rebinds when the active campus changes and cancels pending old-campus invalidations", async () => {
+    auth.user.active_school_id = "campus-a";
+    const queryClient = new QueryClient(), invalidate = vi.spyOn(queryClient, "invalidateQueries").mockResolvedValue();
+    const content = () => <QueryClientProvider client={queryClient}><SchoolEventBridge /></QueryClientProvider>;
+    const view = render(content()), first = EventSourceMock.instances[0]!;
+    const envelope = { id: "switch-event", type: "chat.updated", created_at: "2026-10-27T06:00:00.000Z",
+      payload: { refresh: ["messages"] }, school_id: "campus-a", namespace_id: "live:campus-a" };
+    act(() => first.emit("chat.updated", JSON.stringify(envelope)));
+    auth.user.active_school_id = "campus-b";
+    view.rerender(content());
+    expect(first.closed).toBe(true);
+    expect(EventSourceMock.instances).toHaveLength(2);
+    const second = EventSourceMock.instances[1]!;
+    act(() => second.emit("chat.updated", JSON.stringify(envelope)));
+    await act(() => vi.advanceTimersByTimeAsync(75));
+    expect(invalidate).not.toHaveBeenCalled();
+    act(() => second.emit("chat.updated", JSON.stringify({ ...envelope, school_id: "campus-b", namespace_id: "live:campus-b" })));
+    await act(() => vi.advanceTimersByTimeAsync(75));
+    expect(invalidate).toHaveBeenCalledWith({ queryKey: ["chat"], exact: undefined });
+  });
   it("falls back to one direct stream per app when cross-tab coordination is unavailable", () => {
     renderBridge();
     renderBridge();
@@ -237,7 +306,7 @@ describe("SchoolEventBridge", () => {
       source.emit("attendance.updated", eventData("attendance.updated", ["student.attendance", "notifications"], "attendance-1"));
       source.emit("notification.created", eventData("notification.created", ["notifications"]));
     });
-    expect(screen.getByRole("status")).toHaveTextContent("Live school updates connected.");
+    expect(screen.getByRole("status")).toHaveTextContent("Campus updates connected.");
     expect(invalidate).not.toHaveBeenCalled();
 
     await act(() => vi.advanceTimersByTimeAsync(75));
@@ -249,7 +318,7 @@ describe("SchoolEventBridge", () => {
     expect(invalidate).toHaveBeenCalledWith({ queryKey: ["attention"], exact: undefined });
     expect(invalidate).toHaveBeenCalledWith({ queryKey: ["attendance-model"], exact: undefined });
     expect(invalidate).toHaveBeenCalledWith({ queryKey: ["attendance-continuity"], exact: undefined });
-    expect(invalidate).toHaveBeenCalledWith({ queryKey: ["campus-view"], exact: undefined });
+    expect(invalidate).toHaveBeenCalledWith({ queryKey: ["execution-environment", "live", "campus-view"], exact: undefined });
 
     act(() => source.emit("attendance.updated", eventData("attendance.updated", ["student.attendance", "notifications"], "attendance-1")));
     await act(() => vi.advanceTimersByTimeAsync(75));
@@ -303,12 +372,12 @@ describe("SchoolEventBridge", () => {
     const { source, invalidate } = renderBridge();
     act(() => source.onopen?.(new Event("open")));
     act(() => source.onerror?.(new Event("error")));
-    expect(screen.getByRole("status")).toHaveTextContent("Reconnecting live school updates.");
+    expect(screen.getByRole("status")).toHaveTextContent("Reconnecting campus updates.");
     act(() => source.onopen?.(new Event("open")));
     await act(() => vi.advanceTimersByTimeAsync(75));
 
     expect(invalidate).not.toHaveBeenCalled();
-    expect(screen.getByRole("status")).toHaveTextContent("Live school updates connected.");
+    expect(screen.getByRole("status")).toHaveTextContent("Campus updates connected.");
   });
 
   it("announces when live updates pause because the device is offline", () => {
@@ -317,7 +386,7 @@ describe("SchoolEventBridge", () => {
     act(() => {
       window.dispatchEvent(new Event("offline"));
     });
-    expect(screen.getByRole("status")).toHaveTextContent("Live school updates paused while this device is offline.");
+    expect(screen.getByRole("status")).toHaveTextContent("Campus updates paused while this device is offline.");
   });
 
   it("hands session expiry to the existing auth flow and closes the stream", () => {
@@ -327,6 +396,16 @@ describe("SchoolEventBridge", () => {
     act(() => source.emit("session.expired"));
     expect(expired).toHaveBeenCalledOnce();
     expect(source.closed).toBe(true);
+  });
+
+  it("closes a stale stream and requests server environment verification instead of reconnecting it", () => {
+    const {source,invalidate}=renderBridge(),verify=vi.fn();
+    window.addEventListener(EXECUTION_ENVIRONMENT_VERIFY_EVENT,verify,{once:true});
+    act(()=>source.emit('environment.changed',JSON.stringify({reason:'server_session_switched'})));
+    expect(verify).toHaveBeenCalledOnce();
+    expect(source.closed).toBe(true);
+    act(()=>source.emit('attendance.updated',eventData('attendance.updated',['student.attendance'],'stale-world-event')));
+    expect(invalidate).not.toHaveBeenCalled();
   });
 
   it("validates the auth session after repeated stream failures and throttles checks", async () => {
@@ -396,7 +475,7 @@ describe("SchoolEventBridge", () => {
     expect(follower.invalidate).toHaveBeenCalledWith({ queryKey: ["school", "student", "attendance"], exact: undefined });
     expect(screen.getAllByRole("status")).toHaveLength(2);
     for (const status of screen.getAllByRole("status")) {
-      expect(status).toHaveTextContent("Live school updates connected.");
+      expect(status).toHaveTextContent("Campus updates connected.");
     }
   });
 
@@ -432,7 +511,7 @@ describe("SchoolEventBridge", () => {
 
     const successorSource = EventSourceMock.instances[1]!;
     act(() => successorSource.onopen?.(new Event("open")));
-    expect(screen.getByRole("status")).toHaveTextContent("Live school updates connected.");
+    expect(screen.getByRole("status")).toHaveTextContent("Campus updates connected.");
 
     second.unmount();
     await settleCoordination();
@@ -483,7 +562,7 @@ describe("SchoolEventBridge", () => {
       await Promise.resolve();
     });
     for (const status of screen.getAllByRole("status")) {
-      expect(status).toHaveTextContent("Live school updates paused while this device is offline.");
+      expect(status).toHaveTextContent("Campus updates paused while this device is offline.");
     }
     await act(async () => {
       window.dispatchEvent(new Event("online"));
@@ -494,5 +573,69 @@ describe("SchoolEventBridge", () => {
 
     expect(EventSourceMock.instances).toHaveLength(1);
     expect(follower.invalidate).toHaveBeenCalledWith({ queryKey: ["school"], exact: undefined });
+  });
+
+  it("closes a superseded source without entering a native reconnect loop", () => {
+    const { source } = renderBridge();
+
+    act(() => source.emit("stream.replaced", JSON.stringify({ reason: "newer_session_connection" })));
+
+    expect(source.closed).toBe(true);
+    expect(screen.getByRole("status")).toHaveTextContent("Campus updates continue in another active window.");
+
+    act(() => {
+      window.dispatchEvent(new Event("online"));
+      window.dispatchEvent(new Event("pageshow"));
+    });
+    expect(EventSourceMock.instances).toHaveLength(1);
+  });
+
+  it("releases its stream and Web Lock on pagehide and reconnects after a BFCache pageshow", async () => {
+    const locks = installCrossTabCoordination();
+    renderBridge();
+    await settleCoordination();
+    const firstSource = EventSourceMock.instances[0]!;
+
+    act(() => {
+      window.dispatchEvent(new Event("pagehide"));
+    });
+    await settleCoordination();
+
+    expect(firstSource.closed).toBe(true);
+    expect(locks.activeCount).toBe(0);
+
+    act(() => {
+      window.dispatchEvent(new Event("pageshow"));
+    });
+    await settleCoordination();
+
+    expect(EventSourceMock.instances).toHaveLength(2);
+    expect(EventSourceMock.instances[1]?.closed).toBe(false);
+    expect(locks.activeCount).toBe(1);
+  });
+
+  it("broadcasts replacement ownership so a waiting tab cannot reopen and ping-pong the session", async () => {
+    const locks = installCrossTabCoordination();
+    const leader = renderBridge();
+    await settleCoordination();
+    const follower = renderBridge();
+    await settleCoordination();
+    const source = EventSourceMock.instances[0]!;
+
+    act(() => source.emit("stream.replaced", JSON.stringify({ reason: "newer_session_connection" })));
+    await settleCoordination();
+
+    expect(source.closed).toBe(true);
+    expect(locks.activeCount).toBe(1);
+    expect(locks.pendingCount).toBe(0);
+    for (const status of screen.getAllByRole("status")) {
+      expect(status).toHaveTextContent("Campus updates continue in another active window.");
+    }
+
+    leader.unmount();
+    await settleCoordination();
+    expect(EventSourceMock.instances).toHaveLength(1);
+    expect(locks.activeCount).toBe(0);
+    follower.unmount();
   });
 });

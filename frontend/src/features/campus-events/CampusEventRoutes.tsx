@@ -37,7 +37,8 @@ import { EventRegisterPage } from "./EventRegisterPage";
 import { FamilyEventDetailPage, FamilyEventListPage, readFamilyEventActionFocus } from "./FamilyEventPages";
 import { OperationsEventDetailPage } from "./OperationsEventDetailPage";
 import { OperationsEventListPage, type EventView } from "./OperationsEventListPage";
-import type { CampusEventDto, CampusEventInput } from "./types";
+import type { CampusEventInput } from "./types";
+import { OperationsEventAttentionGate, type OperationsEventAttentionTarget } from "./EventAttentionGate";
 
 function useSchoolId(role: MembershipRole) {
   const auth = useOptionalAuth();
@@ -48,35 +49,8 @@ function RouteFailure({ error, retry }: { error: unknown; retry?: () => unknown 
   return <LiveRouteError error={error instanceof Error ? error : new Error("This event workspace is unavailable.")} onRetry={retry ?? (() => window.location.reload())} />;
 }
 
-export interface OperationsEventAttentionTarget {
-  notificationId: string | null;
-  focus: string | null;
-  eventRevision: number | null;
-}
-
-export function operationsEventAttentionResolution(
-  event: Pick<CampusEventDto, "status" | "revision">,
-  target: OperationsEventAttentionTarget,
-): "none" | "exact" | "stale" {
-  if (!target.notificationId) return "none";
-  if (target.focus !== "status" || !target.eventRevision) return "stale";
-  return event.status === "cancelled" && event.revision === target.eventRevision ? "exact" : "stale";
-}
-
-export function OperationsEventAttentionGate({
-  event,
-  target,
-}: {
-  event: Pick<CampusEventDto, "status" | "revision">;
-  target: OperationsEventAttentionTarget;
-}) {
-  const resolution = operationsEventAttentionResolution(event, target);
-  if (resolution === "exact") return <AttentionOpenAcknowledgement />;
-  if (resolution === "stale") {
-    return <AttentionTargetUnavailable message="This event cancellation no longer matches the current record. It was not marked as opened." />;
-  }
-  return null;
-}
+export { OperationsEventAttentionGate, operationsEventAttentionResolution } from "./EventAttentionGate";
+export type { OperationsEventAttentionTarget } from "./EventAttentionGate";
 
 function useEventInvalidation() {
   const client = useQueryClient();
@@ -283,7 +257,7 @@ export const PrincipalEventEditRoute = () => <EventEditorRoute portal="principal
 export const PrincipalEventRegisterRoute = () => <RegisterRoute portal="principal" />;
 export const TeacherEventsRoute = () => <OperationsListRoute portal="teacher" />;
 export const TeacherEventDetailRoute = () => <OperationsDetailRoute portal="teacher" />;
-export const TeacherEventCreateRoute = () => <Navigate to="/teacher/assessments?create=class-test" replace />;
+export const TeacherEventCreateRoute = () => <Navigate to="/areas/assessments/assigned?create=class-test" replace />;
 export const TeacherEventEditRoute = () => <EventEditorRoute portal="teacher" />;
 export const TeacherEventRegisterRoute = () => <RegisterRoute portal="teacher" />;
 export const ParentEventsRoute = () => <FamilyListRoute audience="parent" />;

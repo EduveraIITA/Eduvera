@@ -12,7 +12,7 @@ const action: HomeAction = {
   detail: "Accept or decline the invitation so the school can plan the participant roster.",
   status_label: "RSVP pending",
   action_label: "Respond now",
-  href: "/parent/events/event-1?student_id=student-1",
+  href: "/areas/events/calendar/event-1?scope=dependent&student_id=student-1",
   source_id: "event-1",
   occurs_at: "2026-10-08T03:30:00.000Z",
   due_at: "2026-10-08T03:30:00.000Z",
@@ -29,7 +29,7 @@ describe("HomeActionDeck", () => {
     expect(screen.getByRole("heading", { name: "What needs you" })).toBeInTheDocument();
     expect(screen.getByRole("link", { name: /Respond to Science Museum Visit/i })).toHaveAttribute(
       "href",
-      "/parent/events/event-1?student_id=student-1",
+      "/areas/events/calendar/event-1?scope=dependent&student_id=student-1",
     );
     expect(screen.getByText("RSVP pending")).toBeInTheDocument();
   });

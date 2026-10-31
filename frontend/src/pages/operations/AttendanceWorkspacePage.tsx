@@ -11,6 +11,7 @@ import { PrincipalSessionRegisterNavigator } from "./PrincipalSessionRegisterNav
 import "./attendance-workspace.css";
 
 type Queue = "all" | "attention" | "pending" | "submitted" | "finalizing" | "locked";
+export type AttendanceWorkspaceResponsibility = "record" | "coordinate";
 
 const attentionPriority: Record<AttentionItem["priority"], number> = { urgent: 0, high: 1, normal: 2 };
 
@@ -56,11 +57,26 @@ function registerIdentity(item: TeacherClassSummary) {
   return item.session_id ?? item.class_section_id;
 }
 
-function registerHref(portal: "teacher" | "principal", item: TeacherClassSummary, date: string) {
+function registerHref(
+  portal: "teacher" | "principal",
+  item: TeacherClassSummary,
+  date: string,
+  responsibility?: AttendanceWorkspaceResponsibility,
+) {
   const parameters = item.session_id
     ? new URLSearchParams({ session_id: item.session_id, date })
     : new URLSearchParams({ class_section_id: item.class_section_id, date });
+  if (responsibility) {
+    return `/areas/attendance/${responsibility === "coordinate" ? "coordination" : "registers"}?${parameters.toString()}`;
+  }
   return `/${portal}/attendance?${parameters.toString()}`;
+}
+
+function canonicalAttentionHref(item: AttentionItem, responsibility?: AttendanceWorkspaceResponsibility) {
+  if (!responsibility) return item.href;
+  const parameters = attentionParameters(item);
+  const query = parameters.toString();
+  return `/areas/attendance/${responsibility === "coordinate" ? "coordination" : "registers"}${query ? `?${query}` : ""}`;
 }
 
 function registerTime(value: string | null | undefined) {
@@ -68,6 +84,16 @@ function registerTime(value: string | null | undefined) {
   const [hours, minutes] = value.split(":").map(Number);
   if (!Number.isFinite(hours) || !Number.isFinite(minutes)) return null;
   return new Intl.DateTimeFormat("en-IN", { hour: "numeric", minute: "2-digit", timeZone: "UTC" }).format(new Date(Date.UTC(2000, 0, 1, hours, minutes)));
+}
+
+function registerMonogram(item: TeacherClassSummary) {
+  if (item.attendance_scope === "scheduled_session") return item.period_number ?? "•";
+  const label = `${item.grade}${item.section}`.trim();
+  if (Array.from(label).length <= 3) return label || "•";
+  const words = label.split(/\s+/);
+  return (words.length > 1
+    ? words.slice(0, 2).map((word) => Array.from(word)[0]).join("")
+    : Array.from(label).slice(0, 2).join("")).toLocaleUpperCase();
 }
 
 function registerStatusLabel(item: TeacherClassSummary, queue = registerQueue(item)) {
@@ -79,8 +105,12 @@ function registerStatusLabel(item: TeacherClassSummary, queue = registerQueue(it
   return item.marked_count > 0 ? "In progress" : "Not submitted";
 }
 
-export function AttendanceWorkspacePage({ portal, classes, date, onDateChange, continuity, continuityLoading = false, continuityError = null, onContinuityDecision, initialReviewCaseId, attention }: {
-  portal: "teacher" | "principal";
+export function AttendanceWorkspacePage({ portal = "teacher", responsibility, embedded = false, classes, date, onDateChange, continuity, continuityLoading = false, continuityError = null, onContinuityDecision, initialReviewCaseId, attention }: {
+  /** Legacy bookmark presentation only. Canonical routes pass responsibility. */
+  portal?: "teacher" | "principal";
+  responsibility?: AttendanceWorkspaceResponsibility;
+  /** The responsibility-composed Attendance Area owns the single application shell. */
+  embedded?: boolean;
   classes: TeacherClassSummary[];
   date: string;
   onDateChange: (value: string) => void;
@@ -97,8 +127,8 @@ export function AttendanceWorkspacePage({ portal, classes, date, onDateChange, c
   const [searchOpen,setSearchOpen]=useState(false);
   const [deskOpen,setDeskOpen]=useState(Boolean(initialReviewCaseId));
   const searchButton=useRef<HTMLButtonElement>(null);
-  const principal = portal === "principal";
-  const principalSessionView = principal && classes.some((item) => item.attendance_scope === "scheduled_session");
+  const coordinatesAttendance = responsibility ? responsibility === "coordinate" : portal === "principal";
+  const principalSessionView = coordinatesAttendance && classes.some((item) => item.attendance_scope === "scheduled_session");
   const attendanceAttention = (attentionState.data?.items ?? []).filter((item) => item.module === "attendance" || item.module === "registers");
   const registerIds = new Set(classes.map(registerIdentity));
   const registerAttention = new Map<string, AttentionItem>();
@@ -135,29 +165,28 @@ export function AttendanceWorkspacePage({ portal, classes, date, onDateChange, c
     ["all", "All registers", classes.length],
     ...(registerAttention.size ? [["attention", "Needs attention", registerAttention.size] as const] : []),
     ["pending", principalSessionView ? "Pending" : "To submit", counts.pending],
-    ["submitted", principal ? "To review" : "Submitted", counts.submitted],
+    ["submitted", coordinatesAttendance ? "To review" : "Submitted", counts.submitted],
     ["finalizing", "Finalizing", counts.finalizing],
     ["locked", "Final", counts.locked],
   ] as const;
-  return <OperationsShell portal={portal} active="attendance" title="Attendance" subtitle={principal ? "School-wide registers" : "Your assigned classes"} contentHasHeading>
-    <div className="attendance-workspace">
+  const content = <div className="attendance-workspace">
       <AttendanceDateControl date={date} onChange={onDateChange}/>
       <section className="attendance-workspace__queue" aria-labelledby="attendance-class-list">
         <h2 id="attendance-class-list" className="sr-only">Registers</h2>
         <div className={`attendance-queue-toolbar${principalSessionView ? " is-register-navigator" : ""}`}>
           <label><span className="sr-only">Filter registers</span><select value={filter} onChange={e=>setFilter(e.target.value as Queue)}>{filters.map(([key,label,count])=><option key={key} value={key}>{label} · {count}</option>)}</select></label>
           {principalSessionView ? <div id="attendance-class-search" className="attendance-workspace__search attendance-workspace__search--persistent"><Search size={18}/><label className="sr-only" htmlFor="attendance-search-input">Search registers</label><input id="attendance-search-input" value={search} onChange={e=>setSearch(e.target.value)} placeholder="Search subject, class or teacher"/><button type="button" aria-label="Clear search" disabled={!search} onClick={()=>setSearch("")}><X size={18}/></button></div> : <button ref={searchButton} type="button" aria-label="Search classes" aria-expanded={searchOpen} aria-controls="attendance-class-search" onClick={()=>{if(searchOpen)setSearch('');setSearchOpen(!searchOpen);}}><Search size={20}/></button>}
-          {principal && onContinuityDecision?<button type="button" title="Paper & offline entries" aria-label={`Paper & offline entries${reviewCount?`, ${reviewCount} to review`:''}`} aria-expanded={deskOpen} aria-controls="attendance-desk" onClick={()=>setDeskOpen(!deskOpen)}><Inbox size={20}/>{reviewCount?<span className="attendance-desk-count">{reviewCount}</span>:null}</button>:null}
+          {coordinatesAttendance && onContinuityDecision?<button type="button" title="Paper & offline entries" aria-label={`Paper & offline entries${reviewCount?`, ${reviewCount} to review`:''}`} aria-expanded={deskOpen} aria-controls="attendance-desk" onClick={()=>setDeskOpen(!deskOpen)}><Inbox size={20}/>{reviewCount?<span className="attendance-desk-count">{reviewCount}</span>:null}</button>:null}
         </div>
-        {!principalSessionView && searchOpen?<div id="attendance-class-search" className="attendance-workspace__search"><Search size={18}/><label className="sr-only" htmlFor="attendance-search-input">Search classes</label><input id="attendance-search-input" autoFocus value={search} onChange={e=>setSearch(e.target.value)} placeholder={principal?'Class or teacher':'Class or subject'} onKeyDown={e=>{if(e.key==='Escape'){setSearch('');setSearchOpen(false);searchButton.current?.focus();}}}/><button type="button" aria-label="Clear and close search" onClick={()=>{setSearch('');setSearchOpen(false);searchButton.current?.focus();}}><X size={18}/></button></div>:null}
+        {!principalSessionView && searchOpen?<div id="attendance-class-search" className="attendance-workspace__search"><Search size={18}/><label className="sr-only" htmlFor="attendance-search-input">Search classes</label><input id="attendance-search-input" autoFocus value={search} onChange={e=>setSearch(e.target.value)} placeholder={coordinatesAttendance?'Class or teacher':'Class or subject'} onKeyDown={e=>{if(e.key==='Escape'){setSearch('');setSearchOpen(false);searchButton.current?.focus();}}}/><button type="button" aria-label="Clear and close search" onClick={()=>{setSearch('');setSearchOpen(false);searchButton.current?.focus();}}><X size={18}/></button></div>:null}
         {attentionState.isError ? <div className="attendance-attention-summary is-unavailable" role="status"><span className="attendance-attention-summary__mark" aria-hidden="true"/><span><strong>Attention status unavailable</strong><small>The register list is still current.</small></span></div> : null}
         {!attentionState.isError && attendanceAttention.length ? <div className={`attendance-attention-summary is-${summaryTone}`} role="status">
           <span className="attendance-attention-summary__mark" aria-hidden="true"/>
           <span><strong>{attendanceAttention.length} attendance {attendanceAttention.length === 1 ? "item needs" : "items need"} attention</strong><small>{registerAttention.size ? `${registerAttention.size} ${registerAttention.size === 1 ? "register" : "registers"} on this date` : "No affected register on this date"}{otherAttention.length ? ` · ${otherAttention.length} ${otherAttention.length === 1 ? "other review" : "other reviews"}` : ""}</small></span>
-          {exceptionAttention && otherAttention.some((item) => item.id === exceptionAttention.id) ? <Link to={exceptionAttention.href}>Review exception<ArrowRight size={15}/></Link> : registerAttention.size ? <button type="button" aria-pressed={filter === "attention"} onClick={() => setFilter(filter === "attention" ? "all" : "attention")}>{filter === "attention" ? "Show all" : "Show affected"}</button> : otherAttention[0] ? <Link to={otherAttention[0].href}>Open next<ArrowRight size={15}/></Link> : null}
+          {exceptionAttention && otherAttention.some((item) => item.id === exceptionAttention.id) ? <Link to={canonicalAttentionHref(exceptionAttention, responsibility)}>Review exception<ArrowRight size={15}/></Link> : registerAttention.size ? <button type="button" aria-pressed={filter === "attention"} onClick={() => setFilter(filter === "attention" ? "all" : "attention")}>{filter === "attention" ? "Show all" : "Show affected"}</button> : otherAttention[0] ? <Link to={canonicalAttentionHref(otherAttention[0], responsibility)}>Open next<ArrowRight size={15}/></Link> : null}
         </div> : null}
-        {principal && onContinuityDecision && !deskOpen && (continuityError || reviewCount)?<button className="attendance-desk-notice" type="button" onClick={()=>setDeskOpen(true)}>{continuityError?'Attendance review unavailable':`${reviewCount} ${reviewCount === 1 ? 'entry needs' : 'entries need'} review`}<ArrowRight size={16}/></button>:null}
-        {deskOpen && principal && onContinuityDecision ? <div id="attendance-desk"><AttendanceContinuityPanel key={initialReviewCaseId ?? "review-desk"}
+        {coordinatesAttendance && onContinuityDecision && !deskOpen && (continuityError || reviewCount)?<button className="attendance-desk-notice" type="button" onClick={()=>setDeskOpen(true)}>{continuityError?'Attendance review unavailable':`${reviewCount} ${reviewCount === 1 ? 'entry needs' : 'entries need'} review`}<ArrowRight size={16}/></button>:null}
+        {deskOpen && coordinatesAttendance && onContinuityDecision ? <div id="attendance-desk"><AttendanceContinuityPanel key={initialReviewCaseId ?? "review-desk"}
         data={continuity}
         classes={classes}
         date={date}
@@ -171,7 +200,7 @@ export function AttendanceWorkspacePage({ portal, classes, date, onDateChange, c
           const queue = registerQueue(item);
           return {
             register: item,
-            href: registerHref(portal, item, date),
+            href: registerHref(portal, item, date, responsibility),
             queue,
             statusLabel: queue === "pending" && item.marked_count === 0 ? "Pending" : registerStatusLabel(item, queue),
             attentionLabel: attentionItem?.status_label,
@@ -187,15 +216,17 @@ export function AttendanceWorkspacePage({ portal, classes, date, onDateChange, c
           const className = item.class_name || `Class ${item.grade}${item.section}`;
           const name = item.attendance_scope === "scheduled_session" ? item.subject_name ?? item.subjects?.[0] ?? "Scheduled session" : className;
           const teachers = item.assigned_teachers ?? [];
+          const studentLabel = item.student_count === 1 ? "student" : "students";
           return <article className={`attendance-class-card${attentionItem ? ` has-attention is-${attentionTone(attentionItem)}` : ""}`} key={registerIdentity(item)}>
-            <div className="attendance-class-card__top"><span className="attendance-class-card__monogram">{item.attendance_scope === "scheduled_session" ? item.period_number ?? "•" : `${item.grade}${item.section}`}</span><div><h3>{name}{attentionItem ? <span className={`attendance-class-card__attention-mark is-${attentionTone(attentionItem)}`} title={attentionItem.status_label}><span className="sr-only"> · {attentionItem.status_label}, needs attention</span></span> : null}</h3><p>{item.attendance_scope === "scheduled_session" ? `${className} · Period ${item.period_number}${registerTime(item.starts_at) && registerTime(item.ends_at) ? ` · ${registerTime(item.starts_at)}–${registerTime(item.ends_at)}` : ""}` : `${item.student_count} students`}{item.room_number ? ` · ${/^room\b/i.test(item.room_number) ? item.room_number : `Room ${item.room_number}`}` : ""}</p></div><span className={`attendance-class-card__status is-${queue}`}>{queue === "locked" ? <LockKeyhole size={13} /> : submitted ? <CheckCheck size={13} /> : <Clock3 size={13} />}{label}</span></div>
-            {principal ? <details className="attendance-class-card__team"><summary><UsersRound size={15} /><span>{teachers.length ? `${teachers.length} assigned ${teachers.length === 1 ? "teacher" : "teachers"}` : "No teaching assignment"}</span><ChevronDown size={15} /></summary><p>{teachers.length ? teachers.join(" · ") : "Assign teachers through the school timetable."}</p></details> : <p className="attendance-class-card__assignment"><CalendarDays size={15} /><span>{item.assignment_kind === "substitute" ? "Accepted cover" : item.subjects?.filter(Boolean).join(" · ") || "Assigned class"}{item.periods_today ? ` · ${item.periods_today} ${item.periods_today === 1 ? "period" : "periods"} on this day` : " · No lesson on this day"}</span></p>}
-            <div className="attendance-class-card__progress"><span>{item.marked_count}/{item.student_count} marked</span><progress value={item.marked_count} max={item.student_count || 1} aria-label={`${name} students marked`} /></div>
-            <div className="attendance-class-card__bottom"><span>{assignmentMismatch ? `Submitted by ${item.submitted_by_name ?? "an unscheduled user"}; assignment review is required.` : savedWithoutSchedule ? "Saved attendance exists without a scheduled lesson." : queue === "finalizing" && item.auto_finalize_at ? `Finalizes automatically ${new Date(item.auto_finalize_at).toLocaleTimeString("en-IN", { hour: "numeric", minute: "2-digit" })}` : submitted ? item.submitted_by_name ? `${queue === "locked" ? "Finalized" : "Submitted"} by ${item.submitted_by_name}` : queue === "locked" ? "Final register" : "Submitted register" : queue === "not_required" ? item.availability_reason ?? (item.date_open === false ? "Opens on the selected date" : "No register due") : principal ? "Awaiting teacher submission" : "Complete and submit"}</span>{(savedWithoutSchedule || assignmentMismatch) && principal ? <Link to={registerHref(portal,item,date)} aria-label={`Review ${assignmentMismatch ? "assignment" : "schedule"} mismatch for ${name}`}>Review record<ArrowRight size={16} /></Link> : queue === "not_required" ? <span className="attendance-class-card__inactive">No action required</span> : <Link to={registerHref(portal,item,date)} aria-label={`${queue === "finalizing" ? "View" : principal || submitted ? "Review" : "Take attendance for"} ${name}`}>{queue === "finalizing" ? "View" : principal || submitted ? "Review" : "Take attendance"}<ArrowRight size={16} /></Link>}</div>
+            <div className="attendance-class-card__top"><span className="attendance-class-card__monogram" aria-hidden="true">{registerMonogram(item)}</span><div><h3>{name}{attentionItem ? <span className={`attendance-class-card__attention-mark is-${attentionTone(attentionItem)}`} title={attentionItem.status_label}><span className="sr-only"> · {attentionItem.status_label}, needs attention</span></span> : null}</h3><p>{item.attendance_scope === "scheduled_session" ? `${className} · Period ${item.period_number}${registerTime(item.starts_at) && registerTime(item.ends_at) ? ` · ${registerTime(item.starts_at)}–${registerTime(item.ends_at)}` : ""}` : `${item.student_count} ${studentLabel}`}{item.room_number ? ` · ${/^room\b/i.test(item.room_number) ? item.room_number : `Room ${item.room_number}`}` : ""}</p></div><span className={`attendance-class-card__status is-${queue}`}>{queue === "locked" ? <LockKeyhole size={13} /> : submitted ? <CheckCheck size={13} /> : <Clock3 size={13} />}{label}</span></div>
+            {coordinatesAttendance ? <details className="attendance-class-card__team"><summary><UsersRound size={15} /><span>{teachers.length ? `${teachers.length} assigned ${teachers.length === 1 ? "teacher" : "teachers"}` : "No teaching assignment"}</span><ChevronDown size={15} /></summary><p>{teachers.length ? teachers.join(" · ") : "Assign teachers through the school timetable."}</p></details> : <p className="attendance-class-card__assignment"><CalendarDays size={15} /><span>{item.assignment_kind === "substitute" ? "Accepted cover" : item.subjects?.filter(Boolean).join(" · ") || "Assigned class"}{item.periods_today ? ` · ${item.periods_today} ${item.periods_today === 1 ? "period" : "periods"} on this day` : " · No lesson on this day"}</span></p>}
+            <div className="attendance-class-card__progress"><span>{item.marked_count}/{item.student_count} marked</span><progress value={item.marked_count} max={item.student_count || 1} aria-label={`${name} ${studentLabel} marked`} /></div>
+            <div className="attendance-class-card__bottom"><span>{assignmentMismatch ? `Submitted by ${item.submitted_by_name ?? "an unscheduled user"}; assignment review is required.` : savedWithoutSchedule ? "Saved attendance exists without a scheduled lesson." : queue === "finalizing" && item.auto_finalize_at ? `Finalizes automatically ${new Date(item.auto_finalize_at).toLocaleTimeString("en-IN", { hour: "numeric", minute: "2-digit" })}` : submitted ? item.submitted_by_name ? `${queue === "locked" ? "Finalized" : "Submitted"} by ${item.submitted_by_name}` : queue === "locked" ? "Final register" : "Submitted register" : queue === "not_required" ? item.availability_reason ?? (item.date_open === false ? "Opens on the selected date" : "No register due") : coordinatesAttendance ? "Awaiting teacher submission" : "Complete and submit"}</span>{(savedWithoutSchedule || assignmentMismatch) && coordinatesAttendance ? <Link to={registerHref(portal,item,date,responsibility)} aria-label={`Review ${assignmentMismatch ? "assignment" : "schedule"} mismatch for ${name}`}>Review record<ArrowRight size={16} /></Link> : queue === "not_required" ? <span className="attendance-class-card__inactive">No action required</span> : <Link to={registerHref(portal,item,date,responsibility)} aria-label={`${queue === "finalizing" ? "View" : coordinatesAttendance || submitted ? "Review" : "Take attendance for"} ${name}`}>{queue === "finalizing" ? "View" : coordinatesAttendance || submitted ? "Review" : "Take attendance"}<ArrowRight size={16} /></Link>}</div>
           </article>;
         })}</div> : null}
-        {!visible.length ? <div className="attendance-workspace__empty"><ClipboardCheck size={28} /><h3>{classes.length ? "No registers in this view" : "No attendance due"}</h3><p>{classes.length ? "Choose another filter or search for a class." : principal ? "There are no scheduled class registers for this date." : "You have no scheduled lesson or accepted cover requiring attendance on this date."}</p>{classes.length ? <button type="button" onClick={() => { setFilter("all"); setSearch(""); }}>Show all registers</button> : null}</div> : null}
+        {!visible.length ? <div className="attendance-workspace__empty"><ClipboardCheck size={28} /><h3>{classes.length ? "No registers in this view" : "No attendance due"}</h3><p>{classes.length ? "Choose another filter or search for a class." : coordinatesAttendance ? "There are no scheduled class registers for this date." : "You have no scheduled lesson or accepted cover requiring attendance on this date."}</p>{classes.length ? <button type="button" onClick={() => { setFilter("all"); setSearch(""); }}>Show all registers</button> : null}</div> : null}
       </section>
-    </div>
-  </OperationsShell>;
+    </div>;
+  if (embedded) return content;
+  return <OperationsShell portal={portal} active="attendance" title="Attendance" subtitle={coordinatesAttendance ? "School-wide registers" : "Your assigned classes"}>{content}</OperationsShell>;
 }

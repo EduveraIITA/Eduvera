@@ -1,10 +1,12 @@
+import { applicationNow } from "../simulation/applicationTime";
 import { CalendarPlus2, Check, Plus, ShieldCheck, Trash2, UsersRound } from "lucide-react";
 import { useMemo, useState, type FormEvent } from "react";
 import { Link, useSearchParams } from "react-router-dom";
 import { OperationsShell } from "../../pages/operations/OperationsShell";
 import { eventTypeLabels } from "./EventPrimitives";
-import { eventDetailHref, eventListHref } from "./eventNavigation";
+import { eventDetailHref, eventListHref, eventWorkspaceDetailHref, eventWorkspaceListHref } from "./eventNavigation";
 import type { CampusEventDto, CampusEventInput, EventCatalogResponse } from "./types";
+import { EventPlacePicker } from "./EventPlacePicker";
 import "./campus-events.css";
 
 import { TemporalInput } from "../../components/forms/TemporalInput";
@@ -16,7 +18,7 @@ function localDateTime(value: string) {
 }
 
 function defaultTimes() {
-  const start = new Date();
+  const start = applicationNow();
   start.setDate(start.getDate() + 7);
   start.setHours(9, 0, 0, 0);
   const end = new Date(start);
@@ -37,6 +39,7 @@ function initialInput(event?: CampusEventDto, preferredStart?: string | null, pr
     title: event.title,
     description: event.description,
     venue: event.venue,
+    space_id: event.space_id ?? null,
     starts_at: localDateTime(event.starts_at),
     ends_at: localDateTime(event.ends_at),
     audience: event.audience,
@@ -46,8 +49,8 @@ function initialInput(event?: CampusEventDto, preferredStart?: string | null, pr
     payment_required: event.payment_required,
     payment_amount_paise: event.payment_amount_paise,
     payment_due_on: event.payment_due_on,
-    sessions: event.sessions.map(({ id, title, session_type, venue, starts_at, ends_at, attendance_mode }) => ({
-      id, title, session_type, venue, starts_at: localDateTime(starts_at), ends_at: localDateTime(ends_at), attendance_mode,
+    sessions: event.sessions.map(({ id, title, session_type, venue, starts_at, ends_at, attendance_mode, space_id, use_event_space }) => ({
+      id, title, session_type, venue, space_id: space_id ?? null, use_event_space: use_event_space ?? false, starts_at: localDateTime(starts_at), ends_at: localDateTime(ends_at), attendance_mode,
       participant_student_ids: event.sessions.find((session) => session.id === id)?.participant_student_ids ?? [],
     })),
     checklist: event.checklist.map(({ id, label, required }) => ({ id, label, required })),
@@ -58,6 +61,7 @@ function initialInput(event?: CampusEventDto, preferredStart?: string | null, pr
     title: "",
     description: "",
     venue: "",
+    space_id: null,
     starts_at: startsAt,
     ends_at: endsAt,
     audience: { mode: "school", class_section_ids: [], student_ids: [] },
@@ -67,7 +71,7 @@ function initialInput(event?: CampusEventDto, preferredStart?: string | null, pr
     payment_required: false,
     payment_amount_paise: null,
     payment_due_on: null,
-    sessions: [{ title: "Main programme", session_type: "general", venue: "", starts_at: startsAt, ends_at: endsAt, attendance_mode: "none", participant_student_ids: [] }],
+    sessions: [{ title: "Main programme", session_type: "general", venue: "", space_id: null, use_event_space: true, starts_at: startsAt, ends_at: endsAt, attendance_mode: "none", participant_student_ids: [] }],
     checklist: [],
     staff: [],
   };
@@ -75,11 +79,13 @@ function initialInput(event?: CampusEventDto, preferredStart?: string | null, pr
 
 export function EventEditorPage({
   portal = "principal",
+  workspace,
   catalog,
   event,
   onSave,
 }: {
   portal?: "teacher" | "principal";
+  workspace?: { basePath: string; kind: "manage" | "assigned" };
   catalog: EventCatalogResponse;
   event?: CampusEventDto;
   onSave: (input: CampusEventInput) => Promise<void>;
@@ -89,15 +95,21 @@ export function EventEditorPage({
   const [state, setState] = useState<"idle" | "saving" | "error">("idle");
   const [error, setError] = useState("");
   const prefix = portal === "principal" ? "/principal" : "/teacher";
-  const backHref = event ? eventDetailHref(prefix, event.id, params) : eventListHref(prefix, params);
+  const backHref = workspace
+    ? event
+      ? eventWorkspaceDetailHref(workspace.basePath, event.id, params)
+      : eventWorkspaceListHref(workspace.basePath, params)
+    : event
+      ? eventDetailHref(prefix, event.id, params)
+      : eventListHref(prefix, params);
   const canManagePolicy = !event || event.permissions.can_manage_policy;
   const canManageAudience = !event || event.permissions.can_manage_audience;
   const canManageStaff = !event || event.permissions.can_manage_staff;
   const updateEventField = (field: "venue" | "starts_at" | "ends_at", value: string) => {
     const sessions = input.sessions.length === 1 && input.sessions[0]?.session_type === "general"
-      ? input.sessions.map((session) => ({ ...session, [field === "venue" ? "venue" : field]: value }))
+      ? input.sessions.map((session) => ({ ...session, [field]: value, ...(field === "venue" ? { space_id: null } : {}) }))
       : input.sessions;
-    setInput({ ...input, [field]: value, sessions });
+    setInput({ ...input, [field]: value, ...(field === "venue" ? { space_id: null } : {}), sessions });
   };
   const students = useMemo(() => input.audience.mode === "class_sections"
     ? catalog.students.filter((student) => input.audience.class_section_ids.includes(student.class_section_id))
@@ -164,7 +176,7 @@ export function EventEditorPage({
   };
 
   return (
-    <OperationsShell portal={portal} active="events" title={event ? "Edit event draft" : "Create event"} subtitle="Events & activities" backTo={backHref} contentHasHeading>
+    <OperationsShell portal={workspace ? undefined : portal} active="events" title={event ? "Edit event draft" : "Create event"} subtitle="Events & activities" backTo={backHref}>
       <form className="campus-event-editor" onSubmit={submit}>
         <header className="campus-event-editor__header campus-event-editor__header--actions">
           <button className="campus-event-primary" type="submit" disabled={state === "saving"}><Check size={17} />{state === "saving" ? "Saving..." : "Save draft"}</button>
@@ -177,6 +189,7 @@ export function EventEditorPage({
             <label className="is-wide">Event name<input required value={input.title} onChange={(e) => setInput({ ...input, title: e.target.value })} placeholder="Class 7 educational excursion" /></label>
             {canManagePolicy ? <label>Event type<select value={input.event_type} onChange={(e) => setInput({ ...input, event_type: e.target.value as CampusEventInput["event_type"] })}>{Object.entries(eventTypeLabels).filter(([value]) => value !== "class_test").map(([value, label]) => <option key={value} value={value}>{label}</option>)}</select></label> : <div className="campus-event-readonly-field"><span>Event type</span><strong>{eventTypeLabels[input.event_type]}</strong></div>}
             <label>Venue<input required value={input.venue} onChange={(e) => updateEventField("venue", e.target.value)} placeholder="School auditorium" /></label>
+            <EventPlacePicker catalog={catalog} spaceId={input.space_id} onChange={choice => setInput({ ...input, space_id: choice.space_id })} />
             <label>Starts<TemporalInput required type="datetime-local" value={input.starts_at} onChange={(e) => updateEventField("starts_at", e.target.value)} /></label>
             <label>Ends<TemporalInput required type="datetime-local" value={input.ends_at} onChange={(e) => updateEventField("ends_at", e.target.value)} /></label>
             <label className="is-wide">Description<textarea required rows={4} value={input.description} onChange={(e) => setInput({ ...input, description: e.target.value })} placeholder="Purpose, programme and what participants should expect." /></label>
@@ -250,7 +263,7 @@ function EventSessionEditor({ input, catalog, onChange }: { input: CampusEventIn
   const [searches, setSearches] = useState<Record<number, string>>({});
   const eligibleStudents = catalog.students.filter((student) => input.audience.mode === "school" || (input.audience.mode === "class_sections" ? input.audience.class_section_ids.includes(student.class_section_id) : input.audience.student_ids.includes(student.id)));
   const update = (index: number, patch: Partial<CampusEventInput["sessions"][number]>) => onChange({ ...input, sessions: input.sessions.map((session, i) => i === index ? { ...session, ...patch } : session) });
-  const add = () => onChange({ ...input, sessions: [...input.sessions, { title: "Main session", session_type: "general", venue: input.venue, starts_at: input.starts_at, ends_at: input.ends_at, attendance_mode: "none", participant_student_ids: [] }] });
+  const add = () => onChange({ ...input, sessions: [...input.sessions, { title: "Main session", session_type: "general", venue: input.venue, space_id: null, use_event_space: true, starts_at: input.starts_at, ends_at: input.ends_at, attendance_mode: "none", participant_student_ids: [] }] });
   return (
     <section className="campus-event-form-section" aria-labelledby="event-sessions-heading">
       <header><span><CalendarPlus2 size={18} /></span><div><h2 id="event-sessions-heading">Programme sessions</h2><p>At least one programme session is required. Attendance stays optional for each session.</p></div><button type="button" className="campus-event-secondary" onClick={add}><Plus size={16} />Add session</button></header>
@@ -264,7 +277,8 @@ function EventSessionEditor({ input, catalog, onChange }: { input: CampusEventIn
             <label>Session type<select value={session.session_type} onChange={(event) => update(index, { session_type: event.target.value as typeof session.session_type })}><option value="general">General</option><option value="rehearsal">Rehearsal</option><option value="departure">Departure</option><option value="activity">Activity</option><option value="return">Return</option></select></label>
             <label>Starts<TemporalInput required type="datetime-local" value={session.starts_at} onChange={(event) => update(index, { starts_at: event.target.value })} /></label>
             <label>Ends<TemporalInput required type="datetime-local" value={session.ends_at} onChange={(event) => update(index, { ends_at: event.target.value })} /></label>
-            <label>Venue<input required value={session.venue} onChange={(event) => update(index, { venue: event.target.value })} /></label>
+            <label>Venue<input required value={session.venue} onChange={(event) => update(index, { venue: event.target.value, space_id: null, use_event_space: false })} /></label>
+            <EventPlacePicker catalog={catalog} spaceId={session.space_id} inherit={session.use_event_space} allowInheritance label={session.title || `session ${index + 1}`} onChange={choice => update(index, choice)} />
             <label>Event attendance<select value={session.attendance_mode} onChange={(event) => update(index, { attendance_mode: event.target.value as typeof session.attendance_mode })}><option value="none">No register</option><option value="check_in">Check-in only</option><option value="check_in_out">Check-in and check-out</option></select></label>
           </div>
           <details className="campus-event-session-audience">

@@ -1,3 +1,4 @@
+import { executionNow } from "../campus-model-core/execution-time.runtime.js";
 import { BadRequestException, ConflictException, ForbiddenException, Injectable, NotFoundException } from "@nestjs/common";
 import { createHash } from "node:crypto";
 import { sql, type Kysely, type Transaction } from "kysely";
@@ -12,6 +13,7 @@ import {
   createNoticeSchema,
   deliveryAttemptSchema,
   noticePortalSchema,
+  noticeWorkspaceScopeSchema,
   publishNoticeSchema,
   respondNoticeSchema,
   updateNoticeSchema,
@@ -135,26 +137,49 @@ interface NoticeListRow {
   attention_reasons?: NoticeAttentionReason[];
 }
 
-const listQuerySchema = z.object({
+const legacyListQuerySchema = z.object({
   portal: noticePortalSchema,
   school_id: z.string().uuid().optional(),
   student_id: z.string().uuid().optional(),
   status: z.enum(["draft", "published", "cancelled"]).optional(),
 }).strict();
 
-const detailQuerySchema = z.object({
-  portal: noticePortalSchema,
+const workspaceListQuerySchema = z.object({
+  scope: noticeWorkspaceScopeSchema,
+  school_id: z.string().uuid().optional(),
   student_id: z.string().uuid().optional(),
-}).strict();
+  status: z.enum(["draft", "published", "cancelled"]).optional(),
+}).strict().superRefine((query, context) => {
+  if ((query.scope === "dependent") !== Boolean(query.student_id)) {
+    context.addIssue({ code: "custom", path: ["student_id"], message: "A learner is required only for dependent updates." });
+  }
+});
+
+const listQuerySchema = z.union([legacyListQuerySchema, workspaceListQuerySchema]);
+
+const detailQuerySchema = z.union([
+  z.object({ portal: noticePortalSchema, student_id: z.string().uuid().optional() }).strict(),
+  z.object({ scope: noticeWorkspaceScopeSchema, student_id: z.string().uuid().optional() }).strict()
+    .superRefine((query, context) => {
+      if ((query.scope === "dependent") !== Boolean(query.student_id)) {
+        context.addIssue({ code: "custom", path: ["student_id"], message: "A learner is required only for dependent updates." });
+      }
+    }),
+]);
 
 @Injectable()
 export class NoticesService {
   constructor(private readonly db: DatabaseService, private readonly events: SchoolEventService) {}
 
   async references(user: AuthUser, rawQuery: Record<string, string | undefined>) {
-    const query = z.object({ portal: z.enum(["teacher", "principal"]), school_id: z.string().uuid().optional() }).strict().parse(rawQuery);
-    const scope = await this.actorScope(this.db, user, query.portal, query.school_id);
-    const rows = query.portal === "principal" ? (await sql<{ id: string; name: string }>`
+    const query = z.union([
+      z.object({ portal: z.enum(["teacher", "principal"]), school_id: z.string().uuid().optional() }).strict(),
+      z.object({ scope: z.literal("responsibility"), school_id: z.string().uuid().optional() }).strict(),
+    ]).parse(rawQuery);
+    const scope = "portal" in query
+      ? await this.actorScope(this.db, user, query.portal, query.school_id)
+      : await this.responsibilityScope(this.db, user, query.school_id);
+    const rows = scope.role === "admin" ? (await sql<{ id: string; name: string }>`
       SELECT section.id,concat('Class ',section.grade,section.section) AS name
       FROM class_sections section WHERE section.school_id=${scope.school_id}::uuid
       ORDER BY section.academic_year DESC,section.grade,section.section,section.id
@@ -164,18 +189,30 @@ export class NoticesService {
         AND staff_has_class_permission(section.school_id,${user.id}::uuid,'messages.send',section.id)
       ORDER BY section.academic_year DESC,section.grade,section.section,section.id
     `.execute(this.db)).rows;
-    return { school_id: scope.school_id, classes: rows };
+    return {
+      school_id: scope.school_id,
+      classes: rows,
+      audience_kinds: scope.role === "admin"
+        ? ["class_guardians", "school_guardians", "school_staff"] as const
+        : ["class_guardians"] as const,
+    };
   }
 
   async list(user: AuthUser, rawQuery: Record<string, string | undefined>) {
     const query = listQuerySchema.parse(rawQuery);
-    const scope = await this.actorScope(this.db, user, query.portal, query.school_id, query.student_id);
-    const rawRows = query.portal === "parent"
+    const workspaceScope = "scope" in query ? query.scope : null;
+    const scope = "portal" in query
+      ? await this.actorScope(this.db, user, query.portal, query.school_id, query.student_id)
+      : query.scope === "dependent"
+        ? await this.actorScope(this.db, user, "parent", query.school_id, query.student_id)
+        : await this.responsibilityScope(this.db, user, query.school_id);
+    const recipientView = "portal" in query ? query.portal === "parent" : query.scope === "dependent";
+    const rawRows = recipientView
       ? await this.familyList(user, scope, query.status)
       : await this.staffList(user, scope, query.status);
     const rows = this.withAttention(rawRows);
     return {
-      portal: query.portal,
+      ...(workspaceScope ? { scope: workspaceScope } : { portal: (query as z.infer<typeof legacyListQuerySchema>).portal }),
       school_id: scope.school_id,
       student_id: scope.student_id,
       attention: this.attentionSummary(rows),
@@ -188,7 +225,8 @@ export class NoticesService {
     items: NoticeAttentionItem[];
   }> {
     const result = await this.list(user, rawQuery);
-    const portal = result.portal;
+    const portal = "portal" in result ? result.portal : null;
+    const workspaceScope = "scope" in result ? result.scope : null;
     const items = result.results.flatMap((row): NoticeAttentionItem[] => {
       const reasons = row.attention_reasons ?? [];
       if (!reasons.length) return [];
@@ -199,8 +237,9 @@ export class NoticesService {
           : reasons.includes("response_required")
             ? row.response_mode === "acknowledgement" ? "Acknowledgement needed" : "Response needed"
             : row.status === "cancelled" ? "Cancellation not viewed" : "New notice";
-      const studentSuffix = portal === "parent" && result.student_id
-        ? `?student_id=${encodeURIComponent(result.student_id)}` : "";
+      const studentSuffix = (portal === "parent" || workspaceScope === "dependent") && result.student_id
+        ? `?scope=dependent&student_id=${encodeURIComponent(result.student_id)}` : "";
+      const href = `/areas/messages/updates/${encodeURIComponent(row.id)}${studentSuffix}`;
       return [{
         id: `notice:${row.id}:${row.recipient_id ?? "manager"}`,
         source_kind: "notice",
@@ -215,7 +254,7 @@ export class NoticesService {
         subject_label: row.student_name ?? null,
         due_at: this.iso(row.due_at),
         created_at: this.iso(row.published_at ?? row.created_at),
-        href: `/${portal}/notices/${encodeURIComponent(row.id)}${studentSuffix}`,
+        href,
       }];
     });
     return { summary: result.attention, items };
@@ -225,7 +264,11 @@ export class NoticesService {
     const id = z.string().uuid().parse(idValue);
     const query = detailQuerySchema.parse(rawQuery);
     const notice = await this.notice(this.db, id);
-    const scope = await this.actorScope(this.db, user, query.portal, notice.school_id, query.student_id);
+    const scope = "portal" in query
+      ? await this.actorScope(this.db, user, query.portal, notice.school_id, query.student_id)
+      : query.scope === "dependent"
+        ? await this.actorScope(this.db, user, "parent", notice.school_id, query.student_id)
+        : await this.responsibilityScope(this.db, user, notice.school_id);
     const manager = await this.isCurrentManager(this.db, user, notice, "messages.view");
     if (manager) {
       const [audiences, recipients, audits] = await Promise.all([
@@ -390,7 +433,7 @@ export class NoticesService {
       if (prior) return prior;
       this.assertResponseAllowed(notice, recipient, input.expected_revision);
       const value = this.responseValue(notice, input.response_value);
-      const updated = await this.writeResponse(db, notice, recipient, value, input.response_note, "app", new Date(), request.authUser.id, true);
+      const updated = await this.writeResponse(db, notice, recipient, value, input.response_note, "app", executionNow(), request.authUser.id, true);
       await this.markLinkedNotificationsRead(db, request.authUser.id, notice.id, updated);
       await this.recordAudit(db, request, notice, "responded", "pending", value, updated.id, { channel: "app" });
       await this.emitRecipient(db, notice, updated, "responded", String(updated.revision));
@@ -505,7 +548,7 @@ export class NoticesService {
   }
 
   private withAttention(rows: NoticeListRow[]): NoticeListRow[] {
-    const now = Date.now();
+    const now = executionNow().getTime();
     return rows.map((row) => {
       const reasons = new Set<NoticeAttentionReason>();
       const dueAt = row.due_at ? new Date(row.due_at).getTime() : null;
@@ -576,6 +619,20 @@ export class NoticesService {
       ORDER BY membership.created_at LIMIT 1
     `.execute(db)).rows[0];
     if (!row) throw new ForbiddenException(`This account does not have an active ${expected} notice context.`);
+    return row;
+  }
+
+  private async responsibilityScope(db: Db, user: AuthUser, requestedSchool?: string): Promise<ActorScope> {
+    const schoolId = requestedSchool ?? user.active_school_id ?? null;
+    if (!schoolId) throw new ForbiddenException("Choose an institution before opening updates.");
+    const row = (await sql<ActorScope>`
+      SELECT membership.school_id,membership.role,NULL::uuid AS guardian_id,NULL::uuid AS student_id
+      FROM school_memberships membership JOIN users actor ON actor.id=membership.user_id AND actor.is_active
+      WHERE membership.user_id=${user.id}::uuid AND membership.role IN ('admin','staff') AND membership.is_active
+        AND membership.school_id=${schoolId}::uuid
+      ORDER BY CASE membership.role WHEN 'admin' THEN 0 ELSE 1 END,membership.created_at LIMIT 1
+    `.execute(db)).rows[0];
+    if (!row) throw new ForbiddenException("This account has no active communication responsibility in this institution.");
     return row;
   }
 
@@ -654,7 +711,7 @@ export class NoticesService {
   private validateDeadline(input: { response_mode: NoticeRow["response_mode"]; due_at?: string | Date | null | undefined }) {
     if (input.response_mode === "information") return;
     const due = input.due_at ? new Date(input.due_at) : null;
-    const now = Date.now();
+    const now = executionNow().getTime();
     if (!due || due.getTime() <= now || due.getTime() > now + 180 * 86400000) {
       throw new BadRequestException("Choose a response deadline within the next 180 days.");
     }
@@ -702,13 +759,14 @@ export class NoticesService {
       INSERT INTO school_notice_recipients(school_id,notice_id,recipient_key,recipient_role,user_id,
         recipient_name,contact_phone,contact_email)
       SELECT DISTINCT ON (membership.user_id) notice.school_id,notice.id,'user:'||membership.user_id::text,
-        membership.role,membership.user_id,concat_ws(' ',account.first_name,account.last_name),
-        COALESCE(profile.phone,''),COALESCE(NULLIF(profile.email,''),account.email)
+        membership.role,membership.user_id,COALESCE(NULLIF(trim(concat_ws(' ',person.first_name,person.last_name)),''),trim(concat_ws(' ',account.first_name,account.last_name))),
+        COALESCE(person.contact_phone,''),COALESCE(NULLIF(person.contact_email,''),account.email)
       FROM school_notices notice
       JOIN school_notice_audiences audience ON audience.notice_id=notice.id AND audience.audience_kind='school_staff'
       JOIN school_memberships membership ON membership.school_id=notice.school_id AND membership.role IN ('staff','admin') AND membership.is_active
       JOIN users account ON account.id=membership.user_id AND account.is_active
       LEFT JOIN staff_profiles profile ON profile.user_id=account.id AND profile.school_id=notice.school_id
+      LEFT JOIN school_people person ON person.id=profile.person_id AND person.school_id=profile.school_id
       WHERE notice.id=${notice.id}::uuid
       ORDER BY membership.user_id,(membership.role='admin') DESC
       ON CONFLICT(notice_id,recipient_key) DO NOTHING
@@ -728,9 +786,8 @@ export class NoticesService {
   private async createAppNotifications(db: Db, notice: NoticeRow) {
     await sql`INSERT INTO notifications(recipient_id,kind,title,body,link,metadata,dedupe_key)
       SELECT recipient.user_id,'general',${notice.title},left(${notice.body},240),
-        CASE recipient.recipient_role WHEN 'guardian' THEN '/parent/notices/'||notice.id::text||'?student_id='||recipient.student_id::text
-          WHEN 'admin' THEN '/principal/notices/'||notice.id::text
-          ELSE '/teacher/notices/'||notice.id::text END,
+        CASE recipient.recipient_role WHEN 'guardian' THEN '/areas/messages/updates/'||notice.id::text||'?scope=dependent&student_id='||recipient.student_id::text
+          ELSE '/areas/messages/updates/'||notice.id::text END,
         jsonb_build_object('notice_id',notice.id,'notice_recipient_id',recipient.id,'notice_revision',notice.revision,
           'response_mode',notice.response_mode,'student_id',recipient.student_id,'notice_status',notice.status),
         'notice:'||notice.id::text||':recipient:'||recipient.id::text
@@ -742,9 +799,8 @@ export class NoticesService {
   private async createCancellationNotifications(db: Db, notice: NoticeRow) {
     await sql`INSERT INTO notifications(recipient_id,kind,title,body,link,metadata,dedupe_key)
       SELECT recipient.user_id,'general','Notice cancelled: '||${notice.title},left(${notice.cancellation_reason},500),
-        CASE recipient.recipient_role WHEN 'guardian' THEN '/parent/notices/'||notice.id::text||'?student_id='||recipient.student_id::text
-          WHEN 'admin' THEN '/principal/notices/'||notice.id::text
-          ELSE '/teacher/notices/'||notice.id::text END,
+        CASE recipient.recipient_role WHEN 'guardian' THEN '/areas/messages/updates/'||notice.id::text||'?scope=dependent&student_id='||recipient.student_id::text
+          ELSE '/areas/messages/updates/'||notice.id::text END,
         jsonb_build_object('notice_id',notice.id,'notice_recipient_id',recipient.id,'notice_revision',notice.revision,
           'response_mode',notice.response_mode,'student_id',recipient.student_id,'notice_status','cancelled'),
         'notice:'||notice.id::text||':cancelled:'||notice.revision::text||':recipient:'||recipient.id::text
@@ -784,7 +840,7 @@ export class NoticesService {
   private assertResponseAllowed(notice: NoticeRow, recipient: RecipientRow, expectedRevision: number) {
     if (notice.status !== "published") throw new ConflictException("This notice is not accepting responses.");
     if (notice.response_mode === "information") throw new BadRequestException("This notice is for information only.");
-    if (notice.due_at && notice.due_at.getTime() < Date.now()) throw new ConflictException("The response deadline has passed.");
+    if (notice.due_at && notice.due_at.getTime() < executionNow().getTime()) throw new ConflictException("The response deadline has passed.");
     this.assertRevision(recipient.revision, expectedRevision);
     if (recipient.responded_at) throw new ConflictException("A response has already been recorded.");
   }
@@ -823,7 +879,7 @@ export class NoticesService {
 
   private validateObservedAt(notice: NoticeRow, observedAt: Date) {
     const published = notice.published_at?.getTime() ?? Number.POSITIVE_INFINITY;
-    if (observedAt.getTime() < published - 5000 || observedAt.getTime() > Date.now() + 5000) {
+    if (observedAt.getTime() < published - 5000 || observedAt.getTime() > executionNow().getTime() + 5000) {
       throw new BadRequestException("The recorded time must fall between publication and now.");
     }
   }

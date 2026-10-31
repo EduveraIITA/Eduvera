@@ -294,7 +294,7 @@ export class NotificationAttentionService {
             WHERE refund.id=notification.attention_source_id
           )
           WHEN 'fee_review_decision' THEN (
-            SELECT decision.request_id::text FROM fee_review_decisions decision
+            SELECT decision.review_id::text FROM fee_native_review_decisions decision
             WHERE decision.id=notification.attention_source_id
           )
           ELSE NULL
@@ -493,13 +493,14 @@ export class NotificationAttentionService {
               AND refund.student_id=notification.attention_student_id
           )
           WHEN 'fee_review_decision' THEN ${scope.portal === "parent"} AND EXISTS (
-            SELECT 1 FROM fee_review_decisions decision
-            JOIN fee_review_requests request ON request.id=decision.request_id
+            SELECT 1 FROM fee_native_review_decisions decision
+            JOIN fee_native_review_requests request ON request.id=decision.review_id
               AND request.school_id=decision.school_id
             JOIN fee_invoices invoice ON invoice.id=request.invoice_id
               AND invoice.school_id=request.school_id
             WHERE decision.id=notification.attention_source_id
               AND decision.school_id=notification.attention_school_id
+              AND request.route_kind='guardian_queue'
               AND request.submitted_by=notification.recipient_id
               AND invoice.student_id=notification.attention_student_id
           )

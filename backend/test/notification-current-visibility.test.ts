@@ -18,6 +18,14 @@ const safeguardingLinkMigration = readFileSync(
   join(process.cwd(), "migrations", "077_exact_safeguarding_report_links.sql"),
   "utf8",
 );
+const canonicalMessageLinkMigration = readFileSync(
+  join(process.cwd(), "migrations", "142_canonical_message_notification_links.sql"),
+  "utf8",
+);
+const canonicalCareLinkMigration = readFileSync(
+  join(process.cwd(), "migrations", "144_canonical_reports_care_links.sql"),
+  "utf8",
+);
 const schoolService = readFileSync(
   join(process.cwd(), "src", "school", "school.service.ts"),
   "utf8",
@@ -100,14 +108,16 @@ describe("current notification visibility", () => {
     expect(requestsService).toContain("report.status IN ('open','under_review')");
     expect(requestsService).toContain("safeguardingReportAttentionHref(\"teacher\", row.id)");
     expect(requestsService).toContain("safeguardingReportAttentionHref(\"principal\", row.id)");
-    expect(chatLinks).toContain("/safeguarding?section=message_reports&report=${encodeURIComponent(reportId)}");
+    expect(chatLinks).toContain("/areas/care/concerns?section=message_reports&report=${encodeURIComponent(reportId)}");
   });
 
   it("routes moderation notices to the exact report or conversation and repairs historical blank links", () => {
     expect(chatService).toContain('safeguardingReportAttentionHref("principal", saved.id)');
     expect(chatService).toContain("safeguardingReportAttentionHref(targetPortal, reportId)");
     expect(chatService).toContain('safeguardingReportAttentionHref("principal", reportId)');
-    expect(chatService).toContain("link: conversationLink(report.sender_role, report.conversation_id, report.context_student_id)");
+    expect(chatService).toContain("report.sender_relationship_scope");
+    expect(chatService).toContain("report.reporter_relationship_scope");
+    expect(chatLinks).toContain("/areas/messages/conversations");
     expect(chatService).not.toContain('title: "Messaging temporarily restricted",\n          body: `School staff restricted messaging for ${data.restriction_days ?? 7} day(s).`,\n          link: ""');
     expect(migration).toContain("notification.title='Messaging temporarily restricted'");
     expect(migration).toContain("notification.link=''");
@@ -115,5 +125,9 @@ describe("current notification visibility", () => {
     expect(safeguardingLinkMigration).toContain("/safeguarding?section=message_reports&report=");
     expect(safeguardingLinkMigration).toContain("report.id::text=notification.metadata->>'report_id'");
     expect(safeguardingLinkMigration).not.toMatch(/notification\.(title|body)\s*(=|LIKE|~)/);
+    expect(canonicalMessageLinkMigration).toContain("notification.metadata->>'notification_scope'='chat_conversation'");
+    expect(canonicalMessageLinkMigration).toContain("/areas/messages/conversations?conversation=");
+    expect(canonicalCareLinkMigration).toContain("/areas/care/concerns");
+    expect(canonicalCareLinkMigration).toContain("/areas/reports/remarks");
   });
 });

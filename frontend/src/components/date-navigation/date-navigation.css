@@ -18,7 +18,7 @@
 .date-navigation__day strong { display:grid; place-items:center; width:32px; height:32px; border-radius:50%; font-size:17px; font-weight:750; }
 .date-navigation__day.is-muted { color:var(--thatcampus-ink-secondary); }
 .date-navigation__day.is-today strong { color:var(--thatcampus-brand); box-shadow:inset 0 0 0 1.5px var(--thatcampus-brand); }
-.date-navigation .date-navigation__day[aria-pressed="true"] strong { color:#fff; background:var(--thatcampus-brand); }
+.date-navigation .date-navigation__day[aria-pressed="true"] strong { color:#fff; background:var(--thatcampus-action); }
 .date-navigation__indicator { display:flex; align-items:center; justify-content:center; min-height:8px; font-size:10px; line-height:1; color:var(--thatcampus-ink-secondary); }
 .date-navigation .date-navigation__toggle { display:flex; width:100%; min-height:44px; align-items:center; justify-content:center; margin:0; padding:0; color:var(--thatcampus-ink-secondary); }
 .date-view-select { position:relative; display:inline-flex; flex:0 0 auto; }

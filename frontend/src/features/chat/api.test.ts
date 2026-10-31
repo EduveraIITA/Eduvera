@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { createChatConversation, createChatGroup, getChatConversation, getChatReport } from "./api";
+import { createChatConversation, createChatGroup, getChatConversation, getChatConversationDirectory, getChatConversations, getChatMessages, getChatReport, getChatRecipients } from "./api";
 
 const apiFetchMock = vi.hoisted(() => vi.fn());
 vi.mock("../../lib/api", () => ({ apiFetch: apiFetchMock }));
@@ -7,6 +7,34 @@ vi.mock("../../lib/api", () => ({ apiFetch: apiFetchMock }));
 beforeEach(() => apiFetchMock.mockReset());
 
 describe("exact chat conversation API", () => {
+  it("keeps the legacy no-query list contract available", async () => {
+    apiFetchMock.mockResolvedValue({results:[]});
+    await getChatConversations();
+    expect(apiFetchMock).toHaveBeenCalledWith("/api/v1/chat/conversations/");
+  });
+  it("keeps direct recipients separate from governed group member selection", async () => {
+    apiFetchMock.mockResolvedValue({ results: [] });
+    await getChatRecipients("child-1");
+    expect(apiFetchMock).toHaveBeenLastCalledWith("/api/v1/chat/recipients/?student_id=child-1&purpose=direct");
+    await getChatRecipients("child-1", "group");
+    expect(apiFetchMock).toHaveBeenLastCalledWith("/api/v1/chat/recipients/?student_id=child-1&purpose=group");
+  });
+  it("searches and pages the full authorized directory while retaining selected child scope", async () => {
+    apiFetchMock.mockResolvedValue({ results: [], has_more: false, next_cursor: null });
+    await getChatConversationDirectory({ search: "Aarav", cursor: "opaque+page", studentId: "child-1" });
+    expect(apiFetchMock).toHaveBeenCalledWith("/api/v1/chat/conversations/?pagination=cursor&q=Aarav&cursor=opaque%2Bpage&student_id=child-1");
+  });
+  it("passes the opaque server cursor unchanged instead of deriving a timestamp boundary", async () => {
+    apiFetchMock.mockResolvedValue({ results: [], has_more: false, next_cursor: null });
+    await getChatMessages("conversation-101", "opaque+cursor");
+    expect(apiFetchMock).toHaveBeenCalledWith("/api/v1/chat/conversations/conversation-101/messages/?cursor=opaque%2Bcursor");
+  });
+  it("passes an exact retained frontier and cancellation signal for an anchored refresh", async () => {
+    const signal = new AbortController().signal;
+    apiFetchMock.mockResolvedValue({ results: [], has_more: false, reached_through: true });
+    await getChatMessages("conversation-101", "upper+cursor", { throughCursor: "lower+cursor", signal });
+    expect(apiFetchMock).toHaveBeenCalledWith("/api/v1/chat/conversations/conversation-101/messages/?cursor=upper%2Bcursor&through_cursor=lower%2Bcursor", { signal });
+  });
   it("sends the selected parent child scope", async () => {
     apiFetchMock.mockResolvedValue({});
 

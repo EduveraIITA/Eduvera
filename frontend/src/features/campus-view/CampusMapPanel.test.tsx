@@ -1,6 +1,7 @@
-import { render, screen } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { useRef, useState } from "react";
 import { MemoryRouter } from "react-router-dom";
-import { beforeAll, describe, expect, it } from "vitest";
+import { afterEach, beforeAll, describe, expect, it, vi } from "vitest";
 import { CampusMapPanel } from "./CampusMapPanel";
 import type { CampusViewSpace } from "./types";
 
@@ -8,6 +9,7 @@ beforeAll(() => {
   HTMLDialogElement.prototype.showModal = function showModal() { this.setAttribute("open", ""); };
   HTMLDialogElement.prototype.close = function close() { this.removeAttribute("open"); };
 });
+afterEach(cleanup);
 
 const room: CampusViewSpace = {
   id: "room-401",
@@ -55,6 +57,23 @@ const room: CampusViewSpace = {
 };
 
 describe("CampusMapPanel room capacity summary", () => {
+  it("closes through native Escape cancellation and restores its SVG trigger after dismissal", async () => {
+    const closed = vi.fn();
+    function Fixture() {
+      const trigger = useRef<SVGGElement>(null), [open, setOpen] = useState(false);
+      return <MemoryRouter><svg><g ref={trigger} role="button" tabIndex={0} aria-label="Campus SVG trigger" onKeyDown={event => { if (event.key === "Enter") setOpen(true); }}><text>Campus places</text></g></svg>{open ? <CampusMapPanel mode="spaces" spaces={[room]} zones={[]} activity={[]} formatTime={() => "9:00 AM"} formatClock={() => "9:00 AM"} returnFocus={trigger.current} onSelectSpace={() => undefined} onClose={() => { closed(); setOpen(false); }} /> : null}</MemoryRouter>;
+    }
+    render(<Fixture />);
+    const trigger = screen.getByRole("button", { name: "Campus SVG trigger" });
+    expect(trigger).toBeInstanceOf(SVGElement);
+    trigger.focus(); fireEvent.keyDown(trigger, { key: "Enter" });
+    const dialog = screen.getByRole("dialog", { name: "Campus spaces" });
+    // The browser emits this cancel event for Escape on a modal dialog.
+    fireEvent(dialog, new Event("cancel", { cancelable: true }));
+    expect(closed).toHaveBeenCalledOnce();
+    expect(screen.queryByRole("dialog")).toBeNull();
+    await waitFor(() => expect(trigger).toHaveFocus());
+  });
   it("exposes the representative planned/unconfirmed meaning outside the canvas", () => {
     render(<MemoryRouter><CampusMapPanel
       mode="spaces"

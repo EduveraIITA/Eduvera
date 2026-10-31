@@ -1,0 +1,60 @@
+.calendar-workspace-context {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: .5rem 1rem;
+  color: var(--thatcampus-ink-muted);
+  font-size: .875rem;
+}
+
+.calendar-workspace-context > label {
+  position: relative;
+  min-width: 0;
+  max-width: 100%;
+}
+
+.calendar-workspace-context select {
+  min-height: 44px;
+  max-width: 100%;
+  padding: .5rem 2rem .5rem 0;
+  appearance: none;
+  border: 1px solid transparent;
+  border-radius: var(--thatcampus-radius-control);
+  background: transparent;
+  color: var(--thatcampus-ink);
+  box-shadow: none;
+  font: inherit;
+  font-size: .875rem;
+}
+
+.calendar-workspace-context > label > svg {
+  position: absolute;
+  right: .625rem;
+  top: 50%;
+  transform: translateY(-50%);
+  pointer-events: none;
+}
+
+.calendar-workspace-context__link {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: .375rem;
+  min-height: 44px;
+  padding: .5rem .75rem;
+  border-radius: var(--thatcampus-radius-control);
+  color: var(--thatcampus-brand);
+  font-weight: 650;
+  text-decoration: none;
+}
+
+.calendar-workspace-context__link:hover {
+  background: var(--thatcampus-surface-row);
+}
+
+.calendar-workspace-context :is(select, a):focus-visible {
+  outline: 3px solid var(--thatcampus-brand);
+  outline-offset: 3px;
+}
+

@@ -42,6 +42,13 @@ export interface NonActingHumanAgentIdentity {
 
 export type HumanAgentIdentityResolution = ActingHumanAgentIdentity | NonActingHumanAgentIdentity;
 
+export interface PersonAccountState {
+  person_id: string;
+  has_account: boolean;
+  account_state: 'active' | 'inactive' | 'not_linked';
+  is_you: boolean;
+}
+
 export interface HumanAgentEndpointLinkReceipt extends ActingHumanAgentIdentity {
   replayed: boolean;
 }
@@ -66,6 +73,12 @@ export interface HumanAgentEndpointReplaceReceipt {
 }
 
 export interface HumanAgentIdentityPort {
+  /** Bounded identity presentation for an already-authorized People/account workflow; never grants access. */
+  listPersonAccountStates(transaction: Transaction<Database>, input: {
+    school_id: string; person_ids: string[]; at: string; viewer_user_id?: string;
+  }): Promise<PersonAccountState[]>;
+  /** Minimal current account/person choices for an already-authorized domain workflow. */
+  listActingPeople(transaction: Transaction<Database>, input: { school_id: string; at: string }): Promise<Array<{ person_id: string; user_id: string; label: string }>>;
   resolveAccountEndpoint(
     transaction: Transaction<Database>,
     input: HumanAgentAccountResolution,

@@ -1,0 +1,26 @@
+// Keep native compile and link work bounded on the development Mac.
+// AGP invokes Ninja directly, so CMAKE_BUILD_PARALLEL_LEVEL alone is insufficient.
+gradle.beforeProject { project ->
+    project.plugins.withId("com.facebook.react") {
+        project.extensions.getByName("react").extraPackagerArgs.addAll(["--max-workers", "2"])
+    }
+    def previewOrigin = System.getenv("THATCAMPUS_ANDROID_PREVIEW_ORIGIN")
+    if (previewOrigin) {
+        project.tasks.configureEach { task ->
+            if (task.name in ["createBundleReleaseJsAndAssets", "createReleaseExpoConfig", "createExpoFingerprint"]) {
+                task.inputs.property("thatcampusPreviewApiOrigin", previewOrigin)
+            }
+        }
+    }
+    ["com.android.application", "com.android.library"].each { pluginId ->
+        project.plugins.withId(pluginId) {
+            project.extensions.getByName("androidComponents").finalizeDsl { androidDsl ->
+                androidDsl.defaultConfig.externalNativeBuild.cmake.arguments.addAll([
+                    "-DCMAKE_JOB_POOLS=thatcampus_native=2",
+                    "-DCMAKE_JOB_POOL_COMPILE=thatcampus_native",
+                    "-DCMAKE_JOB_POOL_LINK=thatcampus_native"
+                ])
+            }
+        }
+    }
+}

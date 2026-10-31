@@ -5,9 +5,10 @@ import { Link, MemoryRouter, useLocation, useNavigate } from "react-router-dom";
 import type { ReactNode } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import PeoplePage from "./PeoplePage";
+import { ExecutionEnvironmentProvider } from "../simulation/ExecutionEnvironmentContext";
 import { commitEnrollmentChange, enrollmentOptions, getEnrollmentLifecycle, listStudents, reviewEnrollmentChange } from "./api";
 
-vi.mock("../auth/AuthContext", () => ({ useAuth: () => ({ memberships: [{ role: "admin", school_id: "school-1" }], hasPortal: (role: string) => role === "principal" }) }));
+vi.mock("../auth/AuthContext", () => ({ useAuth: () => ({ memberships: [{ role: "admin", school_id: "school-1", permissions: ["sis.manage", "members.invite"] }] }) }));
 vi.mock("../../pages/operations/OperationsShell", () => ({ OperationsShell: ({ title, backTo, children }: {title:string;backTo:string;children:ReactNode}) => <><h1>{title}</h1><Link to={backTo}>Go back</Link>{children}</> }));
 vi.mock("./api", () => ({ listStudents:vi.fn(), enrollmentOptions:vi.fn(),getEnrollmentLifecycle:vi.fn(),reviewEnrollmentChange:vi.fn(),commitEnrollmentChange:vi.fn() }));
 vi.mock("./GuardianAuthorityPanel", () => ({GuardianAuthorityPanel:({onClose}:{onClose:()=>void})=> <section><p>Permission editor</p><button type="button" onClick={onClose}>Close permissions</button></section>}));
@@ -21,7 +22,7 @@ beforeEach(()=>{
 });
 afterEach(()=>{cleanup();vi.clearAllMocks();});
 function NavigationProbe(){const location=useLocation();const navigate=useNavigate();return <><span data-testid="location">{location.pathname}{location.search}</span><button type="button" onClick={()=>navigate(-1)}>Browser back</button></>;}
-function show(path="/principal/students") {render(<QueryClientProvider client={new QueryClient({defaultOptions:{queries:{retry:false}}})}><MemoryRouter initialEntries={[path]}><NavigationProbe/><PeoplePage/></MemoryRouter></QueryClientProvider>);}
+function show(path="/areas/people/records") {render(<QueryClientProvider client={new QueryClient({defaultOptions:{queries:{retry:false}}})}><ExecutionEnvironmentProvider environment={{mode:"live"}}><MemoryRouter initialEntries={[path]}><NavigationProbe/><PeoplePage/></MemoryRouter></ExecutionEnvironmentProvider></QueryClientProvider>);}
 describe("student directory hierarchy",()=>{
   it("opens a focused profile and permissions page instead of expanding the directory",async()=>{
     const user=userEvent.setup();show();
@@ -37,8 +38,8 @@ describe("student directory hierarchy",()=>{
     await user.click(screen.getByRole("link",{name:"Go back"}));
     expect(await screen.findByRole("searchbox",{name:"Search students"})).toBeVisible();
   });
-  it("resolves a direct profile link using the scoped admission lookup",async()=>{
-    show("/principal/students?school=school-1&student=student-1&student_key=S001");
+  it("opens the owning enrollment context using its scoped admission lookup",async()=>{
+    show("/areas/people/records?school=school-1&student=student-1&student_key=S001&context=learning");
     expect(await screen.findByRole("heading",{name:"Mira Sen"})).toBeVisible();
     expect(listStudents).toHaveBeenCalledWith("school-1","S001");
   });
@@ -53,7 +54,7 @@ describe("student directory hierarchy",()=>{
     expect(screen.queryByText("Permission editor")).not.toBeInTheDocument();
   });
   it("does not display a different student for an invalid profile id",async()=>{
-    show("/principal/students?student=missing&student_key=S001");
+    show("/areas/people/records?student=missing&student_key=S001&context=learning");
     expect(await screen.findByRole("status")).toHaveTextContent("Loading student");
     expect(await screen.findByText(/Student not found/)).toBeVisible();
     expect(screen.queryByRole("heading",{name:"Mira Sen"})).not.toBeInTheDocument();
@@ -79,7 +80,7 @@ describe("student directory hierarchy",()=>{
     expect(screen.queryByRole("form",{name:"Enrollment"})).not.toBeInTheDocument();
   });
   it("reviews connected impact before moving a student and confirms once",async()=>{
-    const user=userEvent.setup();show("/principal/students?school=school-1&student=student-1&student_key=S001");
+    const user=userEvent.setup();show("/areas/people/records?school=school-1&student=student-1&student_key=S001&context=learning");
     await screen.findByRole("heading",{name:"Enrollment"});await user.click(screen.getByRole("button",{name:"Change"}));
     await user.selectOptions(screen.getByLabelText("New class"),"class-2");await user.type(screen.getByLabelText("Reason"),"Balanced class placement");
     await user.click(screen.getByRole("button",{name:/Review impact/}));

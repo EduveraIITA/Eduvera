@@ -1,0 +1,23 @@
+.class-practice{display:grid;gap:20px;color:var(--thatcampus-ink)}
+.class-practice-heading{display:flex;align-items:center;justify-content:space-between;gap:12px}
+.class-practice-heading h2,.class-practice-form h3{margin:0}
+.class-practice-caption{margin:0;color:var(--thatcampus-ink-muted);font-size:14px;line-height:1.5}
+.class-practice button,.class-practice-form button{display:inline-flex;min-height:44px;padding:12px 16px;align-items:center;justify-content:center;gap:8px;border:0;border-radius:var(--thatcampus-radius-control);background:var(--thatcampus-action);color:var(--thatcampus-on-action);box-shadow:var(--thatcampus-shadow-control);font:inherit;cursor:pointer}
+.class-practice button:disabled,.class-practice-form button:disabled{opacity:.55;cursor:default}
+.class-practice-list{display:grid;gap:12px}
+.class-practice-list>button{width:100%;justify-content:start;padding:16px;background:var(--thatcampus-surface-row);color:var(--thatcampus-ink);border-radius:var(--thatcampus-radius-row);box-shadow:var(--thatcampus-shadow-card);text-align:left}
+.class-practice-list>button>span{display:grid;flex:1;min-width:0;gap:4px;overflow-wrap:anywhere}
+.class-practice-list small{color:var(--thatcampus-ink-muted);font-size:14px}
+.class-practice-form{display:grid;gap:20px;padding:20px}
+.class-practice-form fieldset{display:grid;min-width:0;margin:0;padding:0;gap:20px;border:0}
+.class-practice-form label{display:grid;min-width:0;gap:8px;font-weight:600}
+.class-practice-form input,.class-practice-form textarea,.class-practice-form select{box-sizing:border-box;width:100%;min-width:0;min-height:48px;padding:12px 16px;border:1px solid var(--thatcampus-border);border-radius:var(--thatcampus-radius-control);background:var(--thatcampus-surface);color:var(--thatcampus-ink);font:inherit;font-size:16px}
+.class-practice-fields{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px}
+.class-practice-body{white-space:pre-wrap;overflow-wrap:anywhere;line-height:1.6;margin:0}
+.class-practice-form footer{position:sticky;bottom:0;display:flex;gap:12px;margin:0 -4px;padding:16px 4px max(16px,env(safe-area-inset-bottom));background:var(--thatcampus-surface)}
+.class-practice-form footer button{flex:1;min-width:0}
+.class-practice-form .is-secondary,.class-practice-pages button{background:var(--thatcampus-surface-row);color:var(--thatcampus-ink)}
+.class-practice-pages{display:flex;justify-content:space-between;gap:12px}
+.class-practice-form article{display:grid;gap:8px;padding-block:16px;border-bottom:1px solid var(--thatcampus-border)}
+.class-practice-form section{display:grid;gap:16px}
+@media(max-width:360px){.class-practice-fields{grid-template-columns:1fr}.class-practice-heading{align-items:start;flex-wrap:wrap}}

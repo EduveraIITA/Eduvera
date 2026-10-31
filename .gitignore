@@ -5,6 +5,7 @@
 secret.txt
 
 node_modules/
+.pnpm-store/
 frontend/dist/
 backend/dist/
 backend/coverage/
@@ -16,7 +17,12 @@ coverage/
 *.log
 gha-creds-*.json
 .runtime/
+.local/
 tmp/
+
+# Arrowgram editor/build output; keep workspace source only.
+docs/architecture/current-system-atlas/.vite/
+docs/architecture/current-system-atlas/dist/
 
 __pycache__/
 *.py[cod]

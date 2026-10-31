@@ -186,6 +186,22 @@ suite("governance decision authority against isolated PostgreSQL", () => {
     });
   });
 
+  it("requires an explicit fee-instalment rule and honors its exact current owner and source", async () => {
+    await isolatedFixture(async (tx, value) => {
+      const at = new Date("2026-10-16T18:30:00.000Z");
+      await expect(governance.resolveDecisionOwner(tx, value.schoolId, "fee_instalment_decision", at))
+        .rejects.toThrow("No confirmed decision route is effective for fee instalment.");
+      await tx.updateTable("institution_decision_matter_rules").set({ code: "fee_instalment_decision", title: "Fee instalment decision" })
+        .where("id", "=", value.ruleId).execute();
+      await expect(governance.assertDecisionAuthority(tx, value.schoolId, "fee_instalment_decision", value.ownerId, at))
+        .rejects.toThrow("Current Finance identity verification is unavailable.");
+      await tx.updateTable("institution_authority_sources").set({ verification_state: "superseded", verified_by: null, verified_at: null })
+        .where("id", "=", value.sourceId).execute();
+      await expect(governance.resolveDecisionOwner(tx, value.schoolId, "fee_instalment_decision", at))
+        .rejects.toThrow("The fee instalment decision route has missing, unconfirmed or expired authority evidence.");
+    });
+  });
+
   it("uses the institution timezone, includes the end date and honors current revocation", async () => {
     await isolatedFixture(async (tx, value) => {
       await expect(governance.resolveDecisionOwner(

@@ -1,13 +1,14 @@
-import { AlertTriangle, CheckCircle2, Clock3, History as HistoryIcon, LockKeyhole, RotateCcw, Save, Search, ShieldCheck, X } from "lucide-react";
+import { applicationNow } from "../simulation/applicationTime";
+import { AlertTriangle, CheckCircle2, Clock3, History as HistoryIcon, LockKeyhole, RotateCcw, Save, ShieldCheck, X } from "lucide-react";
 import { useMemo, useState } from "react";
 import { OperationsShell } from "../../pages/operations/OperationsShell";
-import { AttendanceStudentRow, type AttendanceStudentRowStatusOption } from "../../pages/operations/AttendanceStudentRow";
+import { AttendanceParticipantRow, type AttendanceParticipantStatusOption } from "../attendance/AttendanceParticipantRow";
+import { AttendanceRegisterView, AttendanceRegisterHeader, AttendanceRegisterProgress, AttendanceRegisterTools, AttendanceRegisterRoster, AttendanceRegisterFooter } from "../attendance/AttendanceRegisterView";
 import { eventIdempotencyKey } from "./api";
 import { formatEventDate } from "./EventPrimitives";
 import { registerLifecycleLabel } from "../attendance/registerLifecycle";
 import type { EventAttendanceHistoryResponse, EventAttendanceStatus, EventRegisterInput, EventRegisterResponse } from "./types";
 import "./campus-events.css";
-import "../../pages/operations/attendance-register.css";
 
 import { TemporalInput } from "../../components/forms/TemporalInput";
 const statusLabels: Record<EventAttendanceStatus, string> = {
@@ -57,6 +58,7 @@ const attendanceDisabledLabels: Record<string, string> = {
 
 export function EventRegisterPage({
   portal,
+  workspace,
   backTo,
   register,
   onSave,
@@ -64,7 +66,8 @@ export function EventRegisterPage({
   onReopen,
   onHistory,
 }: {
-  portal: "teacher" | "principal";
+  portal?: "teacher" | "principal";
+  workspace?: { basePath: string; kind: "manage" | "assigned" };
   backTo?: string;
   register: EventRegisterResponse;
   onSave: (input: EventRegisterInput) => Promise<void>;
@@ -72,7 +75,7 @@ export function EventRegisterPage({
   onReopen: (reason: string) => Promise<void>;
   onHistory: () => Promise<EventAttendanceHistoryResponse>;
 }) {
-  const [now] = useState(() => Date.now());
+  const [now] = useState(() => applicationNow().getTime());
   const policy = register.observation_policy ?? { observation_hours_before: 2, observation_hours_after: 4, revision: 0 };
   const earliestObservation = new Date(register.session.starts_at).getTime() - policy.observation_hours_before * 3_600_000;
   const latestObservation = Math.min(now, new Date(register.session.ends_at).getTime() + policy.observation_hours_after * 3_600_000);
@@ -86,6 +89,7 @@ export function EventRegisterPage({
   const [records, setRecords] = useState<Record<string, RegisterDraftRecord>>(original);
   const [query, setQuery] = useState("");
   const [filter, setFilter] = useState<"all" | "pending" | "exceptions">("all");
+  const [toolsOpen, setToolsOpen] = useState(register.rows.length > 10);
   const [reason, setReason] = useState("");
   const [lockReason, setLockReason] = useState("");
   const [reopenReason, setReopenReason] = useState("");
@@ -96,8 +100,9 @@ export function EventRegisterPage({
   const [historyError, setHistoryError] = useState("");
   const [historyLoading, setHistoryLoading] = useState(false);
   const [lockPanelOpen, setLockPanelOpen] = useState(false);
-  const prefix = portal === "principal" ? "/principal" : "/teacher";
-  const registerBackTo = backTo ?? `${prefix}/events/${register.event.id}`;
+  const legacyPortal = portal ?? "teacher";
+  const prefix = legacyPortal === "principal" ? "/principal" : "/teacher";
+  const registerBackTo = backTo ?? (workspace ? `${workspace.basePath}/${register.event.id}` : `${prefix}/events/${register.event.id}`);
   const changedRows = register.rows.filter((row) => {
     const value = records[row.student_id];
     const prior = original[row.student_id];
@@ -112,7 +117,6 @@ export function EventRegisterPage({
     return matchesSearch && matchesFilter;
   });
   const marked = Object.values(records).filter((record) => record.status !== "not_recorded").length;
-  const attending = Object.values(records).filter((item) => item.status === "present" || item.status === "checked_out").length;
   const exceptions = Object.values(records).filter((item) => ["late", "excused", "no_show"].includes(item.status)).length;
   const missingObservation = changedRows.some((row) => physicalStatuses.has(records[row.student_id]!.status) && !records[row.student_id]!.observed_at);
   const invalidObservation = changedRows.some((row) => {
@@ -180,33 +184,30 @@ export function EventRegisterPage({
   };
 
   return (
-    <OperationsShell portal={portal} active="events" title="Event register" backTo={registerBackTo} contentHasHeading>
-      <div className="campus-event-register-page roll-call-page">
-        <section className="campus-event-register-hero">
-          <div className="campus-event-register-hero__heading">
-            <div><span>{register.event.title}</span><h2>{register.session.title}</h2><p>{formatEventDate(register.session.starts_at)} · {register.session.attendance_mode === "check_in_out" ? "Check-in and check-out" : "Check-in only"}</p></div>
-            <span className={`campus-event-register-state is-${register.session.state}`}>{register.session.state === "locked" ? <LockKeyhole size={15} /> : <Clock3 size={15} />}{registerLifecycleLabel(register.session.state)}</span>
-          </div>
-          <div className="campus-event-register-progress" aria-label={`${marked} of ${register.rows.length} attendance decisions recorded`}>
-            <div><strong>{marked} of {register.rows.length}</strong><span>{marked === register.rows.length ? "All decisions recorded" : `${register.rows.length - marked} still to record`}</span></div>
-            <progress max={register.rows.length || 1} value={marked}>{marked}/{register.rows.length}</progress>
-            <p><span>{attending} attending</span><span>{exceptions} {exceptions === 1 ? "exception" : "exceptions"}</span></p>
-          </div>
-        </section>
+    <OperationsShell portal={workspace ? undefined : legacyPortal} active="events" title="Event register" backTo={registerBackTo}>
+      <div className="campus-event-register-page">
+      <AttendanceRegisterView>
+        <AttendanceRegisterHeader title={register.session.title}
+          state={registerLifecycleLabel(register.session.state)}
+          action={<button type="button" onClick={() => void openHistory()}><HistoryIcon size={16} aria-hidden="true" />History</button>}
+          context={<p>{register.event.title} · {formatEventDate(register.session.starts_at)} · {register.session.attendance_mode === "check_in_out" ? "Check-in and check-out" : "Check-in only"}</p>} />
+        <AttendanceRegisterProgress recorded={marked} total={register.rows.length}>
+          {register.rows.length > 1 && register.rows.length <= 10 ? <button className="attendance-register-action attendance-register-action--text" type="button" aria-expanded={toolsOpen} aria-controls="event-register-tools" onClick={() => { setToolsOpen(!toolsOpen); if (toolsOpen) { setQuery(""); setFilter("all"); } }}>Find & filter</button> : null}
+          <button className="attendance-register-action attendance-register-action--text" type="button" disabled={register.session.state === "locked" || !register.permissions.can_take_attendance || readyRows.length === 0} onClick={markReadyPresent}><CheckCircle2 size={16} aria-hidden="true" />{readyRows.length < register.rows.length ? "Mark ready present" : marked && marked < register.rows.length ? "Mark remaining present" : "Mark all present"}</button>
+        </AttendanceRegisterProgress>
+        {toolsOpen ? <AttendanceRegisterTools id="event-register-tools">
+          <label><span className="sr-only">Search student or admission number</span><input autoFocus={register.rows.length <= 10} type="search" value={query} onChange={event => setQuery(event.target.value)} placeholder="Find a participant" /></label>
+          <select aria-label="Filter participants" value={filter} onChange={event => setFilter(event.target.value as typeof filter)}>{(["all", "pending", "exceptions"] as const).map(item => <option value={item} key={item}>{item === "all" ? "All" : item === "pending" ? "Not recorded" : "Exceptions"} · {item === "all" ? register.rows.length : item === "pending" ? Object.values(records).filter(entry => entry.status === "not_recorded").length : exceptions}</option>)}</select>
+        </AttendanceRegisterTools> : null}
 
         {!liveObservation ? <section className="campus-event-register-lock-panel"><h2>Record past attendance</h2><p>Choose when attendance was observed for this session. This time applies to new marks and unsaved attendance below.</p><label>Observed time<TemporalInput type="datetime-local" min={localDateTime(earliestObservation)} max={localDateTime(latestObservation)} value={batchObservedAt} onChange={(event) => {
           const observed_at = event.target.value;
           setBatchObservedAt(observed_at);
           setRecords((current) => Object.fromEntries(Object.entries(current).map(([id, value]) => [id, physicalStatuses.has(value.status) && changedRows.some((row) => row.student_id === id) ? { ...value, observed_at } : value])));
         }} /></label></section> : null}
-        <section className="roll-call-register campus-event-register-workspace" aria-labelledby="event-participants-heading">
-          <header className="roll-call-toolbar">
-            <div className="roll-call-toolbar__title"><div><h2 id="event-participants-heading">Participants</h2><p>{register.rows.length} in this register</p></div><div className="roll-call-toolbar__actions"><button className="campus-event-history-action" type="button" onClick={() => void openHistory()}><HistoryIcon size={16} />History</button><button className="roll-call-mark-all" type="button" disabled={register.session.state === "locked" || !register.permissions.can_take_attendance || readyRows.length === 0} onClick={markReadyPresent}><CheckCircle2 size={16} />{readyRows.length < register.rows.length ? "Mark ready present" : marked && marked < register.rows.length ? "Mark remaining present" : "Mark all present"}</button></div></div>
-            <label className="roll-call-search"><Search size={17} /><input aria-label="Search student or admission number" type="search" value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Search name or admission number" /></label>
-            <div className="roll-call-filters" role="group" aria-label="Filter participants">{(["all", "pending", "exceptions"] as const).map((item) => { const count = item === "all" ? register.rows.length : item === "pending" ? Object.values(records).filter((entry) => entry.status === "not_recorded").length : exceptions; return <button type="button" aria-pressed={filter === item} key={item} onClick={() => setFilter(item)}>{item === "all" ? "All" : item === "pending" ? "Not recorded" : "Exceptions"}<span>{count}</span></button>; })}</div>
-          </header>
+        <section aria-label="Participants">
           {readyRows.length < register.rows.length ? <p className="campus-event-readiness-summary"><ShieldCheck size={16} />{register.rows.length - readyRows.length} {register.rows.length - readyRows.length === 1 ? "student needs" : "students need"} individual review before bulk marking.</p> : null}
-          <div className="roll-call-roster campus-event-register-list">{visibleRows.map((row) => {
+          <AttendanceRegisterRoster>{visibleRows.map((row) => {
             const value = records[row.student_id]!;
             const prior = original[row.student_id]!;
             const isPersistedChange = row.record_revision > 0 && (value.status !== prior.status || value.note.trim() !== prior.note.trim() || value.observed_at !== prior.observed_at);
@@ -216,8 +217,8 @@ export function EventRegisterPage({
               if (status === "no_show") return row.participation_ready && (row.participation_requirement === "mandatory" || row.rsvp_status === "accepted") && now >= new Date(register.session.ends_at).getTime();
               return true;
             });
-            const statusOptions: AttendanceStudentRowStatusOption<EventAttendanceStatus>[] = statuses.map((status) => ({ value: status, label: statusLabels[status] + (status === "not_recorded" && row.record_revision > 0 ? " (clear decision)" : "") }));
-            const quickStatuses: AttendanceStudentRowStatusOption<EventAttendanceStatus>[] = [{ value: "present", label: "Present", tone: "positive" }, ...(statuses.includes("no_show") ? [{ value: "no_show" as const, label: "No-show", tone: "negative" as const }] : [])];
+            const statusOptions: AttendanceParticipantStatusOption<EventAttendanceStatus>[] = statuses.map((status) => ({ value: status, label: statusLabels[status] + (status === "not_recorded" && row.record_revision > 0 ? " (clear decision)" : "") }));
+            const quickStatuses: AttendanceParticipantStatusOption<EventAttendanceStatus>[] = [{ value: "present", label: "Present", tone: "positive" }, ...(statuses.includes("no_show") ? [{ value: "no_show" as const, label: "No-show", tone: "negative" as const }] : [])];
             const updateRow = (change: { status?: EventAttendanceStatus | null; remarks?: string }) => {
               const status = change.status ?? value.status;
               const observed_at = change.status === undefined
@@ -230,9 +231,9 @@ export function EventRegisterPage({
               setRecords({ ...records, [row.student_id]: { ...value, status, note: change.remarks ?? value.note, observed_at, readiness_contradiction_note: physicalStatuses.has(status) ? value.readiness_contradiction_note : "" } });
             };
             return (
-              <AttendanceStudentRow<EventAttendanceStatus>
+              <AttendanceParticipantRow<EventAttendanceStatus>
                 key={row.student_id}
-                student={{ id: row.student_id, name: row.student_name, admission_number: row.admission_number, avatar_url: row.avatar_url }}
+                participant={{ id: row.student_id, name: row.student_name, identifier: row.admission_number, avatar_url: row.avatar_url }}
                 status={value.status}
                 remarks={value.note}
                 disabled={register.session.state === "locked" || !register.permissions.can_take_attendance}
@@ -248,9 +249,9 @@ export function EventRegisterPage({
               >
                 {physicalStatuses.has(value.status) ? <label className="campus-event-register-observed"><span>Observed at</span><TemporalInput required min={localDateTime(earliestObservation)} max={localDateTime(latestObservation)} aria-label={`Observed at for ${row.student_name}`} type="datetime-local" disabled={register.session.state === "locked" || !register.permissions.can_take_attendance} value={value.observed_at} onChange={(event) => setRecords({ ...records, [row.student_id]: { ...value, observed_at: event.target.value } })} /></label> : null}
                 {!row.participation_ready && physicalStatuses.has(value.status) ? <label className="campus-event-register-contradiction"><span>Observed attendance explanation</span><input required minLength={3} aria-label={`Observed attendance explanation for ${row.student_name}`} disabled={register.session.state === "locked" || !register.permissions.can_take_attendance} value={value.readiness_contradiction_note} onChange={(event) => setRecords({ ...records, [row.student_id]: { ...value, readiness_contradiction_note: event.target.value } })} placeholder="Explain the verified physical observation" /><small>Physical presence may be recorded, but No-show is unavailable while participation is not ready.</small></label> : null}
-              </AttendanceStudentRow>
+              </AttendanceParticipantRow>
             );
-          })}{visibleRows.length === 0 ? <p className="campus-event-inline-empty">No participants match this filter.</p> : null}</div>
+          })}{visibleRows.length === 0 ? <p className="campus-event-inline-empty">No participants match this filter.</p> : null}</AttendanceRegisterRoster>
         </section>
 
         {missingObservation ? <p className="campus-event-form-error" role="alert">Add the observed time for every physical attendance decision.</p> : null}
@@ -259,18 +260,14 @@ export function EventRegisterPage({
         {correctionRequired ? <section className="campus-event-correction"><RotateCcw size={18} /><div><label>Correction reason<textarea rows={2} required value={reason} onChange={(event) => setReason(event.target.value)} placeholder="Why are persisted attendance decisions changing?" /></label><p>This reason becomes part of the immutable register history.</p></div></section> : null}
         {message ? <p className={`campus-event-action-message is-${state}`} role="status">{message}</p> : null}
         {register.session.state === "open" && lockPanelOpen ? <section id="event-register-lock-panel" className="campus-event-register-lock-panel" aria-labelledby="event-register-lock-heading"><div><LockKeyhole size={18} /><span><h2 id="event-register-lock-heading">Finalize register</h2><p>Finalize after every decision is complete. A principal can reopen it for a correction.</p></span></div><label><span>Reason</span><input autoFocus value={lockReason} onChange={(event) => setLockReason(event.target.value)} placeholder="Why is this register complete?" /></label><div><button className="campus-event-secondary" type="button" onClick={() => setLockPanelOpen(false)}>Cancel</button><button className="campus-event-primary" type="button" disabled={!register.permissions.can_lock || changedRows.length > 0 || state === "locking" || lockReason.trim().length < 3} onClick={() => void lock()}><LockKeyhole size={16} />{state === "locking" ? "Finalizing..." : "Confirm final"}</button></div></section> : null}
-        <footer className="roll-call-submit-bar campus-event-submit-bar">
-          <div className="roll-call-submit-bar__inner">
-            <div className="roll-call-progress">
-              <span>{changedRows.length ? `${changedRows.length} unsaved ${changedRows.length === 1 ? "change" : "changes"}` : marked === register.rows.length ? "Register complete" : `${marked} of ${register.rows.length} recorded`}</span>
-              <progress aria-label="Participants recorded" max={register.rows.length || 1} value={marked}>{marked}/{register.rows.length}</progress>
-            </div>
-            {register.session.state === "open" ? changedRows.length ? <button type="button" disabled={missingObservation || invalidObservation || missingReadinessExplanation || state === "saving" || (correctionRequired && reason.trim().length < 3)} onClick={() => void save()}><Save size={16} />{state === "saving" ? "Saving..." : correctionRequired ? "Save correction" : "Save draft"}</button> : register.permissions.can_lock ? <button className="campus-event-submit-secondary" type="button" aria-expanded={lockPanelOpen} aria-controls="event-register-lock-panel" onClick={() => setLockPanelOpen((open) => !open)}><LockKeyhole size={16} />Finalize register</button> : null : register.permissions.can_reopen ? <div className="campus-event-reopen"><input aria-label="Reason to reopen register" value={reopenReason} onChange={(event) => setReopenReason(event.target.value)} placeholder="Reason to reopen" /><button className="campus-event-secondary" type="button" disabled={reopenReason.trim().length < 3 || state === "reopening"} onClick={() => void reopen()}><RotateCcw size={16} />Reopen for correction</button></div> : <span className="campus-event-locked-note"><ShieldCheck size={15} />Final register</span>}
-          </div>
-        </footer>
+        {register.session.state !== "open" && register.permissions.can_reopen ? <div className="campus-event-register-lock-panel"><label>Reason to reopen register<input value={reopenReason} onChange={event => setReopenReason(event.target.value)} placeholder="Reason to reopen" /></label></div> : null}
+        <AttendanceRegisterFooter status={changedRows.length ? `${changedRows.length} unsaved ${changedRows.length === 1 ? "change" : "changes"}` : marked === register.rows.length ? "Register complete" : "Saved"}>
+          {register.session.state === "open" ? changedRows.length ? <button className="attendance-register-action attendance-register-action--primary" type="button" disabled={missingObservation || invalidObservation || missingReadinessExplanation || state === "saving" || (correctionRequired && reason.trim().length < 3)} onClick={() => void save()}><Save size={16} aria-hidden="true" />{state === "saving" ? "Saving..." : correctionRequired ? "Save correction" : "Save draft"}</button> : register.permissions.can_lock ? <button className="attendance-register-action" type="button" aria-expanded={lockPanelOpen} aria-controls="event-register-lock-panel" onClick={() => setLockPanelOpen(open => !open)}><LockKeyhole size={16} aria-hidden="true" />Finalize register</button> : null : register.permissions.can_reopen ? <button className="attendance-register-action" type="button" disabled={reopenReason.trim().length < 3 || state === "reopening"} onClick={() => void reopen()}><RotateCcw size={16} aria-hidden="true" />Reopen for correction</button> : <span className="campus-event-locked-note"><ShieldCheck size={15} />Final register</span>}
+        </AttendanceRegisterFooter>
         {!register.permissions.can_take_attendance && register.session.state === "open" ? <p className="campus-event-policy-note"><Clock3 size={15} />{register.permissions.attendance_disabled_reason ? attendanceDisabledLabels[register.permissions.attendance_disabled_reason] ?? "Attendance controls are not available for this session." : "Attendance controls are not available for this session yet."}</p> : null}
         {register.session.state === "open" && !register.permissions.can_lock && register.permissions.lock_disabled_reason ? <p className="campus-event-policy-note"><LockKeyhole size={15} />{attendanceDisabledLabels[register.permissions.lock_disabled_reason] ?? "This register is not ready to finalize."}</p> : null}
         <p className="campus-event-policy-note"><ShieldCheck size={15} /><span><b>Event register only.</b> “Not recorded” means no decision yet; academic attendance is unchanged.</span></p>
+      </AttendanceRegisterView>
       </div>
       {historyOpen ? <EventRegisterHistorySheet history={history} loading={historyLoading} error={historyError} onClose={() => setHistoryOpen(false)} onRetry={() => void openHistory()} /> : null}
     </OperationsShell>

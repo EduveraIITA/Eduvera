@@ -1,3 +1,4 @@
+import { applicationNow } from "../simulation/applicationTime";
 import {
   CalendarDays,
   Check,
@@ -13,6 +14,7 @@ import { useEffect, useState, type ReactNode } from "react";
 import { ParentShell } from "../../pages/parent/ParentShell";
 import type { ParentChildSummary, ParentPageAction } from "../../pages/parent/parentTypes";
 import { StudentShell } from "../../pages/student/StudentShell";
+import { OperationsShell } from "../../pages/operations/OperationsShell";
 import {
   CampusEventCard,
   EventEmptyState,
@@ -21,10 +23,18 @@ import {
   formatEventDate,
 } from "./EventPrimitives";
 import { FamilyEventFinancePanel } from "./EventFinancePanels";
+import { eventRelationshipParams } from "./eventNavigation";
 import type { CampusEventDto, ConsentStatus, EventFinanceParticipant, RsvpStatus } from "./types";
 import "./campus-events.css";
 
 export type FamilyEventActionFocus = "status" | "rsvp" | "consent" | "payment" | "checklist";
+
+export interface RelationshipEventWorkspace {
+  basePath: string;
+  relationship: "self" | "dependent";
+  studentId: string;
+  relationshipLabel?: string | null;
+}
 
 export function readFamilyEventActionFocus(value: string | null): FamilyEventActionFocus | undefined {
   return value === "status" || value === "rsvp" || value === "consent" || value === "payment" || value === "checklist"
@@ -37,14 +47,22 @@ function FamilyFrame({
   child,
   onSelectChild,
   backTo,
+  workspace,
   children,
 }: {
   audience: "parent" | "student";
   child?: ParentChildSummary;
   onSelectChild?: (id: string) => ParentPageAction;
   backTo?: string;
+  workspace?: RelationshipEventWorkspace;
   children: ReactNode;
 }) {
+  if (workspace) {
+    return <OperationsShell active="areas" title="Events & activities" backTo={backTo}>
+      {workspace.relationshipLabel ? <p className="event-workspace-scope">{workspace.relationshipLabel}</p> : null}
+      {children}
+    </OperationsShell>;
+  }
   return audience === "parent" ? (
     <ParentShell active="events" pageLabel="Events" child={child} onSelectChild={onSelectChild} backTo={backTo}>
       {children}
@@ -64,6 +82,7 @@ export function FamilyEventListPage({
   onLoadMore,
   child,
   onSelectChild,
+  workspace,
 }: {
   audience: "parent" | "student";
   events: CampusEventDto[];
@@ -74,6 +93,7 @@ export function FamilyEventListPage({
   onLoadMore?: () => void;
   child?: ParentChildSummary;
   onSelectChild?: (id: string) => ParentPageAction;
+  workspace?: RelationshipEventWorkspace;
 }) {
   const [localView, setLocalView] = useState<"upcoming" | "past">("upcoming");
   const view = controlledView ?? localView;
@@ -81,13 +101,14 @@ export function FamilyEventListPage({
     if (onViewChange) onViewChange(next);
     else setLocalView(next);
   };
-  const [now] = useState(() => Date.now());
+  const [now] = useState(() => applicationNow().getTime());
   const visible = events.filter((event) =>
     view === "upcoming"
       ? event.status === "published" && new Date(event.ends_at).getTime() >= now
       : event.status === "completed" || event.status === "cancelled" || new Date(event.ends_at).getTime() < now,
   );
   const prefix = audience === "parent" ? "/parent" : "/student";
+  const basePath = workspace?.basePath ?? `${prefix}/events`;
   const actionCount = events.filter((event) =>
     event.status === "published"
     && new Date(event.starts_at).getTime() > now
@@ -99,7 +120,7 @@ export function FamilyEventListPage({
   ).length;
 
   return (
-    <FamilyFrame audience={audience} child={child} onSelectChild={onSelectChild}>
+    <FamilyFrame audience={audience} child={child} onSelectChild={onSelectChild} workspace={workspace}>
       <div className="family-events-page">
         {actionCount > 0 ? <p className="workspace-context">{actionCount} {actionCount === 1 ? "event needs" : "events need"} your response</p> : null}
         <div className="family-event-tabs" role="tablist" aria-label="Filter events">
@@ -112,10 +133,12 @@ export function FamilyEventListPage({
               <CampusEventCard
                 key={event.id}
                 event={event}
-                to={`${prefix}/events/${event.id}?${new URLSearchParams({
-                  ...(child ? { student_id: child.id } : {}),
-                  ...(view === "past" ? { view } : {}),
-                })}`.replace(/\?$/, "")}
+                to={`${basePath}/${event.id}?${workspace
+                  ? eventRelationshipParams(view === "past" ? "view=past" : "", workspace.relationship, workspace.studentId)
+                  : new URLSearchParams({
+                    ...(child ? { student_id: child.id } : {}),
+                    ...(view === "past" ? { view } : {}),
+                  })}`.replace(/\?$/, "")}
               />
             ))}
           </div>
@@ -145,6 +168,7 @@ interface FamilyEventDetailProps {
   onWithdraw: (reason: string, idempotencyKey: string) => Promise<void>;
   onConsent: (status: Extract<ConsentStatus, "granted" | "denied" | "withdrawn">, note: string) => Promise<void>;
   onChecklist: (itemId: string, completed: boolean) => Promise<void>;
+  workspace?: RelationshipEventWorkspace;
 }
 
 export function FamilyEventDetailPage({
@@ -161,14 +185,16 @@ export function FamilyEventDetailPage({
   onWithdraw,
   onConsent,
   onChecklist,
+  workspace,
 }: FamilyEventDetailProps) {
   const [pending, setPending] = useState<string | null>(null);
   const [message, setMessage] = useState("");
   const [messageTone, setMessageTone] = useState<"success" | "error">("success");
-  const [now] = useState(() => Date.now());
+  const [now] = useState(() => applicationNow().getTime());
   const participant = event.viewer_participants.find((item) => item.student_id === selectedStudentId) ?? event.viewer_participants[0];
   const prefix = audience === "parent" ? "/parent" : "/student";
-  const PageHeading = audience === "parent" ? "h2" : "h1";
+  const basePath = workspace?.basePath ?? `${prefix}/events`;
+  const PageHeading = audience === "parent" || workspace ? "h2" : "h1";
   const completedIds = new Set(participant?.checklist_completed_item_ids ?? []);
   const responseWindowOpen = event.status === "published" && new Date(event.starts_at).getTime() > now;
   const withdrawn = finance?.participation_state === "withdrawn";
@@ -197,10 +223,12 @@ export function FamilyEventDetailPage({
   };
 
   return (
-    <FamilyFrame audience={audience} child={child} onSelectChild={onSelectChild} backTo={`${prefix}/events${(() => {
-      const listParams = new URLSearchParams();
-      if (child) listParams.set("student_id", child.id);
-      if (listView === "past") listParams.set("view", "past");
+    <FamilyFrame audience={audience} child={child} onSelectChild={onSelectChild} workspace={workspace} backTo={`${basePath}${(() => {
+      const listParams = workspace
+        ? eventRelationshipParams(listView === "past" ? "view=past" : "", workspace.relationship, workspace.studentId)
+        : new URLSearchParams();
+      if (!workspace && child) listParams.set("student_id", child.id);
+      if (!workspace && listView === "past") listParams.set("view", "past");
       return listParams.size ? `?${listParams}` : "";
     })()}`}>
       <div className="family-event-detail">

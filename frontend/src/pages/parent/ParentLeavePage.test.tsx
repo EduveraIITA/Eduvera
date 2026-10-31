@@ -16,6 +16,18 @@ function HistoryProbe() {
 }
 
 describe("ParentLeavePage", () => {
+  it("renders the full leave workflow without a nested parent persona shell", () => {
+    const { container } = render(
+      <TestQueryProvider><MemoryRouter initialEntries={["/areas/attendance/leave?scope=dependent&student_id=student-1"]}>
+        <ParentLeavePage embedded data={fallbackLeaveData} />
+      </MemoryRouter></TestQueryProvider>,
+    );
+
+    expect(container.querySelector(".parent-app--embedded")).toBeInTheDocument();
+    expect(screen.getByRole("tab", { name: /Pending/ })).toBeVisible();
+    expect(screen.queryByRole("navigation", { name: /parent/i })).not.toBeInTheDocument();
+  });
+
   it("requires consent and exposes an accessible pending-to-authorized flow", async () => {
     const user = userEvent.setup();
     let finishAuthorization!: () => void;

@@ -11,7 +11,7 @@ import "./principal-student-leave.css";
 
 const queueKey = ["school", "principal", "student-leave", "queue"] as const;
 
-export default function PrincipalStudentLeavePage() {
+export function WorkspaceStudentLeaveReviewRoute() {
   const auth = useAuth();
   const queryClient = useQueryClient();
   const [params] = useSearchParams();
@@ -83,13 +83,14 @@ export default function PrincipalStudentLeavePage() {
 
   return (
     <OperationsShell
-      portal="principal"
-      active="more"
-      title="Student leave"
+      active="areas"
+      title="Learner leave review"
       schoolName={membership?.school_name}
-      backTo="/principal/requests"
+      backTo="/areas/attendance"
     >
       {content}
     </OperationsShell>
   );
 }
+
+export default WorkspaceStudentLeaveReviewRoute;

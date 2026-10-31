@@ -43,7 +43,7 @@ function useCalendarState() {
   const today = schoolDateToday();
   const selected = params.get("date") ?? today;
   const ym = parseYm(selected);
-  const mode: CalendarMode = params.get("view") === "day" ? "day" : "month";
+  const mode: CalendarMode = params.get("view") === "month" ? "month" : "day";
   const select = (iso: string) => { const next = new URLSearchParams(params); next.set("date", iso); clearCalendarAttention(next); setParams(next, { replace: true }); };
   return {
     year: ym[0], month0: ym[1], selected, select,
@@ -126,6 +126,15 @@ export interface CalendarAttentionTarget {
   changeKind?: "created" | "removed";
   changeRevision?: number;
   recordRevision?: number;
+}
+
+export interface CalendarRoutePresentationProps {
+  /**
+   * `workspace` renders only the domain body so the responsibility-composed
+   * application owns the single shared shell. The default remains available
+   * temporarily for focused legacy-component tests while bookmarks migrate.
+   */
+  presentation?: "legacy" | "workspace";
 }
 
 export function calendarAttentionResolution(days: ApiSchoolCalendarDay[], target: CalendarAttentionTarget): "none" | "exact" | "stale" {
@@ -220,8 +229,18 @@ export function CalendarHolidayRow({ days, selected, focusChangeId, resolved = t
   </>;
 }
 
-function CalendarEventRows({ events, selected, portal, studentId, pending, error, retry }: {
-  events: CampusEventDto[]; selected: string; portal: "parent" | "student" | "teacher" | "principal"; studentId?: string;
+type CalendarEventSurface = "dependent" | "self" | "assigned" | "manage";
+
+function calendarEventHref(surface: CalendarEventSurface, eventId: string, studentId?: string) {
+  if (surface === "assigned" || surface === "manage") {
+    return `/areas/events/${surface}/${encodeURIComponent(eventId)}`;
+  }
+  if (!studentId) return "/areas/events";
+  return `/areas/events/calendar/${encodeURIComponent(eventId)}?scope=${surface}&student_id=${encodeURIComponent(studentId)}`;
+}
+
+function CalendarEventRows({ events, selected, surface, studentId, pending, error, retry }: {
+  events: CampusEventDto[]; selected: string; surface: CalendarEventSurface; studentId?: string;
   pending: boolean; error: boolean; retry: () => unknown;
 }) {
   if (pending) return <Loading>Loading events…</Loading>;
@@ -230,8 +249,7 @@ function CalendarEventRows({ events, selected, portal, studentId, pending, error
   if (!dayEvents.length) return null;
   return <><h4 className="cal-section-title">Events</h4><div className="cal-list">{dayEvents.map((event) => {
     const time = new Intl.DateTimeFormat("en-IN", { hour: "numeric", minute: "2-digit", timeZone: "Asia/Kolkata" }).format(new Date(event.starts_at));
-    const suffix = studentId ? `?student_id=${encodeURIComponent(studentId)}` : "";
-    return <Link className="cal-row" key={event.id} to={`/${portal}/events/${event.id}${suffix}`}>
+    return <Link className="cal-row" key={event.id} to={calendarEventHref(surface, event.id, studentId)}>
       <span className={`cal-event-icon cal-event-icon--${eventTone(event)}`}><CalendarDays size={18} /></span>
       <span className="cal-row__body"><strong>{event.title}</strong><small>{time}{event.venue ? ` · ${event.venue}` : ""}</small></span>
       <ArrowRight size={16} aria-hidden="true" />
@@ -261,7 +279,7 @@ function ScheduleStatus({schedule}:{schedule:ReturnType<typeof useCalendarSchedu
 const dayOf = (days: Array<{ weekday: number; periods: ApiTimetableSlot[] }> | undefined, iso: string) => days?.find((d) => d.weekday === isoWeekday(iso))?.periods ?? [];
 
 /* ---------- Parent ---------- */
-export function ParentCalendarRoute() {
+export function ParentCalendarRoute({ presentation = "legacy" }: CalendarRoutePresentationProps = {}) {
   const cal = useCalendarState();
   const events = useRoleCalendarEvents("guardian", cal.year, cal.month0, cal.studentId);
   const calendarDays = useRoleCalendarDays("guardian", cal.year, cal.month0);
@@ -278,8 +296,7 @@ export function ParentCalendarRoute() {
   const holiday = holidayOn(calendarDays.data?.results ?? [], cal.selected);
   const child = attendance.data ? adaptStudentSummary(attendance.data.student) : undefined;
   const name = child?.name.split(" ")[0] ?? "your child";
-  return (
-    <ParentShell active="more" pageLabel="Calendar" child={child} onSelectChild={cal.selectStudent}>
+  const content = <>
       <CalendarAttentionGate target={calendarAttentionTarget(cal)} days={calendarDays.data?.results ?? []} loaded={calendarDays.isSuccess && attendance.isSuccess} />
       <ScheduleStatus schedule={schedule}/>
       <CalendarView {...cal} onSelect={cal.select} marks={merge(marks,assessments.marks)} isSchoolDay={isSchoolDay} subtitle={child ? `${child.name} · ${attendance.data?.term.name}` : undefined}
@@ -289,19 +306,24 @@ export function ParentCalendarRoute() {
             <DetailHead iso={cal.selected} sub={holiday ? "School closed" : record?.check_in_at ? `Checked in ${new Date(record.check_in_at).toLocaleTimeString("en-IN", { hour: "2-digit", minute: "2-digit" })}` : undefined}
               pill={record ? <Pill tone={record.status === "late" || record.status === "half_day" ? "late" : record.status}>{record.status.replace("_", " ")}</Pill> : onLeave ? <Pill tone="leave">On leave</Pill> : cal.selected <= schoolDateToday() && isSchoolDay({ iso: cal.selected, day: 0, weekday: isoWeekday(cal.selected), inMonth: true, isToday: false }) ? <Pill tone="neutral">Not recorded</Pill> : null} />
             <CalendarHolidayRow days={calendarDays.data?.results ?? []} selected={cal.selected} focusChangeId={calendarFocusChangeId(cal, calendarDays.data?.results ?? [])} resolved={calendarDays.isSuccess} />
-            <CalendarEventRows events={events.data?.items ?? []} selected={cal.selected} portal="parent" studentId={cal.studentId} pending={events.isPending} error={events.isError} retry={events.refetch} />
+            <CalendarEventRows events={events.data?.items ?? []} selected={cal.selected} surface="dependent" studentId={cal.studentId ?? attendance.data?.student.id} pending={events.isPending} error={events.isError} retry={events.refetch} />
             <AssessmentCalendarRows calendar={assessments} date={cal.selected}/>
-            {onLeave ? <div className="cal-row"><span><strong>Leave</strong><small>{onLeave.status_label}</small></span><span className="cal-row__body"><strong>{onLeave.category_label}</strong><small>{onLeave.reason}</small></span><Link className="cal-action" to={`/parent/leave${cal.studentId ? `?student_id=${cal.studentId}` : ""}`}><ArrowRight size={14} /></Link></div> : null}
+            {onLeave ? <div className="cal-row"><span><strong>Leave</strong><small>{onLeave.status_label}</small></span><span className="cal-row__body"><strong>{onLeave.category_label}</strong><small>{onLeave.reason}</small></span><Link className="cal-action" to={`/areas/responsibilities/leave?scope=dependent&student_id=${encodeURIComponent(cal.studentId ?? attendance.data?.student.id ?? "")}`}><ArrowRight size={14} /></Link></div> : null}
             {!holiday ? timetable.isPending ? <Loading>Loading {name}'s periods…</Loading> : <PeriodRows slots={dayOf(timetable.data?.days, cal.selected)} empty={`No periods for ${name} on this day.`} /> : null}
-            <div className="cal-actions"><Link className="cal-action" to={`/parent/timetable?date=${cal.selected}${cal.studentId ? `&student_id=${cal.studentId}` : ""}`}>Full timetable <ArrowRight size={14} /></Link><Link className="cal-action" to={`/parent/attendance${cal.studentId ? `?student_id=${cal.studentId}` : ""}`}>Attendance <ArrowRight size={14} /></Link></div>
+            <div className="cal-actions"><Link className="cal-action" to={`/areas/timetable/schedule?scope=dependent&student_id=${encodeURIComponent(cal.studentId ?? attendance.data?.student.id ?? "")}&date=${cal.selected}`}>Full timetable <ArrowRight size={14} /></Link><Link className="cal-action" to={`/areas/attendance/records?scope=dependent&student_id=${encodeURIComponent(cal.studentId ?? attendance.data?.student.id ?? "")}`}>Attendance <ArrowRight size={14} /></Link></div>
           </div>
         } />
+  </>;
+  if (presentation === "workspace") return content;
+  return (
+    <ParentShell active="more" pageLabel="Calendar" child={child} onSelectChild={cal.selectStudent}>
+      {content}
     </ParentShell>
   );
 }
 
 /* ---------- Student ---------- */
-export function StudentCalendarRoute() {
+export function StudentCalendarRoute({ presentation = "legacy" }: CalendarRoutePresentationProps = {}) {
   const cal = useCalendarState();
   const events = useRoleCalendarEvents("student", cal.year, cal.month0);
   const calendarDays = useRoleCalendarDays("student", cal.year, cal.month0);
@@ -318,8 +340,8 @@ export function StudentCalendarRoute() {
   const onLeave = leaveOn(requests, cal.selected);
   const record = records.get(cal.selected);
   const holiday = holidayOn(calendarDays.data?.results ?? [], cal.selected);
-  return (
-    <StudentShell activeNav="launcher" variant="platform">
+  const content = <>
+      <CalendarAttentionGate target={calendarAttentionTarget(cal)} days={calendarDays.data?.results ?? []} loaded={calendarDays.isSuccess && attendance.isSuccess} />
       <ScheduleStatus schedule={schedule}/>
       <CalendarView {...cal} onSelect={cal.select} marks={merge(marks,assessments.marks)} isSchoolDay={isSchoolDay} subtitle={timetable.data ? `${timetable.data.class_name} · ${timetable.data.student.current_enrollment.term.name}` : undefined}
         legend={[{ tone: "holiday", label: "Holiday" }, { tone: "event", label: "Event" }, { tone: "test", label: "Test" }, { tone: "present", label: "Present" }, { tone: "late", label: "Late" }, { tone: "absent", label: "Absent" }, { tone: "leave", label: "Leave" }]}
@@ -327,13 +349,18 @@ export function StudentCalendarRoute() {
           <div className="cal-detail">
             <DetailHead iso={cal.selected} sub={holiday ? "School closed" : timetable.data ? `${dayOf(timetable.data.days, cal.selected).length} periods` : undefined} pill={record ? <Pill tone={record.status === "late" || record.status === "half_day" ? "late" : record.status}>{record.status.replace("_", " ")}</Pill> : onLeave ? <Pill tone="leave">{onLeave.status_label}</Pill> : null} />
             <CalendarHolidayRow days={calendarDays.data?.results ?? []} selected={cal.selected} focusChangeId={calendarFocusChangeId(cal, calendarDays.data?.results ?? [])} resolved={calendarDays.isSuccess} />
-            <CalendarEventRows events={events.data?.items ?? []} selected={cal.selected} portal="student" pending={events.isPending} error={events.isError} retry={events.refetch} />
+            <CalendarEventRows events={events.data?.items ?? []} selected={cal.selected} surface="self" studentId={timetable.data?.student.id} pending={events.isPending} error={events.isError} retry={events.refetch} />
             <AssessmentCalendarRows calendar={assessments} date={cal.selected}/>
-            {onLeave ? <div className="cal-row"><span><strong>Leave</strong><small>{onLeave.duration_days} day{onLeave.duration_days === 1 ? "" : "s"}</small></span><span className="cal-row__body"><strong>{onLeave.category_label}</strong><small>{onLeave.reason}</small></span><Link className="cal-action" to="/student/leave"><ArrowRight size={14} /></Link></div> : null}
+            {onLeave ? <div className="cal-row"><span><strong>Leave</strong><small>{onLeave.duration_days} day{onLeave.duration_days === 1 ? "" : "s"}</small></span><span className="cal-row__body"><strong>{onLeave.category_label}</strong><small>{onLeave.reason}</small></span><Link className="cal-action" to={`/areas/responsibilities/leave?scope=self&student_id=${encodeURIComponent(timetable.data?.student.id ?? "")}`}><ArrowRight size={14} /></Link></div> : null}
             {!holiday ? timetable.isPending ? <Loading>Loading your periods…</Loading> : <PeriodRows slots={dayOf(timetable.data?.days, cal.selected)} empty="No periods on this day." /> : null}
-            <div className="cal-actions"><Link className="cal-action" to={`/student/timetable?date=${cal.selected}`}>Full timetable <ArrowRight size={14} /></Link><Link className="cal-action" to="/student/leave/new">Apply for leave <ArrowRight size={14} /></Link></div>
+            <div className="cal-actions"><Link className="cal-action" to={`/areas/timetable/schedule?scope=self&student_id=${encodeURIComponent(timetable.data?.student.id ?? "")}&date=${cal.selected}`}>Full timetable <ArrowRight size={14} /></Link><Link className="cal-action" to={`/areas/responsibilities/leave?scope=self&student_id=${encodeURIComponent(timetable.data?.student.id ?? "")}&create=1`}>Apply for leave <ArrowRight size={14} /></Link></div>
           </div>
         } />
+  </>;
+  if (presentation === "workspace") return content;
+  return (
+    <StudentShell activeNav="launcher" variant="platform">
+      {content}
     </StudentShell>
   );
 }
@@ -342,7 +369,7 @@ export function StudentCalendarRoute() {
 const statusTone = (s: string): MarkTone | "brand" | "neutral" => s === "submitted" || s === "locked" ? "present" : s === "in_progress" ? "late" : "neutral";
 const statusLabel = (s: string) => s === "submitted" ? "Submitted" : s === "locked" ? "Locked" : s === "in_progress" ? "In progress" : "Not started";
 
-export function TeacherCalendarRoute() {
+export function TeacherCalendarRoute({ presentation = "legacy" }: CalendarRoutePresentationProps = {}) {
   const cal = useCalendarState();
   const assessments=useAssessmentCalendar('staff',cal.year,cal.month0);
   const schedule=useCalendarSchedule('staff',cal.year,cal.month0);
@@ -352,8 +379,7 @@ export function TeacherCalendarRoute() {
   const isSchoolDay = schoolDayPolicy(schedule.isSchoolDay, calendarDays.data?.results ?? []);
   const periods = (home.data?.weekly_timetable ?? []).filter((s) => s.weekday === isoWeekday(cal.selected)).sort((a, b) => a.period_number - b.period_number);
   const holiday = holidayOn(calendarDays.data?.results ?? [], cal.selected);
-  return (
-    <OperationsShell portal="teacher" active="more" title="Calendar" subtitle={home.data ? `${home.data.teacher.name} - Teaching calendar` : "Teaching calendar"}>
+  const content = <>
       <CalendarAttentionGate target={calendarAttentionTarget(cal)} days={calendarDays.data?.results ?? []} loaded={calendarDays.isSuccess && home.isSuccess} />
       <ScheduleStatus schedule={schedule}/>
       <CalendarView {...cal} onSelect={cal.select} marks={merge(eventMarks(events.data?.items ?? []), holidayMarks(calendarDays.data?.results ?? []),assessments.marks)} isSchoolDay={isSchoolDay} subtitle="Teaching days" legend={[{ tone: "holiday", label: "Holiday" }, { tone: "event", label: "Event" }, { tone: "test", label: "Test" }]}
@@ -361,11 +387,11 @@ export function TeacherCalendarRoute() {
           <div className="cal-detail">
             <DetailHead iso={cal.selected} sub={holiday ? "School closed" : `${periods.length} period${periods.length === 1 ? "" : "s"} · ${home.data?.classes.length ?? 0} register${home.data?.classes.length === 1 ? "" : "s"}`} />
             <CalendarHolidayRow days={calendarDays.data?.results ?? []} selected={cal.selected} focusChangeId={calendarFocusChangeId(cal, calendarDays.data?.results ?? [])} resolved={calendarDays.isSuccess} />
-            <CalendarEventRows events={events.data?.items ?? []} selected={cal.selected} portal="teacher" pending={events.isPending} error={events.isError} retry={events.refetch} />
+            <CalendarEventRows events={events.data?.items ?? []} selected={cal.selected} surface="assigned" pending={events.isPending} error={events.isError} retry={events.refetch} />
             <AssessmentCalendarRows calendar={assessments} date={cal.selected}/>
             {!holiday && home.isPending ? <Loading>Loading your day…</Loading> : !holiday ? <>
               {!holiday && home.data!.classes.length ? <div className="cal-list">{home.data!.classes.map((c) => (
-                <Link className="cal-row" key={c.class_section_id} to={`/teacher/attendance?class_section_id=${encodeURIComponent(c.class_section_id)}&date=${cal.selected}`}>
+                <Link className="cal-row" key={c.class_section_id} to={`/areas/attendance/registers?class_section_id=${encodeURIComponent(c.class_section_id)}&date=${cal.selected}`}>
                   <span><strong>{c.class_name}</strong><small>Room {c.room_number}</small></span>
                   <span className="cal-row__body"><strong>{c.marked_count}/{c.student_count} marked</strong><small>{c.subjects?.join(", ") || "Register"}</small></span>
                   <Pill tone={statusTone(c.submission_status)}>{statusLabel(c.submission_status)}</Pill>
@@ -375,15 +401,20 @@ export function TeacherCalendarRoute() {
                 <div className="cal-row" key={s.id}><span><strong>{clockLabel(s.starts_at)}</strong><small>P{s.period_number}</small></span><span className="cal-row__body"><strong>{s.subject_name}</strong><small>{s.class_name} · {s.room || "Room pending"}</small></span><span /></div>
               ))}</div> : <p className="cal-empty">No periods scheduled.</p>}
             </> : null}
-            <div className="cal-actions"><Link className="cal-action" to={`/teacher/timetable?date=${cal.selected}`}><ClipboardList size={14} /> Day plan</Link><Link className="cal-action" to={`/teacher/attendance?date=${cal.selected}`}><ClipboardCheck size={14} /> Registers</Link></div>
+            <div className="cal-actions"><Link className="cal-action" to={`/areas/timetable/schedule?date=${cal.selected}`}><ClipboardList size={14} /> Day plan</Link><Link className="cal-action" to={`/areas/attendance/registers?date=${cal.selected}`}><ClipboardCheck size={14} /> Registers</Link></div>
           </div>
         } />
+  </>;
+  if (presentation === "workspace") return content;
+  return (
+    <OperationsShell portal="teacher" active="more" title="Calendar" subtitle={home.data ? `${home.data.teacher.name} - Teaching calendar` : "Teaching calendar"}>
+      {content}
     </OperationsShell>
   );
 }
 
 /* ---------- Principal ---------- */
-export function PrincipalCalendarRoute() {
+export function PrincipalCalendarRoute({ presentation = "legacy" }: CalendarRoutePresentationProps = {}) {
   const cal = useCalendarState();
   const assessments=useAssessmentCalendar('admin',cal.year,cal.month0);
   const schedule=useCalendarSchedule('admin',cal.year,cal.month0);
@@ -396,8 +427,7 @@ export function PrincipalCalendarRoute() {
   const open = home.data?.classes.filter((c) => c.submission_status !== "submitted" && c.submission_status !== "locked") ?? [];
   const past = cal.selected <= schoolDateToday();
   const holiday = holidayOn(calendarDays.data?.results ?? [], cal.selected);
-  return (
-    <OperationsShell portal="principal" active="timetable" title="Calendar" subtitle="School calendar" backTo="/principal/timetable">
+  const content = <>
       <CalendarAttentionGate target={calendarAttentionTarget(cal)} days={calendarDays.data?.results ?? []} loaded={calendarDays.isSuccess && timetable.isSuccess && home.isSuccess} />
       <ScheduleStatus schedule={schedule}/>
       <CalendarView {...cal} onSelect={cal.select} marks={merge(eventMarks(events.data?.items ?? []), holidayMarks(calendarDays.data?.results ?? []),assessments.marks)} isSchoolDay={isSchoolDay} subtitle={timetable.data ? `${timetable.data.classes.length} classes` : undefined} legend={[{ tone: "holiday", label: "Holiday" }, { tone: "event", label: "Event" }, { tone: "test", label: "Test" }]}
@@ -405,7 +435,7 @@ export function PrincipalCalendarRoute() {
           <div className="cal-detail">
             <DetailHead iso={cal.selected} sub={holiday ? "School closed" : s ? `${s.classes_total} classes with registers due` : undefined} pill={!holiday && s && past && s.classes_total ? <Pill tone={open.length ? "late" : "present"}>{open.length ? `${open.length} open` : "All submitted"}</Pill> : null} />
             <CalendarHolidayRow days={calendarDays.data?.results ?? []} selected={cal.selected} focusChangeId={calendarFocusChangeId(cal, calendarDays.data?.results ?? [])} resolved={calendarDays.isSuccess} />
-            <CalendarEventRows events={events.data?.items ?? []} selected={cal.selected} portal="principal" pending={events.isPending} error={events.isError} retry={events.refetch} />
+            <CalendarEventRows events={events.data?.items ?? []} selected={cal.selected} surface="manage" pending={events.isPending} error={events.isError} retry={events.refetch} />
             <AssessmentCalendarRows calendar={assessments} date={cal.selected}/>
             {!holiday ? home.isPending ? <Loading>Loading the school day…</Loading> : s ? (
               <div className="cal-stats">
@@ -415,15 +445,20 @@ export function PrincipalCalendarRoute() {
               </div>
             ) : null : null}
             {!holiday && open.length && past ? <div className="cal-list">{open.slice(0, 6).map((c) => (
-              <Link className="cal-row" key={c.id} to={`/principal/attendance?class_section_id=${encodeURIComponent(c.id)}&date=${cal.selected}`}>
+              <Link className="cal-row" key={c.id} to={`/areas/attendance/coordination?class_section_id=${encodeURIComponent(c.id)}&date=${cal.selected}`}>
                 <span><strong>{c.name}</strong><small>Room {c.room_number}</small></span>
                 <span className="cal-row__body"><strong>{c.marked_count}/{c.student_count} marked</strong><small>{c.timetable_slots} periods</small></span>
                 <Pill tone={statusTone(c.submission_status)}>{statusLabel(c.submission_status)}</Pill>
               </Link>
             ))}</div> : null}
-            <div className="cal-actions"><Link className="cal-action" to={`/principal/attendance?date=${cal.selected}`}><ClipboardCheck size={14} /> Attendance desk</Link><Link className="cal-action" to={`/principal/timetable?date=${cal.selected}`}><ClipboardList size={14} /> Day plan</Link></div>
+            <div className="cal-actions"><Link className="cal-action" to={`/areas/attendance/coordination?date=${cal.selected}`}><ClipboardCheck size={14} /> Attendance desk</Link><Link className="cal-action" to={`/areas/timetable/planning?date=${cal.selected}`}><ClipboardList size={14} /> Day plan</Link></div>
           </div>
         } />
+  </>;
+  if (presentation === "workspace") return content;
+  return (
+    <OperationsShell portal="principal" active="timetable" title="Calendar" subtitle="School calendar" backTo="/areas/timetable">
+      {content}
     </OperationsShell>
   );
 }

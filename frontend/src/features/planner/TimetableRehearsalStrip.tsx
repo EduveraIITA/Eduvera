@@ -1,3 +1,4 @@
+import { applicationNow } from "../simulation/applicationTime";
 import { ChevronRight, Clock3 } from "lucide-react";
 import { Link } from "react-router-dom";
 import type { TimetableRehearsalIndicator } from "./rehearsal";
@@ -11,7 +12,7 @@ function rehearsalTime(value: string, timeZone: string) {
 
 function rehearsalNextStep(value: string | null) {
   if (!value) return "School day complete";
-  const milliseconds = new Date(value).getTime() - Date.now();
+  const milliseconds = new Date(value).getTime() - applicationNow().getTime();
   if (!Number.isFinite(milliseconds) || milliseconds <= 0) return "Rehearsal updating";
   const seconds = Math.ceil(milliseconds / 1_000);
   return seconds < 60 ? `Next step in ${seconds} sec` : `Next step in ${Math.ceil(seconds / 60)} min`;
@@ -32,6 +33,6 @@ export function TimetableRehearsalStrip({
       <span>{current ? `${current} · ` : ""}{rehearsal.phaseLabel}</span>
     </div>
     <span className="planner-rehearsal__next">{rehearsalNextStep(rehearsal.nextChangeAt)}</span>
-    {showCampusLink ? <Link to={rehearsal.campusPath}>Campus View<ChevronRight aria-hidden="true" size={16} /></Link> : null}
+    {showCampusLink ? <Link to={rehearsal.campusPath} aria-label="Open Virtual campus">Virtual campus<ChevronRight aria-hidden="true" size={16} /></Link> : null}
   </section>;
 }

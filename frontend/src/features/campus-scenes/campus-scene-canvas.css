@@ -1,0 +1,76 @@
+.campus-scene-canvas {
+  position: relative;
+  isolation: isolate;
+  width: 100%;
+  height: 100%;
+  min-height: 420px;
+  overflow: hidden;
+  background: #aec48d;
+  border-radius: 20px;
+}
+.campus-scene-canvas[data-lighting="night"] { background: #11191e; }
+.campus-scene-canvas[data-lighting="night"] .campus-scene-perspective-label { color: #acb7c0; }
+.campus-scene-canvas[data-lighting="night"] .campus-scene-map-controls { background: #1c252c; }
+.campus-scene-canvas[data-lighting="night"] .campus-scene-map-controls button { color: #edf0f2; }
+.campus-scene-canvas[data-lighting="night"] .campus-scene-map-controls button:hover { background: #303d47; }
+.campus-scene-canvas[data-interior] { background: var(--thatcampus-surface-soft); }
+.campus-scene-canvas[data-interior][data-lighting="day"] .campus-scene-perspective-label { color: var(--thatcampus-ink-muted); }
+.campus-scene-canvas[data-interior][data-lighting="night"] { background: #202a31; }
+.campus-scene-svg { display: block; width: 100%; height: 100%; min-height: inherit; touch-action: none; user-select: none; cursor: grab; }
+.campus-scene-canvas[data-dragging] .campus-scene-svg { cursor: grabbing; }
+.campus-scene-canvas[data-interaction="draw"] .campus-scene-svg { cursor: crosshair; }
+.campus-scene-object { cursor: pointer; outline: none; }
+.campus-scene-object:focus-visible { filter: drop-shadow(0 0 3px var(--thatcampus-action)); }
+.campus-scene-floating-label { pointer-events: none; }
+.scene-evidence-marker { --marker-ink:var(--thatcampus-action); cursor:pointer; outline:none; }
+.scene-evidence-marker[data-dimension="observed"] { --marker-ink:var(--thatcampus-positive); }
+.scene-evidence-marker[data-dimension="accepted"] { --marker-ink:var(--thatcampus-ink); }
+.scene-evidence-marker[data-dimension="unknown"] { --marker-ink:var(--thatcampus-ink-muted); }
+.scene-evidence-marker__leader { fill:none; stroke:var(--marker-ink); stroke-width:1.2; opacity:.7; }
+.scene-evidence-marker__background { fill:var(--thatcampus-surface); stroke:var(--marker-ink); stroke-width:1.5; filter:drop-shadow(0 2px 2px rgb(0 0 0 / .15)); }
+.scene-evidence-marker__symbol { stroke:var(--marker-ink); }
+.scene-evidence-marker__count { fill:var(--marker-ink); font-size:12px; font-weight:750; }
+.scene-evidence-marker__pressure { fill:var(--thatcampus-danger); font-size:14px; font-weight:800; }
+.scene-evidence-marker:focus-visible .scene-evidence-marker__background,.scene-evidence-marker[data-selected] .scene-evidence-marker__background { stroke:var(--thatcampus-action); stroke-width:3; }
+.campus-scene-label-background { filter: drop-shadow(0 2px 3px rgb(30 56 46 / .13)); }
+.campus-scene-vertex { cursor: move; }
+.campus-scene-svg:focus-visible { outline: 3px solid var(--thatcampus-action); outline-offset: -4px; }
+.campus-scene-map-controls {
+  position: absolute;
+  right: 16px;
+  bottom: 16px;
+  display: flex;
+  gap: 4px;
+  padding: 4px;
+  border-radius: 16px;
+  background: var(--thatcampus-surface);
+  box-shadow: var(--thatcampus-shadow-control);
+}
+.campus-scene-map-controls button {
+  display: grid;
+  place-items: center;
+  width: 44px;
+  height: 44px;
+  padding: 0;
+  border: 0;
+  border-radius: 12px;
+  background: transparent;
+  color: var(--thatcampus-ink);
+  cursor: pointer;
+}
+.campus-scene-map-controls button:hover { background: var(--thatcampus-surface-soft); }
+.campus-scene-map-controls button:focus-visible { outline: 3px solid var(--thatcampus-action); outline-offset: 1px; }
+.campus-scene-perspective-label { position: absolute; bottom: 20px; left: 16px; color: #465a43; font-size: 11px; font-weight: 600; letter-spacing: .02em; pointer-events: none; }
+.campus-scene-visually-hidden { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; border: 0; }
+@media (max-width: 480px) {
+  .campus-scene-canvas { min-height: 440px; border-radius: 16px; }
+  .campus-scene-map-controls { right: 12px; bottom: 12px; }
+  .campus-scene-perspective-label { left: 12px; bottom: 72px; }
+}
+@media (forced-colors: active) {
+  .campus-scene-map-controls { border: 1px solid ButtonText; }
+  .campus-scene-map-controls button:focus-visible { outline-color: Highlight; }
+  .campus-scene-perspective-label { color: CanvasText; background: Canvas; }
+}
+.scene-interior-label { fill:#38454d; stroke:#f5f3eb; stroke-width:3px; paint-order:stroke fill; }
+[data-lighting="night"] .scene-interior-label { fill:#edf0f2; stroke:#27343e; }

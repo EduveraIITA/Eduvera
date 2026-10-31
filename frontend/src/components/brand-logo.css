@@ -1,0 +1,5 @@
+.thatcampus-logo{display:inline-flex;width:var(--brand-logo-width,98px);height:var(--brand-logo-height,64px);flex-shrink:0;vertical-align:middle}
+.thatcampus-logo>.thatcampus-logo__artwork{display:block;width:100%;height:100%;object-fit:contain}
+.thatcampus-logo>.thatcampus-logo__artwork--dark{display:none}
+:root[data-theme="dark"] .thatcampus-logo>.thatcampus-logo__artwork--light{display:none}
+:root[data-theme="dark"] .thatcampus-logo>.thatcampus-logo__artwork--dark{display:block}

@@ -4,7 +4,7 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { MemoryRouter, Route, Routes, Link } from "react-router-dom";
 import type { ReactNode } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { getTeacherAttendance, getTeacherHome, type TeacherAttendanceResponse, type TeacherClassSummary } from "../operations/api";
+import { getAssignedClass, getAssignedClasses, type TeacherAttendanceResponse, type TeacherClassSummary } from "../operations/api";
 import { getTeacherDay, type TeacherDay } from "../day-plans/api";
 import { apiFetch } from "../../lib/api";
 import TeacherClassesPage from "./TeacherClassesPage";
@@ -14,7 +14,7 @@ import { classStatus } from "./classWorkspace";
 const access = vi.hoisted(() => ({ permissions: ["attendance.view", "attendance.record", "timetable.view"] }));
 vi.mock("../auth/AuthContext", () => ({ useAuth: () => ({ memberships: [{ school_id: "school-1", role: "staff", permissions: access.permissions }] }) }));
 vi.mock("../../pages/operations/OperationsShell", () => ({ OperationsShell: ({ title, backTo, children }: { title: string; backTo?: string; children: ReactNode }) => <><h1>{title}</h1>{backTo ? <Link to={backTo}>Go back</Link> : null}{children}</> }));
-vi.mock("../operations/api", () => ({ getTeacherHome: vi.fn(), getTeacherAttendance: vi.fn() }));
+vi.mock("../operations/api", () => ({ getAssignedClasses: vi.fn(), getAssignedClass: vi.fn() }));
 vi.mock("../day-plans/api", () => ({ getTeacherDay: vi.fn() }));
 vi.mock("../../lib/api", () => ({ apiFetch: vi.fn() }));
 
@@ -28,19 +28,19 @@ const register: TeacherAttendanceResponse = {
 };
 const day: TeacherDay = { date: "2026-10-08", context: { today: "2026-10-08", local_time: "09:00", timezone: "Asia/Kolkata", is_instructional: true, label: null }, periods: [{ id: "p1", class_section_id: "7a", class_name: "Class 7A", day_plan_id: null, plan_version: null, owner_name: null, period_number: 1, starts_at: "09:00", ends_at: "09:45", title: "Algebra", slot_type: "class", room: "204", teacher_user_id: "teacher", teacher_name: "Meera", cancelled: false, materials: ["Geometry kit"], notice: "Bring your workbook", coverage_status: "not_required", response_revision: 0, response_note: "", response_source: null, responded_at: null }] };
 
-function show(path = "/teacher/classes?date=2026-10-08") {
+function show(path = "/areas/people/classes?date=2026-10-08") {
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   return render(<QueryClientProvider client={client}><MemoryRouter initialEntries={[path]}><Routes>
-    <Route path="/teacher/classes" element={<TeacherClassesPage />} />
-    <Route path="/teacher/classes/:classId" element={<TeacherClassPage />} />
+    <Route path="/areas/people/classes" element={<TeacherClassesPage />} />
+    <Route path="/areas/people/classes/:classId" element={<TeacherClassPage />} />
   </Routes></MemoryRouter></QueryClientProvider>);
 }
 beforeEach(() => {
   vi.clearAllMocks();
   vi.spyOn(window, "scrollTo").mockImplementation(() => undefined);
   access.permissions = ["attendance.view", "attendance.record", "timetable.view"];
-  vi.mocked(getTeacherHome).mockResolvedValue(home);
-  vi.mocked(getTeacherAttendance).mockResolvedValue(register);
+  vi.mocked(getAssignedClasses).mockResolvedValue({ date: home.date, classes: home.classes });
+  vi.mocked(getAssignedClass).mockResolvedValue(register);
   vi.mocked(getTeacherDay).mockResolvedValue(day);
   vi.mocked(apiFetch).mockResolvedValue({ results: [] });
 });
@@ -57,7 +57,7 @@ describe("teacher class directory and detail pages", () => {
     show();
     expect(await screen.findByText(/P1 9:00 AM–9:45 AM/)).toBeVisible();
     const activity = await screen.findByRole("link", { name: "1 recent comment · 1 recent note · 1 unread change" });
-    expect(activity).toHaveAttribute("href", "/teacher/classes/7a?date=2026-10-08&section=notes");
+    expect(activity).toHaveAttribute("href", "/areas/people/classes/7a?date=2026-10-08&section=notes");
     expect(screen.queryByText(/unread note|2 recent comments/)).not.toBeInTheDocument();
   });
   it("keeps cancelled lessons visible and reports activity failures without a false zero", async () => {
@@ -72,7 +72,7 @@ describe("teacher class directory and detail pages", () => {
     const user = userEvent.setup();
     const update = { id: "notice", class_section_id: "7a", kind: "change", title: "Schedule changed", body: "Review period 1", occurred_at: "2026-10-08T08:00:00Z", unread: true, notification_id: "notification-1", total: 1 };
     vi.mocked(apiFetch).mockResolvedValue({ results: [update] });
-    show("/teacher/classes/7a?date=2026-10-08&section=notes");
+    show("/areas/people/classes/7a?date=2026-10-08&section=notes");
     await screen.findByRole("heading", { name: "Schedule changed" });
     expect(apiFetch).not.toHaveBeenCalledWith(expect.stringContaining("/read/"), expect.anything());
     vi.mocked(apiFetch).mockImplementation(path => Promise.resolve(path.includes("/read/") ? {} : { results: [{ ...update, unread: false }] }));
@@ -84,22 +84,22 @@ describe("teacher class directory and detail pages", () => {
     const user = userEvent.setup(); show();
     const list = await screen.findByRole("list", { name: "Your classes" });
     expect(screen.queryByText("Assigned classes")).not.toBeInTheDocument();
-    expect(getTeacherAttendance).not.toHaveBeenCalled();
+    expect(getAssignedClass).not.toHaveBeenCalled();
     await waitFor(() => expect(getTeacherDay).toHaveBeenCalled());
-    expect(within(list).getByRole("link")).toHaveAttribute("href", "/teacher/classes/7a?date=2026-10-08");
+    expect(within(list).getByRole("link")).toHaveAttribute("href", "/areas/people/classes/7a?date=2026-10-08");
     await user.click(within(list).getByRole("link"));
     expect(await screen.findByRole("heading", { level: 1, name: "Class 7A" })).toBeVisible();
     expect(screen.queryByRole("list", { name: "Your classes" })).not.toBeInTheDocument();
     expect(await screen.findByText("CBSE")).toBeVisible();
     expect(await screen.findByRole("heading", { name: "Algebra" })).toBeVisible();
     expect(screen.getByText("Geometry kit", { exact: false })).toBeVisible();
-    expect(screen.getByRole("link", { name: /Open register/ })).toHaveAttribute("href", "/teacher/attendance?class_section_id=7a&date=2026-10-08");
+    expect(screen.getByRole("link", { name: /Open register/ })).toHaveAttribute("href", "/areas/attendance/registers?class_section_id=7a&date=2026-10-08");
     await user.click(screen.getByRole("link", { name: "Go back" }));
     expect(await screen.findByRole("list", { name: "Your classes" })).toBeVisible();
     expect(screen.getByLabelText("Choose date")).toHaveValue("2026-10-08");
   });
   it("supports direct links to a searchable roster with honest attendance states", async () => {
-    const user = userEvent.setup(); show("/teacher/classes/7a?date=2026-10-08&section=students");
+    const user = userEvent.setup(); show("/areas/people/classes/7a?date=2026-10-08&section=students");
     expect(await screen.findByRole("list", { name: "Class roster" })).toBeVisible();
     expect(screen.getByText("Half day")).toBeVisible();
     expect(screen.getByText("Not marked")).toBeVisible();
@@ -110,62 +110,62 @@ describe("teacher class directory and detail pages", () => {
     expect(getTeacherDay).not.toHaveBeenCalled();
   });
   it("preserves the selected class and section when changing dates", async () => {
-    show("/teacher/classes/7a?date=2026-10-08&section=students");
+    show("/areas/people/classes/7a?date=2026-10-08&section=students");
     await screen.findByRole("list", { name: "Class roster" });
     fireEvent.change(screen.getByLabelText("Choose date"), { target: { value: "2026-10-07" } });
-    await waitFor(() => expect(getTeacherAttendance).toHaveBeenCalledWith("7a", "2026-10-07"));
+    await waitFor(() => expect(getAssignedClass).toHaveBeenCalledWith("7a", "2026-10-07"));
     expect(screen.getByRole("button", { name: "Students" })).toHaveAttribute("aria-pressed", "true");
-    expect(screen.getByRole("link", { name: "Go back" })).toHaveAttribute("href", "/teacher/classes?date=2026-10-07");
+    expect(screen.getByRole("link", { name: "Go back" })).toHaveAttribute("href", "/areas/people/classes?date=2026-10-07");
   });
   it("does not fetch a roster or notes for a class outside current assignments", async () => {
-    show("/teacher/classes/not-assigned?date=2026-10-08&section=notes");
+    show("/areas/people/classes/not-assigned?date=2026-10-08&section=notes");
     expect(await screen.findByText(/not available in your assignments/)).toBeVisible();
-    expect(getTeacherAttendance).not.toHaveBeenCalled();
+    expect(getAssignedClass).not.toHaveBeenCalled();
     expect(apiFetch).not.toHaveBeenCalled();
   });
   it("reports loading and errors instead of an empty or zero class list", async () => {
-    vi.mocked(getTeacherHome).mockReturnValue(new Promise(() => undefined));
+    vi.mocked(getAssignedClasses).mockReturnValue(new Promise(() => undefined));
     const view = show();
     expect(screen.getByRole("status")).toHaveTextContent("Loading your classes");
     expect(screen.queryByText(/0 students|No classes/)).not.toBeInTheDocument();
     view.unmount();
-    vi.mocked(getTeacherHome).mockRejectedValue(new Error("Offline"));
+    vi.mocked(getAssignedClasses).mockRejectedValue(new Error("Offline"));
     show(); expect(await screen.findByRole("alert")).toHaveTextContent("Could not load your classes");
-    vi.mocked(getTeacherHome).mockResolvedValue({ ...home, classes: [] });
+    vi.mocked(getAssignedClasses).mockResolvedValue({ date: home.date, classes: [] });
     await userEvent.click(screen.getByRole("button", { name: "Try again" }));
     expect(await screen.findByText("No classes assigned for this date.")).toBeVisible();
   });
   it("hides timetable actions and requests when that permission is absent", async () => {
     access.permissions = ["attendance.view"];
-    show("/teacher/classes/7a?date=2026-10-08");
+    show("/areas/people/classes/7a?date=2026-10-08");
     await screen.findByText("CBSE");
-    expect(screen.queryByRole("link", { name: "Your timetable" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("link", { name: "Open timetable" })).not.toBeInTheDocument();
     expect(getTeacherDay).not.toHaveBeenCalled();
     expect(screen.queryByRole("link", { name: /Take attendance/ })).not.toBeInTheDocument();
   });
   it("does not hide lesson failures as no lessons", async () => {
     vi.mocked(getTeacherDay).mockRejectedValue(new Error("Offline"));
-    show("/teacher/classes/7a?date=2026-10-08");
+    show("/areas/people/classes/7a?date=2026-10-08");
     expect(await screen.findByRole("alert")).toHaveTextContent("Could not load lessons");
     expect(screen.queryByText(/No lessons with/)).not.toBeInTheDocument();
   });
   it("loads notes on demand and does not expose student-specific acknowledgements or private replies", async () => {
     const user = userEvent.setup();
     vi.mocked(apiFetch).mockResolvedValue({ results: [{ id: "note", class_section_id: "7a", kind: "note", occurred_at: "2026-10-08T09:00:00Z", title: "Practice fractions", body: "Complete all exercises", unread: false, total: 1 }] });
-    show("/teacher/classes/7a?date=2026-10-08"); await screen.findByText("CBSE");
+    show("/areas/people/classes/7a?date=2026-10-08"); await screen.findByText("CBSE");
     expect(apiFetch).not.toHaveBeenCalled();
     await user.click(screen.getByRole("button", { name: "Updates" }));
     expect(await screen.findByRole("heading", { name: "Practice fractions" })).toBeVisible();
     expect(screen.queryByText(/Acknowledged at home|Private reply/)).not.toBeInTheDocument();
-    expect(apiFetch).toHaveBeenCalledWith("/api/v1/screens/teacher/class-updates/?date=2026-10-08");
+    expect(apiFetch).toHaveBeenCalledWith("/api/v1/areas/people/classes/updates/?date=2026-10-08");
   });
   it("reports failed notes and roster requests rather than empty content", async () => {
     vi.mocked(apiFetch).mockRejectedValue(new Error("Unavailable"));
-    const view = show("/teacher/classes/7a?date=2026-10-08&section=notes");
+    const view = show("/areas/people/classes/7a?date=2026-10-08&section=notes");
     expect(await screen.findByRole("alert")).toHaveTextContent("Could not load class updates");
     expect(screen.queryByText("No class updates in this period.")).not.toBeInTheDocument();
-    view.unmount(); vi.mocked(getTeacherAttendance).mockRejectedValue(new Error("Forbidden"));
-    show("/teacher/classes/7a?date=2026-10-08&section=students");
+    view.unmount(); vi.mocked(getAssignedClass).mockRejectedValue(new Error("Forbidden"));
+    show("/areas/people/classes/7a?date=2026-10-08&section=students");
     expect(await screen.findByRole("alert")).toHaveTextContent("Could not load class details");
     expect(screen.queryByRole("list", { name: "Class roster" })).not.toBeInTheDocument();
   });

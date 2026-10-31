@@ -1,5 +1,5 @@
 import { RequirePermission } from "../roles/permissions.js";
-import { Controller, Delete, Get, HttpCode, Param, Patch, Post, Query, Req, Res } from "@nestjs/common";
+import { Controller, Delete, ForbiddenException, Get, HttpCode, Param, Patch, Post, Query, Req, Res } from "@nestjs/common";
 import { ApiCookieAuth, ApiTags } from "@nestjs/swagger";
 import type { FastifyReply } from "fastify";
 import type { AuthenticatedRequest } from "../common/request.js";
@@ -27,6 +27,11 @@ async function bodyAndUpload(request: AuthenticatedRequest): Promise<{ body: Rec
 @Controller("api/v1")
 export class SchoolController {
   constructor(private readonly school: SchoolService, private readonly events: SchoolEventService) {}
+
+  private practiceWritable(request:AuthenticatedRequest){
+    const world=request.executionEnvironmentView;
+    if(world?.mode==="simulation"&&(world.unavailable||["completed","stopped"].includes(world.run_status??"")))throw new ForbiddenException("This simulation is read-only.");
+  }
 
   @Get("students/")
   async students(@Req() request: AuthenticatedRequest) {
@@ -93,11 +98,13 @@ export class SchoolController {
 
   @Get("leave-requests/:leaveId/documents/:documentId/download/")
   async downloadDocument(@Req() request: AuthenticatedRequest, @Res() reply: FastifyReply, @Param("leaveId") leaveId: string, @Param("documentId") documentId: string) {
-    const { document, stream } = await this.school.leaveDocument(request.authUser, leaveId, documentId);
-    const filename = document.original_name.replace(/[\r\n"]/g, "_");
-    reply.type(document.content_type || "application/octet-stream");
+    const result = await this.school.leaveDocument(request.authUser, leaveId, documentId);
+    const filename = result.document.original_name.replace(/[\r\n"]/g, "_");
+    reply.type(result.document.content_type || "application/octet-stream");
     reply.header("Content-Disposition", `inline; filename="${filename}"`);
-    return reply.send(stream);
+    reply.header("X-ThatCampus-Evidence-Mode", result.evidence_mode);
+    reply.header("X-ThatCampus-Source-Content-Omitted", String(result.source_content_omitted));
+    return reply.send(result.stream);
   }
 
   @Post("leave-requests/:leaveId/:action/")
@@ -120,9 +127,16 @@ export class SchoolController {
     return result.data;
   }
 
+  @Get("diary/:itemId/")
+  exactDiary(@Req() request: AuthenticatedRequest, @Param("itemId") itemId: string, @Query("student_id") studentId?: string) {
+    return this.school.exactDiaryItem(request.authUser, itemId, studentId);
+  }
+
   @Post("diary/:itemId/notes/")
   async note(@Req() request: AuthenticatedRequest, @Param("itemId") itemId: string) {
-    return this.school.addDiaryNote(request.authUser, itemId, (request.body as any)?.student_id, (request.body as any)?.body);
+    this.practiceWritable(request);
+    const body = request.body as { student_id?: string; body?: unknown; command?: unknown };
+    return this.school.addDiaryNote(request.authUser, itemId, body?.student_id, body?.body, body?.command);
   }
 
   @Get("notifications/")
@@ -148,12 +162,15 @@ export class SchoolController {
   @Post("homework/:itemId/complete/")
   @HttpCode(200)
   completeHomework(@Req() request: AuthenticatedRequest, @Param("itemId") itemId: string) {
-    return this.school.setHomeworkCompleted(request.authUser, itemId, (request.body as { student_id?: string })?.student_id, true);
+    this.practiceWritable(request);
+    const body = request.body as { student_id?: string; command?: unknown };
+    return this.school.setHomeworkCompleted(request.authUser, itemId, body?.student_id, true, body?.command);
   }
 
   @Delete("homework/:itemId/complete/")
   async reopenHomework(@Req() request: AuthenticatedRequest, @Param("itemId") itemId: string, @Query("student_id") studentId?: string) {
-    return this.school.setHomeworkCompleted(request.authUser, itemId, studentId, false);
+    this.practiceWritable(request);
+    return this.school.setHomeworkCompleted(request.authUser, itemId, studentId, false, (request.body as { command?: unknown } | undefined)?.command);
   }
 
   @Get("screens/parent/attendance/")
@@ -279,6 +296,16 @@ export class SchoolController {
   @HttpCode(200)
   attendanceContinuityDecision(@Req() request: AuthenticatedRequest, @Param("caseId") caseId: string) {
     return this.school.decideAttendanceReconciliation(request.authUser, caseId, request.body, request);
+  }
+
+  @Get("attendance-registers/:classSectionId/")
+  @RequirePermission("attendance.view")
+  attendanceRegister(
+    @Req() request: AuthenticatedRequest,
+    @Param("classSectionId") classSectionId: string,
+    @Query("date") date?: string,
+  ) {
+    return this.school.teacherAttendanceScreen(request.authUser, classSectionId, date);
   }
 
   @Post("attendance-registers/:classSectionId/lock/")

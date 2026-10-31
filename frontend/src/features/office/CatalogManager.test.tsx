@@ -36,6 +36,30 @@ const administration = (): Administration => ({
 });
 
 describe("school catalogue management", () => {
+  it.each([
+    { tab: "Terms", name: "Term 1", revision: 1 },
+    { tab: "Classes", name: "Class 7A", revision: 3 },
+    { tab: "Subjects", name: "Mathematics", revision: 2 },
+  ])("does not infer that $tab are unused from incomplete zero usage counts", async ({ tab, name, revision }) => {
+    const data = administration();
+    Object.assign(data.terms[0]!, { enrollment_count: 0, timetable_count: 0, register_count: 0 });
+    Object.assign(data.classes[0]!, { enrollment_count: 0, timetable_count: 0, assignment_count: 0 });
+    const user = userEvent.setup();
+    render(<CatalogManager schoolId="school-1" data={data} refresh={vi.fn()} />);
+
+    await user.click(screen.getByRole("tab", { name: new RegExp(tab) }));
+    expect(screen.getByText(`Revision ${revision}`)).toBeVisible();
+    expect(screen.queryByText(/Not used yet/i)).not.toBeInTheDocument();
+
+    await user.click(screen.getByRole("button", { name: `Edit ${name}` }));
+    const dialog = screen.getByRole("dialog", { name: `Edit ${name}` });
+    expect(within(dialog).getByText("Review this change")).toBeVisible();
+    expect(within(dialog).getByText("This record keeps its identity. Connected features may use the updated details.")).toBeVisible();
+    expect(within(dialog).queryByText("No linked records yet")).not.toBeInTheDocument();
+    expect(within(dialog).queryByText(/without changing an existing schedule or history/)).not.toBeInTheDocument();
+    expect(saveCatalog).not.toHaveBeenCalled();
+  });
+
   it("opens linked class editing in a focused sheet and requires reviewed impact before persisting", async () => {
     const refresh = vi.fn().mockResolvedValue(undefined);
     vi.mocked(saveCatalog).mockResolvedValue({} as never);
@@ -43,6 +67,7 @@ describe("school catalogue management", () => {
     render(<CatalogManager schoolId="school-1" data={administration()} refresh={refresh} />);
 
     await user.click(screen.getByRole("tab", { name: /Classes/ }));
+    expect(screen.getByText("81 linked records, revision 3")).toBeVisible();
     await user.click(screen.getByRole("button", { name: "Edit Class 7A" }));
     const dialog = screen.getByRole("dialog", { name: "Edit Class 7A" });
     expect(within(dialog).getByRole("heading", { name: "Edit Class 7A" })).toHaveFocus();

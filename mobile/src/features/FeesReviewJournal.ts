@@ -1,0 +1,8 @@
+import * as Crypto from 'expo-crypto';
+import * as SecureStore from '../lib/device-storage';
+import { validateNativeFeeAction, type NativeFeeAction } from '../lib/fee-action-policy';
+type Entry = { pending: NativeFeeAction | null; busy: boolean; ready: boolean; blocked: boolean; error: string; loaded?: Promise<void>; listeners: Set<() => void> };
+const entries = new Map<string, Entry>();
+export function feesReviewJournal(scope: string) { let entry = entries.get(scope); if (!entry) { entry = { pending: null, busy: false, ready: false, blocked: false, error: '', listeners: new Set() }; entries.set(scope, entry); } return entry; }
+export function updateFeesReviewJournal(scope: string, values: Partial<Entry>) { const entry = feesReviewJournal(scope); Object.assign(entry, values); for (const notify of entry.listeners) notify(); }
+export function hydrateFeesReviewJournal(scope: string, schoolId: string) { const entry = feesReviewJournal(scope); if (!entry.loaded) entry.loaded = (async () => { try { const key = `thatcampus.fee-action.${await Crypto.digestStringAsync(Crypto.CryptoDigestAlgorithm.SHA256, scope)}`, raw = await SecureStore.getItemAsync(key), value: unknown = raw ? JSON.parse(raw) : null; if (value && !validateNativeFeeAction(value, scope, schoolId)) throw new Error('The retained fee-review action cannot be verified. Its evidence is kept.'); updateFeesReviewJournal(scope, { ready: true, pending: value as NativeFeeAction | null }); } catch (cause) { updateFeesReviewJournal(scope, { ready: true, blocked: true, error: cause instanceof Error ? cause.message : 'Secure fee-review recovery is unavailable.' }); } })(); return entry.loaded; }

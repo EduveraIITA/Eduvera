@@ -24,6 +24,33 @@ afterEach(() => {
 });
 
 describe("NotificationCenter", () => {
+  it("shows read-status failure and keeps the update available for a safe retry", async () => {
+    let failRead = true;
+    apiFetchMock.mockImplementation((path: string) => path.endsWith("/read/")
+      ? failRead ? Promise.reject(new Error("Read status unavailable")) : Promise.resolve({ id: "notice-1", read_at: "2026-10-20T10:00:00.000Z" })
+      : Promise.resolve({ results: [{ id: "notice-1", kind: "general", title: "Campus notice", body: "A published update", link: "/areas/messages/updates/notice-1", attention_eligible: false, read_at: null, created_at: "2026-10-20T10:00:00.000Z" }], unread_count: 1, next_cursor: null }));
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    const user = userEvent.setup();
+    render(<QueryClientProvider client={client}><MemoryRouter initialEntries={["/today?notifications=open"]}><NotificationCenter buttonClassName="notification-trigger" /><LocationProbe /></MemoryRouter></QueryClientProvider>);
+    await user.click(await screen.findByRole("button", { name: /Campus notice/ }));
+    expect(await screen.findByRole("alert")).toHaveTextContent("Read status was not saved");
+    expect(screen.getByRole("dialog", { name: "Notifications" })).toBeVisible();
+    expect(screen.getByTestId("location")).toHaveTextContent("/today?notifications=open");
+    failRead = false;
+    await user.click(screen.getByRole("button", { name: /Campus notice/ }));
+    await waitFor(() => expect(screen.getByTestId("location")).toHaveTextContent("/areas/messages/updates/notice-1"));
+  });
+  it("has an explicit close action that restores focus to the notification trigger", async () => {
+    apiFetchMock.mockResolvedValue({ results: [], unread_count: 0, next_cursor: null });
+    const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    const user = userEvent.setup();
+    render(<QueryClientProvider client={queryClient}><MemoryRouter><NotificationCenter buttonClassName="notification-trigger" /></MemoryRouter></QueryClientProvider>);
+    const trigger = screen.getByRole("button", { name: "Notifications" });
+    await user.click(trigger);
+    await user.click(screen.getByRole("button", { name: "Close notifications" }));
+    expect(screen.queryByRole("dialog", { name: "Notifications" })).not.toBeInTheDocument();
+    expect(trigger).toHaveFocus();
+  });
   it("opens an agent verification link and clears it when dismissed", async () => {
     apiFetchMock.mockResolvedValue({ results: [], unread_count: 0, next_cursor: null });
     const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
@@ -61,7 +88,7 @@ describe("NotificationCenter", () => {
         kind: "general",
         title: "A result has been published",
         body: "Mathematics",
-        link: "/parent/results?student_id=30000000-0000-4000-a000-000000000003&assessment_id=40000000-0000-4000-a000-000000000004",
+        link: "/areas/assessments/results?scope=dependent&student_id=30000000-0000-4000-a000-000000000003&assessment_id=40000000-0000-4000-a000-000000000004",
         // The producer-owned link is the typed target. Stale metadata must not
         // redirect the acknowledgement to a different child.
         metadata: { student_id: "30000000-0000-4000-a000-000000000009" },
@@ -76,7 +103,7 @@ describe("NotificationCenter", () => {
     const interact = userEvent.setup();
     render(
       <QueryClientProvider client={queryClient}>
-        <MemoryRouter initialEntries={["/parent/events?view=past&notifications=open"]}>
+        <MemoryRouter initialEntries={["/areas/events/calendar?scope=dependent&student_id=30000000-0000-4000-a000-000000000003&view=past&notifications=open"]}>
           <NotificationCenter buttonClassName="notification-trigger" />
           <LocationProbe />
         </MemoryRouter>
@@ -84,8 +111,8 @@ describe("NotificationCenter", () => {
     );
 
     await interact.click(await screen.findByRole("button", { name: /A result has been published/i }));
-    expect(screen.getByTestId("location")).toHaveTextContent(`/parent/results?student_id=30000000-0000-4000-a000-000000000003&assessment_id=40000000-0000-4000-a000-000000000004&attention_notification_id=${notificationId}`);
-    expect(screen.getByTestId("return-to")).toHaveTextContent("/parent/events?view=past");
+    expect(screen.getByTestId("location")).toHaveTextContent(`/areas/assessments/results?scope=dependent&student_id=30000000-0000-4000-a000-000000000003&assessment_id=40000000-0000-4000-a000-000000000004&attention_notification_id=${notificationId}`);
+    expect(screen.getByTestId("return-to")).toHaveTextContent("/areas/events/calendar?scope=dependent&student_id=30000000-0000-4000-a000-000000000003&view=past");
     expect(apiFetchMock).not.toHaveBeenCalledWith(
       `/api/v1/notifications/${notificationId}/read/`,
       expect.anything(),

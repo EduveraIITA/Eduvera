@@ -1,0 +1,14 @@
+.activity-timetable-agenda { display:grid; min-width:0; gap:24px; }
+.activity-timetable-agenda > section { min-width:0; }
+.activity-timetable-agenda h3 { display:flex; align-items:baseline; flex-wrap:wrap; gap:8px; margin:0 0 4px; font-size:16px; font-weight:650; line-height:1.5; }
+.activity-timetable-agenda h3 span { color:var(--thatcampus-ink-secondary); font-size:14px; font-weight:400; }
+.activity-timetable-agenda ul { margin:0; padding:0; list-style:none; }
+.activity-timetable-agenda li + li { border-top:1px solid var(--thatcampus-border); }
+.activity-timetable-agenda li > button { display:grid; grid-template-columns:76px minmax(0,1fr); gap:12px; width:100%; min-height:64px; padding:16px 4px; border:0; border-radius:var(--thatcampus-radius-control); background:transparent; color:var(--thatcampus-ink); font:inherit; text-align:left; cursor:pointer; }
+.activity-timetable-agenda__time,.activity-timetable-agenda__content { display:flex; flex-direction:column; min-width:0; gap:4px; }
+.activity-timetable-agenda__time { font-size:14px; font-weight:600; font-variant-numeric:tabular-nums; }
+.activity-timetable-agenda small { color:var(--thatcampus-ink-secondary); font-size:13px; line-height:1.5; font-weight:400; }
+.activity-timetable-agenda__content strong { overflow-wrap:anywhere; font-size:16px; font-weight:600; line-height:1.4; }
+.activity-timetable-agenda__content small { overflow-wrap:anywhere; }
+.activity-timetable-agenda button:focus-visible { outline:2px solid var(--thatcampus-brand); outline-offset:-2px; }
+@media(hover:hover) { .activity-timetable-agenda li > button:hover { background:var(--thatcampus-surface-soft); } }

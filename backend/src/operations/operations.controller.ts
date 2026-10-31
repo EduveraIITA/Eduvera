@@ -1,17 +1,21 @@
 import { RequirePermission } from "../roles/permissions.js";
-import { Controller, Get, HttpCode, Param, Patch, Post, Query, Req } from "@nestjs/common";
-import { Public } from "../common/decorators.js";
+import { Controller, Get, HttpCode, Inject, Param, Patch, Post, Query, Req, Optional } from "@nestjs/common";
+import { LiveAccountControl, Public, SkipCsrf } from "../common/decorators.js";
 import type { AuthenticatedRequest } from "../common/request.js";
 import { FeeReviewService } from "./fee-review.service.js";
 import { OperationsService } from "./operations.service.js";
+import { FeeLedgerService } from "./fee-ledger.service.js";
 
 @Controller("api/v1")
 export class OperationsController {
-  constructor(private readonly operations: OperationsService, private readonly feeReviews: FeeReviewService) {}
+  constructor(@Inject(OperationsService) private readonly operations: OperationsService, @Inject(FeeReviewService) private readonly feeReviews: FeeReviewService, @Optional() @Inject(FeeLedgerService) private readonly feeLedger?: FeeLedgerService) {}
 
   @Get("schools/:schoolId/fees/workspace/")
-  @RequirePermission("fees.manage")
-  feeWorkspace(@Req() req: AuthenticatedRequest, @Param("schoolId") school: string, @Query("student_id") student?: string) { return this.feeReviews.workspace(req.authUser, school, student); }
+  feeWorkspace(@Req() req: AuthenticatedRequest, @Param("schoolId") school: string, @Query("student_id") student?: string, @Query("person_id") person?: string, @Query("invoice_id") invoice?: string, @Query() query: Record<string, string> = {}) { return this.feeReviews.workspace(req.authUser, school, student, person, invoice, query); }
+  @Get("schools/:schoolId/fees/accounts/")
+  feeAccounts(@Req() req: AuthenticatedRequest, @Param("schoolId") school: string) { return this.feeLedger!.accounts(req.authUser, school); }
+  @Get("schools/:schoolId/fees/invoices/:id/confirmation/")
+  feeConfirmation(@Req() req: AuthenticatedRequest, @Param("schoolId") school: string, @Param("id") id: string, @Query("command_id") command: string) { return this.feeLedger!.confirmation(req.authUser, school, id, command); }
 
   @Get("schools/:schoolId/fees/gateway-orders/:orderId/")
   @RequirePermission("fees.manage")
@@ -32,9 +36,33 @@ export class OperationsController {
   school() { return this.operations.createSchool(); }
 
   @Public()
+  @LiveAccountControl()
   @Post("invitations/accept/")
   @HttpCode(200)
   accept(@Req() req: AuthenticatedRequest) { return this.operations.acceptInvite(req.body); }
+
+  @Public()
+  @LiveAccountControl()
+  @Post("invitations/recipient-proof/")
+  @HttpCode(200)
+  recipientProof(@Req() req: AuthenticatedRequest) { return this.operations.recipientProof(req.body); }
+
+  // Native recipients present the same invitation/password/mailbox proofs.
+  // These handlers never use an ambient cookie to grant account authority or
+  // create a session. The browser keeps its original CSRF-protected endpoints.
+  @Public()
+  @LiveAccountControl()
+  @SkipCsrf()
+  @Post("auth/native/invitations/accept/")
+  @HttpCode(200)
+  nativeAccept(@Req() req: AuthenticatedRequest) { return this.operations.acceptInvite(req.body); }
+
+  @Public()
+  @LiveAccountControl()
+  @SkipCsrf()
+  @Post("auth/native/invitations/recipient-proof/")
+  @HttpCode(200)
+  nativeRecipientProof(@Req() req: AuthenticatedRequest) { return this.operations.recipientProof(req.body); }
 
   @Get("schools/:schoolId/administration/")
   @RequirePermission("sis.manage")
@@ -60,10 +88,6 @@ export class OperationsController {
   @RequirePermission("sis.manage")
   importStudents(@Req() req: AuthenticatedRequest, @Param("schoolId") school: string) { return this.operations.importStudents(req.authUser, school, req.body); }
 
-  @Post("schools/:schoolId/guardians/")
-  @RequirePermission("sis.manage")
-  guardian(@Req() req: AuthenticatedRequest, @Param("schoolId") school: string) { return this.operations.guardian(req.authUser, school, req.body); }
-
   @Post("schools/:schoolId/enrollments/")
   @RequirePermission("sis.manage")
   enroll(@Req() req: AuthenticatedRequest, @Param("schoolId") school: string) { return this.operations.enroll(req.authUser, school, req.body); }
@@ -78,6 +102,12 @@ export class OperationsController {
   @Post("schools/:schoolId/invitations/")
   invite(@Req() req: AuthenticatedRequest, @Param("schoolId") school: string) { return this.operations.invite(req.authUser, school, req.body); }
 
+  @Get("schools/:schoolId/invitations/:id/")
+  invitation(@Req() req: AuthenticatedRequest, @Param("schoolId") school: string, @Param("id") id: string) { return this.operations.invitationDetail(req.authUser, school, id); }
+
+  @Get('schools/:schoolId/invitations/:id/continuation/')
+  invitationContinuation(@Req() req: AuthenticatedRequest, @Param('schoolId') school: string, @Param('id') id: string) { return this.operations.invitationContinuation(req.authUser, school, id); }
+
   @Post("schools/:schoolId/invitations/:id/resend/")
   resend(@Req() req: AuthenticatedRequest, @Param("schoolId") school: string, @Param("id") id: string) { return this.operations.resendInvitation(req.authUser, school, id); }
 
@@ -88,12 +118,11 @@ export class OperationsController {
   member(@Req() req: AuthenticatedRequest, @Param("schoolId") school: string, @Param("id") id: string) { return this.operations.member(req.authUser, school, id, req.body, req.requestId); }
 
   @Get("schools/:schoolId/fees/")
-  @RequirePermission("fees.manage")
-  fees(@Req() req: AuthenticatedRequest, @Param("schoolId") school: string, @Query("student_id") student?: string) { return this.operations.fees(req.authUser, school, student); }
+  fees(@Req() req: AuthenticatedRequest, @Param("schoolId") school: string, @Query("student_id") student?: string, @Query("person_id") person?: string, @Query("invoice_id") invoice?: string, @Query() query: Record<string, string> = {}) { return this.operations.fees(req.authUser, school, student, person, invoice, query); }
 
   @Get("schools/:schoolId/fees/students/")
   @RequirePermission("fees.manage")
-  feeStudents(@Req() req: AuthenticatedRequest, @Param("schoolId") school: string) { return this.operations.feeStudents(req.authUser, school); }
+  feeStudents(@Req() req: AuthenticatedRequest, @Param("schoolId") school: string, @Query() query: Record<string, string> = {}) { return this.operations.feeStudents(req.authUser, school, query); }
 
   @Post("schools/:schoolId/fees/invoices/")
   @RequirePermission("fees.manage")

@@ -6,6 +6,8 @@ Normative parent: [ThatCampus product blueprint v2](PRODUCT_BLUEPRINT_V2.md)
 
 Architecture boundary: [Campus digital twin and agency architecture](CAMPUS_DIGITAL_TWIN_AND_AGENCY_ARCHITECTURE.md)
 
+Universal model companion: [realms, semantic catalogues and domain extension](UNIVERSAL_INSTITUTION_MODEL.md)
+
 Experience companion: [ThatCampus operating experience](THATCAMPUS_OPERATING_EXPERIENCE.md)
 
 ## 1. Purpose
@@ -224,8 +226,11 @@ Examples:
 - device `installed_at` gate/space;
 - route `operated_by` transport team.
 
-Kinds define source/target types, cardinality, overlap and closure rules in reviewed
-code. Domain services determine whether the source assignment is valid.
+Kinds define source/target types, cardinality, overlap, hierarchy and closure rules in an
+immutable reviewed semantic-catalogue version. The generic core validates those declared
+constraints; domain services and reviewed domain code determine whether the source
+assignment is valid. New relationship meaning cannot be invented through tenant custom
+fields or an unvalidated payload.
 
 ### 5.3 Domain event
 
@@ -443,6 +448,37 @@ A conversation groups correlated protocol messages without turning them into cha
 It retains protocol/version, participants, subject/context, current owner, source
 record/revision and terminal outcome. Per-recipient delivery, acknowledgement,
 claim, response and terminal resolution are independent states.
+
+When an accepted owning-domain transition makes earlier invitations obsolete, a
+source-qualified supersession may cancel that exact prior revision's open work.
+It MUST bind the current concrete command actor, matching current domain authority,
+freshly prepared command in the same owning transaction, prior model event and next typed outbox/model event
+to the same source, target and selected execution world. It retains the actual
+actor and transition evidence; it MUST NOT impersonate the recipient/original
+sender, imply a recipient response, or weaken ordinary message-response checks.
+An accepted command may only replay an exact already-retained supersession;
+inherited or durable pending receipts cannot authorize a new effect.
+
+#### Ordinary person-to-person Messages
+
+The user-facing Messaging domain remains separate from this operational mailbox. It
+owns conversation membership, prose, attachments, moderation, transport, delivery
+projection, read state and retention. After accepting a conversation action, it MUST
+write a typed outbox fact and journal it through the Model Core in the same database
+transaction. The core resolves the sender and current recipients to stable human
+agents and retains their event participation, correlation and privacy-safe metadata.
+
+The journal MUST NOT copy message bodies, attachments or inferred intent. The
+standard event vocabulary is `communication.conversation.created`,
+`communication.message.sent`, `communication.message.edited` and
+`communication.conversation.read`. A read-through event is evidence that one agent
+opened the domain conversation; it is not acceptance of an operational request.
+
+Prose becomes operational work only through a separate, explicit and authorized
+domain command or configured reaction. For example, “I am absent tomorrow” remains a
+chat message until the teacher confirms a Leave-domain command; the accepted Leave
+record then enters its own configured coordination trace. This boundary applies
+equally in Live and an isolated Simulation environment.
 
 ### 5.12 Command
 
@@ -703,6 +739,19 @@ owned work rather than silent last-write-wins.
 The core registers versions and dated occurrences from timetable, daily plan,
 calendar, event, route, examination and assignment domains.
 
+An occurrence's explicit `claim_kind` distinguishes non-reserving `availability`
+from existing `exclusive` schedule claims. Legacy callers retain exclusive
+semantics. Availability can refer to a canonical place/resource, but cannot assign
+human participants, an attendance class or a responsible teaching agent. It does
+not contribute to required-person work, occupancy/room-use pressure or teaching
+KPIs. Owning-domain Calendar/Today adapters label published availability and link
+to the source, rather than treating it as an exclusive activity. Switching claim
+kind on the same logical occurrence is not a permitted silent source revision.
+The Dining weekly increment is the first bounded consumer. Its
+[release 123 evidence](../VERIFICATION.md#dining) establishes publication,
+date exceptions, database-enforced participant exclusion and isolated-world
+behaviour; it does not establish general Dining reservations or physical service.
+
 It supports:
 
 - recurring plan publication and bounded occurrence expansion;
@@ -742,6 +791,20 @@ import provenance.
 
 The UI-facing Today/Requests APIs are owned by application/domain composition modules,
 not by exposing core tables.
+
+The shared **Operating day** composition is the canonical UI boundary for Now/Next.
+It combines the environment-qualified effective schedule from the Core with
+authoritative domain state (for example attendance lifecycle and accepted gate
+points) without copying those records into the Core. It must respect the institution's
+configured attendance grain: one register per class/day for `daily_class`, one per
+effective timetable occurrence for `scheduled_session`, and no academic register for
+`none`. The same application composition executes through the request-selected Live
+or isolated Simulation data plane, uses the execution clock for its date and session
+state, and returns the environment marker, provenance and freshness. Role filtering is
+by stable human-agent responsibility; administrators see the institution-wide day.
+Campus View, Today and future operational surfaces should consume this boundary or a
+checkpointed projection derived from it instead of independently reconstructing a
+different school day.
 
 ## 14. Behaviour configuration and Operating rules
 
@@ -859,8 +922,20 @@ separate, audited ceremony:
    single founder was allowed.
 6. Behaviour and Operating-rule templates are installed only as visible drafts. The
    authorized officeholder validates, rehearses, approves and activates them.
-7. Successful handover revokes the bootstrap grant. Failure leaves the institution
-   in setup-only mode with recovery evidence, never an implicit super-admin.
+7. Successful handover revokes the bootstrap grant. If no accepted operating
+   authority exists, failure leaves the institution in setup-only mode with
+   recovery evidence, never an implicit super-admin. Failure to establish a new
+   capability's authority blocks that action, not unrelated accepted operations.
+
+Owner clarification, 21 October 2026: perform the minimum audited ceremony for the
+chosen private operation, not a compulsory full-campus governance/legal setup.
+The first authority source, appointment, expiry, explicit single-founder exception
+where permitted and independent approval where required remain mandatory. Draft
+behaviour templates do not run until reviewed activation; no missing recipient or
+authority is filled by an implicit administrator. Progressive private setup and
+trust-sensitive public/integration gates remain separate. This is a target
+clarification, not evidence that current founder provisioning implements every
+ceremony step. See [End-to-end campus workflows](END_TO_END_CAMPUS_WORKFLOWS.md).
 
 Demo/local fixtures may abbreviate the ceremony only behind explicit demo flags and
 must identify their synthetic provenance. They are not production defaults.
@@ -868,8 +943,78 @@ must identify their synthetic provenance. They are not production defaults.
 ## 16. Simulation and what-if analysis
 
 The core must remain simulation-capable even before a full scenario engine ships.
-The implemented campus-planning specialization and current limits are recorded in
+The continuous same-application product contract, implementation and current limits are recorded in
 [Campus scenario simulation](CAMPUS_SCENARIO_SIMULATION.md).
+
+### 16.0 Execution-environment invariant
+
+The platform has one authoritative Live operational environment. Product workflows
+may bind temporarily to one isolated Simulation fork:
+
+```text
+LiveEnvironment {
+  kind: live,
+  institution_id,
+  clock: institution_wall_clock,
+  namespace_id: live:<institution_id>
+}
+
+SimulationEnvironment {
+  kind: simulation,
+  institution_id,
+  scenario_id,
+  run_id,
+  namespace_id: scenario:<scenario_id>:run:<run_id>,
+  virtual_clock,
+  source_snapshot_ref,
+  optional_end_at,
+  retention_policy
+}
+```
+
+Every runtime request, event, message, artifact, projection, idempotency key and query
+cache belongs to exactly one environment. Environment is not an optional HTTP hint and
+cannot be inferred from a date. A server-authoritative execution-environment session
+binds the authenticated user context to Live or one authorized Simulation run. The
+same application routes and domain service/API contracts resolve their clock, stores,
+agents, connectors and projection ports from that binding; a caller-controlled header,
+query parameter or body field cannot switch them.
+
+After an environment switch, every child surface preserves the same binding, while
+the client clears or partitions its query caches and realtime subscriptions before
+rendering. Missing Simulation support fails closed during development; it never
+queries Live and relabels the answer. This is only a migration guard. Release
+acceptance requires complete Simulation adapters for every enabled module, not a
+partially operational simulated application.
+
+The one-way boundary is:
+
+```text
+Live domain/twin --authorized snapshot--> Simulation run
+Simulation run --optional reviewed proposal--> new Live draft command
+```
+
+Scenario events, messages, observations, evidence, KPIs and caches never flow directly
+back to Live. A later reviewed proposal must create a new Live command, recheck current
+authority, rules, revisions and invariants, and retain only a minimal scenario receipt.
+
+### 16.0.1 Actor counterparts
+
+Snapshot materialization considers every eligible active Model Core agent kind:
+`human`, `team`, `device`, `integration` and `software`. Each source agent maps
+one-to-one to a distinct run-local scenario actor containing:
+
+- source agent ID and kind plus the safe person/external reference needed for lineage;
+- scenario/run/namespace identity;
+- copied effective role, authority-context and configuration references;
+- copied approved behaviour/scenario-policy version references, if any;
+- an explicit readiness state of `modelled`, `passive` or `unsupported`.
+
+The counterpart has no production credential, endpoint, session, token or independent
+Live authority. A source agent and its scenario counterpart are never interchangeable.
+Human uncertainty is not filled by code: deterministic structural behaviour can run
+immediately from the copied plan/rules, while choices requiring a human-response
+model remain unsupported unless an approved versioned scenario policy applies.
 
 ### 16.1 Isolation
 
@@ -877,21 +1022,55 @@ A scenario uses a separate namespace/tenant partition, virtual clock and synthet
 sanitized snapshot. Scenario IDs are mandatory on all scenario artifacts. Production
 connectors, recipients, commands, authority and notifications are unreachable.
 
-Each run has a deterministic seed, explicit scope and retention deadline. Credentials
+Baseline and scenario runs both offer speed and an optional virtual end. Without an
+end, either continues until stopped; returning to Live or closing the browser does not
+stop it. A scenario begins as an editable paused snapshot. Recent runs support exact-
+snapshot duplication and shared-elapsed-time comparison. This is not just the legacy
+bounded aggregate what-if calculation, and it has no mandatory 30-minute product TTL.
+
+Each run has a deterministic seed, explicit scope and independently managed retention. Credentials
 and endpoints are scenario-only; a code path that cannot prove scenario isolation
 must refuse execution.
+
+Snapshot creation is the only permitted Live read in the scenario lifecycle. It runs
+under current administrator authority and records a manifest, privacy transform,
+source revisions and hash. A runnable product Simulation snapshot covers the complete
+state needed by every module enabled for the institution, not merely the domain named
+by the first intervention. After capture, the runtime resolves configuration,
+authority evidence, domain stores/executors, clock, random source, messages, artifacts
+and projections exclusively from scenario-owned ports.
+
+Commands in Simulation traverse the same owning-domain validation, authority,
+state-machine, idempotency, audit and event semantics as Live, but commit to
+copy-on-write scenario state and scenario-only outboxes/connectors. The aggregate
+what-if calculation may remain a bounded first adapter while parity is built; it is
+not a substitute for this operational environment contract.
+
+Authority parity includes internal owning-domain attestations used in Live: the
+same domain must freshly recheck membership, responsibility/schedule, revisions and
+invariants against the isolated branch at virtual time. Core accepts that attestation
+only with an active run-local counterpart and matching sealed source snapshot and
+retains the execution actor and source provenance in its immutable authority receipt.
+The browser cannot submit such an attestation. This does not create a broad grant or
+permit Live authority reads. Where no domain attestation applies, the frozen Core
+grant evaluator remains mandatory.
 
 ### 16.2 Reuse
 
 Simulation reuses the same event schemas, behaviour versions, subscription matching,
-reaction logic, message protocols, domain command fakes and projection functions.
-Domain adapters provide deterministic scenario executors or explicit unsupported
-outcomes.
+reaction logic, message protocols, domain command handlers, invariants and projection
+functions. Environment-bound adapters replace persistence, clock and external-effect
+ports, not domain meaning. Deterministic models/fakes supply only inputs or effects
+that cannot safely occur outside Live—such as modeled human responses, sensors or
+connectors—and remain explicit. During development, an unavailable adapter returns an
+unsupported outcome rather than borrowing Live state.
 
 ### 16.3 Inputs
 
-- selected production snapshot with privacy-safe transformation;
-- synthetic campus fixture;
+- selected production snapshot with privacy-safe transformation (the required
+  starting point for an institution user's product Simulation);
+- synthetic campus fixture only in automated tests or the separate development
+  harness;
 - alternate timetable/role/resource configuration;
 - hypothetical observations or absences;
 - different Operating-rule/behaviour versions;
@@ -930,10 +1109,18 @@ ExecutionContext {
 }
 ```
 
-`live` may address approved production domain executors and channels. `rehearsal` and
-`simulation` use snapshot/fake domain executors and a sink-only dispatcher;
+The production implementation may express `live` and `simulation` as a discriminated
+union so illegal dependencies are unrepresentable. A scenario execution context must
+also provide a scenario projection/event sink and only scenario-capable domain
+executor registrations. A Live connector, command bus, recipient resolver or
+production authority resolver must not be constructible from it.
+
+`live` may address approved production stores and channels. `rehearsal` and
+`simulation` use the same domain executors with snapshot/copy-on-write stores,
+scenario authority/configuration resolvers and a sink-only dispatcher;
 `side_effect_policy` must make production recipients, credentials and commands
-unaddressable. `replay` can rebuild projections or re-evaluate a bounded trace but
+unaddressable. Explicit fakes model only unavailable external observations/effects or
+approved cohort behaviour; they do not replace domain invariants. `replay` can rebuild projections or re-evaluate a bounded trace but
 cannot redispatch external messages or repeat domain writes. Wall-clock reads,
 `CURRENT_TIMESTAMP`, random IDs and provider calls behind simulation-capable logic
 must come from the context or a declared adapter. A domain without a deterministic
@@ -1193,6 +1380,12 @@ occurrence corrections append version/supersession records with `valid_from`,
 `valid_until`, `recorded_at` and `superseded_at`; they do not overwrite the only copy
 of a prior expectation. `resolveAt(effectiveInstant, recordedAsOf)` uses the supplied
 recorded boundary for both source selection and freshness, never the process clock.
+The bounded multi-subject read uses that same point resolver and assertion mapper,
+with one ordered result group for each requested position, including duplicate or
+unmapped subjects. A technical bound of64 subjects controls each query; callers
+chunk their complete authorized set rather than truncate it. All groups share the
+effective/recorded boundary and selected namespace. Batching grants no additional
+authority and does not introduce a cross-world cache or another temporal engine.
 Aggregate sequence plus source revision detect gaps and out-of-order delivery.
 Privacy retention may redact payload while preserving the minimum authorized lineage
 skeleton and redaction evidence.
@@ -1350,6 +1543,66 @@ slice:
   evidence, fail-closed production side-effect policy, deterministic baseline versus
   alternative comparison, optional policy-backed ensembles and bounded transient
   storage. `campus-scenarios` is the first domain adapter, not a parallel runtime.
+- OperationalRealm and environment-qualified model identity from migrations 124 and 125,
+  including separately addressable Live/Simulation entities and observations; immutable
+  reviewed semantic/protocol/capability definitions; effective-dated realm activation; and
+  exact definition/version retention on catalogue-certified Attendance evidence. Legacy
+  adapters are still accepted only as explicitly uncertified migration inputs.
+- environment-qualified relationship history and accepted command/outcome traces from
+  migration 126. Composite address constraints prevent cross-environment endpoints/results,
+  while relationship and command idempotency can replay independently in an isolated
+  Simulation namespace.
+- an environment-qualified mutable execution spine from migration 127: events and causal
+  links, temporal occurrence revisions, reactions, coordination exceptions, operational
+  messages and outcomes inherit one immutable ModelAddress. Replay keys and the shared current
+  activity/temporal/signal projections are namespace-aware, allowing Live and Simulation to
+  execute the same logical workflow without sharing results.
+- execution identity/configuration/authority isolation from migration 128: immutable execution
+  snapshots retain exact rule, behaviour, domain-config and catalogue versions; environment-local
+  actor bindings distinguish a stable real-world agent from its Simulation counterpart; Simulation
+  evaluates only captured authority grants while Live evaluates current effective authority;
+  immutable authority receipts can be linked to accepted commands; and forward-only projection
+  checkpoints are partitioned by full ModelAddress and consumer.
+- domain-neutral execution provisioning and recovery from migration 129: versioned snapshot adapters
+  are capability-manifest backed and realm activated; an authorized Live capture freezes exact module
+  coverage and accepts only matching content-addressed, privacy-transformed contributions; an isolated
+  Simulation restore must report every captured adapter before readiness; projection recovery uses
+  environment-local leased jobs, configured retries and poison-event quarantine; and transient
+  retention requires explicit policy, authority, artifact coverage and a privileged deletion receipt.
+- a pre-domain command gateway from migration 130: every adopted material mutation is represented by
+  one environment-qualified, replay-safe command envelope before its owning domain changes state. The
+  envelope retains an immutable request hash, stable acting-human identity, target and expected revision,
+  handler/version, exact configuration references and authority evidence. Completion records the owning
+  domain's terminal outcome and resulting revision/event; ambiguous completion has the explicit
+  `uncertain` state rather than being reported as success. Staff-leave decisions and attendance record/
+  submission mutations are the first adopted paths. Live commands retain a fresh owning-domain authority
+  attestation. Following the 19 October continuous-Simulation correction, an internal domain attestation
+  can also be retained after the same isolated-domain rechecks, bound to the matching run-local actor
+  and sealed source snapshot; otherwise Simulation evaluates frozen authority grants.
+
+  Replay discovery is a separate narrow read port, `DomainCommandReceiptReadPort`.
+  It checks the **current execution-clock** acting endpoint and selects only the
+  exact school/realm/world, actor, source domain, handler/version and idempotency
+  key, serialized by the gateway's command-key lock. It exposes the original
+  source address, action, expected revision, safe payload commitment and terminal
+  outcome, or an explicit pending state. It does not authorize a mutation. The
+  owning domain must first recheck current source authority and compare the exact
+  source/action/payload commitment before returning the retained outcome; pending
+  work fails closed and never permits repeating native effects. A new command
+  uses the current server-owned execution time, not a client-supplied historical
+  time retained merely to make the gateway envelope hash match. Domains do not
+  query Core persistence to reconstruct this lookup. This read seam does not add
+  abandoned-command recovery, authorize an expired endpoint, or weaken the
+  gateway's immutable-envelope checks.
+
+  Exact coordination-trace discovery additionally exposes the current message
+  protocol state, with the event/reaction/message bound to one execution namespace.
+  It is not domain authorization or a generic terminal-work query. An owning
+  sender withdrawal first rechecks current identity and exact native source rights,
+  then matches retained event/message/correlation/source revision. A verified
+  already-terminal protocol message need not be cancelled again, but cannot be
+  revived or presented as proof of a native decision. Missing/ambiguous state
+  fails closed; private message bodies are not returned by this lookup.
 
 The schedule/cover items above are local release-candidate behavior, not completion
 of MC-2. Disposable PostgreSQL verification covers migration, exact acceptance,
@@ -1367,7 +1620,13 @@ Not yet implemented at this checkpoint:
   retry/expiry/dead-letter execution and loop/fan-out budgets;
 - mailbox query/claim/reassign/channel-delivery APIs and dated team membership;
 - general authority resolution from roles/appointments;
-- idempotent domain command router across workflows;
+- command-gateway adoption by the remaining material domain mutations, handler/configuration
+  administration, independently durable evidence for denied or failed attempts whose domain transaction
+  rolls back, and recovery/expiry for abandoned `pending` or `uncertain` commands;
+- implementation and activation of every enabled domain snapshot adapter, encrypted artifact
+  transport, privileged retention execution, quarantine release tooling, adoption of the generalized
+  authority-receipt reference by every material command adapter, and database-backed
+  migration/concurrency evidence for the migration-128/129 execution boundary;
 - configured staff-leave rerouting/transfer when the officeholder changes after
   submission (decision currently fails closed rather than guessing a recipient);
 - configured transport-duty offer/decision rerouting when either recipient changes
@@ -1405,12 +1664,16 @@ Known transitional mismatches that later slices MUST remove:
   contract, not yet executable isolation;
 - `recordAcceptedChange` records an already accepted topology result and is not the
   general pre-domain authority/command gateway;
-- some operational-signal queries still join enrollment/student domain tables rather
-  than consuming adapter-owned projections;
+- Campus View/KPI and scenario snapshot adapters still compose Core records with
+  enrollment/student/domain tables at read time rather than consuming independently
+  checkpointed adapter-owned projections. Direct Core event/message-table access has
+  been removed from the transport and attendance-coordination business services and a
+  source-level boundary guard now limits such reads to the named projection/snapshot adapters;
 - relationship kinds are syntactically checked but not yet enforced through a
   reviewed relationship-type/cardinality catalogue;
-- event ordering, privacy/rule fields, schema registry/upcasters and tenant-partitioned
-  checkpoint semantics are incomplete;
+- event ordering, privacy/rule fields, schema upcasters and tenant-partitioned checkpoint
+  semantics are incomplete; the registry now resolves realm-pinned observation contracts but
+  is not yet administered or adopted by every adapter;
 - contradiction results are signals, not yet durable owned cases;
 - current temporal `resolveAt` and accepted-observation naming require conformance
   review so historical/future context cannot be mislabeled as present domain truth.

@@ -23,7 +23,8 @@ export function useDemoChat(scope: string) {
   const [openKey, setOpenKey] = useState<string | undefined>(() => stateRequestsReopen || consumeAssistantReopen(href) ? key : undefined);
   const trigger = useRef<HTMLButtonElement | null>(null);
   const id = useId();
-  const fullPage = /^\/(teacher|principal|parent|student)\/assistant\/?$/.test(location.pathname);
+  const fullPage = location.pathname === "/areas/assistant/conversation"
+    || /^\/(teacher|principal|parent|student)\/assistant\/?$/.test(location.pathname);
   const close = () => { setOpenKey(undefined); trigger.current?.focus(); };
   return {
     id, key, fullPage, active: fullPage || openKey === key, open: !fullPage && openKey === key,

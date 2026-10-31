@@ -1,7 +1,9 @@
+import { applicationNow } from "../simulation/applicationTime";
 import { ThatCampusLoadingIcon as LoaderCircle } from "../../components/ThatCampusLoader";
 import { type InfiniteData, useInfiniteQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useCallback, useEffect, useRef, useState } from "react";
-import { Bell, BookOpen, CalendarCheck2, Check, ClipboardCheck, } from "lucide-react";
+import { Check, X } from "lucide-react";
+import { ProductIcon } from "../../components/ProductIcon";
 import { useLocation, useNavigate } from "react-router-dom";
 import { useOptionalAuth } from "../auth/AuthContext";
 import { apiFetch } from "../../lib/api";
@@ -38,7 +40,7 @@ interface NotificationCenterProps {
 function formatWhen(value: string) {
   const date = new Date(value);
   if (Number.isNaN(date.getTime())) return "Recently";
-  const elapsedMinutes = Math.max(0, Math.floor((Date.now() - date.getTime()) / 60_000));
+  const elapsedMinutes = Math.max(0, Math.floor((applicationNow().getTime() - date.getTime()) / 60_000));
   if (elapsedMinutes < 1) return "Just now";
   if (elapsedMinutes < 60) return `${elapsedMinutes}m ago`;
   if (elapsedMinutes < 24 * 60) return `${Math.floor(elapsedMinutes / 60)}h ago`;
@@ -46,10 +48,10 @@ function formatWhen(value: string) {
 }
 
 function KindIcon({ kind }: { kind: NotificationKind }) {
-  if (kind === "attendance") return <ClipboardCheck size={17} />;
-  if (kind === "leave") return <CalendarCheck2 size={17} />;
-  if (kind === "diary") return <BookOpen size={17} />;
-  return <Bell size={17} />;
+  if (kind === "attendance") return <ProductIcon name="attendance" size={24} />;
+  if (kind === "leave") return <ProductIcon name="calendar" size={24} />;
+  if (kind === "diary") return <ProductIcon name="updates" size={24} />;
+  return <ProductIcon name="notifications" size={24} />;
 }
 
 export function NotificationCenter({
@@ -65,6 +67,7 @@ export function NotificationCenter({
   const authUserId = auth?.user?.id ?? "anonymous";
   const notificationsQueryKey = ["notifications", authUserId] as const;
   const anchor = useRef<HTMLDivElement>(null);
+  const trigger = useRef<HTMLButtonElement>(null);
   const [panelOpen, setPanelOpen] = useState(false);
   const routeOpen = new URLSearchParams(location.search).get("notifications") === "open";
   const open = panelOpen || routeOpen;
@@ -102,7 +105,7 @@ export function NotificationCenter({
             ...page,
             unread_count: Math.max(0, page.unread_count - (wasUnread ? 1 : 0)),
             results: page.results.map((item) =>
-              item.id === id ? { ...item, read_at: new Date().toISOString() } : item,
+              item.id === id ? { ...item, read_at: applicationNow().toISOString() } : item,
             ),
           })),
         };
@@ -146,7 +149,8 @@ export function NotificationCenter({
         // screen only after that screen has mounted successfully.
         destination.searchParams.set("attention_notification_id", item.id);
       } else if (!item.read_at) {
-        await readMutation.mutateAsync(item.id);
+        try { await readMutation.mutateAsync(item.id); }
+        catch { return; }
       }
       setOpen(false);
       const originParams = new URLSearchParams(location.search);
@@ -160,6 +164,7 @@ export function NotificationCenter({
   return (
     <div className="notification-center" ref={anchor}>
       <button
+        ref={trigger}
         className={buttonClassName}
         type="button"
         aria-label={unreadCount ? `Notifications, ${unreadCount} unread` : "Notifications"}
@@ -171,7 +176,7 @@ export function NotificationCenter({
           setOpen(!open);
         }}
       >
-        <Bell size={iconSize} />
+        <ProductIcon name="notifications" size={iconSize + 6} />
         {unreadCount > 0 ? <span className="notification-center__dot" aria-hidden="true">{unreadCount > 99 ? "99+" : unreadCount}</span> : null}
       </button>
 
@@ -179,8 +184,9 @@ export function NotificationCenter({
         <section className="notification-panel" role="dialog" aria-label="Notifications">
           <header>
             <span><strong>Notifications</strong><small>{unreadCount ? `${unreadCount} unread` : "You're all caught up"}</small></span>
-            {query.isFetching ? <LoaderCircle className="notification-spin" size={16} /> : <Check size={16} />}
+            <button className="notification-panel__close" type="button" aria-label="Close notifications" onClick={() => { setOpen(false); trigger.current?.focus(); }}><X size={20} aria-hidden="true" /></button>
           </header>
+          {readMutation.isError ? <p className="notification-panel__read-error" role="alert">Read status was not saved. Try opening the update again.</p> : null}
           {query.isPending ? (
             <div className="notification-panel__state"><LoaderCircle className="notification-spin" size={18} /><span>Loading school updates...</span></div>
           ) : query.isError ? (

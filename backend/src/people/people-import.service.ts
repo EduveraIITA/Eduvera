@@ -1,5 +1,7 @@
-import { schoolPermission } from "../roles/authorization.js";
-import {BadRequestException,ConflictException,Injectable,Logger,NotFoundException,type OnModuleInit,type OnModuleDestroy} from "@nestjs/common";
+import { executionNow } from "../campus-model-core/execution-time.runtime.js";
+import { executionEnvironmentStorage } from "../campus-model-core/execution-time.runtime.js";
+import { institutionSchoolPermission } from "../roles/authorization.js";
+import {BadRequestException,ConflictException,Inject,Injectable,Logger,NotFoundException,Optional,type OnModuleInit,type OnModuleDestroy} from "@nestjs/common";
 import {createHash,randomUUID} from "node:crypto";
 import {sql} from "kysely";
 import {z} from "zod";
@@ -12,27 +14,40 @@ import {saveValidatedImport} from "./import-writer.js";
 import type {ImportDb,ImportJob,ImportRow} from "./import-types.js";
 import type {Transaction} from "kysely";
 import type {Database} from "../database/types.js";
+import {HUMAN_AGENT_IDENTITY_PORT,type HumanAgentIdentityPort} from '../campus-model-core/human-agent-identity.port.js';
+import {DOMAIN_COMMAND_GATEWAY_PORT,type DomainCommandGatewayPort} from '../campus-model-core/domain-command-gateway.port.js';
+import {DOMAIN_EVENT_JOURNAL_PORT,type DomainEventJournalPort} from '../campus-model-core/domain-event-journal.port.js';
+import {prepareAttachmentBatch} from './person-attachment.js';
+import {AcademicParticipationBridge} from '../attendance/academic-participation-bridge.service.js';
+import {lockSchedule} from '../day-plans/schedule.js';
 
 const uuid=z.string().uuid();
 @Injectable()
 export class PeopleImportService implements OnModuleInit,OnModuleDestroy {
   private timer:ReturnType<typeof setInterval>|undefined;
-  private cleaning=false;
-  constructor(private readonly db:DatabaseService,private readonly events:SchoolEventService){}
+  private readonly cleaning=new Set<string>();
+  constructor(private readonly db:DatabaseService,private readonly events:SchoolEventService,
+    @Optional() @Inject(HUMAN_AGENT_IDENTITY_PORT) private readonly identity?:HumanAgentIdentityPort,
+    @Optional() @Inject(DOMAIN_COMMAND_GATEWAY_PORT) private readonly gateway?:DomainCommandGatewayPort,
+    @Optional() @Inject(DOMAIN_EVENT_JOURNAL_PORT) private readonly journal?:DomainEventJournalPort,
+    @Optional() private readonly attendance?:AcademicParticipationBridge){}
   onModuleInit(){const run=()=>void this.expireDrafts().catch(()=>Logger.warn("Import retention cleanup will retry.","PeopleImportService"));run();this.timer=setInterval(run,15*60*1000);this.timer.unref();}
   onModuleDestroy(){if(this.timer)clearInterval(this.timer);}
   async expireDrafts(){
-    if(this.cleaning)return;this.cleaning=true;
+    const environment=executionEnvironmentStorage.getStore();
+    if(environment?.kind==='simulation'&&environment.domain_read_only)return;
+    const namespace=executionEnvironmentStorage.getStore()?.namespace_id??"live";
+    if(this.cleaning.has(namespace))return;this.cleaning.add(namespace);
     try{await this.db.transaction().execute(async db=>{
       const expired=(await sql<{id:string}>`SELECT id FROM people_imports WHERE state='draft' AND expires_at<=clock_timestamp() ORDER BY expires_at LIMIT 100 FOR UPDATE SKIP LOCKED`.execute(db)).rows.map(r=>r.id);
       if(!expired.length)return;
       await sql`UPDATE people_import_rows SET raw_values='{}'::jsonb,guardian_choice='{}'::jsonb WHERE import_id=ANY(${expired}::uuid[])`.execute(db);
       await sql`UPDATE people_imports SET state='expired',revision=revision+1,updated_at=now() WHERE id=ANY(${expired}::uuid[])`.execute(db);
-    });}finally{this.cleaning=false;}
+    });}finally{this.cleaning.delete(namespace);}
   }
   private async authorize(db:ImportDb,user:AuthUser,schoolId:string,lock=false){
     uuid.parse(schoolId);
-    await schoolPermission(db,user,schoolId,"sis.manage",lock);
+    await institutionSchoolPermission(db,user,schoolId,"sis.manage",lock);
   }
   private async job(db:ImportDb,id:string,schoolId:string,lock=false){
     const job=(await sql<ImportJob>`SELECT * FROM people_imports WHERE id=${uuid.parse(id)}::uuid AND school_id=${uuid.parse(schoolId)}::uuid ${lock?sql`FOR UPDATE`:sql``}`.execute(db)).rows[0];
@@ -45,7 +60,7 @@ export class PeopleImportService implements OnModuleInit,OnModuleDestroy {
     await this.events.enqueueUserEvent(db,{schoolId,eventType:"people.updated",aggregateType:"people_import",aggregateId:id,audienceUserIds:audience,
       idempotencyKey:`import-draft:${id}:${revision}`,payload:{import_id:id,revision,refresh:["people"]}});
   }
-  private ensureDraft(job:ImportJob,revision:number){if(job.state!=='draft')throw new ConflictException("This import is no longer editable.");if(new Date(job.expires_at).getTime()<=Date.now())throw new ConflictException("This import expired. Upload a new file.");if(job.revision!==revision)throw new ConflictException("This import changed. Reload the latest review before continuing.");}
+  private ensureDraft(job:ImportJob,revision:number){if(job.state!=='draft')throw new ConflictException("This import is no longer editable.");if(new Date(job.expires_at).getTime()<=executionNow().getTime())throw new ConflictException("This import expired. Upload a new file.");if(job.revision!==revision)throw new ConflictException("This import changed. Reload the latest review before continuing.");}
 
   async template(user:AuthUser,schoolId:string){await this.authorize(this.db,user,schoolId);return `${IMPORT_COLUMNS.join(",")}\r\n`;}
   async list(user:AuthUser,query:Record<string,string>){
@@ -76,10 +91,12 @@ export class PeopleImportService implements OnModuleInit,OnModuleDestroy {
   }
   async detail(user:AuthUser,id:string,schoolId:string){
     await this.authorize(this.db,user,schoolId);
+    const environment=executionEnvironmentStorage.getStore();
+    const readOnly=environment?.kind==='simulation'&&environment.domain_read_only;
     // Directly purge this authorized expired draft, even when the background queue is busy.
-    await this.db.transaction().execute(async db=>{
+    if(!readOnly)await this.db.transaction().execute(async db=>{
       const job=await this.job(db,id,schoolId,true);
-      if(job.state==='draft'&&new Date(job.expires_at).getTime()<=Date.now()){
+      if(job.state==='draft'&&new Date(job.expires_at).getTime()<=executionNow().getTime()){
         await sql`UPDATE people_import_rows SET raw_values='{}'::jsonb,guardian_choice='{}'::jsonb WHERE import_id=${id}::uuid`.execute(db);
         await sql`UPDATE people_imports SET state='expired',revision=revision+1,updated_at=now() WHERE id=${id}::uuid`.execute(db);
         await db.insertInto("audit_events").values({school_id:schoolId,actor_id:null,action:"people.import.expired",target_type:"people_import",target_id:id,request_id:randomUUID(),ip_hash:null,metadata:{}}).execute();
@@ -89,7 +106,7 @@ export class PeopleImportService implements OnModuleInit,OnModuleDestroy {
     return this.db.transaction().setIsolationLevel("repeatable read").execute(async db=>{
       const job=await this.job(db,id,schoolId);
       const summary={id:job.id,filename:job.filename,state:job.state,revision:job.revision,row_count:job.row_count,created_at:job.created_at,expires_at:job.expires_at,receipt:job.receipt};
-      if(job.state!=='draft'||new Date(job.expires_at).getTime()<=Date.now())return {...summary,state:job.state==='draft'?'expired':job.state,review:null};
+      if(job.state!=='draft'||new Date(job.expires_at).getTime()<=executionNow().getTime())return {...summary,state:job.state==='draft'?'expired':job.state,review:null};
       return {...summary,review:await validateImport(db,job,await this.rows(db,id))};
     });
   }
@@ -123,21 +140,42 @@ export class PeopleImportService implements OnModuleInit,OnModuleDestroy {
     try{return await this.db.transaction().execute(async db=>{
       await sql`SET LOCAL lock_timeout='5s'`.execute(db);await sql`SET LOCAL statement_timeout='20s'`.execute(db);
       await this.authorize(db,req.authUser,input.school_id,true);const job=await this.job(db,id,input.school_id,true);
+      const ports=this.identity&&this.gateway&&this.journal?{identity:this.identity,gateway:this.gateway,journal:this.journal}:undefined;
+      if(ports){const actor=await ports.identity.resolveAccountEndpoint(db,{school_id:input.school_id,user_id:req.authUser.id,at:executionNow().toISOString()});
+        if(!actor.acting)throw new ConflictException('Current campus app access is required.');}
       if(job.state==='committed'){if(job.commit_token!==input.validation_token||job.revision!==input.expected_revision+1)throw new ConflictException("This import was committed from a different review.");return job.receipt;}
       this.ensureDraft(job,input.expected_revision);const rows=await this.rows(db,id);
+      await lockSchedule(db,job.school_id);
+      const referencedPeople=[...new Set(rows.filter(row=>row.decision==='include').flatMap(row=>[row.values.person_id,row.values.guardian_person_id,
+        row.guardian_choice.mode==='person'?row.guardian_choice.person_id:undefined]).filter((value):value is string=>uuid.safeParse(value).success))];
+      if(referencedPeople.length&&!ports)throw new ConflictException('The reviewed existing-person import path is unavailable.');
       // Same lock order as individual enrollment: admission, classes, term, guardians, registers.
       const admissions=[...new Set(rows.filter(r=>r.decision==='include').map(r=>r.values.admission_number.toUpperCase()))].sort();
       await sql`SELECT pg_advisory_xact_lock(hashtextextended(key,0)) FROM (SELECT unnest(${admissions.map(admission=>`admission:${job.school_id}:${admission}`)}::text[]) AS key ORDER BY key OFFSET 0) ordered_keys`.execute(db);
+      if(referencedPeople.length)await sql`SELECT id FROM school_people WHERE school_id=${job.school_id}::uuid AND id=ANY(${referencedPeople}::uuid[]) ORDER BY id FOR UPDATE`.execute(db);
       const preflight=await validateImport(db,job,rows);const classIds=[...new Set(preflight.rows.flatMap(r=>r.normalized?[r.normalized.class_section_id]:[]))];
       await sql`SELECT c.id FROM class_sections c WHERE c.school_id=${job.school_id}::uuid AND c.id=ANY(${classIds}::uuid[]) ORDER BY c.id FOR UPDATE OF c`.execute(db);
       await sql`SELECT id FROM academic_terms WHERE id=${job.term_id}::uuid FOR SHARE`.execute(db);
       const guardians=rows.flatMap(r=>r.decision==='include'&&r.guardian_choice.mode==='existing'?[r.guardian_choice.id]:[]);
       await sql`SELECT p.id FROM parents p JOIN guardian_school_profiles gp ON gp.guardian_id=p.id JOIN school_people person ON person.id=gp.person_id WHERE gp.school_id=${job.school_id}::uuid AND p.id=ANY(${guardians}::uuid[]) ORDER BY p.id FOR UPDATE OF p FOR SHARE OF gp,person`.execute(db);
-      await sql`SELECT id FROM attendance_registers WHERE school_id=${job.school_id}::uuid AND term_id=${job.term_id}::uuid AND class_section_id=ANY(${classIds}::uuid[]) ORDER BY id FOR UPDATE`.execute(db);
+      await sql`SELECT register.id FROM activity_attendance_registers register
+        JOIN schedule_activity_occurrences occurrence ON occurrence.id=register.occurrence_id AND occurrence.school_id=register.school_id
+        WHERE register.school_id=${job.school_id}::uuid AND occurrence.term_id=${job.term_id}::uuid
+          AND occurrence.source='academic' AND occurrence.context_ref=ANY(${classIds}::uuid[])
+        ORDER BY register.id FOR UPDATE OF register`.execute(db);
       const review=await validateImport(db,job,rows);
       if(!review.summary.included||review.summary.errors)throw new ConflictException("Resolve or skip every invalid row before importing. At least one valid row is required.");
       if(review.validation_token!==input.validation_token)throw new ConflictException("School records changed since this review. Reload and check the updated results before confirming.");
-      return saveValidatedImport(db,this.events,req,job,review);
+      if(review.registers.length&&!this.attendance)throw new ConflictException('The canonical enrollment roster service is required.');
+      const targetDates=new Map<string,{class_id:string;term_id:string;effective_on:string}>();
+      for(const row of review.rows)if(row.decision==='include'&&row.normalized){const value=row.normalized,prior=targetDates.get(value.class_section_id);
+        if(!prior||value.enrolled_on<prior.effective_on)targetDates.set(value.class_section_id,{class_id:value.class_section_id,term_id:job.term_id,effective_on:value.enrolled_on});}
+      const prepared=ports?await prepareAttachmentBatch(db,ports,{school_id:job.school_id,actor_id:req.authUser.id,target_id:job.id,
+        target_kind:'people_import',label:'Reviewed enrollment import',revision:job.revision,command_type:'people.enrollment.import',source_domain:'people',
+        key:`people-import:${job.id}`,correlation_id:job.id,request_hash:review.validation_token,permission:'sis.manage',roster_targets:[...targetDates.values()]}):undefined;
+      if(prepared&&this.attendance)await this.attendance.prepareEnrollmentRostersInTransaction(db,req.authUser,job.school_id,
+        {kind:'import',review_id:job.id,command_id:prepared.command_id});
+      return saveValidatedImport(db,this.events,req,job,review,ports&&prepared?{ports,prepared}:undefined,this.attendance);
     });}catch(error){const code=(error as {code?:string}).code;if(['23505','40001','40P01','55P03','57014'].includes(code??''))throw new ConflictException("Another school update conflicted with this import. Nothing from this attempt was saved; reload and review before retrying.");throw error;}
   }
   async report(user:AuthUser,id:string,schoolId:string){

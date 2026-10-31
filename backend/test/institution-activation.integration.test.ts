@@ -36,7 +36,6 @@ suite("institution activation and account trust against PostgreSQL 17", () => {
   const cookies = new Map<string, string>();
   let server: ChildProcess;
   let userId = "";
-  let schoolId = "";
   let recoveryCodes: string[] = [];
 
   async function request(path: string, body?: unknown, method = body === undefined ? "GET" : "POST") {
@@ -84,11 +83,12 @@ suite("institution activation and account trust against PostgreSQL 17", () => {
 
   afterAll(async () => { server?.kill("SIGTERM"); await pool.end(); });
 
-  it("requires verified ownership before either onboarding lane", async () => {
-    const rejected = await request("onboarding/coaching-workspaces/", {
-      name: "Kiran Tutorials", code: `coach-${suffix.slice(0, 8)}`, timezone: "Asia/Kolkata", delivery_mode: "hybrid", minors_enrolled: true,
+  it("provisions a neutral private workspace without making verification a setup gate", async () => {
+    const created = await request("onboarding/workspace/", {
+      timezone: "Asia/Kolkata", goals: ["attendance"],
     });
-    expect(rejected.status).toBe(409);
+    expect(created.status, JSON.stringify(created.data)).toBe(201);
+    expect(created.data.workspace).toMatchObject({ profile_named: false, display_name: "Your campus" });
     const issued = await request("auth/email-verification/request/", {});
     expect(issued.status).toBe(201);
     expect(issued.data.development_token).toHaveLength(43);
@@ -96,75 +96,7 @@ suite("institution activation and account trust against PostgreSQL 17", () => {
     expect((await pool.query("SELECT email_verified_at IS NOT NULL AS verified FROM users WHERE id=$1", [userId])).rows[0].verified).toBe(true);
   });
 
-  it("creates a coaching workspace and writes a real quick-start foundation", async () => {
-    const created = await request("onboarding/coaching-workspaces/", {
-      name: "Kiran Tutorials", code: `coach-${suffix.slice(0, 8)}`, timezone: "Asia/Kolkata", delivery_mode: "hybrid", minors_enrolled: true,
-    });
-    expect(created.status, JSON.stringify(created.data)).toBe(201);
-    schoolId = created.data.id;
-    const before = await request(`schools/${schoolId}/activation/`);
-    expect(before.status).toBe(200);
-    expect(before.data.institution.capability_pack).toBe("coaching_core");
-    expect(before.data.institution.status).toBe("draft");
-    expect(before.data.checks.find((check: any) => check.key === "owner_email").complete).toBe(true);
-
-    const quick = await request(`schools/${schoolId}/activation/quick-start/`, {
-      academic_year: "2026-27", term_name: "Term 1", starts_on: "2026-04-01", ends_on: "2027-03-31",
-      grade_or_program: "Foundation", section: "A",
-      subjects: [{ code: "MATH", name: "Mathematics", short_name: "Maths" }],
-      attendance_threshold: 80, medical_document_after_days: 2,
-      contact_name: "Kiran Tutorials office", contact_phone: "+91 9000000000", contact_email: "",
-      teaching_days: [1, 2, 3, 4, 5, 6], starts_at: "17:00", ends_at: "18:00",
-    });
-    expect(quick.status, JSON.stringify(quick.data)).toBe(201);
-    expect(quick.data.counts).toMatchObject({ terms: 1, cohorts: 1, subjects: 1, schedule: 6 });
-    expect((await pool.query("SELECT count(*)::int AS count FROM attendance_policies policy JOIN academic_terms term ON term.id=policy.term_id WHERE term.school_id=$1", [schoolId])).rows[0].count).toBe(1);
-    const convergenceEvents = await pool.query(
-      "SELECT event_type,aggregate_type,payload,audience_user_ids FROM event_outbox WHERE school_id=$1 AND (idempotency_key LIKE 'activation:%') ORDER BY sequence",
-      [schoolId],
-    );
-    expect(convergenceEvents.rows.filter((row) => row.event_type === "administration.updated")).toHaveLength(3);
-    expect(convergenceEvents.rows.filter((row) => row.event_type === "timetable.updated")).toHaveLength(6);
-    expect(convergenceEvents.rows).toEqual(expect.arrayContaining([
-      expect.objectContaining({ aggregate_type: "term", payload: expect.objectContaining({ catalog_kind: "terms" }) }),
-      expect.objectContaining({ aggregate_type: "class", payload: expect.objectContaining({ catalog_kind: "classes" }) }),
-      expect.objectContaining({ aggregate_type: "subject", payload: expect.objectContaining({ catalog_kind: "subjects" }) }),
-      expect.objectContaining({ aggregate_type: "timetable_slot", payload: expect.objectContaining({ class_section_id: expect.any(String), refresh: expect.arrayContaining(["calendar", "institution-activation"]) }) }),
-    ]));
-    expect(convergenceEvents.rows.every((row) => row.audience_user_ids.includes(userId))).toBe(true);
-    const temporalFoundation = (await pool.query(`SELECT
-        (SELECT count(DISTINCT event.source_record_id)::int
-          FROM campus_model_events event
-          WHERE event.school_id=$1 AND event.event_type='timetable.legacy_slot_created') AS source_count,
-        (SELECT count(*)::int
-          FROM campus_model_schedule_occurrences occurrence
-          JOIN campus_model_events basis ON basis.id=occurrence.basis_event_id
-            AND basis.school_id=occurrence.school_id
-          WHERE occurrence.school_id=$1 AND occurrence.recorded_until IS NULL
-            AND basis.event_type='timetable.legacy_slot_created') AS occurrence_count,
-        EXISTS(SELECT 1 FROM campus_model_agent_endpoints endpoint
-          WHERE endpoint.school_id=$1 AND endpoint.endpoint_kind='account'
-            AND endpoint.provider='thatcampus' AND endpoint.user_id=$2
-            AND endpoint.status='active' AND endpoint.effective_until IS NULL) AS owner_identity,
-        (SELECT bool_and(slot.revision=1 AND slot.updated_by=$2)
-          FROM timetable_slots slot
-          JOIN class_sections section ON section.id=slot.class_section_id
-          WHERE section.school_id=$1) AS sources_versioned`, [schoolId, userId])).rows[0];
-    expect(temporalFoundation).toMatchObject({
-      source_count: 6,
-      owner_identity: true,
-      sources_versioned: true,
-    });
-    expect(temporalFoundation.occurrence_count).toBeGreaterThan(0);
-    expect((await request(`schools/${schoolId}/activation/quick-start/`, {
-      academic_year: "2026-27", term_name: "Again", starts_on: "2026-04-01", ends_on: "2027-03-31",
-      grade_or_program: "Again", section: "A", subjects: [{ code: "SCI", name: "Science", short_name: "Science" }],
-      attendance_threshold: 80, medical_document_after_days: 2, contact_name: "Office", contact_phone: "1", contact_email: "",
-      teaching_days: [1], starts_at: "17:00", ends_at: "18:00",
-    })).status).toBe(409);
-  });
-
-  it("protects privileged activation with authenticator MFA and a real enrolment", async () => {
+  it("protects the workspace owner account with authenticator MFA", async () => {
     const enrollment = await request("auth/mfa/enroll/", {});
     expect(enrollment.status).toBe(201);
     const confirmed = await request("auth/mfa/confirm/", { code: currentTotp(enrollment.data.secret) });
@@ -172,27 +104,6 @@ suite("institution activation and account trust against PostgreSQL 17", () => {
     recoveryCodes = confirmed.data.recovery_codes;
     expect(recoveryCodes).toHaveLength(8);
 
-    const catalog = (await pool.query(
-      "SELECT (SELECT id FROM academic_terms WHERE school_id=$1 LIMIT 1) term_id,(SELECT id FROM class_sections WHERE school_id=$1 LIMIT 1) class_id",
-      [schoolId],
-    )).rows[0];
-    const personId = (await pool.query(
-      "INSERT INTO school_people(school_id,first_name,last_name) VALUES($1,'Aarav','Learner') RETURNING id", [schoolId],
-    )).rows[0].id;
-    const studentId = (await pool.query(
-      "INSERT INTO students(school_id,person_id,admission_number) VALUES($1,$2,$3) RETURNING id", [schoolId, personId, `ADM-${suffix.slice(0, 8)}`],
-    )).rows[0].id;
-    await pool.query("INSERT INTO enrollments(student_id,class_section_id,term_id,roll_number) VALUES($1,$2,$3,1)", [studentId, catalog.class_id, catalog.term_id]);
-
-    const reviewed = await request(`schools/${schoolId}/activation/review/`, {});
-    expect(reviewed.status).toBe(200);
-    expect(reviewed.data.summary.ready).toBe(true);
-    expect(reviewed.data.institution.status).toBe("ready");
-    const activated = await request(`schools/${schoolId}/activation/activate/`, { expected_revision: reviewed.data.institution.revision });
-    expect(activated.status).toBe(200);
-    expect(activated.data.institution.status).toBe("active");
-    expect((await pool.query("SELECT count(*)::int AS count FROM event_outbox WHERE event_type='InstitutionActivated' AND school_id=$1", [schoolId])).rows[0].count).toBe(1);
-    expect((await pool.query("SELECT action FROM institution_activation_audits WHERE school_id=$1 ORDER BY created_at", [schoolId])).rows.map((row) => row.action)).toEqual(["quick_start_applied", "readiness_reviewed", "activated"]);
   });
 
   it("requires MFA on the next login and supports single-use recovery", async () => {

@@ -1,0 +1,10 @@
+.fee-ledger-search {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.fee-ledger-search .office-field { flex: 1; min-width: 0; margin: 0; }
+.fee-ledger-search input { width: 100%; min-width: 0; }
+.fee-ledger-search button { flex: 0 0 auto; min-height: 44px; }
+.fee-ledger-paging { min-width: 0; padding-block: 8px; color: var(--thatcampus-ink); }
+.fee-ledger-paging .office-actions:empty { display: none; }

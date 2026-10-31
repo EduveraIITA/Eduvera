@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import type { PrincipalTimetableResponse } from "../operations/api";
-import { buildAdminSummaryFromPublishedTimetables } from "./api";
+import { buildAdminSummaryFromPublishedTimetables, periodInput, type PeriodInput } from "./api";
 
 const timetable: PrincipalTimetableResponse = {
   terms: [
@@ -106,5 +106,18 @@ describe("principal timetable summary fallback", () => {
       classes: 0,
     });
     expect(summary.totals).toMatchObject({ periods: 3, classes: 3, pending: 1 });
+  });
+});
+
+describe("day-plan canonical place round trip", () => {
+  const period: PeriodInput = { period_number: 1, starts_at: "09:00:00", ends_at: "10:00:00", title: "Distributed Systems", slot_type: "class", room: "Room 204", teacher_user_id: null, cancelled: false, materials: [] };
+  it("retains the exact canonical space through draft serialization and repeated cloning", () => {
+    const linked = { ...period, space_id: "canonical-room-204" };
+    expect(periodInput(linked).space_id).toBe("canonical-room-204");
+    expect(periodInput(periodInput(linked))).toEqual({ ...linked, starts_at: "09:00", ends_at: "10:00", subject_id: null });
+  });
+  it("keeps legacy room labels unlinked and preserves an explicit cleared link", () => {
+    expect(periodInput(period)).toMatchObject({ room: "Room 204", space_id: null });
+    expect(periodInput({ ...period, space_id: null }).space_id).toBeNull();
   });
 });

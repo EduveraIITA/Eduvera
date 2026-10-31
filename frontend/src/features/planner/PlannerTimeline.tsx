@@ -1,3 +1,4 @@
+import { applicationNow } from "../simulation/applicationTime";
 import { useMemo, useSyncExternalStore } from "react";
 import FullCalendar, { type DateClickInfo, type DateSelectInfo, type EventClickInfo, type EventDisplayInfo, type EventDropInfo, type EventInput, type EventResizeDoneInfo } from "@fullcalendar/react";
 import timeGridPlugin from "@fullcalendar/react/timegrid";
@@ -54,7 +55,7 @@ export function periodEvents(periods: PlannerPeriod[], date: string, grouped: bo
     id: `period:${period.id}:${date}`, title: period.display_title,
     start: `${date}T${period.starts_at.slice(0, 5)}`, end: `${date}T${period.ends_at.slice(0, 5)}`,
     editable: period.version_state === "draft", durationEditable: period.version_state === "draft", startEditable: period.version_state === "draft",
-    color: period.slot_type === "class" ? "#eaf1ff" : "#f1f4f6", contrastColor: "#15345b",
+    color: period.slot_type === "class" ? "var(--thatcampus-brand-soft)" : "var(--thatcampus-surface-soft)", contrastColor: "var(--thatcampus-ink)",
     extendedProps: { kind: period.slot_type, meta: period.slot_type === "class" ? `${period.teacher_name ?? "Teacher needed"}${period.room ? ` · ${period.room}` : ""}` : "", periodId: period.id, date, isDraft: period.version_state === "draft", isRehearsalActive: timetableRehearsalPeriodIsActive(rehearsal, date, period.id) },
   }));
   const groups = periods.reduce((result, period) => {
@@ -65,7 +66,7 @@ export function periodEvents(periods: PlannerPeriod[], date: string, grouped: bo
     const first = items[0]!; const subjects = new Set(items.filter((period) => period.slot_type === "class").map((period) => period.display_title));
     const isBreak = items.every((period) => period.slot_type !== "class");
     return { id: `group:${date}:${key}`, title: isBreak ? first.display_title : `Period ${first.period_number}`, start: `${date}T${first.starts_at.slice(0, 5)}`, end: `${date}T${first.ends_at.slice(0, 5)}`, editable: false,
-      color: isBreak ? "#f1f4f6" : "#eaf1ff", contrastColor: "#15345b",
+      color: isBreak ? "var(--thatcampus-surface-soft)" : "var(--thatcampus-brand-soft)", contrastColor: "var(--thatcampus-ink)",
       extendedProps: { kind: isBreak ? "break" : "class", meta: `${items.length} ${items.length === 1 ? "class" : "classes"}${isBreak ? "" : ` · ${subjects.size} subjects`}`, groupDate: date, groupStart: first.starts_at, isRehearsalActive: items.some((period) => timetableRehearsalPeriodIsActive(rehearsal, date, period.id)) } };
   });
 }
@@ -73,7 +74,7 @@ export function periodEvents(periods: PlannerPeriod[], date: string, grouped: bo
 export function timelineNowInstant(
   rehearsal: TimetableRehearsalIndicator | null | undefined,
   visibleDates: string[],
-  fallback = new Date(),
+  fallback = applicationNow(),
 ) {
   if (!rehearsal || !visibleDates.includes(rehearsal.referenceDate)) return fallback;
   const simulated = new Date(rehearsal.simulatedAt);
@@ -99,7 +100,7 @@ export function PlannerTimeline({ dates, selected, periodsForDate, events, closu
   const visiblePeriods = useMemo(() => visibleDates.flatMap((date) => periodsForDate(date).map((period) => ({ period, date }))), [visibleDates, periodsForDate]);
   const calendarEvents = useMemo(() => {
     const items = dates.flatMap((date) => periodEvents(visiblePeriods.filter((item) => item.date === date).map((item) => item.period), date, grouped, rehearsal));
-    for (const event of events) if (event.status !== "cancelled") items.push({ id: `event:${event.id}`, title: event.title, start: event.starts_at, end: event.ends_at, editable: false, color: "#e4f5f1", contrastColor: "#165d54", extendedProps: { kind: "event", meta: event.venue || "", href: `/principal/events/${event.id}` } });
+    for (const event of events) if (event.status !== "cancelled") items.push({ id: `event:${event.id}`, title: event.title, start: event.starts_at, end: event.ends_at, editable: false, color: "var(--thatcampus-logo-green-soft)", contrastColor: "var(--thatcampus-ink)", extendedProps: { kind: "event", meta: event.venue || "", href: `/areas/events/manage/${encodeURIComponent(event.id)}` } });
     for (const closure of closures.filter((item) => !item.is_instructional && dates.includes(item.date))) items.push({ id: `closure:${closure.date}`, title: closure.label, start: closure.date, allDay: true, display: "background", classNames: ["school-calendar-event--closure"], extendedProps: { kind: "closure" } });
     return items;
   }, [closures, dates, events, grouped, rehearsal, visiblePeriods]);

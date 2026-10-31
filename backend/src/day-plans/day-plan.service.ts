@@ -1,3 +1,4 @@
+import { executionNow } from "../campus-model-core/execution-time.runtime.js";
 import {
   BadRequestException,
   ConflictException,
@@ -39,6 +40,7 @@ import {
   getPlan,
   insertPeriods,
   periods,
+  validatePeriodSpaces,
 } from "./repository.js";
 import {
   effectiveSchedule,
@@ -53,6 +55,7 @@ import {
   adminSummary,
 } from "./day-plan.queries.js";
 import { planEvent } from "./events.js";
+import { assertSpacesNotResidential } from "../common/campus-space-use.js";
 
 interface DayPlanProjectionRow {
   id:string; period_number:number; starts_at:string; ends_at:string; title:string;
@@ -417,6 +420,11 @@ export class DayPlanService {
         if (!plan.draft_version)
           throw new ConflictException("There is no draft to publish.");
         const rows = await periods(db, id, plan.draft_version);
+        await validatePeriodSpaces(db, plan.school_id, rows);
+        const places = (await sql<{space_id:string}>`SELECT DISTINCT space_id FROM day_plan_periods
+          WHERE school_id=${plan.school_id}::uuid AND plan_id=${id}::uuid AND version=${plan.draft_version}
+            AND NOT cancelled AND slot_type<>'break' AND space_id IS NOT NULL`.execute(db)).rows;
+        await assertSpacesNotResidential(db,plan.school_id,places.map(place=>place.space_id));
         const context = await this.editableDay(db, plan);
         await this.guardStarted(db, plan, rows);
         if (
@@ -511,7 +519,7 @@ export class DayPlanService {
         await sql`UPDATE day_plan_versions SET state='superseded' WHERE plan_id=${id}::uuid AND state='published'`.execute(
           db,
         );
-        await sql`UPDATE day_plan_versions SET state='published',published_at=now() WHERE plan_id=${id}::uuid AND version=${plan.draft_version}`.execute(
+        await sql`UPDATE day_plan_versions SET state='published',published_at=now(),published_revision=${plan.revision + 1} WHERE plan_id=${id}::uuid AND version=${plan.draft_version}`.execute(
           db,
         );
         await sql`UPDATE day_plans SET published_version=draft_version,draft_version=NULL,revision=revision+1,owner_id=${req.authUser.id}::uuid,updated_at=now() WHERE id=${id}::uuid`.execute(
@@ -654,7 +662,7 @@ export class DayPlanService {
           : publication.database_now;
         const clockSkewToleranceMs = 5000;
         if (
-          received.getTime() > Date.now() + clockSkewToleranceMs ||
+          received.getTime() > executionNow().getTime() + clockSkewToleranceMs ||
           received.getTime() < published.getTime() - clockSkewToleranceMs
         )
           throw new BadRequestException(

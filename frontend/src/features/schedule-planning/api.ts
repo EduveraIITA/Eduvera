@@ -1,6 +1,7 @@
 import { apiFetch } from '../../lib/api';
 import type { PrincipalTimetableResponse } from '../operations/api';
-export interface SchedulePeriod { id:string; weekday:number; period_number:number; starts_at:string; ends_at:string; subject_id:string|null; teacher_user_id:string|null; title:string; slot_type:'class'|'break'|'activity'; room:string; }
+import type { SchedulePeriod } from '../../../../packages/contracts/src/schedule-period';
+export type { SchedulePeriod } from '../../../../packages/contracts/src/schedule-period';
 export interface ScheduleVersion { id:string; class_section_id:string; term_id:string; state:'draft'|'published'; starts_on:string; ends_on:string; revision:number; baseline:boolean; periods:SchedulePeriod[]; }
 export interface ScheduleScreen extends PrincipalTimetableResponse { school_id:string; versions:ScheduleVersion[]; }
 export const getScheduleSettings=(term?:string)=>apiFetch<ScheduleScreen>(`/api/v1/schedule-planning${term?`?term_id=${encodeURIComponent(term)}`:''}`);

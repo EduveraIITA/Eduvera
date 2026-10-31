@@ -1,3 +1,4 @@
+import { applicationNow } from "../simulation/applicationTime";
 import { CheckCircle2, ChevronRight, Plus } from "lucide-react";
 import { useState } from "react";
 import { Link } from "react-router-dom";
@@ -20,6 +21,7 @@ function eventsForView(events: CampusEventDto[], view: EventView, now: number) {
 
 export function OperationsEventListPage({
   portal,
+  workspace,
   events,
   view,
   hasMore = false,
@@ -28,7 +30,13 @@ export function OperationsEventListPage({
   onViewChange,
   attentionItems = [],
 }: {
-  portal: "teacher" | "principal";
+  portal?: "teacher" | "principal";
+  workspace?: {
+    basePath: string;
+    kind: "manage" | "assigned";
+    title?: string;
+    subtitle?: string;
+  };
   events: CampusEventDto[];
   view: EventView;
   hasMore?: boolean;
@@ -37,21 +45,23 @@ export function OperationsEventListPage({
   onViewChange: (view: EventView) => void;
   attentionItems?: AttentionItem[];
 }) {
-  const [now] = useState(() => Date.now());
+  const [now] = useState(() => applicationNow().getTime());
   const visible = eventsForView(events, view, now).sort((first, second) => first.starts_at.localeCompare(second.starts_at));
   const upcoming = eventsForView(events, "upcoming", now).length;
   const drafts = eventsForView(events, "draft", now).length;
-  const prefix = portal === "principal" ? "/principal" : "/teacher";
-  const listHref = `${prefix}/events${view === "upcoming" ? "" : `?view=${view}`}`;
+  const legacyPortal = portal ?? "teacher";
+  const prefix = legacyPortal === "principal" ? "/principal" : "/teacher";
+  const basePath = workspace?.basePath ?? `${prefix}/events`;
+  const kind = workspace?.kind ?? (legacyPortal === "principal" ? "manage" : "assigned");
+  const listHref = `${basePath}${view === "upcoming" ? "" : `?view=${view}`}`;
   const childContext = view === "upcoming" ? "" : `?list_view=${view}`;
 
   return (
     <OperationsShell
-      portal={portal}
+      portal={workspace ? undefined : legacyPortal}
       active="events"
-      title={portal === "principal" ? "Events & activities" : "Assigned events"}
-      subtitle={portal === "principal" ? "Whole-school event operations" : "Assigned event duties"}
-      contentHasHeading
+      title={workspace?.title ?? (kind === "manage" ? "Events & activities" : "Assigned events")}
+      subtitle={workspace?.subtitle ?? (kind === "manage" ? "Plan and coordinate authorized activities" : "Activities connected to your current responsibilities")}
     >
       <div className="campus-events-page operations-stack campus-events-directory">
         {attentionItems.length > 0 ? <section className="campus-event-collection" aria-label="Events needing attention">
@@ -62,14 +72,14 @@ export function OperationsEventListPage({
         </section> : null}
         <div className="workspace-list-toolbar">
           <select aria-label="Filter events" value={view} onChange={event=>onViewChange(event.target.value as EventView)}><option value="upcoming">Upcoming · {upcoming}</option><option value="draft">Drafts · {drafts}</option><option value="past">Past · {eventsForView(events,"past",now).length}</option></select>
-          {portal === "principal" ? <Link className="workspace-add-link" aria-label="Create event" to={`${prefix}/events/new${childContext}`}><Plus size={18}/>New event</Link> : <Link className="workspace-add-link" aria-label="Plan class test" to="/teacher/assessments?create=class-test"><Plus size={18}/>Class test</Link>}
+          {kind === "manage" ? <Link className="workspace-add-link" aria-label="Create event" to={`${basePath}/new${childContext}`}><Plus size={18}/>New event</Link> : <Link className="workspace-add-link" aria-label="Plan class test" to="/areas/assessments/assigned?create=class-test"><Plus size={18}/>Class test</Link>}
         </div>
         <section className="campus-event-collection" aria-label="Events">
           {visible.length ? (
             <div className="event-directory-rows">
               {visible.map(event=>{
                 const openRegisters=event.sessions.filter(session=>session.attendance_mode!=="none"&&session.state==="open").length;
-                return <Link key={event.id} to={`${prefix}/events/${event.id}${childContext}`} aria-label={`Open ${event.title}`}>
+                return <Link key={event.id} to={`${basePath}/${event.id}${childContext}`} aria-label={`Open ${event.title}`}>
                   <span className="event-directory-date" aria-hidden="true"><b>{new Date(event.starts_at).toLocaleDateString("en-IN",{day:"numeric",timeZone:"Asia/Kolkata"})}</b><small>{new Date(event.starts_at).toLocaleDateString("en-IN",{month:"short",timeZone:"Asia/Kolkata"})}</small></span>
                   <span className="event-directory-copy"><strong>{event.title}</strong><small>{formatEventDate(event.starts_at)}</small><small>{event.venue||"Venue to be confirmed"}</small><span><EventStatusBadge status={event.status}/>{openRegisters>0?<em>{openRegisters} open register{openRegisters===1?"":"s"}</em>:null}</span></span><ChevronRight size={18}/>
                 </Link>;

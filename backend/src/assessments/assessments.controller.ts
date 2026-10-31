@@ -114,6 +114,8 @@ export class AssessmentsController {
     const found = await this.assessments.evidence(req.authUser, schoolId, assessmentId, evidenceId);
     reply.type(found.record.content_type || "application/octet-stream");
     reply.header("Content-Disposition", `inline; filename="${found.record.original_name.replace(/[\r\n"]/g, "_")}"`);
+    reply.header("X-ThatCampus-Evidence-Mode", found.evidence_mode);
+    reply.header("X-ThatCampus-Source-Content-Omitted", String(found.source_content_omitted));
     return reply.send(found.stream);
   }
 }

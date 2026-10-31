@@ -1,4 +1,4 @@
-import CampusViewPage from "../../features/campus-view/CampusViewPage";
+import CampusScenePage from "../../features/campus-scenes/CampusScenePage";
 import type { CampusTruthDimension, CampusViewOverlay } from "../../features/campus-view/types";
 import { useCampusLabProjection } from "./CampusLabProjectionContext";
 
@@ -49,5 +49,5 @@ export function campusLabViewOverlay(status: ReturnType<typeof useCampusLabProje
 export default function CampusViewDevelopmentPage() {
   const projection = useCampusLabProjection();
   const overlay = campusLabViewOverlay(projection.status, projection.isError);
-  return <CampusViewPage overlay={overlay} />;
+  return <CampusScenePage overlay={overlay} />;
 }

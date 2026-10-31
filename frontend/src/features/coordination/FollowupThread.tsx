@@ -12,6 +12,8 @@ export function FollowupThread({ id, context }: { id: string; context: FollowupC
   return <div className="followup-thread">
     <div className="followup-thread__question"><span>Follow-up note</span><p>{query.data.question}</p></div>
     <p className="followup-meta">Response due {moment(query.data.due_at)}</p>
+    {context === "staff" && query.data.coordination?.status === "manual_followup"
+      ? <p role="status" className="followup-meta">{query.data.coordination.message}</p> : null}
     <ol>{query.data.entries.map((entry) => <li key={entry.id}>
       <div><strong>{entry.actor_name}</strong><time dateTime={entry.recorded_at}>{moment(entry.recorded_at)}</time></div>
       {entry.kind === "assisted_reply" ? <small>Recorded by staff · {entry.channel.replace("_", " ")} response from {entry.guardian_name} · Received {moment(entry.observed_at)}</small> : null}

@@ -1,6 +1,7 @@
 import { z } from "zod";
 
 export const noticePortalSchema = z.enum(["parent", "teacher", "principal"]);
+export const noticeWorkspaceScopeSchema = z.enum(["responsibility", "dependent"]);
 export const noticeResponseModeSchema = z.enum(["information", "acknowledgement", "choice"]);
 export const noticePrioritySchema = z.enum(["urgent", "high", "normal"]);
 export const noticeChannelSchema = z.enum(["app", "sms", "paper", "phone", "in_person"]);
@@ -109,6 +110,7 @@ export const deliveryAttemptSchema = z.object({
 }).strict();
 
 export type NoticePortal = z.infer<typeof noticePortalSchema>;
+export type NoticeWorkspaceScope = z.infer<typeof noticeWorkspaceScopeSchema>;
 export type NoticeAudienceInput = z.infer<typeof audienceSchema>;
 export type NoticeContentInput = Pick<z.infer<typeof createNoticeSchema>,
   "title" | "body" | "response_mode" | "response_options" | "priority" | "due_at" | "audiences">;

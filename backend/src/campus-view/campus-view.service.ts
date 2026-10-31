@@ -1,7 +1,12 @@
+import { campusTimezone } from "../common/campus-timezone.js";
+import { executionEnvironmentStorage, executionNow } from "../campus-model-core/execution-time.runtime.js";
 import { BadRequestException, ForbiddenException, Inject, Injectable, NotFoundException } from "@nestjs/common";
 import type { AuthUser } from "../common/request.js";
 import { CAMPUS_MODEL_CORE_PORT, type CampusModelCorePort } from "../campus-model-core/campus-model-core.port.js";
+import { CAMPUS_TEMPORAL_CONTEXT_BATCH_SIZE } from "../campus-model-core/contracts.js";
 import { TEMPORAL_CONTEXT_PORT, type TemporalContextPort } from "../campus-model-core/temporal-context.port.js";
+import { assessmentWorkHref } from "../workspace/canonical-application-links.js";
+import { WorkspaceProjectionReads } from "../workspace/workspace-projection-reads.js";
 import {
   CampusViewRepository,
   type CampusViewDayOccurrence,
@@ -15,6 +20,7 @@ import {
   strongestDimension,
   type CampusViewSpaceRecord,
 } from "./contracts.js";
+import { campusDayMotionClaims, projectCampusMotion, type CampusMotionPointInput } from "./campus-motion.projection.js";
 
 function assertionTitle(context: unknown): string | null {
   if (!context || typeof context !== "object" || !("title" in context)) return null;
@@ -41,6 +47,10 @@ function occurrenceState(occurrence: CampusViewDayOccurrence, asOf: string) {
 }
 
 function publicOccurrence(occurrence: CampusViewDayOccurrence, asOf: string) {
+  const activity = occurrence.planning_origin === "activity";
+  const targetPath = activity
+    ? `/areas/timetable/planning?plan=${encodeURIComponent(occurrence.source_record_id)}&plan_revision=${occurrence.source_revision}`
+    : "/areas/timetable/planning";
   return {
     id: occurrence.id,
     occurrence_id: occurrence.occurrence_id,
@@ -59,10 +69,11 @@ function publicOccurrence(occurrence: CampusViewDayOccurrence, asOf: string) {
     dimension: "expected" as const,
     spatial_claim: "expected_context_only" as const,
     source: {
-      label: occurrence.source_domain === "day_plan" ? "Published day plan" : "Published timetable",
+      label: activity ? "Published activity" : occurrence.source_domain === "day_plan" ? "Published day plan" : "Published timetable",
       domain: occurrence.source_domain,
       record_id: occurrence.source_record_id,
       revision: occurrence.source_revision,
+      target_path: targetPath,
     },
   };
 }
@@ -77,6 +88,11 @@ function gateTotals(rows: CampusViewGateActivity[]) {
 
 @Injectable()
 export class CampusViewService {
+  // A large campus must not reserve the shared Simulation pool for every
+  // place at once. Two owner reads leave capacity for personal/operational and
+  // control requests; this bounds technical fan-out, never the returned places.
+  private readonly projectionReads = new WorkspaceProjectionReads(2);
+
   constructor(
     private readonly repository: CampusViewRepository,
     @Inject(TEMPORAL_CONTEXT_PORT) private readonly temporalContext: TemporalContextPort,
@@ -87,6 +103,10 @@ export class CampusViewService {
     const parsed = campusViewQuerySchema.safeParse({ school_id: schoolId, ...rawQuery });
     if (!parsed.success) throw new BadRequestException("Choose a valid campus and ISO date/time.");
     const query = parsed.data;
+    const environment = executionEnvironmentStorage.getStore();
+    if (!user.is_active || user.active_school_id !== query.school_id || (environment && environment.institution_id !== query.school_id)) {
+      throw new ForbiddenException("Choose this institution and its current world before opening campus operations.");
+    }
     if (!(await this.repository.hasActiveAdminMembership(user.id, query.school_id))) {
       throw new ForbiddenException("An active institution administrator membership is required.");
     }
@@ -101,8 +121,10 @@ export class CampusViewService {
       ? campuses.find((campus) => campus.id === query.campus_id)
       : campuses.find((campus) => campus.is_primary) ?? campuses[0];
     if (query.campus_id && !selectedCampus) throw new NotFoundException("Campus not found in this institution.");
-    const generatedAt = new Date().toISOString();
+    const generatedAt = executionNow().toISOString();
     const asOf = query.at ?? generatedAt;
+    const motionEnvironment = { kind: environment?.kind ?? "live" as const,
+      namespace_id: environment?.namespace_id ?? `live:${query.school_id}` };
     const publicCampuses = campuses.map((campus) => ({
       id: campus.id,
       name: campus.name,
@@ -126,26 +148,75 @@ export class CampusViewService {
         signals: [],
         day_activity: [],
         operations: null,
+        motion: projectCampusMotion({ school_id: query.school_id, campus_id: null, viewer_user_id: user.id,
+          as_of: asOf, environment: motionEnvironment, space_ids: new Set(), claims: [] }),
       };
     }
 
     const spaceRecords = await this.repository.spaces(query.school_id, selectedCampus.id) as CampusViewSpaceRecord[];
     const spacesById = new Map(spaceRecords.map((space) => [space.id, space]));
-    const timezone = selectedCampus.timezone || school.timezone || "Asia/Kolkata";
-    const [assertionGroups, activity, signals, examExpectations, dayOccurrences, gateActivity, visitorCount] = await Promise.all([
-      Promise.all(spaceRecords.map((space) => this.temporalContext.resolveAt({
-        school_id: query.school_id,
-        at: asOf,
-        recorded_as_of: generatedAt,
-        subject: { type: "entity", domain: "campus_topology", domain_id: space.id },
-      }))),
-      this.campusModel.recentActivity(query.school_id, 20),
-      this.campusModel.operationalSignals(query.school_id, asOf, 20),
-      this.repository.examSpaceExpectations(query.school_id, selectedCampus.id, asOf),
-      this.repository.dayOccurrences(query.school_id, selectedCampus.id, asOf, timezone),
-      this.repository.gateActivityToday(query.school_id, selectedCampus.id, asOf, timezone),
-      this.repository.activeVisitorCount(query.school_id, asOf),
-    ]);
+    const timezone = campusTimezone(selectedCampus.timezone, school.timezone);
+    let failed = false;
+    let failure: unknown;
+    const read = <T>(operation: () => Promise<T>) => this.projectionReads.run(async () => {
+      if (failed) throw failure;
+      try { return await operation(); }
+      catch (error) {
+        if (!failed) { failed = true; failure = error; }
+        throw error;
+      }
+    });
+    const groups: Awaited<ReturnType<TemporalContextPort["resolveAt"]>>[] = new Array(spaceRecords.length);
+    let nextSpace = 0;
+    // Batch all authorized places without changing their order or dropping empty
+    // evidence. Two admitted set reads share capacity with sibling projections.
+    const spaceReads = Array.from({ length: Math.min(2, Math.ceil(spaceRecords.length / CAMPUS_TEMPORAL_CONTEXT_BATCH_SIZE)) }, async () => {
+      while (!failed && nextSpace < spaceRecords.length) {
+        const start = nextSpace;
+        nextSpace += CAMPUS_TEMPORAL_CONTEXT_BATCH_SIZE;
+        const batch = spaceRecords.slice(start, nextSpace);
+        const resolved = await read(async () => {
+          const result = await this.temporalContext.resolveAtBatch({
+            school_id: query.school_id,
+            at: asOf,
+            recorded_as_of: generatedAt,
+            subjects: batch.map(space => ({ type: "entity" as const, domain: "campus_topology", domain_id: space.id })),
+          });
+          if (result.length !== batch.length) throw new Error("Campus temporal evidence returned an incomplete batch.");
+          return result;
+        });
+        resolved.forEach((assertions, offset) => { groups[start + offset] = assertions; });
+      }
+    });
+    const projections = [
+      Promise.all(spaceReads).then(() => groups),
+      read(() => this.campusModel.recentActivity(query.school_id, 20)),
+      read(() => this.campusModel.operationalSignals(query.school_id, asOf, 20)),
+      read(() => this.repository.examSpaceExpectations(query.school_id, selectedCampus.id, asOf)),
+      read(() => this.repository.dayOccurrences(query.school_id, selectedCampus.id, asOf, timezone)),
+      read(() => this.repository.gateActivityToday(query.school_id, selectedCampus.id, asOf, timezone)),
+      read(() => this.repository.activeVisitorCount(query.school_id, asOf)),
+    ] as const;
+    const [assertionGroups, activity, signals, examExpectations, dayOccurrences, gateActivity, visitorCount] = await Promise.all(projections)
+      .catch(async error => {
+        // Keep ownership until already-started reads release their clients.
+        // Refuse the projection with its original error, never partial/zero data.
+        await Promise.allSettled([...spaceReads, ...projections]);
+        throw error;
+      });
+    const motionParticipants = await this.repository.motionParticipants(query.school_id, dayOccurrences.map(item => item.id));
+    const motionPoints: CampusMotionPointInput[] = assertionGroups.flatMap((assertions, index) => assertions.flatMap(assertion => {
+      if (assertion.assertion_type !== "direct_observation"
+        || !["pending", "accepted"].includes(assertion.observation.state)
+        || !["gate.movement", "attendance.capture"].includes(assertion.source.source_type)) return [];
+      return [{ id: assertion.assertion_id, space_id: spaceRecords[index]!.id, observed_at: assertion.observed_at,
+        dimension: assertion.dimension, source: { domain: assertion.source.source_type,
+          record_id: assertion.source.source_record_id, revision: null } }];
+    }));
+    const motion = projectCampusMotion({ school_id: query.school_id, campus_id: selectedCampus.id, viewer_user_id: user.id,
+      as_of: asOf, environment: motionEnvironment, space_ids: new Set(spaceRecords.map(item => item.id)),
+      claims: campusDayMotionClaims(dayOccurrences, motionParticipants), points: motionPoints,
+      source_limited: dayOccurrences.length >= 240 || motionParticipants.length > 1024 });
 
     const publicOccurrences = dayOccurrences.map((occurrence) => publicOccurrence(occurrence, asOf));
     const currentBySpace = new Map<string, typeof publicOccurrences>();
@@ -211,7 +282,7 @@ export class CampusViewService {
           expires_at: new Date(expectation.effective_until).toISOString(),
         },
         spatial_claim: "expected_context_only" as const,
-        target_path: `/principal/assessments?assessment=${encodeURIComponent(expectation.assessment_id)}`,
+        target_path: assessmentWorkHref("manage", expectation.assessment_id),
       })));
       const expected = assertions.filter((assertion) => assertion.dimension === "expected");
       const observed = assertions.filter((assertion) => assertion.dimension === "observed");
@@ -255,13 +326,13 @@ export class CampusViewService {
       ends_at: occurrence.ends_at,
       title: occurrence.subject_label || occurrence.title,
       detail: [occurrence.class_label, spacesById.get(occurrence.space_id)?.name,
-        occurrence.teacher ? `Expected: ${occurrence.teacher.label}` : "Teacher not assigned"].filter(Boolean).join(" · "),
+        occurrence.teacher ? `Expected: ${occurrence.teacher.label}` : occurrence.class_label ? "Teacher not assigned" : null].filter(Boolean).join(" · "),
       state_dimension: "expected" as const,
       state: occurrence.state,
       source_label: occurrence.source.label,
       spatial_claim: "expected_context_only" as const,
       space_id: occurrence.space_id,
-      target_path: "/principal/timetable",
+      target_path: occurrence.source.target_path,
     }));
     const gateDayActivity = gateActivity.map((point, index) => ({
       id: `gate:${point.gate_label}:${index}`,
@@ -274,7 +345,7 @@ export class CampusViewService {
       source_label: "Accepted gate observations",
       spatial_claim: "point_observation_only" as const,
       space_id: point.space_id,
-      target_path: "/principal/gate",
+      target_path: "/areas/in-out/manage",
     }));
 
     return {
@@ -284,6 +355,7 @@ export class CampusViewService {
       selected_campus_id: selectedCampus.id,
       generated_at: generatedAt,
       as_of: asOf,
+      motion,
       plan: generatedSchematic(selectedCampus, spaceRecords),
       spaces,
       activity: activity.map((item) => ({

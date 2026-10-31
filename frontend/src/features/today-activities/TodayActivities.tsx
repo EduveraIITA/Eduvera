@@ -14,6 +14,7 @@ import {
   Palette,
 } from "lucide-react";
 
+import { ProductIcon } from "../../components/ProductIcon";
 import "./today-activities.css";
 
 export type TodayActivityState = "complete" | "current" | "upcoming";
@@ -173,7 +174,7 @@ export function TodayActivities({
         </div>
       ) : (
         <div className="today-activities__empty">
-          <BookOpenText size={22} />
+          <ProductIcon name="learning" size={28} />
           <span><strong>No activities today</strong><small>{emptyDetail}</small></span>
         </div>
       )}

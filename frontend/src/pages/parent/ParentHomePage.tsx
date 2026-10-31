@@ -256,7 +256,7 @@ export function ParentHomePage({
         <section aria-labelledby="shortcuts-heading">
           <div className="section-eyebrow-row"><h2 id="shortcuts-heading">Tools</h2></div>
           <div className="surface-card shortcut-list">
-            <button type="button" onClick={() => navigate(parentPath("/parent/events"))}>
+            <button type="button" onClick={() => navigate(`/areas/events/calendar?${new URLSearchParams({ scope: "dependent", student_id: selectedStudentId ?? data.child.id })}`)}>
               <span className="shortcut-icon"><CalendarDays size={19} /></span>
               <span><strong>Events & activities</strong><small>Invitations, consent and schedules</small></span>
               <ChevronRight size={21} />

@@ -19,10 +19,6 @@
 .attendance-workspace .attendance-class-card__bottom { margin-top:8px; padding-top:0; border:0; }
 .attendance-workspace .attendance-workspace__filters { flex-wrap:wrap; gap:6px; overflow:visible; padding:12px 0; }
 .attendance-workspace .attendance-workspace__filters button { padding:8px 10px; border-radius:10px; }
-.roll-call-page { gap:16px; }
-.roll-call-page .roll-call-summary { padding:16px 16px 0; box-shadow:none; border:1px solid var(--thatcampus-border); border-radius:var(--thatcampus-radius-card); }
-.roll-call-page .roll-call-summary h1 { font-size:18px; }
-.roll-call-page .roll-call-totals { margin-top:12px; }
 .attendance-family-simple>.aggregate-card,.attendance-family-simple>.attendance-hero { background:var(--thatcampus-surface); color:var(--thatcampus-ink); padding:16px; border:1px solid var(--thatcampus-border); border-radius:var(--thatcampus-radius-card); box-shadow:none; }
 .attendance-family-simple .aggregate-card__seal,.attendance-family-simple .attendance-ring { display:none; }
 .attendance-family-simple .aggregate-card__score strong,.attendance-family-simple .attendance-hero__number strong { color:var(--thatcampus-brand); font-size:36px; }
@@ -43,7 +39,6 @@
 .attendance-family-simple .attendance-stat small { color:var(--thatcampus-ink-secondary); }
 .attendance-family-simple .attendance-stat strong { color:var(--thatcampus-ink); white-space:normal; overflow:visible; text-overflow:clip; }
 .attendance-family-simple .attendance-stat__icon { color:var(--thatcampus-brand); }
-.roll-call-page .roll-call-review-mode { padding:8px 0; background:transparent; border:0; box-shadow:none; }
 .attendance-queue-toolbar { display:flex; align-items:center; gap:8px; margin-bottom:12px; }
 .attendance-queue-toolbar label { flex:1; min-width:0; }
 .attendance-queue-toolbar select { width:100%; min-height:44px; padding:8px 32px 8px 12px; border:1px solid var(--thatcampus-border); border-radius:10px; background:var(--thatcampus-surface); color:var(--thatcampus-ink); font:inherit; font-size:16px; appearance:none; background-image:linear-gradient(45deg,transparent 50%,currentColor 50%),linear-gradient(135deg,currentColor 50%,transparent 50%); background-position:calc(100% - 16px) 50%,calc(100% - 11px) 50%; background-size:5px 5px; background-repeat:no-repeat; }

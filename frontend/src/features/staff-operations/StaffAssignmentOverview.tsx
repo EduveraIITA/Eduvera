@@ -11,9 +11,9 @@ import "./assignment-overview.css";
 type View = "assigned" | "unassigned" | "history";
 const contextIcons = { class: BookOpen, assessment: ClipboardCheck, event: CalendarDays, trip: Bus, institution: Building2 };
 const staffingLinks = {
-  event: { to: "/principal/events", label: "Event staffing" },
-  assessment: { to: "/principal/assessments", label: "Exam staffing" },
-  trip: { to: "/principal/departure", label: "Journey roster" },
+  event: { to: "/areas/events/manage", label: "Event staffing" },
+  assessment: { to: "/areas/assessments/manage", label: "Exam staffing" },
+  trip: { to: "/areas/departure/manage", label: "Journey roster" },
 };
 
 export function StaffAssignmentOverview({ assignments, roles, options, canAssign, onAssign, onManage, focusAssignmentId }: {

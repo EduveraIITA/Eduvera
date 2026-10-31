@@ -7,6 +7,21 @@ import { AcademicReportsService } from "./academic-reports.service.js";
 export class AcademicReportsController {
   constructor(private readonly reports: AcademicReportsService) {}
 
+  @Get("policies/")
+  policies(@Req() req: AuthenticatedRequest, @Param("schoolId") schoolId: string) {
+    return this.reports.listPolicies(req.authUser, schoolId);
+  }
+
+  @Post("policies/")
+  createPolicy(@Req() req: AuthenticatedRequest, @Param("schoolId") schoolId: string, @Body() body: unknown) {
+    return this.reports.createPolicy(req.authUser, schoolId, body);
+  }
+
+  @Post("policies/:policyId/activate/")
+  activatePolicy(@Req() req: AuthenticatedRequest, @Param("schoolId") schoolId: string, @Param("policyId") policyId: string, @Body() body: unknown) {
+    return this.reports.activatePolicy(req.authUser, schoolId, policyId, body);
+  }
+
   @Get("workspace/")
   workspace(@Req() req: AuthenticatedRequest, @Param("schoolId") schoolId: string) {
     return this.reports.workspace(req.authUser, schoolId);

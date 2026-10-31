@@ -1,0 +1,42 @@
+import { useState, type FormEvent } from "react";
+import { PlannerDialog } from "../planner/PlannerLessonSheet";
+import { applicationNow } from "../simulation/applicationTime";
+import { actOnDiningSession, getDiningSession, type DiningAction, type DiningRef, type DiningSession } from "./diningApi";
+import { DiningPicker } from "./DiningPicker";
+import { DiningWriteFeedback, diningStateLabel } from "./DiningPrimitives";
+import { diningFold, diningInput, diningInstant } from "./diningTime";
+import { DiningTimeField } from "./DiningTimeField";
+import { useDiningCommand } from "./useDiningCommand";
+import { actOnDiningPlanDate, diningDatePresentation, getDiningPlanDate, type DiningPlanDate } from "./diningPlanApi";
+
+export const diningActionLabels: Partial<Record<DiningAction, string>> = { open: "Open service", pause: "Pause service", resume: "Resume service", end: "End service", cancel: "Cancel date", count: "Record serving total", correct_count: "Correct serving total", reassign: "Change operator" };
+export function DiningActionDialog({ schoolId, actorId, initial, action, planDate, timezone, refresh, onClose, onSaved }: {
+  schoolId: string; actorId: string; initial: DiningSession; action: DiningAction; timezone: string; refresh: () => Promise<unknown>; onClose: () => void;
+  planDate?: DiningPlanDate; onSaved?: (id: string) => void;
+}) {
+  const [current, setCurrent] = useState(initial), [currentPlanDate, setCurrentPlanDate] = useState(planDate), [note, setNote] = useState(""), [total, setTotal] = useState(String(initial.count_total ?? 0)), [observedAt, setObservedAt] = useState(diningInput(applicationNow(), timezone, true)), [fold, setFold] = useState(diningFold(applicationNow(), timezone));
+  const [person, setPerson] = useState<DiningRef | null>(null), [picking, setPicking] = useState(false), [confirmed, setConfirmed] = useState(false), [reviewing, setReviewing] = useState(false), [error, setError] = useState("");
+  const counting = action === "count" || action === "correct_count", correction = action === "correct_count", outsideHours = action === "open" && (applicationNow().getTime() < Date.parse(current.starts_at) || applicationNow().getTime() >= Date.parse(current.ends_at)), needsReason = outsideHours || ["correct_count", "pause", "end", "cancel", "reassign"].includes(action), label = diningActionLabels[action] ?? action;
+  const planCancellation = Boolean(currentPlanDate && action === "cancel" && !currentPlanDate.starts_at);
+  const write = useDiningCommand({ schoolId, sourceId: planCancellation ? currentPlanDate!.plan_version_id : initial.id, kind: planCancellation ? "plan" : "session", onAccepted: async id => { await refresh(); if (!planCancellation) onSaved?.(id); onClose(); } });
+  let observed = ""; try { observed = diningInstant(observedAt, timezone, fold); } catch { /* Wait for an unambiguous campus-local time. */ }
+  const valid = confirmed && current.allowed_actions.includes(action) && (!needsReason || note.trim().length >= 3) && (!counting || Boolean(observed) && /^\d+$/.test(total) && Number(total) <= 10000000 && (correction || Number(total) >= (current.count_total ?? 0))) && (action !== "reassign" || Boolean(person));
+  const submit = (event: FormEvent) => { event.preventDefault(); setError(""); if (!valid) return; try {
+    const body = { expected_revision: current.revision, action, note: note.trim(), ...(counting ? { count_total: Number(total), observed_at: observed, ...(correction && current.count_receipt_id ? { supersedes_receipt_id: current.count_receipt_id } : {}) } : {}), ...(person ? { operator_person_id: person.id } : {}) };
+    if (currentPlanDate && (action === "open" || action === "cancel")) { const date = currentPlanDate; const dateBody = { expected_plan_version_id: date.plan_version_id, expected_plan_revision: date.plan_revision, expected_session_revision: 0 as const, action, note: note.trim() }; void write.execute(command_id => actOnDiningPlanDate(schoolId, date.series_id, date.local_date, { ...dateBody, command_id }), [{ id: date.plan_version_id, revision: date.plan_revision, planVersion: true }, { id: date.id, revision: 0 }]); }
+    else void write.execute(command_id => actOnDiningSession(schoolId, current.id, { ...body, command_id }), { id: current.id, revision: current.revision });
+  } catch (cause) { setError(cause instanceof Error ? cause.message : "Check your entry."); } };
+  const review = async () => { setReviewing(true); setError(""); try { const resolved = currentPlanDate ? await getDiningPlanDate(schoolId, currentPlanDate.series_id, currentPlanDate.local_date) : null; const fresh = resolved ? resolved.origin === "session" ? resolved.session : diningDatePresentation(resolved) : await getDiningSession(schoolId, current.id); if (fresh.id !== current.id || fresh.recovery_only) throw new Error("Current responsibility changed. Close and review the dated record."); setCurrent(fresh); if (resolved) setCurrentPlanDate(resolved.origin === "plan_date" ? resolved : undefined); setConfirmed(false); write.reviewed(); } catch (cause) { setError(cause instanceof Error ? cause.message : "Current service unavailable."); } finally { setReviewing(false); } };
+  return <PlannerDialog title={label} busy={write.busy || Boolean(write.recovery) || reviewing} onClose={onClose}><form className="dining-form" onSubmit={submit}><fieldset disabled={write.locked || reviewing}>
+    <section className="dining-review"><h3>{current.label}</h3><p>{current.service.label}{current.place ? ` · ${current.place.label}` : ""}</p><p className="dining-caption">{diningStateLabel(current.state)} · Current operator: {current.operator.label}</p>{counting ? <p>Current cumulative total: <strong>{current.count_receipt_id ? current.count_total : "Not recorded"}</strong></p> : null}</section>
+    {planDate ? <p className="dining-warning">{planDate.local_date} only · Other dates and the weekly pattern stay unchanged.</p> : null}
+    {counting ? <><label>Cumulative meals served<input autoFocus required inputMode="numeric" type="number" min={correction ? 0 : current.count_total ?? 0} max={10000000} step={1} value={total} onChange={event => { setTotal(event.target.value); setConfirmed(false); }} /></label><p className="dining-caption">Total for this date, not additional meals. This count does not identify diners or create charges.</p><DiningTimeField label="Observed at" value={observedAt} onChange={value => { setObservedAt(value); setConfirmed(false); }} timezone={timezone} fold={fold} onFold={value => { setFold(value); setConfirmed(false); }} /><p className="dining-caption">Times: {timezone}.</p></> : null}
+    {action === "reassign" ? <div className="dining-field"><span>Next operator</span><button type="button" className="is-secondary dining-select" onClick={() => setPicking(true)}>{person?.label ?? "Choose a person"}</button></div> : null}
+    {action === "end" ? <p className="dining-caption">Ends serving. Unresolved shortages remain open with their responsible people.</p> : null}
+    {outsideHours ? <p className="dining-warning">Outside the published serving hours. Give a reason before opening.</p> : null}
+    <label>{needsReason ? "Reason" : "Note (optional)"}<textarea rows={2} required={needsReason} minLength={needsReason ? 3 : undefined} maxLength={1000} value={note} onChange={event => { setNote(event.target.value); setConfirmed(false); }} /></label>
+    <label className="dining-check"><input type="checkbox" checked={confirmed} onChange={event => setConfirmed(event.target.checked)} />{counting ? "I reviewed this cumulative total and observation time." : `I reviewed this ${action === "reassign" ? "responsibility change" : "service state change"}.`}</label>
+  </fieldset>{error ? <p className="dining-error" role="alert">{error}</p> : null}<DiningWriteFeedback write={write} review={() => void review()} /><footer><button type="button" className="is-secondary" disabled={write.busy || Boolean(write.recovery) || reviewing} onClick={onClose}>Cancel</button><button type="submit" disabled={write.locked || reviewing || !valid}>{write.busy ? "Saving…" : label}</button></footer></form>
+    {picking ? <DiningPicker schoolId={schoolId} actorId={actorId} sessionId={current.id} kind="people" title="Choose next operator" onClose={() => setPicking(false)} onSelected={choice => { setPerson(choice); setConfirmed(false); setPicking(false); }} /> : null}
+  </PlannerDialog>;
+}

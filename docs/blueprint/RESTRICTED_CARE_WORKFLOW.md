@@ -1,7 +1,9 @@
 # Restricted care workflow
 
-Status: implemented locally on 4 October 2026; authenticated UI and institution-operating review
-remain required. This is an operational record, not legal advice or a compliance certificate.
+Status: original local workflow from 4 October 2026; exact intake/continuity repairs verified
+against disposable PostgreSQL and component tests on 27 October. Combined-release authenticated
+UI and institution-operating review remain separate gates. This is an operational record, not
+legal advice or a compliance certificate.
 
 ## Purpose and applicability
 
@@ -59,6 +61,56 @@ approved police, SJPU, Child Helpline or emergency procedure without waiting for
 - Case closure preserves evidence. There is intentionally no delete command in this slice.
 
 ## Acceptance evidence
+
+### Exact intake and continuity — 27 October
+
+- Each new concern has one stable intent ID. A committed save with a lost response is
+  reconciled by its exact actor/world-bound receipt; retrying the unchanged intent does not
+  open another case. A genuinely separate concern is never merged merely because names or
+  narrative match. Previously uncertain saves remain retained after later access errors.
+- Intake and case actions traverse the existing Model Core command/receipt and event-journal
+  ports before native acceptance. Core holds only a secret-key payload commitment, opaque
+  case/native receipt IDs and revisions. Notes and external references remain encrypted in
+  their owning care tables, never ordinary events, notifications or Core outcomes.
+- Reads, commands, receipt confirmation and route eligibility require a current canonical
+  acting account endpoint plus active staff membership in the selected institution/world.
+  Closing app access cannot leave an inaccessible owner falsely shown as operational.
+- The exact current owner can explicitly hand confidential responsibility to a currently
+  eligible lead on the same protected route. The ordinary-handler-involved route cannot hand
+  the case back to its reporter. Prior full access ends; an original reporter retains only
+  their own intake receipt. Changing an intake-team assignment alone does not revoke an
+  independently retained case assignment.
+- A separate administrator recovery view exposes only opaque case reference, current owner,
+  protected route and revision, in ten-record pages. It appears only for an open case whose
+  exact owner assignment, staff membership, account or canonical endpoint is no longer
+  active. A revision-checked explicit assignment restores responsibility to an eligible
+  same-route lead; administration does not itself grant access to allegations or later notes.
+  Original reporter/assignment identities remain immutable even when a departed subject is
+  revoked. Protected recovery reasons are encrypted, not copied into revocation metadata.
+- New ownership appears in the same native assigned-case queue and neutral attention update;
+  this repair does not claim a new configured mailbox/reaction handover protocol or automatic
+  safeguarding decision. The complete typed-mailbox protocol remains a separate coordination
+  boundary. Revoked or inactive recipients are excluded from new update audiences.
+- External reporting offers editable **Reported at**, defaulted to the selected-world current
+  instant and rejecting a future instant. Actual report time remains distinct from the
+  server-owned recording time displayed in the record.
+- The recovery cache contains only opaque references. Exact callable drafts remain active
+  session memory only, are removed after terminal confirmation and dropped across actor/world
+  scope changes. They are not persisted to browser storage as unencrypted protected drafts.
+  A full browser restart can therefore require checking the exact retained native receipt;
+  no offline protected-narrative storage or automatic replay is claimed.
+- Simulation deliberately omits captured original note/report bodies. The common UI labels
+  that omission instead of presenting an empty history as no evidence. New run-local intake,
+  reporting and handover still use the same owning encrypted records and command path.
+
+Source-level regression evidence: `backend/test/restricted-care-continuity.integration.test.ts`
+(six native checks and one real COW check, including unchanged Live/sibling state);
+`frontend/src/features/restricted-care/restricted-care.test.tsx` and
+`CarePendingReceipts.test.tsx` (18 component checks). The original five HTTP checks are
+migrated to canonical identity fixtures and stable command IDs; their compiled-server gate
+is owned by the combined release. Institution legal/operating validation remains required.
+
+### Original workflow coverage
 
 1. Primary and alternate dated roles can be configured only by an active administrator.
 2. A staff reporter can create encrypted intake; the reporter sees only that intake receipt while

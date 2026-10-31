@@ -9,7 +9,7 @@ const pool=new Pool({connectionString:requireIsolatedTestDatabaseUrl(process.env
 const db=new Kysely<any>({dialect:new PostgresDialect({pool})}) as DatabaseService;
 const thread=randomUUID();const run=randomUUID();
 beforeAll(async()=>{
- const account=(await pool.query("SELECT m.user_id,m.school_id FROM school_memberships m JOIN users u ON u.id=m.user_id WHERE u.username='meera.principal' AND m.is_active LIMIT 1")).rows[0];
+ const account=(await pool.query("SELECT m.user_id,m.school_id FROM school_memberships m JOIN users u ON u.id=m.user_id JOIN schools s ON s.id=m.school_id WHERE u.username='meera.principal' AND s.code='cis' AND m.is_active LIMIT 1")).rows[0];
  await pool.query("INSERT INTO agent_threads(id,owner_id,school_id,portal) VALUES($1,$2,$3,'principal')",[thread,account.user_id,account.school_id]);
  await pool.query("INSERT INTO agent_runs(id,thread_id,client_id,question,status,provider,model) VALUES($1,$2,$3,'Budget test','running','vertex','gemini-3.1-flash-lite')",[run,thread,randomUUID()]);
 });

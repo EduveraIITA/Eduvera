@@ -1,3 +1,5 @@
+import { executionNow } from "../campus-model-core/execution-time.runtime.js";
+import { assignedWorkOnly } from '../auth/assigned-work-access.js';
 import { requireLegacyTimetable } from '../schedule-planning/legacy-guard.js';
 import {
   BadRequestException,
@@ -8,8 +10,7 @@ import {
   NotFoundException,
   Optional,
 } from "@nestjs/common";
-import { createReadStream } from "node:fs";
-import { mkdir, rename, unlink, writeFile } from "node:fs/promises";
+import { mkdir, rename, unlink, writeFile, readEnvironmentStoredFile } from "../common/environment-files.js";
 import { extname, join } from "node:path";
 import { createHash, createHmac, randomUUID, timingSafeEqual } from "node:crypto";
 import type { FastifyRequest } from "fastify";
@@ -27,11 +28,16 @@ import { DatabaseService } from "../database/database.service.js";
 import type { Database } from "../database/types.js";
 import { SchoolEventService } from "./school-event.service.js";
 import { classUpdates } from "./class-updates.js";
+import { ClassPracticeService } from "./class-practice.service.js";
 import {lockSchedule,protectPublishedPlans} from '../day-plans/schedule.js';
+import { assertSpacesNotResidential } from '../common/campus-space-use.js';
 import { attendanceDayPolicy, attendanceWorkspace } from '../attendance/attendance-workspace.js';
-import { recordAttendanceModelObservations } from '../attendance/attendance-model-observation.js';
 import { findAttendanceStudents, studentAttendanceInput, studentAttendanceSearch } from '../attendance/student-attendance.js';
-import { operatingRules } from '../operating-rules/rules.js';
+import { OperatingDayService } from "../operating-day/operating-day.service.js";
+import { EXECUTION_CLOCK_PORT, type ExecutionClockPort } from "../campus-model-core/execution-clock.port.js";
+import { eventWorkHref, relationshipEventHref } from "../workspace/canonical-application-links.js";
+import { completeParticipationCapture, findParticipationAcceptance } from "../attendance/participation-continuity.js";
+import { AcademicParticipationBridge, type AcademicParticipationCapture } from "../attendance/academic-participation-bridge.service.js";
 
 type Db = Kysely<Database> | Transaction<Database>;
 type LeaveStatus = "draft" | "pending_guardian" | "authorized" | "declined" | "school_approved" | "school_rejected" | "withdrawn";
@@ -309,7 +315,7 @@ const leaveSchema = z.object({
   ends_on: z.string().regex(datePattern),
   reason: z.string().trim().min(5).max(2000),
 });
-const attendanceBulkSchema = z.object({
+export const attendanceBulkSchema = z.object({
   class_section_id: z.string().uuid(),
   date: z.string().regex(datePattern),
   expected_revision: z.number().int().min(0),
@@ -319,8 +325,8 @@ const attendanceBulkSchema = z.object({
     student_id: z.string().uuid(),
     status: z.enum(["present", "absent", "late", "excused", "half_day"]),
     remarks: z.string().trim().max(500).optional().default(""),
-  })).min(1).max(100),
-});
+  })).min(1).max(2000),
+}).strict();
 const attendanceCaptureSourceSchema = z.enum(["live_app", "offline_device", "paper", "office"]);
 const attendanceContinuityBatchSchema = attendanceBulkSchema.extend({
   source: attendanceCaptureSourceSchema,
@@ -498,6 +504,10 @@ export class SchoolService {
     @Inject(STAFF_COVERAGE_RECONCILIATION_PORT) private readonly coverage: StaffCoverageReconciliationPort,
     @Optional() @Inject(OBSERVATION_INGRESS_PORT) private readonly observationIngress?: ObservationIngressPort,
     @Optional() @Inject(TEMPORAL_CONTEXT_PORT) private readonly temporal?: TemporalContextPort,
+    @Optional() private readonly operatingDay?: OperatingDayService,
+    @Optional() @Inject(EXECUTION_CLOCK_PORT) private readonly executionClock?: ExecutionClockPort,
+    @Optional() private readonly participation?: AcademicParticipationBridge,
+    @Optional() private readonly classPractice?: ClassPracticeService,
   ) {}
 
   private async parentFeeLedgerStatus(studentId: string, enrollment: EnrollmentContext): Promise<ParentFeeStatus> {
@@ -508,11 +518,11 @@ export class SchoolService {
             COALESCE((SELECT sum(credit.amount_paise) FROM fee_invoice_credits credit
               WHERE credit.school_id=invoice.school_id AND credit.invoice_id=invoice.id),0),0)::bigint AS adjusted_paise,
           GREATEST(
-            COALESCE((SELECT sum(payment.amount_paise) FROM fee_payments payment
+            COALESCE((SELECT sum(payment.amount_paise) FROM fee_effective_payments payment
               WHERE payment.school_id=invoice.school_id AND payment.invoice_id=invoice.id),0)-
             COALESCE((SELECT sum(refund.amount_paise) FROM fee_refunds refund
               WHERE refund.school_id=invoice.school_id AND refund.invoice_id=invoice.id),0),0)::bigint AS net_paid_paise
-        FROM fee_invoices invoice
+        FROM fee_effective_invoices invoice
         WHERE invoice.school_id=${enrollment.school_id}::uuid AND invoice.student_id=${studentId}::uuid
       ), invoice_balances AS (
         SELECT id,due_on,
@@ -578,11 +588,12 @@ export class SchoolService {
       ORDER BY event.starts_at,event.id
       LIMIT 8
     `.execute(this.db)).rows;
-    const now = Date.now();
-    const prefix = audience === "guardian" ? "/parent" : "/student";
-    const href = (eventId: string) => audience === "guardian"
-      ? `${prefix}/events/${eventId}?student_id=${encodeURIComponent(student.id)}`
-      : `${prefix}/events/${eventId}`;
+    const now = executionNow().getTime();
+    const href = (eventId: string) => relationshipEventHref(
+      audience === "guardian" ? "dependent" : "self",
+      student.id,
+      eventId,
+    );
     const actions = rows.map<HomeAction | null>((row) => {
       const startsAt = new Date(row.starts_at).toISOString();
       const hoursUntil = (Date.parse(startsAt) - now) / 3_600_000;
@@ -623,7 +634,7 @@ export class SchoolService {
         return {
           id: `event-payment:${row.event_id}`,
           kind: "event_payment",
-          priority: row.payment_due_on && row.payment_due_on < new Date().toISOString().slice(0, 10) ? "urgent" : "high",
+          priority: row.payment_due_on && row.payment_due_on < executionNow().toISOString().slice(0, 10) ? "urgent" : "high",
           title: `Event fee due for ${row.title}`,
           detail: `Review the outstanding school ledger balance of ₹${Math.ceil((row.invoice_amount_paise - row.paid_paise) / 100).toLocaleString("en-IN")}.`,
           status_label: row.payment_due_on ? `Due ${row.payment_due_on}` : "Fee pending",
@@ -667,11 +678,17 @@ export class SchoolService {
       class_section_id: string;
     }>`
       SELECT followup.id,followup.student_id,concat_ws(' ',person.first_name,person.last_name) AS student_name,
-        followup.attendance_date,followup.question,followup.due_at,followup.state,record.class_section_id
+        followup.attendance_date,followup.question,followup.due_at,followup.state,
+        COALESCE((link.context_snapshot->'context'->>'class_id')::uuid,record.class_section_id) AS class_section_id
       FROM attendance_followups followup
       JOIN students student ON student.id=followup.student_id
       JOIN school_people person ON person.id=student.person_id
-      JOIN attendance_records record ON record.id=followup.attendance_record_id
+      LEFT JOIN attendance_records record ON record.id=followup.attendance_record_id
+      LEFT JOIN activity_attendance_entries participation
+        ON participation.id=COALESCE(followup.participation_entry_id,followup.attendance_record_id)
+          AND participation.school_id=followup.school_id
+      LEFT JOIN activity_attendance_source_contexts link ON link.register_id=participation.register_id
+        AND link.school_id=followup.school_id AND link.state='active'
       WHERE followup.state<>'resolved'
         AND coordination_actor_authorized(followup.school_id,followup.student_id,${user.id}::uuid,${context})
         AND (${studentId ?? null}::uuid IS NULL OR followup.student_id=${studentId ?? null}::uuid)
@@ -679,7 +696,7 @@ export class SchoolService {
       ORDER BY (followup.due_at<now()) DESC,followup.due_at,followup.id
       LIMIT 4
     `.execute(this.db)).rows;
-    const now = Date.now();
+    const now = executionNow().getTime();
     return rows.map((row) => {
       const dueAt = new Date(row.due_at).toISOString();
       const guardianTurn = context === "guardian" && row.state === "awaiting_response";
@@ -717,7 +734,7 @@ export class SchoolService {
         : `Upcoming school event${row.venue ? ` at ${row.venue}` : ""}.`,
       status_label: row.role ? "Assigned event duty" : "Upcoming event",
       action_label: row.role ? "Open duty" : "Review event",
-      href: `/${portal}/events/${row.id}`,
+      href: eventWorkHref(portal === "principal" ? "manage" : "assigned", row.id),
       source_id: row.id, occurs_at: new Date(row.starts_at).toISOString(), due_at: null,
     }));
   }
@@ -877,8 +894,8 @@ export class SchoolService {
       .orderBy("date").execute();
   }
 
-  private async requireSchoolRole(user: AuthUser, roles: Array<"staff" | "admin">, schoolId?: string) {
-    let query = this.db.selectFrom("school_memberships").select(["id", "school_id", "role"])
+  private async requireSchoolRole(user: AuthUser, roles: Array<"staff" | "admin">, schoolId?: string, database: Db = this.db) {
+    let query = database.selectFrom("school_memberships").select(["id", "school_id", "role"])
       .where("user_id", "=", user.id).where("role", "in", roles).where("is_active", "=", true);
     const scopedSchoolId = schoolId ?? user.active_school_id;
     if (scopedSchoolId) query = query.where("school_id", "=", scopedSchoolId);
@@ -891,13 +908,15 @@ export class SchoolService {
     return membership;
   }
 
-  private async schoolLocalDate(schoolId: string): Promise<string> {
-    const result = await sql<{ date: string }>`
-      SELECT (now() AT TIME ZONE timezone)::date::text AS date
-      FROM schools WHERE id=${schoolId}::uuid
-    `.execute(this.db);
-    if (!result.rows[0]?.date) throw new NotFoundException("School not found.");
-    return result.rows[0].date;
+  private async schoolLocalDate(schoolId: string,database:Db=this.db): Promise<string> {
+    const school = await database.selectFrom("schools").select(["id", "timezone"])
+      .where("id", "=", schoolId).executeTakeFirst();
+    if (!school) throw new NotFoundException("School not found.");
+    if (this.executionClock) {
+      return this.executionClock.institutionDate({ institution_id: school.id, time_zone: school.timezone });
+    }
+    const result = await sql<{ date: string }>`SELECT (${executionNow()}::timestamptz AT TIME ZONE ${school.timezone})::date::text AS date`.execute(database);
+    return result.rows[0]!.date;
   }
 
   async attendanceSummary(studentId: string, term: EnrollmentContext): Promise<{ total: number; present: number; absent: number; late: number; excused: number; half_day: number; percentage: number }> {
@@ -928,7 +947,7 @@ export class SchoolService {
   async latestGate(studentId: string, date?: string) {
     let query = this.db.selectFrom("gate_events").selectAll()
       .where("student_id", "=", studentId)
-      .where("occurred_at", "<=", new Date());
+      .where("occurred_at", "<=", executionNow());
     if (date) query = query.where(sql<boolean>`occurred_at::date = ${date}::date`);
     const row = await query.orderBy("occurred_at", "desc").executeTakeFirst();
     return row ? { ...row, direction_label: row.direction === "in" ? "Entry" : "Exit" } : null;
@@ -1073,7 +1092,7 @@ export class SchoolService {
     };
   }
 
-  async timetable(enrollment: Pick<EnrollmentContext, "class_section_id" | "term_id">, weekday?: number, date?: string) {
+  async timetable(enrollment: Pick<EnrollmentContext, "class_section_id" | "term_id">, weekday?: number, date?: string,database:Db=this.db) {
     const result = await sql<any>`
       SELECT ts.*, s.code, s.name AS subject_name, s.short_name, s.color AS subject_color, s.icon AS subject_icon,
         u.first_name AS teacher_first_name, u.last_name AS teacher_last_name
@@ -1082,7 +1101,7 @@ export class SchoolService {
       WHERE ts.class_section_id=${enrollment.class_section_id}::uuid AND ts.term_id=${enrollment.term_id}::uuid
         AND (${weekday ?? null}::smallint IS NULL OR ts.weekday=${weekday ?? null}::smallint)
       ORDER BY ts.weekday, ts.period_number
-    `.execute(this.db);
+    `.execute(database);
     return result.rows.map((row) => ({
       id: row.id, weekday: row.weekday, weekday_label: weekdayLabels[row.weekday],
       period_number: row.period_number, starts_at: row.starts_at, ends_at: row.ends_at,
@@ -1112,7 +1131,7 @@ export class SchoolService {
     `.execute(this.db)).rows[0]??null;
   }
 
-  async diaryItems(studentId: string, enrollment: EnrollmentContext, dateFrom?: string, dateTo?: string) {
+  async diaryItems(studentId: string, enrollment: Pick<EnrollmentContext,"class_section_id"|"term_id">, dateFrom?: string, dateTo?: string, itemId?: string, database:Db=this.db) {
     const result = await sql<any>`
       SELECT di.*, s.id AS subject_join_id, s.name AS subject_name, s.short_name,
         completion.completed_at,
@@ -1123,18 +1142,19 @@ export class SchoolService {
       LEFT JOIN homework_completions completion ON completion.item_id=di.id AND completion.student_id=${studentId}::uuid
       JOIN users au ON au.id=di.author_id
       WHERE di.class_section_id=${enrollment.class_section_id}::uuid AND di.term_id=${enrollment.term_id}::uuid
-        AND di.published_at <= now()
+        AND di.published_at <= ${executionNow()}
+        AND (${itemId ?? null}::uuid IS NULL OR di.id=${itemId ?? null}::uuid)
         AND (${dateFrom ?? null}::date IS NULL OR di.date >= ${dateFrom ?? null}::date)
         AND (${dateTo ?? null}::date IS NULL OR di.date <= ${dateTo ?? null}::date)
       ORDER BY di.date DESC, di.created_at DESC LIMIT 200
-    `.execute(this.db);
+    `.execute(database);
     const items = [];
     for (const row of result.rows) {
       const notes = await sql<any>`
         SELECT dn.id, dn.body, dn.created_at, u.first_name, u.last_name
         FROM diary_notes dn JOIN users u ON u.id=dn.author_id
-        WHERE dn.item_id=${row.id}::uuid AND dn.student_id=${studentId}::uuid ORDER BY dn.created_at
-      `.execute(this.db);
+        WHERE dn.item_id=${row.id}::uuid AND dn.student_id=${studentId}::uuid ORDER BY dn.created_at DESC,dn.id DESC LIMIT 100
+      `.execute(database);
       items.push({
         id: row.id, date: row.date, item_type: row.item_type,
         item_type_label: String(row.item_type).replace(/^./, (value: string) => value.toUpperCase()),
@@ -1145,10 +1165,23 @@ export class SchoolService {
         published_at: row.published_at,
         completed: row.item_type === 'homework' ? Boolean(row.completed_at) : null,
         completed_at: row.item_type === 'homework' ? row.completed_at ?? null : null,
-        notes: notes.rows.map((note) => ({ id: note.id, author_name: `${note.first_name} ${note.last_name}`.trim(), body: note.body, created_at: note.created_at })),
+        notes: notes.rows.reverse().map((note) => ({ id: note.id, author_name: `${note.first_name} ${note.last_name}`.trim(), body: note.body, created_at: note.created_at })),
       });
     }
     return items;
+  }
+
+  async exactDiaryItem(user: AuthUser, itemId: string, studentId?: string) {
+    z.string().uuid().parse(itemId);
+    const student = await this.studentForUser(user, studentId);
+    const practice=this.classPractice;
+    if(!practice)throw new ConflictException("The current Diary authorization adapter is unavailable.");
+    return this.db.transaction().execute(async tx=>{
+    const source=await practice.authorizeLearnerSource(tx,user,itemId,student.id);
+    const items = await this.diaryItems(student.id, source, undefined, undefined, itemId,tx);
+    if (!items[0]) throw new NotFoundException("This diary item is unavailable in your current class.");
+    return items[0];
+    });
   }
 
   async contacts(schoolId: string) {
@@ -1431,16 +1464,16 @@ export class SchoolService {
         const leave = await trx.insertInto("leave_requests").values({
           student_id: student.id, term_id: termId, requested_by: user.id, category: data.category,
           starts_on: data.starts_on, ends_on: data.ends_on, reason: data.reason,
-          status: "pending_guardian", submitted_at: new Date(), guardian_authorized_by: null,
+          status: "pending_guardian", submitted_at: executionNow(), guardian_authorized_by: null,
           guardian_authorized_at: null, decided_by: null, decided_at: null,
         }).returning("id").executeTakeFirstOrThrow();
         await this.addLeaveAudit(trx, leave.id, user.id, "submitted", "draft", "pending_guardian", guardian ? "Leave request submitted by a guardian." : "Leave request submitted for guardian authorization.");
         let status: LeaveStatus = "pending_guardian";
         if (currentGuardian?.can_authorize_leave) {
           status = "authorized";
-          await trx.updateTable("leave_requests").set({ status, guardian_authorized_by: user.id, guardian_authorized_at: new Date(), updated_at: new Date() }).where("id", "=", leave.id).execute();
+          await trx.updateTable("leave_requests").set({ status, guardian_authorized_by: user.id, guardian_authorized_at: executionNow(), updated_at: executionNow() }).where("id", "=", leave.id).execute();
           await this.addLeaveAudit(trx, leave.id, user.id, "authorized", "pending_guardian", status, "Guardian submitted and authorized the leave request.");
-          await this.notify(trx, student.user_id, { title: "Leave request ready for school review", body: `${user.first_name} ${user.last_name} submitted and authorized the request; it is ready for school review.`, link: `/student/leave?leave_id=${leave.id}`, metadata: { leave_request_id: leave.id, student_id: student.id } });
+          await this.notify(trx, student.user_id, { title: "Leave request ready for school review", body: `${user.first_name} ${user.last_name} submitted and authorized the request; it is ready for school review.`, link: `/areas/attendance/leave?scope=self&student_id=${student.id}&leave_id=${leave.id}`, metadata: { leave_request_id: leave.id, student_id: student.id } });
         } else {
           const guardians = await sql<{ user_id: string }>`
             SELECT DISTINCT p.user_id
@@ -1456,7 +1489,7 @@ export class SchoolService {
           for (const recipient of guardians.rows) await this.notify(trx, recipient.user_id, {
             title: "Leave authorization required",
             body: `${student.first_name} ${student.last_name} submitted a ${duration}-day leave request.`,
-            link: `/parent/leave?leave_id=${leave.id}&student_id=${student.id}`,
+            link: `/areas/attendance/leave?scope=dependent&student_id=${student.id}&leave_id=${leave.id}`,
             metadata: { leave_request_id: leave.id, student_id: student.id },
           });
         }
@@ -1538,92 +1571,9 @@ export class SchoolService {
     const document = await this.db.selectFrom("leave_documents").selectAll()
       .where("id", "=", documentId).where("leave_request_id", "=", leaveId).executeTakeFirst();
     if (!document) throw new NotFoundException("Leave document not found.");
-    return { document, stream: createReadStream(join(config().uploadDir, document.storage_key)) };
-  }
-
-  private async applyApprovedLeaveAttendance(db: Db, input: {
-    leaveId: string; studentId: string; schoolId: string; termId: string;
-    startsOn: string; endsOn: string; actorId: string; requestId: string;
-  }): Promise<string[]> {
-    const enrollment = await db.selectFrom("enrollments").select(["class_section_id", "term_id"])
-      .where("student_id", "=", input.studentId).where("term_id", "=", input.termId)
-      .where("is_active", "=", true).executeTakeFirst();
-    if (!enrollment) throw new BadRequestException("The student is not actively enrolled for the leave term.");
-    const days = await sql<{ date: string }>`
-      SELECT candidate.day::date::text AS date
-      FROM generate_series(${input.startsOn}::date, ${input.endsOn}::date, interval '1 day') candidate(day)
-      LEFT JOIN school_calendar_days calendar ON calendar.school_id=${input.schoolId}::uuid
-        AND calendar.date=candidate.day::date
-      WHERE COALESCE(calendar.is_instructional, EXISTS (
-        SELECT 1 FROM timetable_slots slot
-        WHERE slot.class_section_id=${enrollment.class_section_id}::uuid
-          AND slot.term_id=${input.termId}::uuid
-          AND slot.weekday=EXTRACT(ISODOW FROM candidate.day)::int
-          AND slot.slot_type IN ('class','activity')
-      ))
-      ORDER BY candidate.day
-    `.execute(db);
-    const changedDates: string[] = [];
-    for (const day of days.rows) {
-      await sql`SELECT pg_advisory_xact_lock(hashtextextended(${`${enrollment.class_section_id}:${day.date}`}, 0))`.execute(db);
-      const current = await db.selectFrom("attendance_records").selectAll()
-        .where("student_id", "=", input.studentId).where("date", "=", day.date).executeTakeFirst();
-      if (current && current.status !== "absent") continue;
-      const registerRows = await sql<any>`
-        SELECT * FROM attendance_registers WHERE class_section_id=${enrollment.class_section_id}::uuid
-          AND term_id=${input.termId}::uuid AND date=${day.date}::date FOR UPDATE
-      `.execute(db);
-      const existingRegister = registerRows.rows[0];
-      if (existingRegister?.state === "locked") {
-        throw new ConflictException("Reopen the locked attendance register before approving leave for this date.");
-      }
-      const registerRevision = Number(existingRegister?.revision ?? 0) + 1;
-      const now = new Date();
-      const register = existingRegister
-        ? await db.updateTable("attendance_registers").set({ revision: registerRevision, updated_at: now })
-            .where("id", "=", existingRegister.id).returningAll().executeTakeFirstOrThrow()
-        : await db.insertInto("attendance_registers").values({
-            school_id: input.schoolId, class_section_id: enrollment.class_section_id,
-            term_id: input.termId, date: day.date, state: "draft", revision: registerRevision,
-            submitted_by: null, submitted_at: null, locked_by: null, locked_at: null,
-            reopened_by: null, reopened_at: null, reopen_reason: null,
-            auto_finalize_at: null, finalization_policy_revision: null,
-            finalization_source: null,
-          }).returningAll().executeTakeFirstOrThrow();
-      const saved = current
-        ? await db.updateTable("attendance_records").set({
-            status: "excused", remarks: `Approved leave ${input.leaveId}`,
-            marked_by: input.actorId, revision: registerRevision,
-            source_request_id: input.requestId, updated_at: now,
-          }).where("id", "=", current.id).returningAll().executeTakeFirstOrThrow()
-        : await db.insertInto("attendance_records").values({
-            student_id: input.studentId, class_section_id: enrollment.class_section_id,
-            date: day.date, status: "excused", remarks: `Approved leave ${input.leaveId}`,
-            marked_by: input.actorId, revision: registerRevision,
-            source_request_id: input.requestId,
-          }).returningAll().executeTakeFirstOrThrow();
-      await db.insertInto("attendance_record_revisions").values({
-        attendance_record_id: saved.id, attendance_submission_id: null,
-        attendance_register_id: register.id, school_id: input.schoolId,
-        student_id: input.studentId, class_section_id: enrollment.class_section_id,
-        date: day.date, previous_status: current?.status ?? null, new_status: "excused",
-        previous_remarks: current?.remarks ?? null, new_remarks: saved.remarks,
-        previous_check_in_at: current?.check_in_at ?? null, new_check_in_at: saved.check_in_at,
-        previous_check_out_at: current?.check_out_at ?? null, new_check_out_at: saved.check_out_at,
-        reason: "School-approved leave", changed_by: input.actorId,
-        request_id: input.requestId, register_revision: registerRevision,
-      }).execute();
-      await this.events.enqueueAttendanceUpdates(db, {
-        schoolId: input.schoolId, classSectionId: enrollment.class_section_id,
-        termId: input.termId,
-        date: day.date, requestId: input.requestId,
-        records: [{ id: saved.id, student_id: input.studentId, status: "excused", previous_status: current?.status ?? null, revision: registerRevision }],
-        suppressNotifications: true,
-      });
-      changedDates.push(day.date);
-    }
-    if (changedDates.length) await this.refreshSubjectAttendance(db, [input.studentId]);
-    return changedDates;
+    const file = await readEnvironmentStoredFile(join(config().uploadDir, document.storage_key), document.content_type, document.original_name);
+    return { ...file, document: { ...document, content_type: file.content_type, original_name: file.original_name,
+      size_bytes: file.size_bytes ?? document.size_bytes } };
   }
 
   async performLeaveAction(user: AuthUser, leaveId: string, action: string, noteValue: unknown, request: FastifyRequest) {
@@ -1648,7 +1598,7 @@ export class SchoolService {
       if (action === "clarify") {
         if (!note) throw new BadRequestException("Explain what clarification the student should provide.");
         await this.addLeaveAudit(trx, leaveId, user.id, "clarification_requested", locked.status, locked.status, note);
-        await this.notify(trx, scoped.student.user_id, { title: "Clarification requested for leave", body: `${user.first_name} ${user.last_name} requested clarification: ${note}`, link: `/student/leave?leave_id=${leaveId}`, metadata: { action: "clarify", leave_request_id: leaveId, student_id: scoped.student.id } });
+        await this.notify(trx, scoped.student.user_id, { title: "Clarification requested for leave", body: `${user.first_name} ${user.last_name} requested clarification: ${note}`, link: `/areas/attendance/leave?scope=self&student_id=${scoped.student.id}&leave_id=${leaveId}`, metadata: { action: "clarify", leave_request_id: leaveId, student_id: scoped.student.id } });
         await this.enqueueLeaveUpdate(trx, {
           student: scoped.student, leaveId, requestId,
           action: "clarification_requested", status: locked.status,
@@ -1658,9 +1608,9 @@ export class SchoolService {
       if (action === "withdraw") {
         if (user.id !== locked.requested_by && !guardian) throw new ForbiddenException("Only the requester or a linked guardian may withdraw this request.");
         if (!["draft", "pending_guardian", "authorized"].includes(locked.status)) throw new BadRequestException("This leave request can no longer be withdrawn.");
-        await trx.updateTable("leave_requests").set({ status: "withdrawn", updated_at: new Date() }).where("id", "=", leaveId).execute();
+        await trx.updateTable("leave_requests").set({ status: "withdrawn", updated_at: executionNow() }).where("id", "=", leaveId).execute();
         await this.addLeaveAudit(trx, leaveId, user.id, "withdrawn", locked.status, "withdrawn", note);
-        await this.notify(trx, scoped.student.user_id, { title: "Leave request withdrawn", body: "The leave request has been withdrawn.", link: `/student/leave?leave_id=${leaveId}`, metadata: { leave_request_id: leaveId, student_id: scoped.student.id } });
+        await this.notify(trx, scoped.student.user_id, { title: "Leave request withdrawn", body: "The leave request has been withdrawn.", link: `/areas/attendance/leave?scope=self&student_id=${scoped.student.id}&leave_id=${leaveId}`, metadata: { leave_request_id: leaveId, student_id: scoped.student.id } });
         await this.enqueueLeaveUpdate(trx, {
           student: scoped.student, leaveId, requestId,
           action: "withdrawn", status: "withdrawn",
@@ -1671,13 +1621,11 @@ export class SchoolService {
         if (!isSchoolApprover) throw new ForbiddenException("An active school administrator must decide a leave request.");
         if (locked.status !== "authorized") throw new BadRequestException("Guardian authorization is required before a school decision.");
         const next = action === "approve" ? "school_approved" : "school_rejected";
-        await trx.updateTable("leave_requests").set({ status: next, decided_by: user.id, decided_at: new Date(), updated_at: new Date() }).where("id", "=", leaveId).execute();
+        await trx.updateTable("leave_requests").set({ status: next, decided_by: user.id, decided_at: executionNow(), updated_at: executionNow() }).where("id", "=", leaveId).execute();
         await this.addLeaveAudit(trx, leaveId, user.id, action === "approve" ? "approved" : "rejected", locked.status, next, note);
-        const changedAttendanceDates = action === "approve" ? await this.applyApprovedLeaveAttendance(trx, {
-          leaveId, studentId: scoped.student.id, schoolId: scoped.student.school_id,
-          termId: locked.term_id, startsOn: locked.starts_on, endsOn: locked.ends_on,
-          actorId: user.id, requestId,
-        }) : [];
+        if (action === "approve" && !this.participation) throw new ConflictException("The shared academic attendance service is unavailable.");
+        const changedAttendanceDates = action === "approve"
+          ? await this.participation!.applyApprovedLeaveInTransaction(trx,user,scoped.student.school_id,leaveId,request as AuthenticatedRequest) : [];
         const guardianUsers = await sql<{ user_id: string }>`
           SELECT DISTINCT p.user_id FROM guardian_relationships gr
           JOIN parents p ON p.id=gr.guardian_id
@@ -1695,7 +1643,9 @@ export class SchoolService {
         };
         for (const recipientId of recipients) await this.notify(trx, recipientId, {
           ...notification,
-          link: recipientId === scoped.student.user_id ? `/student/leave?leave_id=${leaveId}` : `/parent/leave?leave_id=${leaveId}&student_id=${scoped.student.id}&tab=history`,
+          link: recipientId === scoped.student.user_id
+            ? `/areas/attendance/leave?scope=self&student_id=${scoped.student.id}&leave_id=${leaveId}`
+            : `/areas/attendance/leave?scope=dependent&student_id=${scoped.student.id}&leave_id=${leaveId}&tab=history`,
           metadata: { leave_request_id: leaveId, student_id: scoped.student.id, status: next, changed_attendance_dates: changedAttendanceDates },
           ...(recipientId === scoped.student.user_id ? {} : { attention: {
             schoolId: scoped.student.school_id,
@@ -1715,9 +1665,9 @@ export class SchoolService {
         return;
       }
       const next = action === "authorize" ? "authorized" : "declined";
-      await trx.updateTable("leave_requests").set({ status: next, guardian_authorized_by: user.id, guardian_authorized_at: new Date(), updated_at: new Date() }).where("id", "=", leaveId).execute();
+      await trx.updateTable("leave_requests").set({ status: next, guardian_authorized_by: user.id, guardian_authorized_at: executionNow(), updated_at: executionNow() }).where("id", "=", leaveId).execute();
       await this.addLeaveAudit(trx, leaveId, user.id, action === "authorize" ? "authorized" : "declined", locked.status, next, note);
-      await this.notify(trx, scoped.student.user_id, { title: action === "authorize" ? "Leave request authorized" : "Leave request declined", body: action === "authorize" ? `${user.first_name} ${user.last_name} authorized the request; it is ready for school review.` : `${user.first_name} ${user.last_name} declined the leave authorization request.`, link: `/student/leave?leave_id=${leaveId}`, metadata: { leave_request_id: leaveId, student_id: scoped.student.id } });
+      await this.notify(trx, scoped.student.user_id, { title: action === "authorize" ? "Leave request authorized" : "Leave request declined", body: action === "authorize" ? `${user.first_name} ${user.last_name} authorized the request; it is ready for school review.` : `${user.first_name} ${user.last_name} declined the leave authorization request.`, link: `/areas/attendance/leave?scope=self&student_id=${scoped.student.id}&leave_id=${leaveId}`, metadata: { leave_request_id: leaveId, student_id: scoped.student.id } });
       await this.enqueueLeaveUpdate(trx, {
         student: scoped.student, leaveId, requestId,
         action: action === "authorize" ? "authorized" : "declined",
@@ -1788,7 +1738,7 @@ export class SchoolService {
     return audience.rows.map((row) => row.user_id);
   }
 
-  async setHomeworkCompleted(user: AuthUser, itemId: string, studentId: string | undefined, completed: boolean) {
+  async setHomeworkCompleted(user: AuthUser, itemId: string, studentId: string | undefined, completed: boolean, command?: unknown) {
     const student = await this.studentForUser(user, studentId);
     const self = student.user_id === user.id;
     const guardian = await this.guardianRelationship(this.db, user.id, student.id);
@@ -1796,51 +1746,30 @@ export class SchoolService {
     const enrollment = await this.enrollment(student.id);
     const item = await this.db.selectFrom("diary_items").select("id").where("id", "=", itemId)
       .where("class_section_id", "=", enrollment.class_section_id).where("term_id", "=", enrollment.term_id)
-      .where("item_type", "=", "homework").where("published_at", "<=", new Date()).executeTakeFirst();
+      .where("item_type", "=", "homework").where("published_at", "<=", executionNow()).executeTakeFirst();
     if (!item) throw new NotFoundException("Homework not found.");
-    return this.db.transaction().execute(async (tx) => {
-      const changed = completed
-        ? await tx.insertInto("homework_completions")
-          .values({ item_id: itemId, student_id: student.id, completed_by: user.id })
-          .onConflict((conflict) => conflict.columns(["item_id", "student_id"]).doNothing())
-          .returning("completed_at")
-          .executeTakeFirst()
-        : await tx.deleteFrom("homework_completions")
-          .where("item_id", "=", itemId)
-          .where("student_id", "=", student.id)
-          .returning("completed_at")
-          .executeTakeFirst();
-      if (changed) {
-        const changedAt = new Date(changed.completed_at).toISOString();
-        await this.events.enqueueUserEvent(tx, {
-          schoolId: student.school_id,
-          eventType: "diary.updated",
-          aggregateType: "homework_completion",
-          aggregateId: itemId,
-          audienceUserIds: await this.diaryEventAudience(tx, student),
-          payload: {
-            diary_item_id: itemId,
-            student_id: student.id,
-            action: completed ? "completed" : "reopened",
-            refresh: ["student.home", "student.diary", "parent.home", "parent.diary"],
-          },
-          idempotencyKey: `homework-completion:${itemId}:${student.id}:${completed}:${changedAt}`,
-        });
-      }
-      return { item_id: itemId, student_id: student.id, completed };
-    });
+    const practice = this.classPractice;
+    if (!practice) throw new ConflictException("The class practice command adapter is unavailable.");
+    const result = await practice.complete(user, itemId, { ...practice.legacyCommand(command), student_id: student.id, completed });
+    return { item_id: result.item_id, student_id: result.student_id, completed: result.completed };
   }
 
-  async addDiaryNote(user: AuthUser, itemId: string, studentId: string | undefined, bodyValue: unknown) {
+  async addDiaryNote(user: AuthUser, itemId: string, studentId: string | undefined, bodyValue: unknown, command?: unknown) {
     const body = z.string().trim().min(2).max(2000).parse(bodyValue);
     const student = await this.studentForUser(user, studentId);
     const self = student.user_id === user.id;
     const guardian = await this.guardianRelationship(this.db, user.id, student.id);
     if (!self && !guardian) throw new ForbiddenException("Only the student or a linked guardian may add a diary note.");
     const enrollment = await this.enrollment(student.id);
-    const item = await this.db.selectFrom("diary_items").select("id").where("id", "=", itemId)
-      .where("class_section_id", "=", enrollment.class_section_id).where("term_id", "=", enrollment.term_id).executeTakeFirst();
+    const item = await this.db.selectFrom("diary_items").select(["id", "item_type"]).where("id", "=", itemId)
+      .where("class_section_id", "=", enrollment.class_section_id).where("term_id", "=", enrollment.term_id).where("published_at", "<=", executionNow()).executeTakeFirst();
     if (!item) throw new NotFoundException("Diary item not found.");
+    if (item.item_type === "homework") {
+      const practice = this.classPractice;
+      if (!practice) throw new ConflictException("The class practice command adapter is unavailable.");
+      const input = command as { note_id?: string } | undefined;
+      return practice.note(user, itemId, { ...practice.legacyCommand(command), note_id: input?.note_id ?? randomUUID(), student_id: student.id, body });
+    }
     return this.db.transaction().execute(async (tx) => {
       const note = await tx.insertInto("diary_notes").values({ item_id: itemId, student_id: student.id, author_id: user.id, body }).returningAll().executeTakeFirstOrThrow();
       await this.events.enqueueUserEvent(tx, {
@@ -1863,6 +1792,8 @@ export class SchoolService {
 
   async notifications(user: AuthUser, rawPage: { limit?: string | undefined; cursor?: string | undefined } = {}) {
     const page = notificationPageSchema.parse(rawPage);
+    if (user.active_school_id && await assignedWorkOnly(this.db, user.active_school_id, user.id))
+      return { results: [], unread_count: 0, next_cursor: null };
     const after = notificationCursor(page.cursor);
     let query = this.db.selectFrom("notifications")
       .select(["id", "kind", "title", "body", "link", "metadata", "read_at", "created_at", "attention_eligible"])
@@ -1984,7 +1915,7 @@ export class SchoolService {
         sql<string>`count(*) FILTER (WHERE published_at >= now() - interval '60 days' AND published_at < now() - interval '30 days')::text`.as("previous"),
       ])
         .where("class_section_id", "=", enrollment.class_section_id).where("term_id", "=", enrollment.term_id)
-        .where("item_type", "=", "homework").where("published_at", "<=", new Date()).executeTakeFirst(),
+        .where("item_type", "=", "homework").where("published_at", "<=", executionNow()).executeTakeFirst(),
       this.db.selectFrom("attendance_records").select("status")
         .where("student_id", "=", student.id).where("date", ">=", enrollment.starts_on)
         .where("date", "<=", enrollment.ends_on).where("date", "<=", schoolDate)
@@ -1996,7 +1927,7 @@ export class SchoolService {
         .leftJoin("subjects as subject", "subject.id", "item.subject_id")
         .select(["item.id", "item.title", "item.body", "item.due_at", "item.published_at", "subject.name as subject_name", "completion.completed_at"])
         .where("item.class_section_id", "=", enrollment.class_section_id).where("item.term_id", "=", enrollment.term_id)
-        .where("item.item_type", "=", "homework").where("item.published_at", "<=", new Date())
+        .where("item.item_type", "=", "homework").where("item.published_at", "<=", executionNow())
         .orderBy("item.published_at", "desc").execute(),
       this.familyHomeActions(user, student, "guardian"),
       this.followupHomeActions(user, "guardian", student.id),
@@ -2021,7 +1952,7 @@ export class SchoolService {
         detail: `${actionRequired.category_label} leave for ${daysInclusive(actionRequired.starts_on, actionRequired.ends_on)} ${daysInclusive(actionRequired.starts_on, actionRequired.ends_on) === 1 ? "day" : "days"}.`,
         status_label: "Guardian decision needed",
         action_label: "Review request",
-        href: `/parent/leave?leave_id=${encodeURIComponent(actionRequired.id)}&student_id=${encodeURIComponent(student.id)}`,
+        href: `/areas/attendance/leave?scope=dependent&student_id=${encodeURIComponent(student.id)}&leave_id=${encodeURIComponent(actionRequired.id)}`,
         source_id: actionRequired.id,
         occurs_at: actionRequired.submitted_at ? new Date(actionRequired.submitted_at).toISOString() : null,
         due_at: `${dateOnly(actionRequired.starts_on)}T00:00:00.000Z`,
@@ -2034,7 +1965,7 @@ export class SchoolService {
         detail: diaryAcknowledgements[0]!.title,
         status_label: "Unread school note",
         action_label: "Open diary",
-        href: `/parent/diary?student_id=${encodeURIComponent(student.id)}&diary_item=${encodeURIComponent(diaryAcknowledgements[0]!.id)}`,
+        href: `/areas/messages/diary?scope=dependent&student_id=${encodeURIComponent(student.id)}&diary_item=${encodeURIComponent(diaryAcknowledgements[0]!.id)}`,
         source_id: diaryAcknowledgements[0]!.id,
         occurs_at: new Date(diaryAcknowledgements[0]!.published_at).toISOString(),
         due_at: diaryAcknowledgements[0]!.due_at ? new Date(diaryAcknowledgements[0]!.due_at).toISOString() : null,
@@ -2198,7 +2129,7 @@ export class SchoolService {
         detail: item.title,
         status_label: "Unread school note",
         action_label: "Open diary",
-        href: "/student/diary",
+        href: `/areas/messages/diary?scope=self&student_id=${encodeURIComponent(student.id)}&diary_item=${encodeURIComponent(item.id)}`,
         source_id: item.id,
         occurs_at: new Date(item.published_at).toISOString(),
         due_at: item.due_at ? new Date(item.due_at).toISOString() : null,
@@ -2368,6 +2299,35 @@ export class SchoolService {
     return classUpdates(this.db, classes.map(item => item.class_section_id), user.id, date);
   }
 
+  async assignedClassesScreen(
+    user: AuthUser,
+    classSectionIds: readonly string[],
+    selectedDateValue?: string,
+    recordableClassSectionIds: readonly string[] = classSectionIds,
+  ) {
+    const membership = await this.requireSchoolRole(user, ["staff", "admin"]);
+    const date = z.iso.date().parse(selectedDateValue ?? await this.schoolLocalDate(membership.school_id));
+    const classes = await attendanceWorkspace(this.db, membership.school_id, user.id, membership.role, date);
+    const allowed = new Set(classSectionIds);
+    const recordable = new Set(recordableClassSectionIds);
+    return {
+      date,
+      classes: classes.filter((item) => allowed.has(item.class_section_id)).map((item) => recordable.has(item.class_section_id)
+        ? item
+        : {
+          ...item,
+          can_mark: false,
+          availability_reason: "Your current class responsibility allows viewing this register, but not recording attendance.",
+        }),
+    };
+  }
+
+  async assignedClassUpdates(user: AuthUser, classSectionIds: readonly string[], selectedDateValue?: string) {
+    const membership = await this.requireSchoolRole(user, ["staff", "admin"]);
+    const date = z.iso.date().parse(selectedDateValue ?? await this.schoolLocalDate(membership.school_id));
+    return classUpdates(this.db, [...new Set(classSectionIds)], user.id, date);
+  }
+
   async teacherHomeScreen(user: AuthUser, selectedDateValue?: string) {
     const membership = await this.requireSchoolRole(user, ["staff", "admin"]);
     const selectedDate = selectedDateValue ?? await this.schoolLocalDate(membership.school_id);
@@ -2384,9 +2344,10 @@ export class SchoolService {
         AND (${membership.role}='admin' OR ts.teacher_user_id=${user.id}::uuid)
       ORDER BY ts.weekday, ts.period_number, cs.grade, cs.section
     `.execute(this.db);
-    const [followupActions, eventActions] = await Promise.all([
+    const [followupActions, eventActions, operatingDay] = await Promise.all([
       this.followupHomeActions(user, "staff"),
       this.staffEventHomeActions(user, membership.school_id, "teacher"),
+      this.operatingDay?.project(user, membership.school_id, selectedDate) ?? Promise.resolve(null),
     ]);
     const registerActions: HomeAction[] = classes
       .filter((item) => item.can_mark !== false && !["submitted", "locked"].includes(item.submission_status))
@@ -2398,7 +2359,7 @@ export class SchoolService {
         detail: `${item.marked_count}/${item.student_count} students marked${item.subjects?.length ? ` for ${item.subjects.join(", ")}` : ""}.`,
         status_label: item.submission_status === "in_progress" ? "Finish register" : "Not started",
         action_label: item.submission_status === "in_progress" ? "Continue attendance" : "Take attendance",
-        href: `/teacher/attendance?class_section_id=${encodeURIComponent(item.class_section_id)}&date=${selectedDate}`,
+        href: `/areas/attendance/registers?class_section_id=${encodeURIComponent(item.class_section_id)}&date=${selectedDate}`,
         source_id: item.class_section_id,
         occurs_at: item.starts_at ? `${selectedDate}T${String(item.starts_at).slice(0, 8)}` : null,
         due_at: item.ends_at ? `${selectedDate}T${String(item.ends_at).slice(0, 8)}` : null,
@@ -2411,16 +2372,17 @@ export class SchoolService {
       weekly_timetable: weekly.rows.map((row) => ({ ...row, class_name: `Class ${row.grade}${row.section}`, weekday_label: weekdayLabels[row.weekday] })),
       home_actions: sortHomeActions(allHomeActions).slice(0, 6),
       more_attention: moreAttentionCounts(allHomeActions, "staff"),
+      operating_day: operatingDay,
     };
   }
 
-  async teacherAttendanceScreen(user: AuthUser, classSectionId: string | undefined, selectedDateValue?: string) {
+  async teacherAttendanceScreen(user: AuthUser, classSectionId: string | undefined, selectedDateValue?: string,database:Db=this.db) {
     if (!classSectionId) throw new BadRequestException("class_section_id is required.");
-    const target = await this.db.selectFrom("class_sections").select("school_id").where("id", "=", classSectionId).executeTakeFirst();
+    const target = await database.selectFrom("class_sections").select("school_id").where("id", "=", classSectionId).executeTakeFirst();
     if (!target) throw new NotFoundException("Class section not found.");
-    const selectedDate = selectedDateValue ?? await this.schoolLocalDate(target.school_id);
+    const selectedDate = selectedDateValue ?? await this.schoolLocalDate(target.school_id,database);
     if (!datePattern.test(selectedDate)) throw new BadRequestException("Use ISO date format YYYY-MM-DD.");
-    const section = await this.db.selectFrom("class_sections as cs")
+    const section = await database.selectFrom("class_sections as cs")
       .innerJoin("academic_terms as t", (join) => join
         .onRef("t.school_id", "=", "cs.school_id")
         .onRef("t.academic_year", "=", "cs.academic_year"))
@@ -2431,10 +2393,10 @@ export class SchoolService {
       .orderBy("t.starts_on", "desc")
       .executeTakeFirst();
     if (!section) throw new NotFoundException("Class section not found.");
-    const membership = await this.requireSchoolRole(user, ["staff", "admin"], section.school_id);
+    const membership = await this.requireSchoolRole(user, ["staff", "admin"], section.school_id,database);
     if (membership.role !== "admin") {
-      const substitute=(await sql`SELECT id FROM effective_school_schedule(${section.school_id}::uuid,${selectedDate}::date) WHERE class_section_id=${classSectionId}::uuid AND term_id=${section.term_id}::uuid AND teacher_user_id=${user.id}::uuid AND NOT cancelled AND coverage_status='accepted' LIMIT 1`.execute(this.db)).rows[0];
-      const scoped=(await sql<{allowed:boolean}>`SELECT staff_has_class_permission(${section.school_id}::uuid,${user.id}::uuid,'attendance.view',${classSectionId}::uuid,${selectedDate}::date) AS allowed`.execute(this.db)).rows[0]?.allowed;
+      const substitute=(await sql`SELECT id FROM effective_school_schedule(${section.school_id}::uuid,${selectedDate}::date) WHERE class_section_id=${classSectionId}::uuid AND term_id=${section.term_id}::uuid AND teacher_user_id=${user.id}::uuid AND NOT cancelled AND coverage_status='accepted' LIMIT 1`.execute(database)).rows[0];
+      const scoped=(await sql<{allowed:boolean}>`SELECT staff_has_class_permission(${section.school_id}::uuid,${user.id}::uuid,'attendance.view',${classSectionId}::uuid,${selectedDate}::date) AS allowed`.execute(database)).rows[0]?.allowed;
       if (!substitute&&!scoped) throw new ForbiddenException("This class is not assigned with attendance access to the signed-in teacher.");
     }
     const [roster, register] = await Promise.all([sql<any>`
@@ -2446,15 +2408,15 @@ export class SchoolService {
       WHERE e.class_section_id=${classSectionId}::uuid AND e.term_id=${section.term_id}::uuid AND e.is_active
         AND e.enrolled_on<=${selectedDate}::date
       ORDER BY e.roll_number
-    `.execute(this.db), this.db.selectFrom("attendance_registers")
+    `.execute(database), database.selectFrom("attendance_registers")
       .selectAll().where("class_section_id", "=", classSectionId)
       .where("term_id", "=", section.term_id).where("date", "=", selectedDate).executeTakeFirst()]);
     const periods = await this.timetable({
       class_section_id: classSectionId,
       term_id: section.term_id,
-    }, isoWeekday(selectedDate),selectedDate);
+    }, isoWeekday(selectedDate),selectedDate,database);
     const dayPolicy = await attendanceDayPolicy(
-      this.db,
+      database,
       section.school_id,
       classSectionId,
       section.term_id,
@@ -2475,7 +2437,7 @@ export class SchoolService {
       date: selectedDate,
       studentIds: roster.rows.map((row) => row.student_id),
     });
-    const rosterCapturedAt = new Date();
+    const rosterCapturedAt = executionNow();
     const rosterExpiresAt = new Date(rosterCapturedAt.getTime() + 18 * 60 * 60 * 1000);
     const capturedAt = rosterCapturedAt.toISOString();
     const expiresAt = rosterExpiresAt.toISOString();
@@ -2490,7 +2452,7 @@ export class SchoolService {
       capturedAt,
       expiresAt,
     });
-    const latestCapture = await this.db.selectFrom("attendance_capture_batches")
+    const latestCapture = await database.selectFrom("attendance_capture_batches")
       .select(["id", "source", "status", "received_at", "roster_expires_at"])
       .where("class_section_id", "=", classSectionId)
       .where("term_id", "=", section.term_id)
@@ -2602,7 +2564,7 @@ export class SchoolService {
       JOIN attendance_records ar ON ar.student_id=e.student_id
         AND ar.class_section_id=e.class_section_id
         AND ar.date BETWEEN term.starts_on
-          AND LEAST(term.ends_on, (now() AT TIME ZONE school.timezone)::date)
+          AND LEAST(term.ends_on, (${executionNow()}::timestamptz AT TIME ZONE school.timezone)::date)
       JOIN scheduled_slots ts ON ts.class_section_id=e.class_section_id AND ts.term_id=e.term_id
         AND ts.date=ar.date AND ar.date>=e.enrolled_on
       WHERE e.is_active AND e.student_id=ANY(${studentIds}::uuid[])
@@ -2633,6 +2595,40 @@ export class SchoolService {
     return this.saveAttendanceRecords(user, attendanceBulkSchema.parse(body), request, false);
   }
 
+  /** Shared accepted writer + caller's durable capture receipt commit together. */
+  async saveTeacherAttendanceInTransaction(tx: Transaction<Database>, user: AuthUser, body: unknown,
+    request: AuthenticatedRequest, capture?: AcademicParticipationCapture, single = false) {
+    if (!this.participation) throw new ConflictException("The shared attendance adapter is unavailable.");
+    const input = single ? attendanceBulkSchema.extend({records: z.array(z.object({student_id: z.string().uuid(),
+      status: z.enum(["present","absent","late","excused","half_day"]),remarks: z.string().trim().max(500).optional()})).min(1).max(2000)}).parse(body)
+      : attendanceBulkSchema.parse(body);
+    const screen = await this.teacherAttendanceScreen(user, input.class_section_id, input.date,tx);
+    const accepted = await this.participation.saveDailyRecordsInTransaction(tx, user, screen.class.school_id,
+      input.class_section_id, input.date, input, request, single, capture);
+    if ("legacy_result" in accepted) return accepted.legacy_result as typeof screen;
+    const register = (await sql<{ id: string; state: "draft" | "submitted" | "locked"; revision: number; submitted_by: string | null;
+      submitted_at: Date | null; locked_by: string | null; locked_at: Date | null; reopened_by: string | null; reopened_at: Date | null;
+      reopen_reason: string | null; auto_finalize_at: Date | null; policy_revision: number; finalization_source: "manual" | "automatic" | null }>`
+      SELECT id,state,revision,submitted_by,submitted_at,locked_by,locked_at,reopened_by,reopened_at,reopen_reason,
+        auto_finalize_at,policy_revision,finalization_source FROM activity_attendance_registers WHERE id=${accepted.register_id}::uuid`.execute(tx)).rows[0]!;
+    const entries = (await sql<{ student_id: string; id: string; status: "present" | "absent" | "late" | "excused" | "half_day" | null;
+      remarks: string; revision: number; updated_at: Date }>`SELECT person.student_id,entry.id,entry.status,entry.remarks,entry.revision,entry.updated_at
+      FROM activity_attendance_entries entry JOIN activity_attendance_academic_roster person
+        ON person.register_id=entry.register_id AND person.person_id=entry.person_id
+      WHERE entry.register_id=${accepted.register_id}::uuid`.execute(tx)).rows;
+    const byStudent = new Map(entries.map((entry) => [entry.student_id,entry]));
+    const result = { ...screen, register: { ...screen.register, ...register, id: accepted.context.legacy_register_id ?? accepted.register_id,
+      finalization_policy_revision: register.policy_revision }, roster: screen.roster.map((person) => {
+      const entry = byStudent.get(person.id);
+      return entry ? { ...person, status: entry.status, remarks: entry.remarks, attendance_id: entry.id,
+        attendance_revision: entry.revision, updated_at: entry.updated_at } : person;
+    }) };
+    await this.participation.retainLegacyResult(tx,{command_id: accepted.command_id,school_id: screen.class.school_id,
+      source_kind: "daily_class",source_id: accepted.context.source_id,request_hash: accepted.request_hash,
+      result_body: result,records_count: input.records.length,capture,photo_session_id: input.photo_session_id});
+    return result;
+  }
+
   async studentAttendanceLookup(user: AuthUser, query: unknown) {
     const input = studentAttendanceSearch.parse(query);
     const membership = await this.requireSchoolRole(user, ["staff", "admin"]);
@@ -2660,363 +2656,21 @@ export class SchoolService {
   private async saveAttendanceRecords(user: AuthUser,
     data: Omit<z.infer<typeof attendanceBulkSchema>, 'records'> & { records: { student_id: string; status: z.infer<typeof studentAttendanceInput>['status']; remarks?: string }[] },
     request: AuthenticatedRequest, single: boolean) {
-    const rawIdempotencyKey = request.headers["idempotency-key"];
-    const idempotencyKey = Array.isArray(rawIdempotencyKey) ? rawIdempotencyKey[0] : rawIdempotencyKey;
-    if (!idempotencyKey || !/^[A-Za-z0-9._:-]{8,128}$/.test(idempotencyKey)) {
-      throw new BadRequestException("A valid Idempotency-Key header (8–128 safe characters) is required.");
-    }
-    const screen = await this.teacherAttendanceScreen(user, data.class_section_id, data.date);
-    const membership = await this.requireSchoolRole(user, ["staff", "admin"], screen.class.school_id);
-    const rosterIds = new Set(screen.roster.map((student) => student.id));
-    if (data.records.some((record) => !rosterIds.has(record.student_id))) throw new BadRequestException("Every attendance record must belong to the selected class roster.");
-    if (new Set(data.records.map((record) => record.student_id)).size !== data.records.length) throw new BadRequestException("A student may only appear once in an attendance submission.");
-    if (!single && data.records.length !== rosterIds.size) throw new BadRequestException("Mark every student before submitting the class register.");
-    if (data.date < screen.class.term_starts_on || data.date > screen.class.term_ends_on) {
-      throw new BadRequestException("Attendance can only be submitted inside the selected class term.");
-    }
-    const canonical = {
-      ...(single ? { operation: 'record_student' } : {}),
-      class_section_id: data.class_section_id,
-      date: data.date,
-      expected_revision: data.expected_revision,
-      photo_session_id: data.photo_session_id ?? null,
-      reason: data.reason ?? "",
-      records: [...data.records].sort((a, b) => a.student_id.localeCompare(b.student_id)),
-    };
-    const requestHash = createHash("sha256").update(JSON.stringify(canonical)).digest("hex");
-
-    return this.db.transaction().execute(async (tx) => {
-      await lockSchedule(tx,membership.school_id);
-      await sql`SELECT pg_advisory_xact_lock(hashtextextended(${`${membership.school_id}:${user.id}:${idempotencyKey}`}, 0))`.execute(tx);
-      const duplicate = await tx.selectFrom("attendance_submissions").select(["request_hash", "result_body"])
-        .where("school_id", "=", membership.school_id).where("submitted_by", "=", user.id)
-        .where("idempotency_key", "=", idempotencyKey).executeTakeFirst();
-      if (duplicate) {
-        if (duplicate.request_hash !== requestHash) {
-          throw new ConflictException({ message: "This Idempotency-Key was already used for different attendance data.", code: "idempotency_conflict" });
-        }
-        return duplicate.result_body;
-      }
-      await sql`SELECT pg_advisory_xact_lock(hashtextextended(${`${data.class_section_id}:${data.date}`}, 0))`.execute(tx);
-      // Re-check authorization and the roster after acquiring the write lock.
-      // The screen read above is only a UX preflight; it must never authorize
-      // a command after a concurrent membership, assignment, or enrollment
-      // change. Locking the class also blocks new FK-backed enrollments until
-      // this register transaction commits.
-      const lockedClass = await sql<{ id: string }>`
-        SELECT section.id
-        FROM class_sections section
-        WHERE section.id=${data.class_section_id}::uuid
-          AND section.school_id=${membership.school_id}::uuid
-        FOR UPDATE
-      `.execute(tx);
-      if (!lockedClass.rows[0]) throw new NotFoundException("Class section not found.");
-      const currentMembership = await sql<{ role: "staff" | "admin" }>`
-        SELECT current_membership.role
-        FROM school_memberships current_membership
-        JOIN users account ON account.id=current_membership.user_id AND account.is_active
-        WHERE current_membership.user_id=${user.id}::uuid
-          AND current_membership.school_id=${membership.school_id}::uuid
-          AND current_membership.role IN ('staff','admin')
-          AND current_membership.is_active
-        FOR SHARE OF current_membership
-      `.execute(tx);
-      const currentRole = currentMembership.rows[0]?.role;
-      if (!currentRole) throw new ForbiddenException("An active school staff membership is required.");
-      if (currentRole !== "admin") {
-        const currentSubstitute=(await sql`SELECT id FROM effective_school_schedule(${membership.school_id}::uuid,${data.date}::date) WHERE class_section_id=${data.class_section_id}::uuid AND term_id=${screen.class.term_id}::uuid AND teacher_user_id=${user.id}::uuid AND NOT cancelled AND coverage_status='accepted' LIMIT 1`.execute(tx)).rows[0];
-        const scoped=(await sql<{allowed:boolean}>`SELECT staff_has_class_permission(${membership.school_id}::uuid,${user.id}::uuid,'attendance.record',${data.class_section_id}::uuid,${data.date}::date) AS allowed`.execute(tx)).rows[0]?.allowed;
-        if (!currentSubstitute&&!scoped) {
-          throw new ForbiddenException("This class is no longer assigned to the signed-in teacher.");
-        }
-      }
-      const currentRoster = await sql<{ student_id: string }>`
-        SELECT enrollment.student_id
-        FROM enrollments enrollment
-        JOIN students student ON student.id=enrollment.student_id
-          AND student.school_id=${membership.school_id}::uuid
-        WHERE enrollment.class_section_id=${data.class_section_id}::uuid
-          AND enrollment.term_id=${screen.class.term_id}::uuid
-          AND enrollment.is_active
-          AND enrollment.enrolled_on<=${data.date}::date
-        ORDER BY enrollment.student_id
-        FOR SHARE OF enrollment, student
-      `.execute(tx);
-      const lockedRosterIds = new Set(currentRoster.rows.map((row) => row.student_id));
-      if (
-        lockedRosterIds.size !== rosterIds.size
-        || [...lockedRosterIds].some((studentId) => !rosterIds.has(studentId))
-      ) {
-        throw new ConflictException({
-          message: "The class roster changed after this register was opened. Refresh before submitting.",
-          code: "roster_changed",
-        });
-      }
-      const dayPolicy = await attendanceDayPolicy(
-        tx,
-        membership.school_id,
-        data.class_section_id,
-        screen.class.term_id,
-        data.date,
-        { userId: user.id, role: currentRole },
-      );
-      if (!dayPolicy?.completed) {
-        throw new BadRequestException("Attendance opens on the selected date.");
-      }
-      if (!dayPolicy.instructional) {
-        throw new BadRequestException("Attendance cannot be submitted because this class has no scheduled lesson on the selected date.");
-      }
-      if (!dayPolicy.actor_scheduled) {
-        throw new ForbiddenException("You have no scheduled or accepted cover period for this class on the selected date.");
-      }
-      const registerResult = await sql<any>`
-        SELECT * FROM attendance_registers
-        WHERE class_section_id=${data.class_section_id}::uuid
-          AND term_id=${screen.class.term_id}::uuid AND date=${data.date}::date
-        FOR UPDATE
-      `.execute(tx);
-      const currentRegister = registerResult.rows[0];
-      const currentRevision = Number(currentRegister?.revision ?? 0);
-      if (currentRevision !== data.expected_revision) {
-        throw new ConflictException({
-          message: "This register changed after it was opened. Refresh it before submitting.",
-          code: "revision_conflict", current_revision: currentRevision,
-        });
-      }
-      if (currentRegister?.state === "locked") {
-        throw new ForbiddenException("This attendance register is locked. A principal must reopen it before a teacher can make corrections.");
-      }
-
-      const sourcePhotoSession = data.photo_session_id
-        ? await tx.selectFrom("photo_attendance_sessions").selectAll()
-          .where("id", "=", data.photo_session_id)
-          .where("school_id", "=", membership.school_id)
-          .where("class_section_id", "=", data.class_section_id)
-          .where("date", "=", data.date)
-          .forUpdate()
-          .executeTakeFirst()
-        : undefined;
-      if (data.photo_session_id && !sourcePhotoSession) {
-        throw new BadRequestException("The selected photo analysis does not belong to this class register.");
-      }
-      if (sourcePhotoSession && sourcePhotoSession.expires_at < new Date()) {
-        throw new ConflictException("The photo analysis expired. Capture a new photo or continue manually.");
-      }
-      if (sourcePhotoSession && sourcePhotoSession.state !== "analyzed") {
-        throw new ConflictException("This photo analysis has already been applied or discarded.");
-      }
-
-      const currentRows = await sql<any>`
-        SELECT * FROM attendance_records
-        WHERE date=${data.date}::date AND student_id=ANY(${[...rosterIds]}::uuid[])
-        FOR UPDATE
-      `.execute(tx);
-      const previousByStudent = new Map(currentRows.rows.map((row) => [row.student_id as string, row]));
-      const conflictingClass = currentRows.rows.find((row) => row.class_section_id !== data.class_section_id);
-      if (conflictingClass) {
-        throw new ConflictException({
-          message: "An existing attendance record belongs to a different class. Resolve the enrollment transfer before submitting.",
-          code: "attendance_class_conflict",
-          student_id: conflictingClass.student_id,
-        });
-      }
-      const records = data.records.map(record => ({ ...record, remarks: record.remarks ?? previousByStudent.get(record.student_id)?.remarks ?? '' }));
-      const changed = records.filter((record) => {
-        const previous = previousByStudent.get(record.student_id);
-        return !previous || previous.status !== record.status || previous.remarks !== record.remarks;
-      });
-      if (changed.some((record) => previousByStudent.has(record.student_id)) && !data.reason) {
-        throw new BadRequestException("A correction reason is required when changing an existing attendance record.");
-      }
-      const advancesRevision = changed.length > 0 || !currentRegister || (!single && currentRegister.state === "draft");
-      const nextRevision = currentRevision + (advancesRevision ? 1 : 0);
-      const effectiveRevision = Math.max(1, nextRevision);
-      const now = new Date();
-      const finalizationRules = await operatingRules(tx, membership.school_id);
-      const autoFinalizeAt = single
-        ? currentRegister?.auto_finalize_at ?? null
-        : finalizationRules.attendance_finalization_mode === "automatic"
-          ? new Date(now.getTime() + finalizationRules.attendance_auto_finalize_minutes * 60_000)
-          : null;
-      const finalizationPolicyRevision = single
-        ? currentRegister?.finalization_policy_revision ?? null
-        : finalizationRules.revision;
-      // Recording a learner is NOT submission of the whole class register.
-      const nextState = single ? (currentRegister?.state ?? 'draft') as 'draft' | 'submitted' : 'submitted';
-      const submittedBy = single ? currentRegister?.submitted_by ?? null : user.id;
-      const submittedAt = single ? currentRegister?.submitted_at ?? null : now;
-      const register = currentRegister
-        ? await tx.updateTable("attendance_registers").set({
-            state: nextState, revision: effectiveRevision, submitted_by: submittedBy,
-            submitted_at: submittedAt, auto_finalize_at: autoFinalizeAt,
-            finalization_policy_revision: finalizationPolicyRevision,
-            finalization_source: null, updated_at: now,
-          }).where("id", "=", currentRegister.id).returningAll().executeTakeFirstOrThrow()
-        : await tx.insertInto("attendance_registers").values({
-            school_id: membership.school_id, class_section_id: data.class_section_id,
-            term_id: screen.class.term_id, date: data.date, state: nextState,
-            revision: effectiveRevision, submitted_by: submittedBy, submitted_at: submittedAt,
-            locked_by: null, locked_at: null, reopened_by: null, reopened_at: null,
-            reopen_reason: null, auto_finalize_at: autoFinalizeAt,
-            finalization_policy_revision: finalizationPolicyRevision,
-            finalization_source: null,
-          }).returningAll().executeTakeFirstOrThrow();
-
-      const provisionalResult = {
-        ...screen,
-        register: {
-          id: register.id, state: register.state, revision: register.revision,
-          submitted_by: register.submitted_by, submitted_at: register.submitted_at,
-          locked_by: register.locked_by, locked_at: register.locked_at,
-          reopened_by: register.reopened_by, reopened_at: register.reopened_at,
-          reopen_reason: register.reopen_reason,
-          auto_finalize_at: register.auto_finalize_at,
-          finalization_policy_revision: register.finalization_policy_revision,
-          finalization_source: register.finalization_source,
-        },
-      };
-      const submission = await tx.insertInto("attendance_submissions").values({
-        school_id: membership.school_id, class_section_id: data.class_section_id,
-        term_id: screen.class.term_id, date: data.date, submitted_by: user.id,
-        idempotency_key: idempotencyKey, request_hash: requestHash, request_id: request.requestId,
-        register_revision: effectiveRevision, records_count: data.records.length,
-        changed_count: changed.length, result_body: provisionalResult as any,
-        source_photo_session_id: sourcePhotoSession?.id ?? null,
-        capture_batch_id: null,
-        observed_at: null,
-        completed_at: now,
-      }).returning("id").executeTakeFirstOrThrow();
-
-      if (sourcePhotoSession) {
-        await tx.updateTable("photo_attendance_sessions").set({
-          state: "applied",
-          applied_at: now,
-          applied_submission_id: submission.id,
-          updated_at: now,
-        }).where("id", "=", sourcePhotoSession.id).execute();
-      }
-
-      let persisted = new Map<string, any>();
-      let recordRevisions = new Map<string, { id: number; student_id: string }>();
-      if (changed.length) {
-        const saved = await tx.insertInto("attendance_records").values(changed.map((record) => ({
-          student_id: record.student_id, class_section_id: data.class_section_id, date: data.date,
-          status: record.status, remarks: record.remarks, marked_by: user.id,
-          revision: effectiveRevision, source_request_id: request.requestId, updated_at: now,
-        }))).onConflict((conflict) => conflict.columns(["student_id", "date"]).doUpdateSet({
-          status: sql`excluded.status`, remarks: sql`excluded.remarks`, marked_by: user.id,
-          revision: effectiveRevision, source_request_id: request.requestId, updated_at: now,
-        })).returningAll().execute();
-        persisted = new Map(saved.map((row) => [row.student_id, row]));
-        const savedRevisions = await tx.insertInto("attendance_record_revisions").values(changed.map((record) => {
-          const previous = previousByStudent.get(record.student_id);
-          const savedRecord = persisted.get(record.student_id)!;
-          return {
-            attendance_record_id: savedRecord.id,
-            attendance_submission_id: submission.id,
-            attendance_register_id: register.id,
-            school_id: membership.school_id, student_id: record.student_id,
-            class_section_id: data.class_section_id, date: data.date,
-            previous_status: previous?.status ?? null, new_status: record.status,
-            previous_remarks: previous?.remarks ?? null, new_remarks: record.remarks,
-            previous_check_in_at: previous?.check_in_at ?? null,
-            new_check_in_at: savedRecord.check_in_at ?? null,
-            previous_check_out_at: previous?.check_out_at ?? null,
-            new_check_out_at: savedRecord.check_out_at ?? null,
-            reason: previous ? data.reason! : single ? "Initial student attendance record" : "Initial register submission", changed_by: user.id,
-            request_id: request.requestId, register_revision: effectiveRevision,
-          };
-        })).returning(["id", "student_id"]).execute();
-        recordRevisions = new Map(savedRevisions.map((revision) => [revision.student_id, revision]));
-      }
-
-      const submittedByStudent = new Map(records.map((record) => [record.student_id, record]));
-      const result = {
-        ...provisionalResult,
-        roster: screen.roster.map((student) => {
-          const submitted = submittedByStudent.get(student.id);
-          if (!submitted) return student;
-          const saved = persisted.get(student.id);
-          return {
-            ...student, status: submitted.status, remarks: submitted.remarks,
-            attendance_id: saved?.id ?? student.attendance_id,
-            attendance_revision: saved?.revision ?? student.attendance_revision,
-            updated_at: saved?.updated_at ?? student.updated_at,
-          };
-        }),
-      };
-      await tx.updateTable("attendance_submissions").set({ result_body: result as any }).where("id", "=", submission.id).execute();
-      await tx.insertInto("audit_events").values({
-        action: single ? "attendance.student.recorded" : "attendance.class.submitted", actor_id: user.id, school_id: membership.school_id,
-        target_type: "class_section", target_id: data.class_section_id, request_id: request.requestId,
-        ip_hash: null, metadata: {
-          date: data.date, records: data.records.length, changed: changed.length,
-          register_revision: effectiveRevision, register_state: register.state,
-          correction_reason: data.reason ?? null,
-          photo_session_id: sourcePhotoSession?.id ?? null,
-        },
-      }).execute();
-      if (changed.length) {
-        await this.refreshSubjectAttendance(tx, changed.map((record) => record.student_id));
-        const attendanceEvents = await this.events.enqueueAttendanceUpdates(tx, {
-          schoolId: membership.school_id, classSectionId: data.class_section_id,
-          termId: screen.class.term_id,
-          date: data.date, requestId: request.requestId,
-          records: changed.map((record) => ({
-            ...record,
-            ...(persisted.get(record.student_id)?.id ? { id: persisted.get(record.student_id).id as string } : {}),
-            previous_status: previousByStudent.get(record.student_id)?.status ?? null,
-            revision: effectiveRevision,
-          })),
-        });
-        await recordAttendanceModelObservations({
-          ingress: this.observationIngress,
-          transaction: tx,
-          schoolId: membership.school_id,
-          classSectionId: data.class_section_id,
-          date: data.date,
-          actorUserId: user.id,
-          sourceType: "attendance.daily",
-          sourceRef: submission.id,
-          state: "accepted",
-          receivedAt: now,
-          participationScope: "daily_class",
-          records: changed.map((record) => {
-            const revision = recordRevisions.get(record.student_id);
-            const domainEventId = attendanceEvents.studentEventIds.get(record.student_id);
-            if (!revision || !domainEventId) throw new ConflictException("The attendance evidence chain could not be retained.");
-            return {
-              studentId: record.student_id,
-              sourceRecordId: String(revision.id),
-              status: record.status,
-              observedAt: now,
-              captureSource: sourcePhotoSession ? "camera_assisted" : single ? "staff_student_record" : "staff_roll_call",
-              evidenceRefs: [
-                `attendance_record_revision:${revision.id}`,
-                `attendance_submission:${submission.id}`,
-                ...(sourcePhotoSession ? [`photo_attendance_session:${sourcePhotoSession.id}`] : []),
-              ],
-              domainEventId,
-              decisionProvenance: sourcePhotoSession ? "human_accepted_camera_assisted_register" : "human_attendance_decision",
-            };
-          }),
-        });
-      }
-      await this.events.enqueueRegisterEvent(tx, {
-        schoolId: membership.school_id, classSectionId: data.class_section_id,
-        termId: screen.class.term_id,
-        date: data.date, requestId: request.requestId, state: register.state,
-        revision: effectiveRevision, actorId: user.id,
-      });
-      return result;
-    });
+    if (!this.participation) throw new ConflictException("The shared attendance adapter is unavailable.");
+    return this.db.transaction().execute(tx => this.saveTeacherAttendanceInTransaction(tx,user,data,request,undefined,single));
   }
 
-  private async attendanceCaptureResult(batchId: string) {
-    const batch = await this.db.selectFrom("attendance_capture_batches").selectAll().where("id", "=", batchId).executeTakeFirstOrThrow();
-    const review = await this.db.selectFrom("attendance_reconciliation_cases").selectAll().where("batch_id", "=", batchId).executeTakeFirst();
+  private async attendanceCaptureResult(batchId: string, db: Db = this.db) {
+    const batch = await db.selectFrom("attendance_capture_batches").selectAll().where("id", "=", batchId).executeTakeFirstOrThrow();
+    const review = await db.selectFrom("attendance_reconciliation_cases").selectAll().where("batch_id", "=", batchId).executeTakeFirst();
+    if (batch.status === "accepted" && batch.accepted_participation_command_id) {
+      const command = (await sql<{ result_body: unknown }>`SELECT result_body FROM activity_attendance_commands
+        WHERE id=${batch.accepted_participation_command_id}::uuid AND school_id=${batch.school_id}::uuid`.execute(db)).rows[0];
+      return { status: "accepted" as const, batch, review: review ?? null,
+        register: batch.accepted_result_body ?? command?.result_body ?? null };
+    }
     if (batch.status === "accepted" && batch.accepted_submission_id) {
-      const submission = await this.db.selectFrom("attendance_submissions")
+      const submission = await db.selectFrom("attendance_submissions")
         .select("result_body").where("id", "=", batch.accepted_submission_id).executeTakeFirst();
       return { status: "accepted" as const, batch, review: review ?? null, register: submission?.result_body ?? null };
     }
@@ -3034,7 +2688,7 @@ export class SchoolService {
     await this.db.transaction().execute(async (tx) => {
       const batch = await tx.selectFrom("attendance_capture_batches").selectAll().where("id", "=", batchId).forUpdate().executeTakeFirstOrThrow();
       if (batch.status === "accepted" || batch.status === "rejected") return;
-      const now = new Date();
+      const now = executionNow();
       await tx.updateTable("attendance_capture_batches").set({ status: "quarantined", updated_at: now }).where("id", "=", batchId).execute();
       await this.observationIngress?.transitionObservations(tx, {
         school_id: batch.school_id,
@@ -3096,6 +2750,8 @@ export class SchoolService {
       .where("school_id", "=", section.school_id)
       .where("user_id", "=", user.id)
       .where("role", "in", ["staff", "admin"])
+      .orderBy("is_active", "desc")
+      .orderBy(sql<number>`CASE WHEN role='admin' THEN 0 ELSE 1 END`)
       .orderBy("created_at", "desc")
       .executeTakeFirst();
     if (!membership) {
@@ -3121,7 +2777,7 @@ export class SchoolService {
       records: [...data.records].sort((left, right) => left.student_id.localeCompare(right.student_id)),
     };
     const requestHash = createHash("sha256").update(JSON.stringify(canonical)).digest("hex");
-    const now = new Date();
+    const now = executionNow();
     const batch = await this.db.transaction().execute(async (tx) => {
       await sql`SELECT pg_advisory_xact_lock(hashtextextended(${`${section.school_id}:${user.id}:attendance-capture:${idempotencyKey}`}, 0))`.execute(tx);
       const duplicate = await tx.selectFrom("attendance_capture_batches").selectAll()
@@ -3241,7 +2897,12 @@ export class SchoolService {
       }
       return created;
     });
-    if (batch.status !== "pending") return this.attendanceCaptureResult(batch.id);
+    if (batch.status !== "pending") {
+      // A retained receipt is not a lasting access grant after responsibility
+      // or institution membership changes.
+      if (batch.status === "accepted") await this.teacherAttendanceScreen(user, data.class_section_id, data.date);
+      return this.attendanceCaptureResult(batch.id);
+    }
 
     const observedAt = new Date(data.observed_at);
     const expiresAt = new Date(data.roster_expires_at);
@@ -3270,6 +2931,8 @@ export class SchoolService {
       .where("school_id", "=", section.school_id)
       .where("user_id", "=", user.id)
       .where("role", "in", ["staff", "admin"])
+      .orderBy("is_active", "desc")
+      .orderBy(sql<number>`CASE WHEN role='admin' THEN 0 ELSE 1 END`)
       .orderBy("created_at", "desc")
       .executeTakeFirst();
     if (!currentMembership?.is_active) {
@@ -3320,16 +2983,37 @@ export class SchoolService {
       return this.quarantineAttendanceCapture(user, batch.id, "source_requires_review", "Paper and office observations require an explicit attendance-desk review before publication.", { source_reference: data.source_reference }, request);
     }
 
-    let result: Awaited<ReturnType<SchoolService["saveTeacherAttendance"]>>;
     try {
-      result = await this.saveTeacherAttendance(user, {
-        class_section_id: data.class_section_id,
-        date: data.date,
-        expected_revision: data.expected_revision,
-        photo_session_id: data.photo_session_id,
-        reason: data.reason,
-        records: data.records,
-      }, request);
+      return await this.db.transaction().execute(async (tx) => {
+        const currentBatch = await tx.selectFrom("attendance_capture_batches").select(["id", "status"])
+          .where("id", "=", batch.id).forUpdate().executeTakeFirstOrThrow();
+        if (currentBatch.status === "accepted") {
+          await this.teacherAttendanceScreen(user, data.class_section_id, data.date);
+          return this.attendanceCaptureResult(batch.id, tx);
+        }
+        if (currentBatch.status === "rejected") throw new ConflictException("This capture was rejected. Review its latest decision.");
+        const result = await this.saveTeacherAttendanceInTransaction(tx, user, {
+          class_section_id: data.class_section_id, date: data.date, expected_revision: data.expected_revision,
+          photo_session_id: data.photo_session_id, reason: data.reason, records: data.records,
+        }, request, { capture_channel: data.source === "live_app" ? "human_roll_call" : "offline_paper",
+          observed_at: new Date(batch.observed_at), evidence_refs: [`attendance_capture_batch:${batch.id}`] });
+        const participation = await findParticipationAcceptance(tx, section.school_id, user.id, idempotencyKey);
+        if (!participation) throw new ConflictException("The capture's accepted attendance command could not be resolved. No decision was committed.");
+        const acceptedResult = { ...result, latest_capture: { id: batch.id, source: data.source,
+          status: "accepted" as const, received_at: batch.received_at, roster_expires_at: batch.roster_expires_at } };
+        await completeParticipationCapture(tx, { batch_id: batch.id, command_id: participation.id,
+          register_id: participation.register_id, result_body: acceptedResult });
+        await this.observationIngress?.transitionObservations(tx, {
+          school_id: section.school_id, source_type: "attendance.capture", source_ref: batch.id, state: "accepted",
+        });
+        await tx.insertInto("audit_events").values({
+          action: "attendance.capture.accepted", actor_id: user.id, school_id: section.school_id,
+          target_type: "attendance_capture_batch", target_id: batch.id, request_id: request.requestId, ip_hash: null,
+          metadata: { source: data.source, date: data.date, participation_command_id: participation.id,
+            participation_register_id: participation.register_id, observed_at: data.observed_at },
+        }).execute();
+        return this.attendanceCaptureResult(batch.id, tx);
+      });
     } catch (error) {
       const status = typeof (error as { getStatus?: unknown })?.getStatus === "function"
         ? (error as { getStatus: () => number }).getStatus()
@@ -3345,57 +3029,6 @@ export class SchoolService {
       }
       throw error;
     }
-    const submission = await this.db.selectFrom("attendance_submissions").select("id")
-      .where("school_id", "=", section.school_id)
-      .where("submitted_by", "=", user.id)
-      .where("idempotency_key", "=", idempotencyKey)
-      .executeTakeFirstOrThrow();
-    const acceptedResult = {
-      ...result,
-      latest_capture: {
-        id: batch.id,
-        source: data.source,
-        status: "accepted" as const,
-        received_at: batch.received_at,
-        roster_expires_at: batch.roster_expires_at,
-      },
-    };
-    await this.db.transaction().execute(async (tx) => {
-      await tx.updateTable("attendance_submissions").set({
-        capture_batch_id: batch.id,
-        capture_source: data.photo_session_id ? "photo" : data.source,
-        observed_at: data.observed_at,
-        result_body: acceptedResult as any,
-      }).where("id", "=", submission.id).execute();
-      await tx.updateTable("attendance_capture_batches").set({
-        status: "accepted",
-        accepted_submission_id: submission.id,
-        accepted_at: new Date(),
-        updated_at: new Date(),
-      }).where("id", "=", batch.id).execute();
-      await this.observationIngress?.transitionObservations(tx, {
-        school_id: section.school_id,
-        source_type: "attendance.capture",
-        source_ref: batch.id,
-        state: "accepted",
-      });
-      await tx.insertInto("audit_events").values({
-        action: "attendance.capture.accepted",
-        actor_id: user.id,
-        school_id: section.school_id,
-        target_type: "attendance_capture_batch",
-        target_id: batch.id,
-        request_id: request.requestId,
-        ip_hash: null,
-        metadata: {
-          source: data.source,
-          date: data.date,
-          submission_id: submission.id,
-          observed_at: data.observed_at,
-        },
-      }).execute();
-    });
-    return { status: "accepted" as const, batch: { ...batch, status: "accepted" as const, accepted_submission_id: submission.id }, review: null, register: acceptedResult };
   }
 
   async attendanceContinuityWorkspace(user: AuthUser, selectedDateValue?: string, selectedCaseValue?: string) {
@@ -3452,7 +3085,7 @@ export class SchoolService {
     if (review.state !== "open") return this.attendanceContinuityWorkspace(user, review.date);
     if (data.decision === "reject") {
       const rejected = await this.db.transaction().execute(async (tx) => {
-        const now = new Date();
+        const now = executionNow();
         const claimed = await tx.updateTable("attendance_reconciliation_cases").set({
           state: "rejected", decided_by: user.id, decided_at: now,
           decision_note: data.reason, updated_at: now,
@@ -3498,63 +3131,45 @@ export class SchoolService {
     const reconciliationKey = `reconcile:${review.id}:${data.expected_revision}`;
     const previousKey = request.headers["idempotency-key"];
     request.headers["idempotency-key"] = reconciliationKey;
-    let result: Awaited<ReturnType<SchoolService["saveTeacherAttendance"]>>;
+    let acceptedResult: unknown;
     try {
-      result = await this.saveTeacherAttendance(user, {
-        class_section_id: review.class_section_id,
-        date: review.date,
-        expected_revision: data.expected_revision,
-        reason: `Reconciled ${review.source.replace("_", " ")} observation: ${data.reason}`,
-        records: observations.map((item) => ({ student_id: item.student_id, status: item.observed_status, remarks: item.remarks })),
-      }, request);
+      acceptedResult = await this.db.transaction().execute(async (tx) => {
+        const currentCase = await tx.selectFrom("attendance_reconciliation_cases").select(["id", "state"])
+          .where("id", "=", review.id).forUpdate().executeTakeFirstOrThrow();
+        if (currentCase.state !== "open") return null;
+        const currentBatch = await tx.selectFrom("attendance_capture_batches").select(["id", "status"])
+          .where("id", "=", review.batch_id).forUpdate().executeTakeFirstOrThrow();
+        if (currentBatch.status !== "quarantined") throw new ConflictException("This capture already has a decision. Refresh the review queue.");
+        const result = await this.saveTeacherAttendanceInTransaction(tx, user, {
+          class_section_id: review.class_section_id, date: review.date, expected_revision: data.expected_revision,
+          reason: `Reconciled ${review.source.replace("_", " ")} observation: ${data.reason}`,
+          records: observations.map((item) => ({ student_id: item.student_id, status: item.observed_status, remarks: item.remarks })),
+        }, request, { capture_channel: review.source === "live_app" ? "human_roll_call" : "offline_paper",
+          observed_at: new Date(review.observed_at), evidence_refs: [`attendance_capture_batch:${review.batch_id}`] });
+        const participation = await findParticipationAcceptance(tx, review.school_id, user.id, reconciliationKey);
+        if (!participation) throw new ConflictException("The reviewed attendance command could not be resolved. No decision was committed.");
+        const accepted = { ...result, latest_capture: { id: review.batch_id, source: review.source,
+          status: "accepted" as const, received_at: review.received_at, roster_expires_at: review.roster_expires_at } };
+        await completeParticipationCapture(tx, { batch_id: review.batch_id, command_id: participation.id,
+          register_id: participation.register_id, result_body: accepted, resolved_by: user.id, resolution_note: data.reason });
+        await this.observationIngress?.transitionObservations(tx, {
+          school_id: membership.school_id, source_type: "attendance.capture", source_ref: review.batch_id, state: "accepted",
+        });
+        const now = executionNow();
+        await tx.updateTable("attendance_reconciliation_cases").set({ state: "accepted", decided_by: user.id,
+          decided_at: now, decision_note: data.reason, updated_at: now }).where("id", "=", review.id).execute();
+        await tx.insertInto("audit_events").values({
+          action: "attendance.capture.reconciled", actor_id: user.id, school_id: membership.school_id,
+          target_type: "attendance_capture_batch", target_id: review.batch_id, request_id: request.requestId, ip_hash: null,
+          metadata: { case_id: review.id, reason: data.reason, source: review.source, date: review.date,
+            participation_command_id: participation.id, participation_register_id: participation.register_id },
+        }).execute();
+        return accepted;
+      });
     } finally {
       if (previousKey === undefined) delete request.headers["idempotency-key"];
       else request.headers["idempotency-key"] = previousKey;
     }
-    const submission = await this.db.selectFrom("attendance_submissions").select("id")
-      .where("school_id", "=", review.school_id)
-      .where("submitted_by", "=", user.id)
-      .where("idempotency_key", "=", reconciliationKey)
-      .executeTakeFirstOrThrow();
-    const acceptedResult = {
-      ...result,
-      latest_capture: {
-        id: review.batch_id,
-        source: review.source,
-        status: "accepted" as const,
-        received_at: review.received_at,
-        roster_expires_at: review.roster_expires_at,
-      },
-    };
-    await this.db.transaction().execute(async (tx) => {
-      const now = new Date();
-      await tx.updateTable("attendance_submissions").set({
-        capture_batch_id: review.batch_id,
-        capture_source: review.source,
-        observed_at: review.observed_at,
-        result_body: acceptedResult as any,
-      }).where("id", "=", submission.id).execute();
-      await tx.updateTable("attendance_capture_batches").set({
-        status: "accepted", accepted_submission_id: submission.id, accepted_at: now,
-        resolved_by: user.id, resolved_at: now, resolution_note: data.reason, updated_at: now,
-      }).where("id", "=", review.batch_id).execute();
-      await this.observationIngress?.transitionObservations(tx, {
-        school_id: membership.school_id,
-        source_type: "attendance.capture",
-        source_ref: review.batch_id,
-        state: "accepted",
-      });
-      await tx.updateTable("attendance_reconciliation_cases").set({
-        state: "accepted", decided_by: user.id, decided_at: now,
-        decision_note: data.reason, updated_at: now,
-      }).where("id", "=", review.id).execute();
-      await tx.insertInto("audit_events").values({
-        action: "attendance.capture.reconciled", actor_id: user.id, school_id: membership.school_id,
-        target_type: "attendance_capture_batch", target_id: review.batch_id,
-        request_id: request.requestId, ip_hash: null,
-        metadata: { case_id: review.id, reason: data.reason, source: review.source, date: review.date, submission_id: submission.id },
-      }).execute();
-    });
     return { ...(await this.attendanceContinuityWorkspace(user, review.date)), applied_register: acceptedResult };
   }
 
@@ -3562,48 +3177,20 @@ export class SchoolService {
     const data = attendanceLockSchema.parse(body);
     const target = await this.db.selectFrom("class_sections").select("school_id").where("id", "=", classSectionId).executeTakeFirst();
     if (!target) throw new NotFoundException("Class section not found.");
-    const membership = await this.requireSchoolRole(user, ["admin"], target.school_id);
-    const screen = await this.teacherAttendanceScreen(user, classSectionId, data.date);
+    await this.requireSchoolRole(user, ["admin"], target.school_id);
     if (!locked && !data.reason) throw new BadRequestException("A reason is required to reopen a locked register.");
-    let changed = false;
-    await this.db.transaction().execute(async (tx) => {
-      await sql`SELECT pg_advisory_xact_lock(hashtextextended(${`${classSectionId}:${data.date}`}, 0))`.execute(tx);
-      const found = await sql<any>`
-        SELECT * FROM attendance_registers WHERE class_section_id=${classSectionId}::uuid
-          AND term_id=${screen.class.term_id}::uuid AND date=${data.date}::date FOR UPDATE
-      `.execute(tx);
-      const register = found.rows[0];
-      if (!register) throw new BadRequestException("Submit the attendance register before locking it.");
-      if (locked && register.state === "locked") return;
-      if (!locked && register.state !== "locked") return;
-      if (locked && register.state !== "submitted") throw new BadRequestException("Only a submitted register can be locked.");
-      const revision = Number(register.revision) + 1;
-      const now = new Date();
-      await tx.updateTable("attendance_registers").set(locked ? {
-        state: "locked", revision, locked_by: user.id, locked_at: now,
-        auto_finalize_at: null, finalization_source: "manual", updated_at: now,
-      } : {
-        state: "submitted", revision, locked_by: null, locked_at: null,
-        reopened_by: user.id, reopened_at: now, reopen_reason: data.reason!,
-        auto_finalize_at: null, finalization_policy_revision: null,
-        finalization_source: null, updated_at: now,
-      }).where("id", "=", register.id).execute();
-      await tx.insertInto("audit_events").values({
-        action: locked ? "attendance.register.locked" : "attendance.register.reopened",
-        actor_id: user.id, school_id: membership.school_id, target_type: "attendance_register",
-        target_id: register.id, request_id: request.requestId, ip_hash: null,
-        metadata: { class_section_id: classSectionId, date: data.date, revision, reason: data.reason ?? null },
-      }).execute();
-      await this.events.enqueueRegisterEvent(tx, {
-        schoolId: membership.school_id, classSectionId, date: data.date,
-        termId: screen.class.term_id,
-        requestId: request.requestId, state: locked ? "locked" : "unlocked",
-        revision, actorId: user.id,
+    if (!this.participation) throw new ConflictException("The shared attendance adapter is unavailable.");
+    const changed = await this.db.transaction().execute(async (tx) => {
+        const prepared = await this.participation!.prepareDailyInTransaction(tx,user,target.school_id,classSectionId,data.date,true);
+        const current = (await sql<{ state: string; revision: number }>`SELECT state,revision FROM activity_attendance_registers
+          WHERE id=${prepared.register_id}::uuid FOR UPDATE`.execute(tx)).rows[0]!;
+        if ((locked && current.state==='locked') || (!locked && current.state!=='locked')) return false;
+        const commandRequest = {...request,headers:{...request.headers,"idempotency-key":request.headers["idempotency-key"] ?? `legacy-lifecycle:${request.requestId}`}} as AuthenticatedRequest;
+        await this.participation!.transitionInTransaction(tx,user,target.school_id,prepared.register_id,locked ? "finalize" : "reopen",
+          {expected_revision: current.revision,...(data.reason ? {reason:data.reason} : {})},commandRequest);
+        return true;
       });
-      changed = true;
-    });
-    const refreshed = await this.teacherAttendanceScreen(user, classSectionId, data.date);
-    return { ...refreshed, lifecycle_changed: changed };
+    return {...await this.teacherAttendanceScreen(user,classSectionId,data.date),lifecycle_changed:changed};
   }
 
   async attendanceRegisterHistory(user: AuthUser, classSectionId: string, selectedDate: string) {
@@ -3724,9 +3311,10 @@ export class SchoolService {
       absent: result.absent + Number(row.absent_count), late: result.late + Number(row.late_count),
       excused: result.excused + Number(row.excused_count),
     }), { students: 0, marked: 0, scored: 0, attending: 0, absent: 0, late: 0, excused: 0 });
-    const [followupActions, eventActions] = await Promise.all([
+    const [followupActions, eventActions, operatingDay] = await Promise.all([
       this.followupHomeActions(user, "staff"),
       this.staffEventHomeActions(user, membership.school_id, "principal"),
+      this.operatingDay?.project(user, membership.school_id, selectedDate) ?? Promise.resolve(null),
     ]);
     const pendingRegisters = dueRows
       .filter((row) => !["submitted", "locked"].includes(classContext.get(row.id)?.submission_status ?? "not_started"))
@@ -3741,7 +3329,7 @@ export class SchoolService {
           detail: `${Number(row.marked_count)}/${Number(row.student_count)} students marked.`,
           status_label: status === "in_progress" ? "Partly marked" : "Not started",
           action_label: "Review register",
-          href: `/principal/attendance?class_section_id=${encodeURIComponent(row.id)}&date=${selectedDate}`,
+          href: `/areas/attendance/coordination?class_section_id=${encodeURIComponent(row.id)}&date=${selectedDate}`,
           source_id: row.id,
           occurs_at: context.starts_at ? `${selectedDate}T${String(context.starts_at).slice(0, 8)}` : null,
           due_at: context.ends_at ? `${selectedDate}T${String(context.ends_at).slice(0, 8)}` : null,
@@ -3760,7 +3348,7 @@ export class SchoolService {
             : `${pendingRegisters.length} registers have not been started.`,
           status_label: unfinishedRegisterCount > 0 ? "Attendance in progress" : "Attendance due",
           action_label: "Review registers",
-          href: `/principal/attendance?date=${selectedDate}`,
+          href: `/areas/attendance/coordination?date=${selectedDate}`,
           source_id: membership.school_id,
           occurs_at: null,
           due_at: `${selectedDate}T23:59:59`,
@@ -3774,6 +3362,7 @@ export class SchoolService {
       exceptions: exceptions.rows.map((row) => ({ ...row, name: `${row.first_name} ${row.last_name}`.trim(), class_name: `Class ${row.grade}${row.section}`, percentage: Number(row.percentage), threshold: Number(row.attendance_threshold) })),
       home_actions: sortHomeActions(allHomeActions).slice(0, 6),
       more_attention: moreAttentionCounts(allHomeActions, "staff"),
+      operating_day: operatingDay,
     };
   }
 
@@ -3901,7 +3490,7 @@ export class SchoolService {
             target_minutes: data.target_minutes,
             revision: current.revision + 1,
             updated_by: user.id,
-            updated_at: new Date(),
+            updated_at: executionNow(),
           }).where("term_id", "=", data.term_id).where("class_section_id", "=", data.class_section_id)
             .where("subject_id", "=", data.subject_id).returningAll().executeTakeFirstOrThrow()
         : await tx.insertInto("curriculum_subject_targets").values({
@@ -4007,7 +3596,7 @@ export class SchoolService {
         timezone: school.timezone,
         label: data.label,
         closure_kind: data.kind,
-        occurred_at: new Date().toISOString(),
+        occurred_at: executionNow().toISOString(),
         correlation_id: request.requestId,
       });
       const coverageReceipt = await this.coverage.reconcileEffectiveCoverage(
@@ -4054,10 +3643,10 @@ export class SchoolService {
         notificationPayload: notify.length ? {
           kind: "general", title: data.label,
           body: data.starts_on === data.ends_on ? `${data.reason} School is closed on ${data.starts_on}.` : `${data.reason} School is closed from ${data.starts_on} to ${data.ends_on}.`,
-          parent_link: `/parent/calendar?date=${data.starts_on}&calendar_change_id=${encodeURIComponent(rows[0]!.id)}&calendar_change_kind=created&calendar_revision=${attentionRevision}&calendar_record_revision=${rows[0]!.revision}`,
-          student_link: `/student/calendar?date=${data.starts_on}&calendar_change_id=${encodeURIComponent(rows[0]!.id)}&calendar_change_kind=created&calendar_revision=${attentionRevision}&calendar_record_revision=${rows[0]!.revision}`,
-          staff_link: `/teacher/calendar?date=${data.starts_on}&calendar_change_id=${encodeURIComponent(rows[0]!.id)}&calendar_change_kind=created&calendar_revision=${attentionRevision}&calendar_record_revision=${rows[0]!.revision}`,
-          admin_link: `/principal/calendar?date=${data.starts_on}&calendar_change_id=${encodeURIComponent(rows[0]!.id)}&calendar_change_kind=created&calendar_revision=${attentionRevision}&calendar_record_revision=${rows[0]!.revision}`,
+          parent_link: `/areas/calendar?scope=dependent&date=${data.starts_on}&calendar_change_id=${encodeURIComponent(rows[0]!.id)}&calendar_change_kind=created&calendar_revision=${attentionRevision}&calendar_record_revision=${rows[0]!.revision}`,
+          student_link: `/areas/calendar?scope=self&date=${data.starts_on}&calendar_change_id=${encodeURIComponent(rows[0]!.id)}&calendar_change_kind=created&calendar_revision=${attentionRevision}&calendar_record_revision=${rows[0]!.revision}`,
+          staff_link: `/areas/calendar?surface=assigned&date=${data.starts_on}&calendar_change_id=${encodeURIComponent(rows[0]!.id)}&calendar_change_kind=created&calendar_revision=${attentionRevision}&calendar_record_revision=${rows[0]!.revision}`,
+          admin_link: `/areas/calendar?surface=manage&date=${data.starts_on}&calendar_change_id=${encodeURIComponent(rows[0]!.id)}&calendar_change_kind=created&calendar_revision=${attentionRevision}&calendar_record_revision=${rows[0]!.revision}`,
           attention_eligible: true,
           attention_module: "calendar",
           attention_source_kind: "calendar_change",
@@ -4131,7 +3720,7 @@ export class SchoolService {
         timezone: school.timezone,
         label: current.label || "School closure",
         closure_kind: current.kind,
-        occurred_at: new Date().toISOString(),
+        occurred_at: executionNow().toISOString(),
         correlation_id: request.requestId,
       });
       const coverageReceipt = await this.coverage.reconcileEffectiveCoverage(
@@ -4178,10 +3767,10 @@ export class SchoolService {
         notificationPayload: notify.length ? {
           kind: "general", title: `${current.label} cancelled`,
           body: `The closure on ${date} was removed. Check the timetable for the restored school day.`,
-          parent_link: `/parent/calendar?date=${date}&calendar_change_id=${encodeURIComponent(current.id)}&calendar_change_kind=removed&calendar_revision=${attentionRevision}&calendar_record_revision=${current.revision}`,
-          student_link: `/student/calendar?date=${date}&calendar_change_id=${encodeURIComponent(current.id)}&calendar_change_kind=removed&calendar_revision=${attentionRevision}&calendar_record_revision=${current.revision}`,
-          staff_link: `/teacher/calendar?date=${date}&calendar_change_id=${encodeURIComponent(current.id)}&calendar_change_kind=removed&calendar_revision=${attentionRevision}&calendar_record_revision=${current.revision}`,
-          admin_link: `/principal/calendar?date=${date}&calendar_change_id=${encodeURIComponent(current.id)}&calendar_change_kind=removed&calendar_revision=${attentionRevision}&calendar_record_revision=${current.revision}`,
+          parent_link: `/areas/calendar?scope=dependent&date=${date}&calendar_change_id=${encodeURIComponent(current.id)}&calendar_change_kind=removed&calendar_revision=${attentionRevision}&calendar_record_revision=${current.revision}`,
+          student_link: `/areas/calendar?scope=self&date=${date}&calendar_change_id=${encodeURIComponent(current.id)}&calendar_change_kind=removed&calendar_revision=${attentionRevision}&calendar_record_revision=${current.revision}`,
+          staff_link: `/areas/calendar?surface=assigned&date=${date}&calendar_change_id=${encodeURIComponent(current.id)}&calendar_change_kind=removed&calendar_revision=${attentionRevision}&calendar_record_revision=${current.revision}`,
+          admin_link: `/areas/calendar?surface=manage&date=${date}&calendar_change_id=${encodeURIComponent(current.id)}&calendar_change_kind=removed&calendar_revision=${attentionRevision}&calendar_record_revision=${current.revision}`,
           attention_eligible: true,
           attention_module: "calendar",
           attention_source_kind: "calendar_change",
@@ -4325,7 +3914,7 @@ export class SchoolService {
       starts_on: context.starts_on,
       ends_on: context.ends_on,
       timezone: context.timezone,
-      occurred_at: new Date().toISOString(),
+      occurred_at: executionNow().toISOString(),
       class_section: {
         kind: "class",
         domain: "academic_structure",
@@ -4455,6 +4044,7 @@ export class SchoolService {
       }
       await requireLegacyTimetable(tx,lockedCurrent.class_section_id,lockedCurrent.term_id);
       await requireLegacyTimetable(tx,data.class_section_id,lockedCurrent.term_id);
+      await assertSpacesNotResidential(tx,membership.school_id,lockedCurrent.space_id?[lockedCurrent.space_id]:[]);
       const conflict = data.teacher_user_id || data.room ? await tx.selectFrom("timetable_slots").select("id").where("term_id", "=", lockedCurrent.term_id).where("id", "!=", slotId).where("weekday", "=", data.weekday).where("starts_at", "<", data.ends_at).where("ends_at", ">", data.starts_at).where((eb) => eb.or([...(data.teacher_user_id ? [eb("teacher_user_id", "=", data.teacher_user_id)] : []), ...(data.room ? [eb("room", "=", data.room)] : [])])).executeTakeFirst() : undefined;
       if (conflict) throw new BadRequestException("The selected teacher or room already has an overlapping timetable slot.");
       const preparedCoverage = await this.prepareLegacyTimetableSubstitutions(
@@ -4527,6 +4117,7 @@ export class SchoolService {
         .where("term_id", "=", term.id).where("class_section_id", "=", section.id).where("weekday", "=", data.source_weekday)
         .orderBy("period_number").execute();
       if (!source.length) throw new BadRequestException("The source day has no periods to copy.");
+      await assertSpacesNotResidential(tx,membership.school_id,source.flatMap(slot=>slot.space_id?[slot.space_id]:[]));
       const existingTargets = await tx.selectFrom("timetable_slots").selectAll()
         .where("term_id", "=", term.id).where("class_section_id", "=", section.id).where("weekday", "in", data.target_weekdays).execute();
       if (existingTargets.length && !data.replace) throw new BadRequestException("One or more target days already contain periods. Choose Replace existing days to continue.");

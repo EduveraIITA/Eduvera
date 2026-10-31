@@ -2,6 +2,8 @@ import { useState } from 'react';
 import { act, cleanup, fireEvent, render, screen } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { InvitationReceipt } from './InvitationReceipt';
+import { readFileSync } from 'node:fs';
+import { join } from 'node:path';
 
 const invitation={email:'recipient@example.test',token:'012345',expires_at:'2099-10-04',delivery:'email_accepted' as const};
 afterEach(()=>{cleanup();vi.useRealTimers();});
@@ -12,6 +14,16 @@ function Confirmation(){
 }
 
 describe('invitation success popup',()=>{
+  it('owns its styles for direct People entry and distinguishes a created invitation from unavailable email',()=>{
+    const owner=readFileSync(join(process.cwd(),'src/features/onboarding/InvitationReceipt.tsx'),'utf8');
+    expect(owner).toMatch(/^import ["']\.\/onboarding\.css["'];?$/m);
+    render(<InvitationReceipt invite={{...invitation,delivery:'manual'}} personLabel="Aarav Sharma" invitationCreated onClose={()=>{}}/>);
+    expect(screen.getByRole('heading',{name:'Invitation created'})).toBeVisible();
+    expect(screen.getByText('Aarav Sharma')).toBeVisible();
+    expect(screen.getByText(/App access remains pending/)).toBeVisible();
+    expect(screen.getByText(/Email sending is unavailable/)).toBeVisible();
+    expect(screen.queryByText('Invitation sent')).not.toBeInTheDocument();
+  });
   it('shows sending immediately and starts the dismissal timer only after actual acceptance',async()=>{
     vi.useFakeTimers();const onClose=vi.fn();
     const {rerender}=render(<InvitationReceipt invite={{...invitation,delivery:'queued'}} onClose={onClose}/>);

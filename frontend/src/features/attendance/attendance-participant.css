@@ -1,0 +1,53 @@
+/* One participant interaction for academic, activity, event and examination adapters. */
+.attendance-participant {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(280px, 330px) 44px;
+  gap: 12px;
+  align-items: center;
+  padding: 20px var(--thatcampus-row-inset);
+  border: 0;
+  border-radius: var(--thatcampus-radius-row);
+  background: var(--thatcampus-surface-row);
+  box-shadow: var(--thatcampus-shadow-card);
+}
+.attendance-participant.has-conflict { border: 1px solid var(--thatcampus-warning); border-radius: var(--thatcampus-radius-row); box-shadow: none; background: var(--thatcampus-warning-soft); padding-inline: var(--thatcampus-row-inset); }
+.attendance-participant__identity { display: flex; align-items: center; gap: 12px; min-width: 0; }
+.attendance-participant__identity > div { min-width: 0; }
+.attendance-participant h3 { margin: 0; color: var(--thatcampus-ink); font-size: 16px; font-weight: 650; line-height: 1.45; letter-spacing: -0.025em; overflow-wrap: anywhere; }
+.attendance-participant__identity p { display: flex; flex-wrap: wrap; gap: 2px 8px; margin-top: 4px; color: var(--thatcampus-ink-secondary); font-size: 14px; line-height: 1.5; overflow-wrap: anywhere; }
+.attendance-participant__identity p > span + span { padding-left: 8px; border-left: 1px solid var(--thatcampus-border); }
+.roll-call-avatar { display: grid; place-items: center; width: 44px; height: 44px; flex-shrink: 0; border-radius: 50%; background: var(--thatcampus-brand-soft); color: var(--thatcampus-brand); font-size: 14px; font-weight: 700; overflow: hidden; }
+.roll-call-avatar img { width: 100%; height: 100%; object-fit: cover; }
+.roll-call-note-toggle { grid-column: 3; grid-row: 1; display: grid; width: 44px; height: 44px; place-items: center; border-radius: var(--thatcampus-radius-control); border: 0; background: transparent; color: var(--thatcampus-ink-muted); }
+.roll-call-note-toggle:hover, .roll-call-note-toggle.has-note, .roll-call-note-toggle[aria-expanded="true"] { background: var(--thatcampus-surface-soft); color: var(--thatcampus-brand); }
+.roll-call-choices { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 6px; grid-column: 2; grid-row: 1; }
+.roll-call-choices.has-2 { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+.attendance-participant .roll-call-choice, .roll-call-other { display: flex; min-width: 0; min-height: 44px; padding: 0 8px; align-items: center; justify-content: center; gap: 5px; border: 1px solid var(--thatcampus-border); border-radius: var(--thatcampus-radius-control); color: var(--thatcampus-ink-muted); background: var(--thatcampus-surface); font: inherit; font-size: 14px; font-weight: 600; transition: background var(--thatcampus-motion), border-color var(--thatcampus-motion), color var(--thatcampus-motion); }
+.roll-call-choice svg { flex-shrink: 0; }
+.roll-call-choice:hover { background: var(--thatcampus-surface-soft); border-color: var(--thatcampus-brand-bright); }
+.roll-call-choice.is-present[aria-pressed="true"] { color: var(--thatcampus-positive); border-color: var(--thatcampus-positive); background: var(--thatcampus-positive-soft); }
+.roll-call-choice.is-positive[aria-pressed="true"] { color: var(--thatcampus-positive); border-color: var(--thatcampus-positive); background: var(--thatcampus-positive-soft); }
+.roll-call-choice.is-absent[aria-pressed="true"] { color: var(--thatcampus-danger); border-color: var(--thatcampus-danger); background: var(--thatcampus-danger-soft); }
+.roll-call-choice.is-negative[aria-pressed="true"] { color: var(--thatcampus-danger); border-color: var(--thatcampus-danger); background: var(--thatcampus-danger-soft); }
+.roll-call-other { position: relative; }
+.roll-call-other > span { display: inline-flex; align-items: center; gap: 4px; white-space: nowrap; }
+.roll-call-other select { position: absolute; inset: 0; width: 100%; height: 100%; opacity: 0; cursor: pointer; }
+.roll-call-other:focus-within { outline: 2px solid var(--thatcampus-brand-bright); outline-offset: 2px; }
+.roll-call-other.is-selected { color: var(--thatcampus-warning); border-color: var(--thatcampus-warning); background: var(--thatcampus-warning-soft); }
+.roll-call-other.is-not_recorded { color: var(--thatcampus-ink-muted); border-color: var(--thatcampus-border); background: var(--thatcampus-surface-soft); }
+.roll-call-other.is-excused { color: var(--thatcampus-positive); border-color: var(--thatcampus-positive); background: var(--thatcampus-positive-soft); }
+.attendance-participant button:disabled, .roll-call-other.is-disabled { opacity: .5; cursor: not-allowed; }
+.attendance-participant button:focus-visible { outline: 2px solid var(--thatcampus-brand); outline-offset: 3px; }
+.roll-call-conflict { display: block; color: var(--thatcampus-warning); margin-top: 4px; }
+.roll-call-note { display: grid; grid-column: 1 / -1; gap: 6px; padding-top: 12px; border-top: 1px solid var(--thatcampus-border); }
+.roll-call-note > span { color: var(--thatcampus-ink-muted); font-size: 14px; font-weight: 600; line-height: 1.5; }
+.roll-call-note input { min-width: 0; width: 100%; min-height: 48px; padding: 0 14px; border: 1px solid var(--thatcampus-border); border-radius: var(--thatcampus-radius-control); background: var(--thatcampus-surface); color: var(--thatcampus-ink); font: inherit; font-size: 16px; }
+.roll-call-note input:focus-visible { outline: 2px solid var(--thatcampus-brand); outline-offset: 2px; }
+.attendance-participant__details { display: grid; grid-column: 1 / -1; gap: 10px; padding-top: 12px; border-top: 1px solid var(--thatcampus-border); }
+@media (max-width: 1099px) {
+  .attendance-participant { grid-template-columns: minmax(0, 1fr) 44px; }
+  .roll-call-note-toggle { grid-column: 2; }
+  .roll-call-choices { grid-column: 1 / -1; grid-row: 2; }
+}
+@media (max-width: 360px) { .attendance-participant .roll-call-choice, .roll-call-other { padding-inline: 4px; } }
+@media (forced-colors: active) { .attendance-participant { border: 1px solid CanvasText; } .roll-call-choice[aria-pressed="true"] { outline: 2px solid Highlight; } }

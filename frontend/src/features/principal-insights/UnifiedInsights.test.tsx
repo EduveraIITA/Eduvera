@@ -9,6 +9,7 @@ import { getAnalytics } from "../analytics/api";
 import { PrincipalInsightsPage } from "./PrincipalInsightsPage";
 import { getPrincipalInsights } from "./api";
 import { analyticsFixture, reviewFixture } from "./insight-test-fixtures";
+import { ExecutionEnvironmentProvider } from "../simulation/ExecutionEnvironmentContext";
 
 const session = vi.hoisted(() => ({ role: "admin" }));
 vi.mock("../auth/AuthContext", () => ({ useAuth: () => ({ user: { id: "user", active_school_id: "school-1" }, memberships: [{ role: session.role, school_id: "school-1" }] }) }));
@@ -23,17 +24,24 @@ beforeEach(() => { session.role = "admin"; client = new QueryClient({ defaultOpt
 afterEach(() => { cleanup(); client.clear(); vi.clearAllMocks(); });
 function Location() { const location = useLocation(); return <output data-testid="location">{location.pathname}{location.search}{location.hash}</output>; }
 function mount(path = "/principal/insights?period=90&date=2026-10-07") {
-  return render(<QueryClientProvider client={client}><MemoryRouter initialEntries={[path]}><Routes>
+  return render(<ExecutionEnvironmentProvider environment={{ mode: "live", namespaceId: "live:school-1" }}><QueryClientProvider client={client}><MemoryRouter initialEntries={[path]}><Routes>
     <Route path="/:portal/analytics/*" element={<LegacyAnalyticsRedirect />} />
     <Route path="/principal/insights" element={<AnalyticsPage portal="principal" />} />
+    <Route path="/areas/insights" element={<AnalyticsPage portal="principal" />} />
     <Route path="/principal/insights/results" element={<AnalyticsPage portal="principal" topic="results" />} />
+    <Route path="/areas/insights/results" element={<AnalyticsPage portal="principal" topic="results" />} />
     <Route path="/principal/insights/attendance" element={<AnalyticsPage portal="principal" topic="attendance" />} />
-    {(["review", "recording", "followups", "learning-review", "operations", "finance"] as const).map(topic => <Route key={topic} path={`/principal/insights/${topic}`} element={<PrincipalInsightsPage topic={topic} />} />)}
+    <Route path="/areas/insights/attendance" element={<AnalyticsPage portal="principal" topic="attendance" />} />
+    {(["review", "recording", "followups", "learning-review", "operations", "finance"] as const).flatMap(topic => [
+      <Route key={`legacy-${topic}`} path={`/principal/insights/${topic}`} element={<PrincipalInsightsPage topic={topic} />} />,
+      <Route key={`canonical-${topic}`} path={`/areas/insights/${topic}`} element={<PrincipalInsightsPage topic={topic} />} />,
+    ])}
     <Route path="/principal/insights/review/:studentId" element={<PrincipalInsightsPage topic="review" />} />
+    <Route path="/areas/insights/review/:studentId" element={<PrincipalInsightsPage topic="review" />} />
     <Route path="/teacher/insights" element={<AnalyticsPage portal="teacher" />} />
     <Route path="/parent/insights" element={<AnalyticsPage portal="parent" />} />
     <Route path="/student/insights" element={<AnalyticsPage portal="student" />} />
-  </Routes><Location /></MemoryRouter></QueryClientProvider>);
+  </Routes><Location /></MemoryRouter></QueryClientProvider></ExecutionEnvironmentProvider>);
 }
 
 describe("unified Insights", () => {
@@ -61,14 +69,14 @@ describe("unified Insights", () => {
     expect(screen.queryByRole("heading", { name: "Outstanding fees" })).not.toBeInTheDocument();
     fireEvent.click(screen.getByRole("link", { name: "Review Anaya Test" }));
     expect(await screen.findByRole("heading", { name: "Next step" })).toBeVisible();
-    expect(screen.getByRole("link", { name: "Review Class 7A register" })).toHaveAttribute("href", "/principal/attendance?class_section_id=class-7&date=2026-10-07");
+    expect(screen.getByRole("link", { name: "Review Class 7A register" })).toHaveAttribute("href", "/areas/attendance/registers?class_section_id=class-7&date=2026-10-07");
     expect(screen.queryByRole("combobox", { name: "Class" })).not.toBeInTheDocument();
     fireEvent.click(screen.getByRole("link", { name: "Back to Insights" }));
     await screen.findByRole("link", { name: "Review Anaya Test" });
-    expect(screen.getByTestId("location")).toHaveTextContent("/principal/insights/review?period=90&date=2026-10-07");
+    expect(screen.getByTestId("location")).toHaveTextContent("/areas/insights/review?period=90&date=2026-10-07&scope=institution");
     fireEvent.click(screen.getByRole("link", { name: "Back to Insights" }));
     await screen.findByRole("link", { name: "Explore attendance" });
-    expect(screen.getByTestId("location")).toHaveTextContent("/principal/insights?period=90&date=2026-10-07");
+    expect(screen.getByTestId("location")).toHaveTextContent("/areas/insights?period=90&date=2026-10-07&scope=institution");
   });
   it("shares a class filter without discarding legacy review parameters", async () => {
     mount("/principal/insights?insight_class=class-7&insight_days=14&period=30");
@@ -106,13 +114,13 @@ describe("unified Insights", () => {
   it("redirects old analytics bookmarks with all query context intact", async () => {
     mount("/principal/analytics/results?class=class-a&period=90");
     await screen.findByRole("heading", { name: "Published results" });
-    expect(screen.getByTestId("location")).toHaveTextContent("/principal/insights/results?class=class-a&period=90");
-    expect(screen.getByRole("link", { name: "Learning review Published results below a review threshold" })).toHaveAttribute("href", "/principal/insights/learning-review?class=class-a&period=90&via=results");
+    expect(screen.getByTestId("location")).toHaveTextContent("/areas/insights/results?class=class-a&period=90&scope=institution");
+    expect(screen.getByRole("link", { name: "Learning review Published results below a review threshold" })).toHaveAttribute("href", "/areas/insights/learning-review?class=class-a&period=90&scope=institution&via=results");
   });
   it("keeps old deadline links working as a focused page", async () => {
     mount("/principal/insights?date=2026-10-07&insight_days=14#principal-deadlines");
     await screen.findByRole("heading", { name: "Overlapping deadlines" });
-    expect(screen.getByTestId("location")).toHaveTextContent("/principal/insights/operations?date=2026-10-07&insight_days=14#principal-deadlines");
+    expect(screen.getByTestId("location")).toHaveTextContent("/areas/insights/operations?date=2026-10-07&insight_days=14&scope=institution#principal-deadlines");
     expect(screen.queryByLabelText("Trend period")).not.toBeInTheDocument();
   });
   it("shows threshold controls only on learning review and preserves the end date", async () => {
@@ -127,7 +135,7 @@ describe("unified Insights", () => {
     await screen.findByRole("heading", { name: "Open follow-ups" });
     expect(screen.getByRole("figure", { name: /Current follow-up status/ })).toHaveAccessibleName(/1 open follow-ups/);
     expect(screen.getByText(/Owner: Teacher One/)).toBeVisible();
-    expect(screen.getByRole("link", { name: "Open source register" })).toHaveAttribute("href", "/principal/attendance?class_section_id=class-7&date=2026-10-05");
+    expect(screen.getByRole("link", { name: "Open source register" })).toHaveAttribute("href", "/areas/attendance/registers?class_section_id=class-7&date=2026-10-05");
   });
   it("renders actual currency amounts and does not offer irrelevant historical filters on fees", async () => {
     mount("/principal/insights/finance?period=90");
@@ -135,7 +143,7 @@ describe("unified Insights", () => {
     expect(screen.getByRole("list", { name: "Outstanding balance by age" })).toHaveTextContent("₹60");
     expect(screen.queryByLabelText("Review window")).not.toBeInTheDocument();
     expect(screen.queryByLabelText("Trend period")).not.toBeInTheDocument();
-    expect(screen.getByRole("link", { name: "Open fee ledger" })).toHaveAttribute("href", "/principal/fees");
+    expect(screen.getByRole("link", { name: "Open fee ledger" })).toHaveAttribute("href", "/areas/fees/ledger");
   });
   it("keeps review controls and calculation rules secondary to the actionable list", async () => {
     mount("/principal/insights/review?date=2026-10-07");
@@ -161,15 +169,15 @@ describe("unified Insights", () => {
     expect(await screen.findByRole("link", { name: "Review existing follow-up" })).toHaveAttribute("href", "#attendance-followups");
     expect(screen.getByRole("region", { name: "Existing follow-ups" })).toHaveTextContent("student-2");
     expect(screen.queryByRole("link", { name: "Review Class 7A register" })).not.toBeInTheDocument();
-    expect(screen.getByRole("link", { name: "Back to Insights" })).toHaveAttribute("href", "/principal/insights/review?class=class-7&followup=all");
+    expect(screen.getByRole("link", { name: "Back to Insights" })).toHaveAttribute("href", "/areas/insights/review?class=class-7&followup=all&scope=institution");
   });
   it("separates incomplete recording from individual attendance concerns", async () => {
     mount("/principal/insights/review?date=2026-10-07&insight_days=14");
     fireEvent.click(await screen.findByRole("link", { name: /Check missing attendance records/ }));
     expect(await screen.findByRole("heading", { name: "Recording completeness" })).toBeVisible();
     expect(screen.queryByText("Anaya Test")).not.toBeInTheDocument();
-    expect(screen.getByRole("link", { name: "Review attendance registers" })).toHaveAttribute("href", "/principal/attendance?date=2026-10-07");
-    expect(screen.getByRole("link", { name: "Back to Insights" })).toHaveAttribute("href", "/principal/insights/review?date=2026-10-07&insight_days=14");
+    expect(screen.getByRole("link", { name: "Review attendance registers" })).toHaveAttribute("href", "/areas/attendance/registers?date=2026-10-07");
+    expect(screen.getByRole("link", { name: "Back to Insights" })).toHaveAttribute("href", "/areas/insights/review?date=2026-10-07&insight_days=14&scope=institution");
   });
   it("does not invent detail for students outside the authorized current review", async () => {
     mount("/principal/insights/review/not-in-scope");
@@ -201,7 +209,7 @@ describe("unified Insights", () => {
     await screen.findByRole("heading", { name: "Results to review" });
     fireEvent.click(screen.getByRole("link", { name: "Back to Insights" }));
     expect(await screen.findByRole("heading", { name: "Published results" })).toBeVisible();
-    expect(screen.getByTestId("location")).toHaveTextContent("/principal/insights/results?period=90");
+    expect(screen.getByTestId("location")).toHaveTextContent("/areas/insights/results?period=90&scope=institution");
     expect(screen.getByTestId("location")).not.toHaveTextContent("via=");
   });
 });

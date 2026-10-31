@@ -21,7 +21,7 @@ const ids = {
   otherCampus: "20000000-0000-4000-8000-000000000099",
   user: "30000000-0000-4000-8000-000000000003",
 };
-const user = { id: ids.user, role: "admin" } as AuthUser;
+const user = { id: ids.user, role: "admin", is_active: true, active_school_id: ids.school } as AuthUser;
 
 function row(
   metricKey: string,
@@ -189,7 +189,7 @@ describe("Campus View KPI contract", () => {
       campus_id: ids.campus, page: "spaces", range: "today", at: "2026-10-17T04:00:00.000Z",
     });
     expect(result.metrics.find((metric) => metric.key === "spaces.missing_canonical_space")?.target_path)
-      .toBe("/principal/administration?section=campus");
+      .toBe("/more/setup/institution/campus");
   });
 
   it("authorizes before reading institution or KPI data", async () => {

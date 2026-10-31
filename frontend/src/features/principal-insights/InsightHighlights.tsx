@@ -1,4 +1,5 @@
 import { ChevronRight, CircleAlert } from "lucide-react";
+import { ProductIcon } from "../../components/ProductIcon";
 import { Link, useSearchParams } from "react-router-dom";
 import { canonicalInsightSearch, insightPath } from "../analytics/InsightNavigation";
 import { numberLabel } from "../analytics/AnalyticsCharts";
@@ -40,14 +41,14 @@ export function OperationalSummaries() {
     <header className="insight-section-heading"><h2 id="insight-current-title">School operations</h2><span>As of {shortDate(data.operational_date)}</span></header>
     <div className="analytics-summary">
       <Link className="analytics-panel analytics-summary-card" to={path("operations")} aria-label="Explore teaching coverage and deadlines">
-        <header><h3>Teaching coverage</h3><ChevronRight size={18} aria-hidden="true" /></header>
+        <header><h3><ProductIcon name="timetable" size={24} />Teaching coverage</h3><ChevronRight size={18} aria-hidden="true" /></header>
         <div className="analytics-stat"><strong>{planned ? `${Math.round((planned - unassigned) / planned * 100)}%` : "—"}</strong><span>periods assigned</span></div>
         <div className="insight-coverage-week" aria-hidden="true">{data.schedule.map(day => <div key={day.date}><div><i style={{ height: `${day.planned ? (day.planned - day.unassigned) / day.planned * 100 : 0}%` }} /></div><span>{new Date(`${day.date}T12:00:00Z`).toLocaleDateString("en-IN", { weekday: "short", timeZone: "UTC" })}</span></div>)}</div>
         <p className="analytics-note">{planned - unassigned} of {planned} periods assigned · next 7 days</p>
         {data.deadlines.length ? <p className="analytics-note analytics-warning">{data.deadlines.length} class-days with overlapping deadlines</p> : null}
       </Link>
       <Link className="analytics-panel analytics-summary-card" to={path("finance")} aria-label="Explore fee balances">
-        <header><h3>Fees due</h3><ChevronRight size={18} aria-hidden="true" /></header>
+        <header><h3><ProductIcon name="fees" size={24} />Fees due</h3><ChevronRight size={18} aria-hidden="true" /></header>
         <div className="analytics-stat"><strong>{money(balance)}</strong><span>outstanding</span></div>
         <p className="analytics-support">Against {money(due)} net fees due</p>
         {due > 0 ? <div className="analytics-register-meter" aria-hidden="true"><span style={{ width: `${Math.min(100, Math.max(0, paid / due * 100))}%` }} /></div> : null}

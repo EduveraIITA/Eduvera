@@ -1,5 +1,6 @@
 import { ArrowRight, Check, CheckCircle2, Clock3, ShieldAlert, TriangleAlert, X, XCircle } from 'lucide-react';
 import { Link } from 'react-router-dom';
+import { InfoSummary } from '../../components/InfoSummary';
 import type { MouseEventHandler } from 'react';
 import type { AgentAction, AgentRun } from './agentApi';
 import { AssistantText } from './AssistantText';
@@ -72,7 +73,7 @@ export function ActionReview({action,busy,onDecide}:{action:AgentAction;busy:boo
       <div className="agent-action__buttons"><button type="button" disabled={busy} onClick={()=>onDecide(action.id,'reject')}>Dismiss</button><button type="button" className="is-primary" disabled={busy} onClick={()=>onDecide(action.id,'confirm')}><Check size={17} aria-hidden="true"/>{busy?'Checking…':action.contract?.confirmation_label??'Confirm'}</button></div>
     </>:<p className="agent-action__message">{action.receipt?.message??(action.status==='rejected'?'Nothing was changed.':action.status==='expired'?'Ask for a fresh preview.':action.status==='executing'?'Verifying the result…':'Review the record before trying again.')}</p>}
     <Link className="assistant-source-link" to={action.receipt?.href??action.href}>{action.status==='succeeded'?'Verify in app':'Open affected screen'}<ArrowRight size={17} aria-hidden="true"/></Link>
-    {action.receipt?.request_id?<details className="agent-receipt"><summary>Action receipt</summary><p>Reference {action.receipt.request_id}</p>{action.receipt.completed_at?<p>{new Date(action.receipt.completed_at).toLocaleString()}</p>:null}</details>:null}
+    {action.receipt?.request_id?<details className="agent-receipt"><InfoSummary>Action receipt</InfoSummary><p>Reference {action.receipt.request_id}</p>{action.receipt.completed_at?<p>{new Date(action.receipt.completed_at).toLocaleString()}</p>:null}</details>:null}
     </div>
   </section>;
 }
@@ -86,6 +87,6 @@ export function AgentReply({run,busy,onDecide}:{run:AgentRun;busy:boolean;onDeci
     {chartSources.map(source=><div className="agent-chart-source" key={source.id}><AgentChart chart={source.chart!}/><div className="assistant-source-row"><Link className="assistant-source-link" to={source.href}>{chartLink(source.chart!.title)}<ArrowRight size={17} aria-hidden="true"/></Link><time dateTime={source.retrieved_at}>Checked {new Date(source.retrieved_at).toLocaleTimeString([],{hour:'numeric',minute:'2-digit'})}</time></div></div>)}
     {run.status==='failed'?<p className="agent-caption">No action was automatically retried.</p>:null}
     {run.action?<ActionReview action={run.action} busy={busy} onDecide={onDecide}/>:null}
-    {otherSources.length?<details className="agent-sources"><summary>{otherSources.length===1?'Source checked':`${otherSources.length} sources checked`}</summary><ul>{otherSources.map(source=><li key={source.id}><Link className="assistant-source-link" to={source.href}>{source.title}<ArrowRight size={16} aria-hidden="true"/></Link><small>Checked {new Date(source.retrieved_at).toLocaleTimeString([],{hour:'numeric',minute:'2-digit'})}</small></li>)}</ul></details>:null}
+    {otherSources.length?<details className="agent-sources"><InfoSummary>{otherSources.length===1?'Source checked':`${otherSources.length} sources checked`}</InfoSummary><ul>{otherSources.map(source=><li key={source.id}><Link className="assistant-source-link" to={source.href}>{source.title}<ArrowRight size={16} aria-hidden="true"/></Link><small>Checked {new Date(source.retrieved_at).toLocaleTimeString([],{hour:'numeric',minute:'2-digit'})}</small></li>)}</ul></details>:null}
   </>;
 }

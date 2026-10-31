@@ -30,13 +30,21 @@ export interface CareCaseDetail {
   entries: Array<{ id: string; entry_type: string; note: string; created_by: string; created_at: string }>;
   external_reports: Array<{ id: string; authority_type: string; reported_at: string; reference: string; recorded_by: string; created_at: string }>;
   audits: Array<{ id: string; action: string; metadata: Record<string, unknown>; actor_name: string; created_at: string }>;
+  handover_candidates: CareHandler[];
+  source_content_omitted: boolean;
 }
+export interface CareHandler { id: string; name: string; role_kind: string }
+export interface CareReceipt { id: string; revision: number; receipt_id: string; receipt: string; action?: string }
+export interface OrphanedCareCase { id: string; revision: number; intake_route: "primary" | "alternate"; owner_name: string; candidates: CareHandler[] }
 
 const root = (schoolId: string, path: string) => `/api/v1/schools/${encodeURIComponent(schoolId)}/restricted-care/${path}/`;
 
 export const getCareWorkspace = (schoolId: string) => apiFetch<CareWorkspace>(root(schoolId, "workspace"));
 export const getCareCase = (schoolId: string, caseId: string) => apiFetch<CareCaseDetail>(root(schoolId, `cases/${caseId}`));
-export const openCareCase = (schoolId: string, input: Record<string, unknown>) => apiFetch<{ id: string; revision: number; receipt: string }>(root(schoolId, "cases"), { method: "POST", body: JSON.stringify(input) });
-export const actOnCareCase = (schoolId: string, caseId: string, input: Record<string, unknown>) => apiFetch(root(schoolId, `cases/${caseId}/actions`), { method: "POST", body: JSON.stringify(input) });
+export const openCareCase = (schoolId: string, input: Record<string, unknown>) => apiFetch<CareReceipt>(root(schoolId, "cases"), { method: "POST", body: JSON.stringify(input) });
+export const actOnCareCase = (schoolId: string, caseId: string, input: Record<string, unknown>) => apiFetch<CareReceipt>(root(schoolId, `cases/${caseId}/actions`), { method: "POST", body: JSON.stringify(input) });
+export const confirmCareCommand = (schoolId: string, commandId: string) => apiFetch<{ state: "not_found" | "pending" | "not_accepted" } | { state: "accepted"; result: CareReceipt }>(root(schoolId, `commands/${commandId}/confirmation`));
+export const getOrphanedCareCases = (schoolId: string, page = 1) => apiFetch<{ cases: OrphanedCareCase[]; page: number; total: number; pages: number }>(`${root(schoolId, "orphaned-cases")}?page=${page}`);
+export const recoverCareOwner = (schoolId: string, caseId: string, input: Record<string, unknown>) => apiFetch<CareReceipt>(root(schoolId, `orphaned-cases/${caseId}/reassign`), { method: "POST", body: JSON.stringify(input) });
 export const assignCareRole = (schoolId: string, input: Record<string, unknown>) => apiFetch(root(schoolId, "team-assignments"), { method: "POST", body: JSON.stringify(input) });
 export const revokeCareRole = (schoolId: string, assignmentId: string, expectedRevision: number, reason: string) => apiFetch(root(schoolId, `team-assignments/${assignmentId}/revoke`), { method: "POST", body: JSON.stringify({ expected_revision: expectedRevision, reason }) });

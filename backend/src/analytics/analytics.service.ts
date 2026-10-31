@@ -1,9 +1,11 @@
+import { executionNow } from "../campus-model-core/execution-time.runtime.js";
 import { BadRequestException, ForbiddenException, Injectable, NotFoundException } from "@nestjs/common";
 import { sql } from "kysely";
 import { z } from "zod";
 import type { AuthUser } from "../common/request.js";
 import { DatabaseService } from "../database/database.service.js";
 import { effectiveSchoolAccess } from "../roles/authorization.js";
+import { assignedAdministratorAnalyticsPermissions, assignedAnalyticsAssessmentPermission, assignedAnalyticsClassPermission } from "./assigned-analytics-access.js";
 import { SchoolService } from "../school/school.service.js";
 import { addCounts, attendanceMetric, attendanceTrend, dateOffset, emptyCounts, round, type AttendanceCounts } from "./analytics-metrics.js";
 import { institutionSnapshot, registerSubmission } from "./institution-metrics.js";
@@ -15,7 +17,7 @@ const inputSchema = z.object({
 });
 const portalSchema = z.enum(["principal", "teacher", "parent", "student"]);
 type Scope = { school: string; user: string; admin: boolean; family: boolean; student: string | null; term: string;
-  from: string; to: string; today: string; timezone: string; classId: string | null };
+  from: string; to: string; today: string; timezone: string; classId: string | null; assignedAdministrator: boolean };
 type Term = { id: string; name: string; starts_on: string; ends_on: string; attendance_threshold: string | number };
 type DailyRow = AttendanceCounts & { date: string; class_id: string; class_name: string };
 
@@ -28,12 +30,13 @@ export class AnalyticsService {
     const portal = portalSchema.parse(portalValue), input = inputSchema.parse(query);
     if (user.active_school_id && user.active_school_id !== schoolId) throw new ForbiddenException("Select this institution before opening Analytics.");
     const role = { principal: "admin", teacher: "staff", parent: "guardian", student: "student" }[portal];
-    const membership = await sql<{ timezone: string; today: string }>`
-      SELECT school.timezone,(now() AT TIME ZONE school.timezone)::date::text AS today
+    const membership = await sql<{ timezone: string; today: string; membership_role: string }>`
+      SELECT school.timezone,(now() AT TIME ZONE school.timezone)::date::text AS today,member.role AS membership_role
       FROM school_memberships member JOIN schools school ON school.id=member.school_id
       JOIN users account ON account.id=member.user_id AND account.is_active
       WHERE member.user_id=${user.id}::uuid AND member.school_id=${schoolId}::uuid
-        AND member.role=${role} AND member.is_active LIMIT 1`.execute(this.db);
+        AND ${portal === 'teacher' ? sql`member.role IN ('admin','staff')` : sql`member.role=${role}`} AND member.is_active
+      ORDER BY (member.role='staff') DESC LIMIT 1`.execute(this.db);
     const context = membership.rows[0];
     if (!context) throw new ForbiddenException("Active access to this view is required.");
     if(reportStudent && portal!=='principal')throw new ForbiddenException('Principal access is required.');
@@ -72,16 +75,17 @@ export class AnalyticsService {
     const to = [term.ends_on, context.today].sort()[0]!;
     const from = [term.starts_on, dateOffset(to, -(input.period === "term" ? 365 : Number(input.period) - 1))].sort().at(-1)!;
     const scope: Scope = { school: schoolId, user: user.id, admin: portal === "principal", family,
-      student: student?.id ?? reportStudent?.id ?? null, term: term.id, from, to, today: context.today, timezone: context.timezone, classId: input.class_id ?? null };
-    const permissions = family ? null : await effectiveSchoolAccess(this.db, user.id, schoolId);
-    const permits = (permission: string) => family || permissions?.sources.some(source => source.permission === permission);
+      student: student?.id ?? reportStudent?.id ?? null, term: term.id, from, to, today: context.today, timezone: context.timezone, classId: input.class_id ?? null, assignedAdministrator: portal === 'teacher' && context.membership_role === 'admin' };
+    const assignedPermissions = scope.assignedAdministrator ? await assignedAdministratorAnalyticsPermissions(this.db, scope) : null;
+    const permissions = family || assignedPermissions ? null : await effectiveSchoolAccess(this.db, user.id, schoolId);
+    const permits = (permission: string) => family || (assignedPermissions ? assignedPermissions.has(permission) : permissions?.sources.some(source => source.permission === permission));
     const classes = family ? [] : (await sql<{ id: string; name: string }>`SELECT c.id,'Class '||c.grade||c.section AS name
       FROM class_sections c JOIN academic_terms t ON t.school_id=c.school_id AND t.academic_year=c.academic_year
       WHERE c.school_id=${schoolId}::uuid AND t.id=${term.id}::uuid
-        AND (${scope.admin} OR staff_has_class_permission(${schoolId}::uuid,${user.id}::uuid,'attendance.view',c.id,${context.today}::date)
+        AND (${scope.admin} OR ${assignedAnalyticsClassPermission(scope, sql`c.id`, context.today)}
           OR EXISTS(SELECT 1 FROM assessments a JOIN assessment_cycles cycle ON cycle.id=a.cycle_id
             WHERE a.school_id=c.school_id AND a.class_section_id=c.id AND cycle.term_id=t.id
-              AND staff_has_resource_permission(${schoolId}::uuid,${user.id}::uuid,'assessments.view','assessment',a.id,${context.today}::date)))
+              AND ${assignedAnalyticsAssessmentPermission(scope, sql`a.id`)}))
       ORDER BY c.grade,c.section`.execute(this.db)).rows;
     if (input.class_id && !classes.some(item => item.id === input.class_id)) throw new ForbiddenException("This class is not available in your Analytics view.");
     const [attendance, assessments, institution, registers] = await Promise.all([
@@ -90,7 +94,7 @@ export class AnalyticsService {
       scope.admin && !scope.classId && !scope.student ? institutionSnapshot(this.db, scope) : null,
       scope.admin && !scope.student && permits("attendance.view") ? registerSubmission(this.db, scope) : null,
     ]);
-    return { portal, generated_at: new Date().toISOString(), student, selected_student:reportStudent??null, term: { ...term, attendance_threshold: Number(term.attendance_threshold) },
+    return { portal, generated_at: executionNow().toISOString(), student, selected_student:reportStudent??null, term: { ...term, attendance_threshold: Number(term.attendance_threshold) },
       range: { period: input.period, from, to, capped: input.period === "term" && from > term.starts_on },
       scope_label: reportStudent?.name ?? (family ? student?.user.display_name ?? "Learner" : input.class_id ? classes.find(item => item.id === input.class_id)!.name
         : portal === "principal" ? "All classes" : "Your assigned work"),
@@ -152,8 +156,8 @@ export class AnalyticsService {
     ), allowed_dates AS MATERIALIZED (
       SELECT date,class_section_id FROM candidate_dates
       WHERE ${family} OR ${admin} OR (
-        staff_has_class_permission(${school}::uuid,${user}::uuid,'attendance.view',class_section_id,${today}::date)
-        AND staff_has_class_permission(${school}::uuid,${user}::uuid,'attendance.view',class_section_id,date))
+        ${assignedAnalyticsClassPermission(scope, sql`class_section_id`, today)}
+        AND ${assignedAnalyticsClassPermission(scope, sql`class_section_id`, sql`date`)})
     ) SELECT ar.date::text AS date,ar.class_section_id AS class_id,ar.class_name,
       count(*) FILTER(WHERE status='present')::int AS present,
       count(*) FILTER(WHERE status='late')::int AS late,
@@ -195,8 +199,8 @@ export class AnalyticsService {
         SELECT DISTINCT date,class_section_id FROM scoped
       ), allowed_dates AS MATERIALIZED (
         SELECT date,class_section_id FROM candidate_dates WHERE ${family} OR ${admin} OR (
-          staff_has_class_permission(${school}::uuid,${user}::uuid,'attendance.view',class_section_id,${today}::date)
-          AND staff_has_class_permission(${school}::uuid,${user}::uuid,'attendance.view',class_section_id,date))
+          ${assignedAnalyticsClassPermission(scope, sql`class_section_id`, today)}
+          AND ${assignedAnalyticsClassPermission(scope, sql`class_section_id`, sql`date`)})
       ), recorded_dates AS (SELECT DISTINCT date FROM allowed_dates), lessons AS MATERIALIZED (
         SELECT slot.*,days.date,
           row_number() OVER (PARTITION BY slot.class_section_id,slot.term_id,days.date ORDER BY slot.period_number,slot.starts_at,slot.id)::int AS instructional_index,
@@ -227,7 +231,7 @@ export class AnalyticsService {
         WHERE a.school_id=${school}::uuid AND cycle.term_id=${term}::uuid
           AND (a.scheduled_at AT TIME ZONE ${timezone})::date BETWEEN ${from}::date AND ${to}::date
           AND (${classId}::uuid IS NULL OR a.class_section_id=${classId}::uuid)
-          AND (${family} OR ${admin} OR staff_has_resource_permission(${school}::uuid,${user}::uuid,'assessments.view','assessment',a.id,${today}::date))
+          AND (${family} OR ${admin} OR ${assignedAnalyticsAssessmentPermission(scope, sql`a.id`)})
       ), latest AS MATERIALIZED (
         SELECT DISTINCT ON(p.assessment_id) p.id,p.assessment_id
         FROM assessment_publications p JOIN authorized a ON a.id=p.assessment_id
@@ -258,7 +262,7 @@ export class AnalyticsService {
       WHERE a.school_id=${school}::uuid AND cycle.term_id=${term}::uuid
         AND (COALESCE(a.scheduled_at,a.created_at) AT TIME ZONE ${timezone})::date BETWEEN ${from}::date AND ${to}::date
         AND (${classId}::uuid IS NULL OR a.class_section_id=${classId}::uuid)
-        AND (${admin} OR staff_has_resource_permission(${school}::uuid,${user}::uuid,'assessments.view','assessment',a.id,${today}::date))
+        AND (${admin} OR ${assignedAnalyticsAssessmentPermission(scope, sql`a.id`)})
       GROUP BY a.status ORDER BY a.status`.execute(this.db)).rows;
     const metric = (item: typeof aggregates.rows[number]) => ({ scored: item.scored, other: item.other, assessments: item.assessments,
       average: item.average === null ? null : round(Number(item.average)) });

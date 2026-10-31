@@ -1,3 +1,4 @@
+import { executionNow } from "../campus-model-core/execution-time.runtime.js";
 import { ConflictException, Inject, Injectable } from "@nestjs/common";
 import { randomUUID } from "node:crypto";
 import { sql, type Selectable, type Transaction } from "kysely";
@@ -8,6 +9,7 @@ import {
   type OperationalMessageOutcomeReceipt,
 } from "../campus-model-core/coordination-runtime.port.js";
 import type { AssessmentSittingInvigilatorTable, Database } from "../database/types.js";
+import { assessmentWorkHref } from "../workspace/canonical-application-links.js";
 
 export const ASSESSMENT_INVIGILATION_SELECTOR_KEY = "assessment_invigilation_recipient";
 
@@ -55,6 +57,10 @@ type RetainedBinding = AssessmentInvigilationOfferBinding & {
   model_event_id:string;
   reaction_id:string;
 };
+export interface InvigilationInvitationStatus {
+  state:'current'|'needs_reissue'|'recipient_ineligible'|'unconfigured';can_respond:boolean;message:string;
+  recovery:'save_arrangements'|'choose_eligible_recipient'|'configure_invitations'|null;setup_href:string;
+}
 
 @Injectable()
 export class AssessmentInvigilationOfferBridgeService {
@@ -96,6 +102,7 @@ export class AssessmentInvigilationOfferBridgeService {
     schoolId:string,
     assignmentId:string,
     sourceRevision:number,
+    lock=true,
   ){
     return (await sql<RetainedBinding>`SELECT id AS binding_id,status,message_id,
         correlation_id,source_assignment_revision,selected_user_id,
@@ -104,7 +111,29 @@ export class AssessmentInvigilationOfferBridgeService {
       FROM assessment_invigilation_offer_bindings
       WHERE school_id=${schoolId}::uuid AND assignment_id=${assignmentId}::uuid
         AND source_assignment_revision=${sourceRevision}
-      FOR UPDATE`.execute(transaction)).rows[0]??null;
+      ${lock?sql`FOR UPDATE`:sql``}`.execute(transaction)).rows[0]??null;
+  }
+
+  async invitationStatus(transaction:Transaction<Database>,input:{school_id:string;assignment_id:string;assignment_revision:number;user_id:string}):Promise<InvigilationInvitationStatus>{
+    const setupHref=`/more/setup/institution/operating-rules?school=${input.school_id}&rule=examinations`;
+    const route=await this.coordination.resolveEventRoute(transaction,{school_id:input.school_id,source_domain:'assessments',
+      event_type:'assessment.invigilation.offered',selector_key:ASSESSMENT_INVIGILATION_SELECTOR_KEY,occurred_at:executionNow().toISOString()});
+    if(route.status!=='matched')return{state:'unconfigured',can_respond:false,
+      message:'Invigilation invitation rules need administrator approval before this duty can be reissued.',recovery:'configure_invitations',setup_href:setupHref};
+    const authority=await this.coordination.authorizeCandidateRecipients(transaction,{school_id:input.school_id,
+      behaviour_version_id:route.behaviour_version_id,subscription_id:route.subscription_id,occurred_at:executionNow().toISOString(),
+      recipients:[{agent_kind:'human',user_id:input.user_id}],scope:null});
+    if(authority.authorised.length!==1||authority.unauthorized.length||authority.unresolved.length)return{state:'recipient_ineligible',can_respond:false,
+      message:'This person is no longer an eligible invitation recipient. An administrator must choose an eligible invigilator in Edit arrangements.',
+      recovery:'choose_eligible_recipient',setup_href:setupHref};
+    const binding=await this.retained(transaction,input.school_id,input.assignment_id,input.assignment_revision,false);
+    if(!binding||binding.behaviour_version_id!==route.behaviour_version_id||binding.subscription_id!==route.subscription_id)
+      return{state:'needs_reissue',can_respond:false,message:'Invitation rules changed. An administrator can use Edit arrangements and Save arrangements to issue a fresh invitation without changing the time or room.',
+        recovery:'save_arrangements',setup_href:setupHref};
+    if(Date.parse(binding.response_due_at)<executionNow().getTime()||Date.parse(binding.expires_at)<=executionNow().getTime())
+      return{state:'needs_reissue',can_respond:false,message:'This invitation response window ended. An administrator can save the arrangements to reissue it.',
+        recovery:'save_arrangements',setup_href:setupHref};
+    return{state:'current',can_respond:true,message:'Respond to this exact invitation before its deadline.',recovery:null,setup_href:setupHref};
   }
 
   private async routeRound(transaction:Transaction<Database>,schoolId:string,assignmentId:string){
@@ -163,7 +192,7 @@ export class AssessmentInvigilationOfferBridgeService {
     if(context.assignment_status!=="offered"||context.assignment_revision!==input.source_assignment_revision){
       throw new ConflictException("The invigilation assignment changed before its Offer could be routed.");
     }
-    const occurredAt=new Date().toISOString();
+    const occurredAt=executionNow().toISOString();
     const route=await this.coordination.resolveEventRoute(transaction,{
       school_id:input.school_id,
       source_domain:"assessments",
@@ -250,7 +279,7 @@ export class AssessmentInvigilationOfferBridgeService {
           starts_at:new Date(context.starts_at).toISOString(),
           ends_at:new Date(context.ends_at).toISOString(),
           space_name:context.space_name,
-          action_path:`/teacher/assessments?assessment=${context.assessment_id}`,
+          action_path:assessmentWorkHref("assigned", context.assessment_id),
         },
       },
       selector_input:{
@@ -320,8 +349,8 @@ export class AssessmentInvigilationOfferBridgeService {
         id AS binding_id,status,message_id,correlation_id,source_assignment_revision,
         selected_user_id,behaviour_version_id,subscription_id,model_event_id,reaction_id,
         response_due_at::text,expires_at::text,
-        CURRENT_TIMESTAMP<=response_due_at AS before_due,
-        CURRENT_TIMESTAMP<expires_at AS before_expiry
+        ${executionNow()}::timestamptz<=response_due_at AS before_due,
+        ${executionNow()}::timestamptz<expires_at AS before_expiry
       FROM assessment_invigilation_offer_bindings
       WHERE school_id=${input.school_id}::uuid AND assignment_id=${input.assignment_id}::uuid
         AND source_assignment_revision=${input.assignment_revision}
@@ -366,7 +395,7 @@ export class AssessmentInvigilationOfferBridgeService {
     transaction:Transaction<Database>,
     input:{school_id:string;actor_user_id:string;command_id:string;assignment_id:string;decision:"accepted"|"declined";request_hash:string},
   ):Promise<Selectable<AssessmentSittingInvigilatorTable>|null>{
-    const retained=(await sql<{assignment_id:string;decision:"accepted"|"declined";request_hash:string;result:Selectable<AssessmentSittingInvigilatorTable>}>`SELECT assignment_id,decision,request_hash,result
+    const retained=(await sql<{assignment_id:string;decision:"accepted"|"declined";request_hash:string;source_assignment_revision:number;result:Selectable<AssessmentSittingInvigilatorTable>}>`SELECT assignment_id,decision,request_hash,source_assignment_revision,result
       FROM assessment_invigilation_commands
       WHERE school_id=${input.school_id}::uuid AND actor_id=${input.actor_user_id}::uuid
         AND command_id=${input.command_id}::uuid
@@ -375,6 +404,13 @@ export class AssessmentInvigilationOfferBridgeService {
     if(retained.assignment_id!==input.assignment_id||retained.decision!==input.decision||retained.request_hash!==input.request_hash){
       throw new ConflictException("This invigilation response command was already used for different work.");
     }
+    const binding=await this.retained(transaction,input.school_id,input.assignment_id,retained.source_assignment_revision);
+    if(!binding||binding.selected_user_id!==input.actor_user_id) throw new ConflictException('The retained invitation does not belong to this recipient.');
+    const current=await this.coordination.authorizeCandidateRecipients(transaction,{school_id:input.school_id,
+      behaviour_version_id:binding.behaviour_version_id,subscription_id:binding.subscription_id,occurred_at:executionNow().toISOString(),
+      recipients:[{agent_kind:'human',user_id:input.actor_user_id}],scope:null});
+    if(current.authorised.length!==1||current.unauthorized.length||current.unresolved.length)
+      throw new ConflictException('The invitation recipient is no longer authorized by its current configuration.');
     return retained.result;
   }
 

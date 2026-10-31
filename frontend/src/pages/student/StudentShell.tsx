@@ -2,19 +2,19 @@ import { PoweredBy } from "../../features/school/PoweredBy";
 import { Fragment, type ReactNode } from "react";
 import { NavLink, useLocation } from "react-router-dom";
 import {
+  BriefcaseBusiness,
   CalendarDays,
-  ClipboardCheck,
-  Home,
-  MoreHorizontal,
+  Ellipsis,
+  LayoutGrid,
 } from "lucide-react";
 import { AccountMenu } from "../../features/auth/AccountMenu";
 import { useOptionalAuth } from "../../features/auth/AuthContext";
-import { useProFeatures } from "../../features/auth/useProFeatures";
 import { NotificationCenter } from "../../features/notifications/NotificationCenter";
 import { PortalPageTitle } from "../../features/navigation/PortalPageTitle";
 import { SchoolBrand } from "../../features/school/SchoolBrand";
 import { AssistantPanel, AssistantTab } from "../../features/assistant/DemoChat";
 import { useDemoChat } from "../../features/assistant/useDemoChat";
+import { useProFeatures } from "../../features/auth/useProFeatures";
 
 import "./student-pages.css";
 
@@ -68,19 +68,20 @@ export interface StudentShellProps {
   pageTitleTrailing?: ReactNode;
 }
 
-const schoolNav = [
-  { key: "home" as const, label: "Home", icon: Home },
-  { key: "attendance" as const, label: "Attendance", icon: ClipboardCheck },
-  { key: "classes" as const, label: "Timetable", icon: CalendarDays },
-  { key: "launcher" as const, label: "More", icon: MoreHorizontal },
-];
+const workspaceNav = [
+  { key: "today", label: "Today", path: "/today", icon: CalendarDays },
+  { key: "work", label: "Work", path: "/work", icon: BriefcaseBusiness },
+  { key: "areas", label: "Areas", path: "/areas", icon: LayoutGrid },
+  { key: "more", label: "More", path: "/more", icon: Ellipsis },
+] as const;
 
-const platformNav = [
-  { key: "home" as const, label: "Home", icon: Home },
-  { key: "attendance" as const, label: "Attendance", icon: ClipboardCheck },
-  { key: "classes" as const, label: "Timetable", icon: CalendarDays },
-  { key: "launcher" as const, label: "More", icon: MoreHorizontal },
-];
+function activeWorkspaceSection(pathname: string, activeNav: StudentNavKey) {
+  if (pathname === "/today") return "today";
+  if (pathname === "/work" || pathname.startsWith("/work/")) return "work";
+  if (pathname === "/more" || pathname.startsWith("/more/")) return "more";
+  if (pathname === "/areas" || pathname.startsWith("/areas/")) return "areas";
+  return activeNav === "home" ? "today" : activeNav === "launcher" ? "more" : "areas";
+}
 
 function pageTitleFor(pathname: string, activeNav: StudentNavKey, section?: string) {
   if (pathname === "/student") return "Home";
@@ -118,13 +119,12 @@ export function StudentShell({
 }: StudentShellProps) {
   const location = useLocation();
   const auth = useOptionalAuth();
-  const routeMap = { ...defaultStudentRoutes, ...routes };
-  const navItems = variant === "school" && location.pathname.replace(/\/$/, "") === "/student" ? schoolNav : platformNav;
-  const mobileActive = navItems.some((item) => item.key === activeNav) ? activeNav : "launcher";
+  void routes;
+  const activeSection = activeWorkspaceSection(location.pathname, activeNav);
   const studentSchools = auth?.memberships.filter((membership) => membership.role === "student") ?? [];
   const membershipSchoolName = studentSchools.length === 1 ? studentSchools[0]?.school_name : undefined;
   const resolvedSchoolName = schoolName ?? membershipSchoolName;
-  const chat = useDemoChat(`${auth?.user?.id ?? "preview"}:student:${studentSchools[0]?.school_id ?? ""}`);
+  const chat = useDemoChat(`${auth?.user?.id ?? "preview"}:workspace:${studentSchools[0]?.school_id ?? auth?.user?.active_school_id ?? ""}`);
   const proFeatures = useProFeatures();
   const assistantEnabled = proFeatures.enabled;
   const assistantActive = assistantEnabled && chat.active;
@@ -146,35 +146,26 @@ export function StudentShell({
           </div>
         </div>
         <div className="student-topbar__context">
-          <PortalPageTitle title={pageTitle ?? pageTitleFor(location.pathname, activeNav, section)} rootPath="/student" backTo={backTo} onBack={onBack} beforeBack={beforeBack} trailing={pageTitleTrailing} />
+          <PortalPageTitle title={pageTitle ?? pageTitleFor(location.pathname, activeNav, section)} rootPath="/today" backTo={backTo} onBack={onBack} beforeBack={beforeBack} trailing={pageTitleTrailing} />
         </div>
       </header>
 
       <main className="student-main" inert={assistantOpen}>{children}{activeNav === "home" ? <PoweredBy className="powered-by--home" /> : null}</main>
       {assistantEnabled ? <AssistantPanel chat={chat} context={{ portal: "student", pageTitle: pageTitle ?? pageTitleFor(location.pathname, activeNav, section) }} /> : null}
 
-      {!(assistantEnabled && chat.fullPage) ? <nav className="student-bottom-nav" aria-label="Student navigation">
-        {navItems.map(({ key, label, icon: Icon }, index) => (
-          <Fragment key={key}>
+      {!(assistantEnabled && chat.fullPage) ? <nav className="student-bottom-nav" aria-label="Workspace">
+        {workspaceNav.map(({ key, label, path, icon: Icon }, index) => <Fragment key={key}>
           {assistantEnabled && index === 2 ? <AssistantTab chat={chat} className="student-bottom-nav__item" /> : null}
           <NavLink
-            to={routeMap[key]}
-            end={key === "home"}
-            aria-current={assistantActive ? false : mobileActive === key ? "page" : undefined}
-            className={({ isActive }) => `student-bottom-nav__item ${!assistantActive && (mobileActive === key || isActive) ? "is-active" : ""}`}
+            to={path}
+            end
+            aria-current={!assistantActive && activeSection === key ? "page" : undefined}
+            className={`student-bottom-nav__item ${!assistantActive && activeSection === key ? "is-active" : ""}`}
           >
-            {({ isActive }) => {
-              const selected = !assistantActive && (mobileActive === key || isActive);
-              return (
-                <>
-                  <Icon size={22} strokeWidth={selected ? 2.35 : 1.9} />
-                  <span>{label}</span>
-                </>
-              );
-            }}
+            <Icon size={22} strokeWidth={!assistantActive && activeSection === key ? 2.35 : 1.9} />
+            <span>{label}</span>
           </NavLink>
-          </Fragment>
-        ))}
+        </Fragment>)}
       </nav> : null}
     </div>
   );

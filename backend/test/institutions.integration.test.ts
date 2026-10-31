@@ -203,13 +203,17 @@ describe("Institution directory API and PostgreSQL invariants", () => {
     } finally { client.release(); }
   });
 
-  it("Stage invitation acceptance is email-bound and single-use without bypassing activation", async () => {
+  it("company-admin invitation acceptance requires explicit person confirmation and stays email-bound and single-use", async () => {
     const entry = await record(`Invite ${run}`); const institution = await create(entry.id);
     const response = await operator.request(`/${institution.eduera_institution_id}/admin-invitations/`, { email: `outsider-${run}@example.test` });
     expect(response.status).toBe(201); const { token } = await response.json() as { token: string };
     const details = { token, password, first_name: "Directory", last_name: "Admin" };
     expect((await operator.request("/accept-invitation/", { ...details, email: `operator-${run}@example.test` })).status).toBe(400);
-    expect((await outsider.request("/accept-invitation/", { ...details, email: `outsider-${run}@example.test` })).status).toBe(200);
+    const confirmationRequired = await outsider.request("/accept-invitation/", { ...details, email: `outsider-${run}@example.test` });
+    expect(confirmationRequired.status).toBe(409);
+    expect(await confirmationRequired.json()).toMatchObject({ error: { code: "admin_person_confirmation_required" } });
+    expect((await pool.query("SELECT 1 FROM school_memberships WHERE school_id=$1 AND user_id=$2", [institution.eduera_institution_id, outsiderId])).rows).toHaveLength(0);
+    expect((await outsider.request("/accept-invitation/", { ...details, email: `outsider-${run}@example.test`, confirm_admin_person: true })).status).toBe(200);
     expect((await outsider.request("/accept-invitation/", { ...details, email: `outsider-${run}@example.test` })).status).toBe(400);
     expect((await search(entry.code))[0]?.onboarding_status).toBe("setup_in_progress");
     expect((await pool.query("SELECT role FROM school_memberships WHERE school_id=$1 AND user_id=$2", [institution.eduera_institution_id, outsiderId])).rows[0].role).toBe("admin");

@@ -4,6 +4,7 @@ import { apiFetch } from "../../lib/api";
 import { LiveRouteError, ScreenLoading } from "../school/LiveRouteState";
 
 import { TemporalInput } from "../../components/forms/TemporalInput";
+import { InfoSummary } from "../../components/InfoSummary";
 type Category = "events" | "departure" | "messages";
 type WorkflowRules = {
   revision: number;
@@ -20,7 +21,7 @@ type CategoryRules = { category: Category; workflow: WorkflowRules; domain: Doma
 const titles = {
   events: ["Event attendance", "When staff may record and correct event attendance."],
   departure: ["Departure & transport", "How departure changes, journey controls and location freshness work."],
-  messages: ["Messaging", "Who can communicate, when messages may be sent and how long they are retained."],
+  messages: ["Messaging", "Who can communicate and when."],
 } as const;
 const departureModes = [
   ["guardian_pickup", "Guardian pickup"],
@@ -72,7 +73,6 @@ function payload(category: Category, rules: CategoryRules, form: FormData) {
     ...Object.fromEntries(messageSwitches.map(([key]) => [key, form.has(key)])),
     communication_start: textValue(form, "communication_start"),
     communication_end: textValue(form, "communication_end"),
-    retention_days: numberValue(form, "retention_days"),
   };
 }
 
@@ -82,17 +82,25 @@ export function CategoryOperatingRules({ schoolId, category, onDirtyChange }: { 
   const query = useQuery({ queryKey: ["operating-rules", schoolId, category], queryFn: () => apiFetch<CategoryRules>(url) });
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState("");
-  if (query.isPending) return <ScreenLoading />;
-  if (query.isError) return <LiveRouteError error={query.error} onRetry={query.refetch} />;
-  const rules = query.data;
+  const scope = `${schoolId}:${category}`;
+  const [editSnapshot, setEditSnapshot] = useState<{ scope: string; rules: CategoryRules } | null>(null);
+  const editBase = editSnapshot?.scope === scope ? editSnapshot.rules : null;
+  const rules = editBase ?? query.data;
+  if (!rules && query.isPending) return <ScreenLoading />;
+  if (!rules && query.isError) return <LiveRouteError error={query.error} onRetry={query.refetch} />;
+  if (!rules) return <ScreenLoading />;
+  const changedElsewhere = editBase && query.data && (
+    editBase.workflow.revision !== query.data.workflow.revision || editBase.domain.revision !== query.data.domain.revision
+  );
   const submit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     setBusy(true);
     setMessage("");
     try {
-      await apiFetch<CategoryRules>(url, { method: "POST", body: JSON.stringify(payload(category, rules, new FormData(event.currentTarget))) });
+      const saved = await apiFetch<CategoryRules>(url, { method: "POST", body: JSON.stringify(payload(category, rules, new FormData(event.currentTarget))) });
+      client.setQueryData(["operating-rules", schoolId, category], saved);
+      setEditSnapshot(null);
       onDirtyChange(false);
-      await query.refetch();
       await client.invalidateQueries();
       setMessage("Operating rules saved.");
     } catch (error) {
@@ -104,10 +112,22 @@ export function CategoryOperatingRules({ schoolId, category, onDirtyChange }: { 
   return <section className="office-panel operating-category">
     <h2>{titles[category][0]}</h2>
     <p className="office-hint">{titles[category][1]}</p>
-    <form className="office-form" key={`${rules.workflow.revision}:${rules.domain.revision}`} onChange={() => onDirtyChange(true)} onSubmit={(event) => void submit(event)}>
+    <form className="office-form" key={`${scope}:${rules.workflow.revision}:${rules.domain.revision}`} onChange={() => { setEditSnapshot(base => base?.scope === scope ? base : { scope, rules }); onDirtyChange(true); }} onSubmit={(event) => void submit(event)}>
+      <fieldset className="operating-category__fields" disabled={busy}>
       {category === "events" ? <EventFields rules={rules} /> : category === "departure" ? <DepartureFields rules={rules} /> : <MessageFields rules={rules} />}
+      </fieldset>
+      {query.isError ? <p role="alert">Latest rules could not be refreshed. Your edits are kept.</p> : null}
+      {changedElsewhere ? <p role="status">Rules changed elsewhere. Your edits are kept; reload before saving.</p> : null}
+      {editBase ? <button type="button" className="office-secondary" disabled={busy} onClick={async () => {
+        setBusy(true);
+        try {
+          const latest = await query.refetch();
+          if (latest.isError || !latest.data) { setMessage("Rules could not be reloaded. Your edits are kept."); return; }
+          setEditSnapshot(null); onDirtyChange(false); setMessage("");
+        } finally { setBusy(false); }
+      }}>Discard edits and reload</button> : null}
       <p className="office-hint">Changes apply together after validation. Existing historical records stay unchanged.</p>
-      <button className="office-primary" disabled={busy}>{busy ? "Saving…" : "Save changes"}</button>
+      <button className="office-primary" disabled={busy || Boolean(changedElsewhere)}>{busy ? "Saving…" : "Save changes"}</button>
       {message ? <p role="status" className="office-hint">{message}</p> : null}
     </form>
   </section>;
@@ -144,7 +164,10 @@ function MessageFields({ rules }: { rules: CategoryRules }) {
       <label className="office-field">Communication ends<TemporalInput name="communication_end" type="time" required defaultValue={String(rules.domain.communication_end).slice(0, 5)}/></label>
       <label className="office-field">Message editing (minutes)<input name="message_edit_minutes" type="number" required min="0" max="60" defaultValue={rules.workflow.message_edit_minutes}/></label>
       <label className="office-field">Maximum attachment size (MB)<input name="message_attachment_mb" type="number" required min="1" max="10" defaultValue={rules.workflow.message_attachment_mb}/></label>
-      <label className="office-field">Retention (days)<input name="retention_days" type="number" required min="30" max="3650" defaultValue={Number(rules.domain.retention_days)}/></label>
     </div>
+    <details className="office-hint"><InfoSummary>Hours & privacy</InfoSummary>
+      <p>Times use {String(rules.domain.timezone)}. Overnight ranges cross midnight; equal start and end times allow all day. Reading and reporting stay available outside these hours.</p>
+      <p>Automatic message deletion is not enabled.</p>
+    </details>
   </>;
 }

@@ -3,6 +3,7 @@ import {cleanup,fireEvent,render,screen} from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import {afterEach,describe,it,expect,vi} from "vitest";
 import {EnrollmentForm} from "./EnrollmentForm";
+import {ExecutionEnvironmentProvider} from "../simulation/ExecutionEnvironmentContext";
 import {commitEnrollment,reviewEnrollment,searchGuardians,type EnrollmentInput} from "./api";
 vi.mock("./api",()=>({reviewEnrollment:vi.fn(),commitEnrollment:vi.fn(),searchGuardians:vi.fn()}));
 afterEach(()=>{cleanup();vi.clearAllMocks();});
@@ -10,7 +11,7 @@ const options=[{class_section_id:"class-7a",term_id:"term-1",class_name:"Class 7
 function mount(){
   const onSaved=vi.fn();
   vi.mocked(reviewEnrollment).mockImplementation((input:EnrollmentInput)=>Promise.resolve({id:"review-1",expires_at:"2026-09-15T18:00:00Z",input,class_name:"Class 7A",term_name:"Term 1",guardian:{id:"",name:"Nandita Deshmukh",phone:"9000011001"},warnings:[]}));
-  render(<QueryClientProvider client={new QueryClient({defaultOptions:{queries:{retry:false}}})}><EnrollmentForm schoolId="school-1" options={options} onCancel={vi.fn()} onSaved={onSaved}/></QueryClientProvider>);
+  render(<QueryClientProvider client={new QueryClient({defaultOptions:{queries:{retry:false}}})}><ExecutionEnvironmentProvider environment={{mode:"live"}}><EnrollmentForm schoolId="school-1" options={options} onCancel={vi.fn()} onSaved={onSaved}/></ExecutionEnvironmentProvider></QueryClientProvider>);
   return onSaved;
 }
 function fill(){for(const [label,value] of Object.entries({"Student first name":"Ishaan","Student last name":"Deshmukh","Admission number":"CIS-2026-201","Date of birth":"2014-04-12","Guardian first name":"Nandita","Guardian last name":"Deshmukh","Contact phone":"9000011001"}))fireEvent.change(screen.getByLabelText(label),{target:{value}});}

@@ -20,7 +20,7 @@ describe("PublicDemoGuard", () => {
     expect(guard.canActivate(contextFor({ method, url: "/api/v1/attendance/registers/", publicDemo: true }))).toBe(true);
   });
 
-  it.each(["/api/v1/auth/demo-profile-switch/", "/api/v1/auth/logout/"])(
+  it.each(["/api/v1/auth/demo-profile-switch/", "/api/v1/auth/native/demo-profile-switch/", "/api/v1/auth/logout/", "/api/v1/auth/native/logout/"])(
     "allows the public-demo control endpoint %s",
     (url) => {
       expect(guard.canActivate(contextFor({ method: "POST", url, publicDemo: true }))).toBe(true);

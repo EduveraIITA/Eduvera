@@ -1,3 +1,4 @@
+import { executionEnvironmentStorage, executionNow } from "../campus-model-core/execution-time.runtime.js";
 import { BadRequestException, ConflictException, ForbiddenException, Injectable, NotFoundException } from "@nestjs/common";
 import { createHash } from "node:crypto";
 import { sql, type Selectable, type Transaction } from "kysely";
@@ -186,7 +187,7 @@ export class DepartureCoordinationService {
     const audience=[...new Set([...(await this.schoolAudience(db,schoolId)),...(await Promise.all(riderIds.map(id=>this.familyAudience(db,id)))).flat()])];
     const candidate=extra.revision??extra.action;
     const action=typeof extra.action==="string"?extra.action:"updated";
-    const eventVersion=typeof candidate==="string"||typeof candidate==="number"||typeof candidate==="boolean"?candidate:Date.now();
+    const eventVersion=typeof candidate==="string"||typeof candidate==="number"||typeof candidate==="boolean"?candidate:executionNow().getTime();
     await this.events.enqueueUserEvent(db,{schoolId,eventType:type,aggregateType:targetType,aggregateId:targetId,audienceUserIds:audience,payload:{...extra,refresh:["departure","parent.home","principal.home","teacher.home","attention"]},idempotencyKey:`${type}:${targetType}:${targetId}:${studentId??"trip"}:${action}:${eventVersion}`});
   }
 
@@ -256,22 +257,28 @@ export class DepartureCoordinationService {
 
   private async familyStudent(user:AuthUser,requested?:string,db:Db=this.db,learner=false) {
     if(requested) uuid.parse(requested);
+    const schoolId=learner?user.active_school_id:null;
+    if(learner&&!schoolId) throw new ForbiddenException("Choose an institution before opening your departure plan.");
+    const environment=executionEnvironmentStorage.getStore();
+    if(learner&&environment&&environment.institution_id!==schoolId) throw new ForbiddenException("The selected departure environment does not match your institution.");
     const rows=(await sql<{id:string;school_id:string;first_name:string;last_name:string;admission_number:string;avatar_url:string;grade:string|null;section:string|null;school_name:string}>`
       SELECT s.id,s.school_id,person.first_name,person.last_name,s.admission_number,s.avatar_url,
         section.grade,section.section,school.name AS school_name
       FROM students s JOIN school_people person ON person.id=s.person_id
       JOIN schools school ON school.id=s.school_id
       LEFT JOIN LATERAL (SELECT cs.grade,cs.section FROM enrollments e JOIN class_sections cs ON cs.id=e.class_section_id WHERE e.student_id=s.id AND e.is_active ORDER BY e.enrolled_on DESC LIMIT 1) section ON true
-      WHERE EXISTS(SELECT 1 FROM school_memberships membership JOIN users account ON account.id=membership.user_id AND account.is_active
+      WHERE ${learner?sql`s.school_id=${schoolId}::uuid`:sql`true`}
+        AND EXISTS(SELECT 1 FROM school_memberships membership JOIN users account ON account.id=membership.user_id AND account.is_active
         WHERE membership.school_id=s.school_id AND membership.user_id=${user.id}::uuid AND membership.is_active)
         AND (CASE WHEN ${learner} THEN s.user_id=${user.id}::uuid ELSE EXISTS(
           SELECT 1 FROM guardian_relationships gr JOIN parents p ON p.id=gr.guardian_id
           WHERE gr.student_id=s.id AND gr.school_id=s.school_id AND p.user_id=${user.id}::uuid) END)
       ORDER BY person.first_name,person.last_name,s.id
     `.execute(db)).rows;
-    const selected=requested?rows.find(r=>r.id===requested):rows[0];
+    const scopedRows=learner?rows.filter(row=>row.school_id===schoolId):rows;
+    const selected=requested?scopedRows.find(r=>r.id===requested):scopedRows[0];
     if(!selected) throw new ForbiddenException("The selected learner is not linked to this guardian.");
-    return {selected,children:rows};
+    return {selected,children:scopedRows};
   }
 
   async family(user:AuthUser,studentId?:string,serviceDate?:string,learner=false,focusRequestId?:string) {
@@ -373,7 +380,7 @@ export class DepartureCoordinationService {
       if((current?.revision??0)!==input.expected_revision) throw new ConflictException("Departure policy changed. Reload and review it again.");
       const {expected_revision, ...policy}=input;
       void expected_revision;
-      const row=current?await tx.updateTable("departure_policies").set({...policy,revision:current.revision+1,updated_by:user.id,updated_at:new Date()}).where("school_id","=",schoolId).returningAll().executeTakeFirstOrThrow():await tx.insertInto("departure_policies").values({...policy,school_id:schoolId,revision:1,updated_by:user.id}).returningAll().executeTakeFirstOrThrow();
+      const row=current?await tx.updateTable("departure_policies").set({...policy,revision:current.revision+1,updated_by:user.id,updated_at:executionNow()}).where("school_id","=",schoolId).returningAll().executeTakeFirstOrThrow():await tx.insertInto("departure_policies").values({...policy,school_id:schoolId,revision:1,updated_by:user.id}).returningAll().executeTakeFirstOrThrow();
       await this.audit(tx,schoolId,user.id,"policy.updated","departure_policy",schoolId,{revision:row.revision}); await this.emit(tx,schoolId,"departure.updated","departure_policy",schoolId,undefined,{revision:row.revision}); return row;
     });
   }
@@ -432,8 +439,8 @@ export class DepartureCoordinationService {
       if(existingIds.has(rider.student_id)) {
         const previous=existing.find(item=>item.student_id===rider.student_id)!;
         if(previous.state==="expected"&&previous.stop_id!==rider.stop_id) {
-          await tx.updateTable("transport_trip_roster").set({stop_id:rider.stop_id,revision:sql<number>`revision+1`,updated_at:new Date()}).where("trip_id","=",trip.id).where("student_id","=",rider.student_id).execute();
-          await tx.updateTable("departure_plans").set({stop_id:rider.stop_id,revision:sql<number>`revision+1`,updated_at:new Date()}).where("trip_id","=",trip.id).where("student_id","=",rider.student_id).where("is_current","=",true).where("state","in",["planned","ready"]).execute();
+          await tx.updateTable("transport_trip_roster").set({stop_id:rider.stop_id,revision:sql<number>`revision+1`,updated_at:executionNow()}).where("trip_id","=",trip.id).where("student_id","=",rider.student_id).execute();
+          await tx.updateTable("departure_plans").set({stop_id:rider.stop_id,revision:sql<number>`revision+1`,updated_at:executionNow()}).where("trip_id","=",trip.id).where("student_id","=",rider.student_id).where("is_current","=",true).where("state","in",["planned","ready"]).execute();
         }
       }
       else {
@@ -448,7 +455,7 @@ export class DepartureCoordinationService {
     const assignedIds=new Set(assigned.map(item=>item.student_id));
     const riderExceptions:Array<{student_id:string;revision:number}>=[];
     for(const rider of existing.filter(item=>!assignedIds.has(item.student_id)&&item.state==="expected")) {
-      const updated=await tx.updateTable("transport_trip_roster").set({state:"exception",revision:sql<number>`revision+1`,recorded_by:user.id,outcome_note:"Route assignment changed. School review is required before travel.",updated_at:new Date()}).where("trip_id","=",trip.id).where("student_id","=",rider.student_id).returning(["student_id","revision"]).executeTakeFirstOrThrow();
+      const updated=await tx.updateTable("transport_trip_roster").set({state:"exception",revision:sql<number>`revision+1`,recorded_by:user.id,outcome_note:"Route assignment changed. School review is required before travel.",updated_at:executionNow()}).where("trip_id","=",trip.id).where("student_id","=",rider.student_id).returning(["student_id","revision"]).executeTakeFirstOrThrow();
       riderExceptions.push(updated);
     }
     return {summary:{roster_count:new Set([...existingIds,...assignedIds]).size,added_count:assigned.filter(item=>!existingIds.has(item.student_id)).length,retained_exception_count:riderExceptions.length},riderExceptions};
@@ -527,7 +534,7 @@ export class DepartureCoordinationService {
     return this.db.transaction().execute(async tx=>{
       await this.managedWrite(tx,user,schoolId);
       const trip=await tx.selectFrom("transport_trips").selectAll().where("school_id","=",schoolId).where("id","=",tripId).forUpdate().executeTakeFirst(); if(!trip) throw new NotFoundException("Trip not found."); if(trip.revision!==input.expected_revision) throw new ConflictException("Trip changed. Reload before refreshing its roster.");
-      const {summary:prepared,riderExceptions}=await this.prepareTripRoster(tx,user,trip); const row=await tx.updateTable("transport_trips").set({revision:trip.revision+1,updated_at:new Date()}).where("id","=",trip.id).returningAll().executeTakeFirstOrThrow();
+      const {summary:prepared,riderExceptions}=await this.prepareTripRoster(tx,user,trip); const row=await tx.updateTable("transport_trips").set({revision:trip.revision+1,updated_at:executionNow()}).where("id","=",trip.id).returningAll().executeTakeFirstOrThrow();
       await this.audit(tx,schoolId,user.id,"roster.refreshed","transport_trip",trip.id,prepared);
       await this.emit(tx,schoolId,"transport.updated","transport_trip",trip.id,undefined,{revision:row.revision,action:"roster_refreshed"});
       for(const rider of riderExceptions) await this.enqueueParentAttention(tx,{
@@ -536,7 +543,7 @@ export class DepartureCoordinationService {
         sourceKind:"transport_rider_exception",sourceId:trip.id,sourceRevision:rider.revision,
         topicKey:`transport-rider:${trip.id}:${rider.student_id}`,title:"School journey needs attention",
         body:"The route assignment changed and school staff must review this learner's journey before travel.",
-        link:`/parent/departure?student_id=${rider.student_id}&date=${trip.service_date}&trip_id=${trip.id}&rider_revision=${rider.revision}`,
+        link:`/areas/departure/plan?scope=dependent&student_id=${rider.student_id}&date=${trip.service_date}&trip_id=${trip.id}&rider_revision=${rider.revision}`,
         action:"roster_assignment_removed",
       });
       return {...row,...prepared};
@@ -550,8 +557,8 @@ export class DepartureCoordinationService {
       const trip=await tx.selectFrom("transport_trips").selectAll().where("school_id","=",schoolId).where("id","=",tripId).forUpdate().executeTakeFirst(); if(!trip) throw new NotFoundException("Trip not found."); if(trip.state!=="planned"||trip.roster_frozen_at) throw new ConflictException("Staff can be reassigned only before boarding opens."); if(trip.revision!==input.expected_revision) throw new ConflictException("Trip changed. Reload before assigning staff.");
       await this.assertTripStaff(tx,schoolId,input.collector_user_id); if(input.backup_collector_user_id){if(input.backup_collector_user_id===input.collector_user_id)throw new BadRequestException("Primary and backup collectors must be different.");await this.assertTripStaff(tx,schoolId,input.backup_collector_user_id,"backup collector");}
       await this.assertNoTripDutyConflict(tx,schoolId,input.collector_user_id,trip.service_date,trip.scheduled_departure_time,[trip.id]);
-      const row=await tx.updateTable("transport_trips").set({assigned_collector_user_id:input.collector_user_id,backup_collector_user_id:input.backup_collector_user_id??null,collector_assignment_status:"pending",assignment_accepted_at:null,assignment_declined_at:null,assignment_note:input.note,revision:trip.revision+1,updated_at:new Date()}).where("id","=",trip.id).returningAll().executeTakeFirstOrThrow();
-      await tx.updateTable("transport_duty_swap_requests").set({status:"cancelled",revision:sql<number>`revision+1`,updated_at:new Date()}).where("requester_trip_id","=",trip.id).where("status","in",["submitted","accepted"]).execute();
+      const row=await tx.updateTable("transport_trips").set({assigned_collector_user_id:input.collector_user_id,backup_collector_user_id:input.backup_collector_user_id??null,collector_assignment_status:"pending",assignment_accepted_at:null,assignment_declined_at:null,assignment_note:input.note,revision:trip.revision+1,updated_at:executionNow()}).where("id","=",trip.id).returningAll().executeTakeFirstOrThrow();
+      await tx.updateTable("transport_duty_swap_requests").set({status:"cancelled",revision:sql<number>`revision+1`,updated_at:executionNow()}).where("requester_trip_id","=",trip.id).where("status","in",["submitted","accepted"]).execute();
       await this.audit(tx,schoolId,user.id,"trip.collector_assigned","transport_trip",trip.id,{from:trip.assigned_collector_user_id,to:input.collector_user_id,note:input.note}); await this.emit(tx,schoolId,"transport.updated","transport_trip",trip.id,undefined,{revision:row.revision,action:"collector_assigned"}); return row;
     });
   }
@@ -583,13 +590,13 @@ export class DepartureCoordinationService {
       const coordination=await this.transportDutyModel.publishRequested(tx,{
         school_id:trip.school_id,actor_user_id:user.id,change:row,
         requester_trip_revision:trip.revision,source_outbox_event_id:sourceOutboxEventId,
-        correlation_id:commandId,occurred_at:new Date().toISOString(),
+        correlation_id:commandId,occurred_at:executionNow().toISOString(),
       });
       await this.audit(tx,trip.school_id,user.id,"duty_swap.requested","transport_duty_swap",row.id,{request_type:row.request_type,requester_trip_id:trip.id,target_trip_id:row.target_trip_id,command_id:commandId,source_outbox_event_id:sourceOutboxEventId,coordination_event_id:coordination.event_id,behaviour_version_id:coordination.behaviour_version_id,subscription_id:coordination.subscription_id});
       await this.enqueueTransportStaffAttention(tx,{schoolId:trip.school_id,recipientUserIds:[row.target_user_id],portal:"teacher",
         sourceKind:"transport_swap",sourceId:row.id,sourceRevision:row.revision,title:"Duty change needs your response",
         body:row.request_type==="exchange"?"A colleague requested a journey exchange.":"A colleague asked you to cover a journey.",
-        link:`/teacher/transport?swap=${row.id}&swap_revision=${row.revision}`,action:"requested"});
+        link:`/areas/departure/operate?swap=${row.id}&swap_revision=${row.revision}`,action:"requested"});
       await this.emit(tx,trip.school_id,"transport.updated","transport_duty_swap",row.id,undefined,{revision:row.revision,action:"requested"});
       await this.saveDutyCommand(tx,{schoolId:trip.school_id,actorId:user.id,commandId,commandType:"request",swapId:row.id,requestHash,result:row,outboxEventId:sourceOutboxEventId,correlationId:commandId,causationEventId:null,authorityReceipt:null,coordinationReceipt:coordination as unknown as Record<string,unknown>});
       return row;
@@ -643,11 +650,11 @@ export class DepartureCoordinationService {
         if(targetTrip) await this.assertNoTripDutyConflict(tx,swap.school_id,swap.requester_user_id,targetTrip.service_date,targetTrip.scheduled_departure_time,involvedTripIds);
       }
       const offerTrace=await this.transportDutyModel.trace(tx,swap.school_id,swap.id,"transport.duty_change.requested",swap.revision);
-      const occurredAt=new Date();
+      const occurredAt=executionNow();
       const decisionOwner=input.decision==="accepted"
         ? await this.transportDutyModel.resolveDecisionOwner(tx,swap.school_id,occurredAt)
         : null;
-      const row=await tx.updateTable("transport_duty_swap_requests").set({status:input.decision,response_note:input.note,target_responded_at:new Date(),revision:swap.revision+1,updated_at:new Date()}).where("id","=",swap.id).returningAll().executeTakeFirstOrThrow();
+      const row=await tx.updateTable("transport_duty_swap_requests").set({status:input.decision,response_note:input.note,target_responded_at:executionNow(),revision:swap.revision+1,updated_at:executionNow()}).where("id","=",swap.id).returningAll().executeTakeFirstOrThrow();
       const sourceOutboxEventId=await this.enqueueDutyDomainEvent(tx,{schoolId:swap.school_id,swapId:row.id,
         eventType:`transport.duty_change.${input.decision}`,revision:row.revision,
         audience:[row.requester_user_id,row.target_user_id,...(decisionOwner?[decisionOwner.user_id]:[])],status:row.status});
@@ -665,12 +672,12 @@ export class DepartureCoordinationService {
       await this.enqueueTransportStaffAttention(tx,{schoolId:swap.school_id,recipientUserIds:[row.requester_user_id],portal:"teacher",
         sourceKind:"transport_swap_response",sourceId:row.id,sourceRevision:row.revision,
         title:`Duty change ${input.decision}`,body:input.note||`Your colleague ${input.decision} the duty change request.`,
-        link:`/teacher/transport?swap=${row.id}&swap_revision=${row.revision}`,action:input.decision});
+        link:`/areas/departure/operate?swap=${row.id}&swap_revision=${row.revision}`,action:input.decision});
       if(decisionOwner) {
         await this.enqueueTransportStaffAttention(tx,{schoolId:swap.school_id,recipientUserIds:[decisionOwner.user_id],portal:"principal",
           sourceKind:"transport_swap_approval",sourceId:row.id,sourceRevision:row.revision,
           title:"Duty change needs approval",body:"Two staff members agreed a transport duty change. Review it before the journey.",
-          link:`/principal/departure?section=roster&swap=${row.id}&swap_revision=${row.revision}`,action:"accepted"});
+          link:`/areas/departure/manage?section=roster&swap=${row.id}&swap_revision=${row.revision}`,action:"accepted"});
       }
       await this.emit(tx,swap.school_id,"transport.updated","transport_duty_swap",row.id,undefined,{revision:row.revision,action:input.decision});
       await this.saveDutyCommand(tx,{schoolId:swap.school_id,actorId:user.id,commandId,commandType:"respond",swapId:row.id,requestHash,result:row,outboxEventId:sourceOutboxEventId,correlationId:offerTrace.correlation_id,causationEventId:offerTrace.event_id,authorityReceipt:decisionOwner as unknown as Record<string,unknown>|null,coordinationReceipt:{offer_response:offerResponse,decision_request:decisionRequest}});
@@ -686,7 +693,7 @@ export class DepartureCoordinationService {
       await this.managedWrite(tx,user,schoolId);
       const prior=await this.priorDutyCommand<Selectable<TransportDutySwapRequestTable>>(tx,schoolId,user.id,commandId,"decide",requestHash);
       if(prior)return prior.result;
-      const occurredAt=new Date();
+      const occurredAt=executionNow();
       const decisionAuthority=await this.transportDutyModel.assertDecisionAuthority(tx,schoolId,user.id,occurredAt);
       const swap=await tx.selectFrom("transport_duty_swap_requests").selectAll().where("school_id","=",schoolId).where("id","=",swapId).forUpdate().executeTakeFirst(); if(!swap) throw new NotFoundException("Duty request not found."); if(swap.status!=="accepted"||swap.revision!==input.expected_revision) throw new ConflictException("The colleague must accept the current request before school approval.");
       const decisionTrace=await this.transportDutyModel.trace(tx,schoolId,swap.id,"transport.duty_change.accepted",swap.revision);
@@ -700,10 +707,10 @@ export class DepartureCoordinationService {
         if(targetTrip) await this.assertTripStaff(tx,schoolId,swap.requester_user_id);
         await this.assertNoTripDutyConflict(tx,schoolId,swap.target_user_id,requesterTrip.service_date,requesterTrip.scheduled_departure_time,targetTrip?[requesterTrip.id,targetTrip.id]:[requesterTrip.id]);
         if(targetTrip) await this.assertNoTripDutyConflict(tx,schoolId,swap.requester_user_id,targetTrip.service_date,targetTrip.scheduled_departure_time,[requesterTrip.id,targetTrip.id]);
-        await tx.updateTable("transport_trips").set({assigned_collector_user_id:swap.target_user_id,collector_assignment_status:"accepted",assignment_accepted_at:new Date(),assignment_declined_at:null,assignment_note:`Approved ${swap.request_type} request ${swap.id}`,revision:requesterTrip.revision+1,updated_at:new Date()}).where("id","=",requesterTrip.id).execute();
-        if(targetTrip) await tx.updateTable("transport_trips").set({assigned_collector_user_id:swap.requester_user_id,collector_assignment_status:"accepted",assignment_accepted_at:new Date(),assignment_declined_at:null,assignment_note:`Approved exchange request ${swap.id}`,revision:targetTrip.revision+1,updated_at:new Date()}).where("id","=",targetTrip.id).execute();
+        await tx.updateTable("transport_trips").set({assigned_collector_user_id:swap.target_user_id,collector_assignment_status:"accepted",assignment_accepted_at:executionNow(),assignment_declined_at:null,assignment_note:`Approved ${swap.request_type} request ${swap.id}`,revision:requesterTrip.revision+1,updated_at:executionNow()}).where("id","=",requesterTrip.id).execute();
+        if(targetTrip) await tx.updateTable("transport_trips").set({assigned_collector_user_id:swap.requester_user_id,collector_assignment_status:"accepted",assignment_accepted_at:executionNow(),assignment_declined_at:null,assignment_note:`Approved exchange request ${swap.id}`,revision:targetTrip.revision+1,updated_at:executionNow()}).where("id","=",targetTrip.id).execute();
       }
-      const row=await tx.updateTable("transport_duty_swap_requests").set({status:input.decision,decided_by:user.id,decided_at:new Date(),decision_note:input.note,revision:swap.revision+1,updated_at:new Date()}).where("id","=",swap.id).returningAll().executeTakeFirstOrThrow();
+      const row=await tx.updateTable("transport_duty_swap_requests").set({status:input.decision,decided_by:user.id,decided_at:executionNow(),decision_note:input.note,revision:swap.revision+1,updated_at:executionNow()}).where("id","=",swap.id).returningAll().executeTakeFirstOrThrow();
       const sourceOutboxEventId=await this.enqueueDutyDomainEvent(tx,{schoolId,swapId:row.id,
         eventType:`transport.duty_change.${input.decision}`,revision:row.revision,
         audience:[row.requester_user_id,row.target_user_id,decisionAuthority.user_id],status:row.status});
@@ -717,7 +724,7 @@ export class DepartureCoordinationService {
       await this.enqueueTransportStaffAttention(tx,{schoolId,recipientUserIds:[row.requester_user_id,row.target_user_id],portal:"teacher",
         sourceKind:"transport_swap_decision",sourceId:row.id,sourceRevision:row.revision,
         title:`Duty change ${input.decision==="approved"?"approved":"declined"}`,body:input.note,
-        link:`/teacher/transport?swap=${row.id}&swap_revision=${row.revision}`,action:input.decision});
+        link:`/areas/departure/operate?swap=${row.id}&swap_revision=${row.revision}`,action:input.decision});
       await this.emit(tx,schoolId,"transport.updated","transport_duty_swap",row.id,undefined,{revision:row.revision,action:input.decision});
       await this.saveDutyCommand(tx,{schoolId,actorId:user.id,commandId,commandType:"decide",swapId:row.id,requestHash,result:row,outboxEventId:sourceOutboxEventId,correlationId:decisionTrace.correlation_id,causationEventId:decisionTrace.event_id,authorityReceipt:decisionAuthority as unknown as Record<string,unknown>,coordinationReceipt:coordination as unknown as Record<string,unknown>});
       return row;
@@ -746,8 +753,8 @@ export class DepartureCoordinationService {
       const current=await tx.selectFrom("departure_collection_authorities").selectAll().where("school_id","=",schoolId).where("id","=",authorityId).forUpdate().executeTakeFirst();
       if(!current) throw new NotFoundException("Collection authority not found.");
       if(current.status!=="active"||current.revision!==input.expected_revision) throw new ConflictException("Collection authority changed. Reload before revoking it.");
-      const row=await tx.updateTable("departure_collection_authorities").set({status:"revoked",revision:current.revision+1,revoked_by:user.id,revoked_at:new Date(),revocation_reason:input.reason}).where("id","=",authorityId).returningAll().executeTakeFirstOrThrow();
-      const affectedPlans=await tx.updateTable("departure_plans").set({state:"exception",revision:sql<number>`revision+1`,updated_at:new Date()}).where("school_id","=",schoolId).where("authority_id","=",authorityId).where("is_current","=",true).where("service_date",">=",sql<string>`current_date`).where("state","in",["planned","ready","change_pending"]).returning(["id","student_id","service_date","revision"]).execute();
+      const row=await tx.updateTable("departure_collection_authorities").set({status:"revoked",revision:current.revision+1,revoked_by:user.id,revoked_at:executionNow(),revocation_reason:input.reason}).where("id","=",authorityId).returningAll().executeTakeFirstOrThrow();
+      const affectedPlans=await tx.updateTable("departure_plans").set({state:"exception",revision:sql<number>`revision+1`,updated_at:executionNow()}).where("school_id","=",schoolId).where("authority_id","=",authorityId).where("is_current","=",true).where("service_date",">=",sql<string>`current_date`).where("state","in",["planned","ready","change_pending"]).returning(["id","student_id","service_date","revision"]).execute();
       await this.audit(tx,schoolId,user.id,"authority.revoked","departure_authority",row.id,{student_id:row.student_id,reason:input.reason});
       await this.emit(tx,schoolId,"departure.updated","departure_authority",row.id,row.student_id,{revision:row.revision});
       for(const plan of affectedPlans) await this.enqueueParentAttention(tx,{
@@ -756,7 +763,7 @@ export class DepartureCoordinationService {
         sourceKind:"departure_plan_exception",sourceId:plan.id,sourceRevision:plan.revision,
         topicKey:`departure-plan:${plan.id}`,title:"Departure plan needs attention",
         body:"An approved collector is no longer authorised. Review the departure arrangement before collection.",
-        link:`/parent/departure?student_id=${plan.student_id}&date=${plan.service_date}&plan_id=${plan.id}&plan_revision=${plan.revision}`,
+        link:`/areas/departure/plan?scope=dependent&student_id=${plan.student_id}&date=${plan.service_date}&plan_id=${plan.id}&plan_revision=${plan.revision}`,
         action:"collection_authority_revoked",
       });
       return row;
@@ -779,7 +786,7 @@ export class DepartureCoordinationService {
       const current=await tx.selectFrom("departure_plans").selectAll().where("school_id","=",schoolId).where("student_id","=",input.student_id).where("service_date","=",input.service_date).where("is_current","=",true).forUpdate().executeTakeFirst();
       await this.assertChangeable(tx,schoolId,input.student_id,input.service_date,current);
       const row=await tx.insertInto("departure_change_requests").values({school_id:schoolId,student_id:input.student_id,service_date:input.service_date,current_plan_id:current?.id??null,requested_mode:input.mode,requested_authority_id:input.authority_id??null,requested_trip_id:input.trip_id??null,requested_stop_id:input.stop_id??null,external_arrangement:input.external_arrangement??"",reason:input.reason,channel:"app",requester_user_id:user.id,requester_person_id:null,recorded_by:user.id}).returningAll().executeTakeFirstOrThrow();
-      if(current) await tx.updateTable("departure_plans").set({state:"change_pending",revision:current.revision+1,updated_at:new Date()}).where("id","=",current.id).execute();
+      if(current) await tx.updateTable("departure_plans").set({state:"change_pending",revision:current.revision+1,updated_at:executionNow()}).where("id","=",current.id).execute();
       await this.audit(tx,schoolId,user.id,"request.submitted","departure_request",row.id,{student_id:row.student_id,mode:row.requested_mode}); await this.emit(tx,schoolId,"departure.updated","departure_request",row.id,row.student_id,{revision:row.revision}); return row;
     });
   }
@@ -798,7 +805,7 @@ export class DepartureCoordinationService {
       const current=await tx.selectFrom("departure_plans").selectAll().where("school_id","=",schoolId).where("student_id","=",input.student_id).where("service_date","=",input.service_date).where("is_current","=",true).forUpdate().executeTakeFirst();
       await this.assertChangeable(tx,schoolId,input.student_id,input.service_date,current);
       const row=await tx.insertInto("departure_change_requests").values({school_id:schoolId,student_id:input.student_id,service_date:input.service_date,current_plan_id:current?.id??null,requested_mode:input.mode,requested_authority_id:input.authority_id??null,requested_trip_id:input.trip_id??null,requested_stop_id:input.stop_id??null,external_arrangement:input.external_arrangement??"",reason:input.reason,channel:assisted.channel,requester_user_id:null,requester_person_id:assisted.requester_person_id,recorded_by:user.id}).returningAll().executeTakeFirstOrThrow();
-      if(current) await tx.updateTable("departure_plans").set({state:"change_pending",revision:current.revision+1,updated_at:new Date()}).where("id","=",current.id).execute();
+      if(current) await tx.updateTable("departure_plans").set({state:"change_pending",revision:current.revision+1,updated_at:executionNow()}).where("id","=",current.id).execute();
       await this.audit(tx,schoolId,user.id,"request.office_recorded","departure_request",row.id,{student_id:row.student_id,channel:row.channel});
       await this.emit(tx,schoolId,"departure.updated","departure_request",row.id,row.student_id,{revision:row.revision});
       return row;
@@ -813,8 +820,8 @@ export class DepartureCoordinationService {
       const current=await tx.selectFrom("departure_plans").select(["id","state"]).where("school_id","=",schoolId).where("student_id","=",req.student_id).where("service_date","=",req.service_date).where("is_current","=",true).executeTakeFirst();
       if(input.decision==="approved" && ((current?.id??null)!==req.current_plan_id || (current&&current.state!=="change_pending"))) throw new ConflictException("The approved arrangement changed after this request. Decline it and review a new request.");
       if(input.decision==="approved") await this.upsertPlan(tx,user,schoolId,{student_id:req.student_id,service_date:req.service_date,mode:req.requested_mode,authority_id:req.requested_authority_id,trip_id:req.requested_trip_id,stop_id:req.requested_stop_id,external_arrangement:req.external_arrangement,source:req.channel==="app"?"guardian_request":"office_assisted",source_reference_id:req.id});
-      else if(req.current_plan_id) await tx.updateTable("departure_plans").set({state:"planned",revision:sql<number>`revision+1`,updated_at:new Date()}).where("id","=",req.current_plan_id).where("is_current","=",true).where("state","=","change_pending").execute();
-      const row=await tx.updateTable("departure_change_requests").set({status:input.decision,revision:req.revision+1,decided_by:user.id,decided_at:new Date(),decision_note:input.note,updated_at:new Date()}).where("id","=",req.id).returningAll().executeTakeFirstOrThrow();
+      else if(req.current_plan_id) await tx.updateTable("departure_plans").set({state:"planned",revision:sql<number>`revision+1`,updated_at:executionNow()}).where("id","=",req.current_plan_id).where("is_current","=",true).where("state","=","change_pending").execute();
+      const row=await tx.updateTable("departure_change_requests").set({status:input.decision,revision:req.revision+1,decided_by:user.id,decided_at:executionNow(),decision_note:input.note,updated_at:executionNow()}).where("id","=",req.id).returningAll().executeTakeFirstOrThrow();
       await this.audit(tx,schoolId,user.id,`request.${input.decision}`,"departure_request",row.id,{student_id:row.student_id});
       await this.emit(tx,schoolId,"departure.updated","departure_request",row.id,row.student_id,{revision:row.revision});
       await this.enqueueParentAttention(tx,{
@@ -823,7 +830,7 @@ export class DepartureCoordinationService {
         sourceKind:"departure_request_decision",sourceId:row.id,sourceRevision:row.revision,
         topicKey:`departure-request:${row.id}`,title:`Departure request ${input.decision}`,
         body:`Your departure request for ${row.service_date} was ${input.decision}.`,
-        link:`/parent/departure?student_id=${row.student_id}&date=${row.service_date}&request_id=${row.id}&request_revision=${row.revision}`,
+        link:`/areas/departure/plan?scope=dependent&student_id=${row.student_id}&date=${row.service_date}&request_id=${row.id}&request_revision=${row.revision}`,
         action:input.decision,
       });
       return row;
@@ -868,8 +875,8 @@ export class DepartureCoordinationService {
       if(!member) continue;
       if(!["completed","cancelled"].includes(trip.state)&&!await hasScopedSchoolPermission(this.db,user.id,trip.school_id,"departure.collect","trip",trip.id)) continue;
       const policy=await this.db.selectFrom("departure_policies").select(["location_stale_seconds","location_retention_hours"]).where("school_id","=",trip.school_id).executeTakeFirst();
-      const location=trip.state==="in_progress"&&trip.latest_location&&Date.now()-new Date(trip.latest_location.received_at).getTime()<=(policy?.location_retention_hours??24)*3_600_000?trip.latest_location:null;
-      visible.push({...trip,...await this.journeyWindow(this.db,trip.id),latest_location:location,location_fresh:Boolean(location&&Date.now()-new Date(location.observed_at).getTime()<=(policy?.location_stale_seconds??90)*1000),local_date:await this.localDate(this.db,trip.school_id)});
+      const location=trip.state==="in_progress"&&trip.latest_location&&executionNow().getTime()-new Date(trip.latest_location.received_at).getTime()<=(policy?.location_retention_hours??24)*3_600_000?trip.latest_location:null;
+      visible.push({...trip,...await this.journeyWindow(this.db,trip.id),latest_location:location,location_fresh:Boolean(location&&executionNow().getTime()-new Date(location.observed_at).getTime()<=(policy?.location_stale_seconds??90)*1000),local_date:await this.localDate(this.db,trip.school_id)});
     }
     const availableCandidates=[];
     for(const candidate of swapCandidates) if((await this.journeyWindow(this.db,candidate.id)).duty_change_available) availableCandidates.push(candidate);
@@ -891,7 +898,7 @@ export class DepartureCoordinationService {
     const policy=await this.db.selectFrom("departure_policies").select(["location_retention_hours","location_stale_seconds"]).where("school_id","=",schoolId).executeTakeFirst();
     const location=trip.state==="in_progress"?await this.db.selectFrom("transport_location_samples").select(["latitude","longitude","accuracy_metres","observed_at"]).where("trip_id","=",tripId).where("received_at",">=",sql<Date>`now()-make_interval(hours=>${policy?.location_retention_hours??24})`).orderBy("observed_at","desc").executeTakeFirst():null;
     const history=await this.db.selectFrom("departure_audits").select(["id","action","metadata","created_at"]).where("school_id","=",schoolId).where("target_id","=",tripId).orderBy("id","desc").limit(50).execute();
-    return {trip,roster,history,location:location??null,location_fresh:Boolean(location&&Date.now()-new Date(location.observed_at).getTime()<=(policy?.location_stale_seconds??90)*1000),map:{tile_url:process.env.MAP_TILE_URL||"https://tile.openstreetmap.org/{z}/{x}/{y}.png",attribution:"© OpenStreetMap contributors"}};
+    return {trip,roster,history,location:location??null,location_fresh:Boolean(location&&executionNow().getTime()-new Date(location.observed_at).getTime()<=(policy?.location_stale_seconds??90)*1000),map:{tile_url:process.env.MAP_TILE_URL||"https://tile.openstreetmap.org/{z}/{x}/{y}.png",attribution:"© OpenStreetMap contributors"}};
   }
 
   async tripAction(user:AuthUser,tripId:string,action:string,body:unknown,managementSchoolId?:string) {
@@ -903,7 +910,7 @@ export class DepartureCoordinationService {
       if(action==="accept"||action==="decline"){
         if(trip.state!=="planned"||trip.roster_frozen_at) throw new ConflictException("This duty can no longer be accepted or declined.");
         if(trip.collector_assignment_status!=="pending") throw new ConflictException("This duty response is already recorded.");
-        const now=new Date(); const status=action==="accept"?"accepted":"declined";
+        const now=executionNow(); const status=action==="accept"?"accepted":"declined";
         const row=await tx.updateTable("transport_trips").set({collector_assignment_status:status,assignment_accepted_at:action==="accept"?now:null,assignment_declined_at:action==="decline"?now:null,assignment_note:input.note,revision:trip.revision+1,updated_at:now}).where("id","=",trip.id).returningAll().executeTakeFirstOrThrow();
         await this.audit(tx,trip.school_id,user.id,`trip.assignment_${status}`,"transport_trip",trip.id,{note:input.note}); await this.emit(tx,trip.school_id,"transport.updated","transport_trip",trip.id,undefined,{revision:row.revision,action:`assignment_${status}`}); return row;
       }
@@ -922,10 +929,10 @@ export class DepartureCoordinationService {
       assertTripTransition(trip,action,riders,input.note);
       let affectedPlans:Array<{id:string;student_id:string;service_date:string;revision:number}>=[];
       if(action==="cancel") {
-        affectedPlans=await tx.updateTable("departure_plans").set({state:"exception",revision:sql<number>`revision+1`,updated_at:new Date()}).where("trip_id","=",tripId).where("is_current","=",true).where("state","not in",["completed","cancelled"]).returning(["id","student_id","service_date","revision"]).execute();
+        affectedPlans=await tx.updateTable("departure_plans").set({state:"exception",revision:sql<number>`revision+1`,updated_at:executionNow()}).where("trip_id","=",tripId).where("is_current","=",true).where("state","not in",["completed","cancelled"]).returning(["id","student_id","service_date","revision"]).execute();
         await tx.deleteFrom("transport_location_samples").where("trip_id","=",tripId).execute();
       }
-      const now=new Date(); const row=await tx.updateTable("transport_trips").set({state:next,revision:trip.revision+1,roster_frozen_at:action==="boarding"||action==="start"?(trip.roster_frozen_at??now):trip.roster_frozen_at,departed_at:action==="start"?now:trip.departed_at,location_started_at:action==="start"?now:trip.location_started_at,completed_at:action==="complete"?now:trip.completed_at,location_ended_at:action==="complete"?now:trip.location_ended_at,cancelled_at:action==="cancel"?now:trip.cancelled_at,cancellation_reason:action==="cancel"?input.note:trip.cancellation_reason,updated_at:now}).where("id","=",tripId).returningAll().executeTakeFirstOrThrow();
+      const now=executionNow(); const row=await tx.updateTable("transport_trips").set({state:next,revision:trip.revision+1,roster_frozen_at:action==="boarding"||action==="start"?(trip.roster_frozen_at??now):trip.roster_frozen_at,departed_at:action==="start"?now:trip.departed_at,location_started_at:action==="start"?now:trip.location_started_at,completed_at:action==="complete"?now:trip.completed_at,location_ended_at:action==="complete"?now:trip.location_ended_at,cancelled_at:action==="cancel"?now:trip.cancelled_at,cancellation_reason:action==="cancel"?input.note:trip.cancellation_reason,updated_at:now}).where("id","=",tripId).returningAll().executeTakeFirstOrThrow();
       await this.audit(tx,trip.school_id,user.id,`trip.${action}`,"transport_trip",trip.id,{from:trip.state,to:next,note:input.note,school_reconciliation:Boolean(managementSchoolId)}); await this.emit(tx,trip.school_id,"transport.updated","transport_trip",trip.id,undefined,{revision:row.revision,action});
       if(action==="cancel") {
         const affectedPlanStudents=new Set(affectedPlans.map(plan=>plan.student_id));
@@ -936,7 +943,7 @@ export class DepartureCoordinationService {
           sourceKind:"transport_trip_cancellation",sourceId:trip.id,sourceRevision:row.revision,
           topicKey:`transport-trip:${trip.id}:${studentId}`,title:"School bus journey cancelled",
           body:`The school bus journey on ${trip.service_date} was cancelled. Review the departure arrangement.`,
-          link:`/parent/departure?student_id=${studentId}&date=${trip.service_date}&trip_id=${trip.id}&trip_revision=${row.revision}`,
+          link:`/areas/departure/plan?scope=dependent&student_id=${studentId}&date=${trip.service_date}&trip_id=${trip.id}&trip_revision=${row.revision}`,
           action:"cancelled",
         });
         for(const plan of affectedPlans) await this.enqueueParentAttention(tx,{
@@ -945,7 +952,7 @@ export class DepartureCoordinationService {
           sourceKind:"departure_plan_exception",sourceId:plan.id,sourceRevision:plan.revision,
           topicKey:`departure-plan:${plan.id}`,title:"Departure plan needs attention",
           body:"The assigned school bus journey was cancelled. Review the departure arrangement before dismissal.",
-          link:`/parent/departure?student_id=${plan.student_id}&date=${plan.service_date}&plan_id=${plan.id}&plan_revision=${plan.revision}`,
+          link:`/areas/departure/plan?scope=dependent&student_id=${plan.student_id}&date=${plan.service_date}&plan_id=${plan.id}&plan_revision=${plan.revision}`,
           action:"transport_trip_cancelled",
         });
       }
@@ -958,7 +965,7 @@ export class DepartureCoordinationService {
     return this.db.transaction().execute(async tx=>{
       const trip=await this.operatingTrip(tx,user,tripId); if(trip.state!=="in_progress"||trip.collector_assignment_status!=="accepted") throw new ConflictException("Location is accepted only while this accepted trip is in progress.");
       if(!await hasScopedSchoolPermission(tx,user.id,trip.school_id,"departure.collect","trip",trip.id))throw new ForbiddenException("Your current assignment does not allow sharing this journey location.");
-      const policy=await tx.selectFrom("departure_policies").selectAll().where("school_id","=",trip.school_id).executeTakeFirst(); if(policy&&!policy.enabled) throw new ForbiddenException("Journey location sharing is disabled by institution policy."); const observed=new Date(input.observed_at); const skew=Math.abs(Date.now()-observed.getTime()); if(skew>120000) throw new BadRequestException("Location time is too old or ahead of the server clock."); if(input.accuracy_metres>(policy?.maximum_location_accuracy_metres??250)) throw new BadRequestException("Location accuracy is too low. Move to a clearer area and retry.");
+      const policy=await tx.selectFrom("departure_policies").selectAll().where("school_id","=",trip.school_id).executeTakeFirst(); if(policy&&!policy.enabled) throw new ForbiddenException("Journey location sharing is disabled by institution policy."); const observed=new Date(input.observed_at); const skew=Math.abs(executionNow().getTime()-observed.getTime()); if(skew>120000) throw new BadRequestException("Location time is too old or ahead of the server clock."); if(input.accuracy_metres>(policy?.maximum_location_accuracy_metres??250)) throw new BadRequestException("Location accuracy is too low. Move to a clearer area and retry.");
       const last=await tx.selectFrom("transport_location_samples").select("observed_at").where("trip_id","=",trip.id).orderBy("observed_at","desc").executeTakeFirst(); if(last && observed.getTime()-new Date(last.observed_at).getTime()<(policy?.minimum_location_interval_seconds??10)*1000) return {accepted:false,reason:"too_frequent"};
       const row=await tx.insertInto("transport_location_samples").values({school_id:trip.school_id,trip_id:trip.id,recorded_by:user.id,latitude:String(input.latitude),longitude:String(input.longitude),accuracy_metres:String(input.accuracy_metres),heading_degrees:input.heading_degrees==null?null:String(input.heading_degrees),speed_metres_per_second:input.speed_metres_per_second==null?null:String(input.speed_metres_per_second),observed_at:observed}).returningAll().executeTakeFirstOrThrow();
       await tx.deleteFrom("transport_location_samples").where("school_id","=",trip.school_id).where("received_at","<",sql<Date>`now() - make_interval(hours=>${policy?.location_retention_hours??24})`).execute(); return {accepted:true,location:row};
@@ -980,7 +987,7 @@ export class DepartureCoordinationService {
         const approved=await tx.selectFrom("departure_plans").select(["trip_id","state"]).where("student_id","=",studentId).where("service_date","=",trip.service_date).where("is_current","=",true).executeTakeFirst();
         if(!approved||approved.trip_id!==tripId||!["planned","ready","exception"].includes(approved.state)) throw new ConflictException("The learner's current departure plan does not permit boarding this trip. Ask school operations to review it.");
       }
-      const now=new Date(); const row=await tx.updateTable("transport_trip_roster").set({state:input.state,revision:rider.revision+1,boarded_at:input.state==="boarded"?(rider.boarded_at??now):rider.boarded_at,dropped_at:input.state==="dropped"?now:null,recorded_by:user.id,outcome_note:input.note,updated_at:now}).where("trip_id","=",tripId).where("student_id","=",studentId).returningAll().executeTakeFirstOrThrow();
+      const now=executionNow(); const row=await tx.updateTable("transport_trip_roster").set({state:input.state,revision:rider.revision+1,boarded_at:input.state==="boarded"?(rider.boarded_at??now):rider.boarded_at,dropped_at:input.state==="dropped"?now:null,recorded_by:user.id,outcome_note:input.note,updated_at:now}).where("trip_id","=",tripId).where("student_id","=",studentId).returningAll().executeTakeFirstOrThrow();
       const plan=await tx.selectFrom("departure_plans").selectAll().where("trip_id","=",tripId).where("student_id","=",studentId).where("is_current","=",true).executeTakeFirst();
       const planState=input.state==="dropped"?"completed":input.state==="boarded"?"ready":"exception";
       if(plan) await tx.updateTable("departure_plans").set({state:planState,revision:plan.revision+1,updated_at:now}).where("id","=",plan.id).execute();
@@ -992,7 +999,7 @@ export class DepartureCoordinationService {
         sourceKind:"transport_rider_exception",sourceId:trip.id,sourceRevision:row.revision,
         topicKey:`transport-rider:${trip.id}:${studentId}`,title:"School journey needs attention",
         body:"School staff recorded a concern with this journey. Open the journey for the current status.",
-        link:`/parent/departure?student_id=${studentId}&date=${trip.service_date}&trip_id=${trip.id}&rider_revision=${row.revision}`,
+        link:`/areas/departure/plan?scope=dependent&student_id=${studentId}&date=${trip.service_date}&trip_id=${trip.id}&rider_revision=${row.revision}`,
         action:"rider_exception",
       });
       return row;
@@ -1006,7 +1013,7 @@ export class DepartureCoordinationService {
       const plan=await tx.selectFrom("departure_plans").selectAll().where("school_id","=",schoolId).where("id","=",planId).where("is_current","=",true).forUpdate().executeTakeFirst(); if(!plan) throw new NotFoundException("Current departure plan not found."); if(plan.mode==="school_transport") throw new BadRequestException("Use the trip roster for school-transport handover."); if(plan.state!=="ready") throw new ConflictException("Mark the learner ready after completing the departure checks before recording handover.");
       if(plan.revision!==input.expected_revision) throw new ConflictException("The departure plan changed. Reload before recording handover.");
       if(plan.service_date!==await this.localDate(tx,schoolId)) throw new ConflictException("Record handover on the planned service date.");
-      if(Math.abs(Date.now()-new Date(input.occurred_at).getTime())>300_000) throw new BadRequestException("Record a current handover; historical corrections require school review.");
+      if(Math.abs(executionNow().getTime()-new Date(input.occurred_at).getTime())>300_000) throw new BadRequestException("Record a current handover; historical corrections require school review.");
       if(input.authority_id&&input.authority_id!==plan.authority_id) throw new ConflictException("The receiver differs from the approved plan. Update the arrangement first.");
       if(input.outcome==="departed_independently"&&plan.mode!=="independent_departure") throw new BadRequestException("Independent departure is not approved for this learner.");
       let snapshot:unknown={}; const authorityId=plan.authority_id;
@@ -1014,14 +1021,14 @@ export class DepartureCoordinationService {
       if(plan.mode==="independent_departure"&&input.outcome==="handed_over") throw new BadRequestException("Independent departure requires its matching factual outcome.");
       const terminal=["handed_over","departed_independently"].includes(input.outcome); const row=await tx.insertInto("departure_handovers").values({school_id:schoolId,plan_id:plan.id,student_id:plan.student_id,outcome:input.outcome,authority_id:authorityId??null,authority_snapshot:snapshot,evidence_method:input.evidence_method,note:input.note,occurred_at:new Date(input.occurred_at),recorded_by:user.id}).returningAll().executeTakeFirstOrThrow();
       const nextRevision=plan.revision+1;
-      await tx.updateTable("departure_plans").set({state:terminal?"completed":"exception",revision:nextRevision,updated_at:new Date()}).where("id","=",plan.id).execute(); await this.audit(tx,schoolId,user.id,`handover.${input.outcome}`,"departure_plan",plan.id,{student_id:plan.student_id}); await this.emit(tx,schoolId,"departure.updated","departure_plan",plan.id,plan.student_id,{revision:nextRevision,action:input.outcome});
+      await tx.updateTable("departure_plans").set({state:terminal?"completed":"exception",revision:nextRevision,updated_at:executionNow()}).where("id","=",plan.id).execute(); await this.audit(tx,schoolId,user.id,`handover.${input.outcome}`,"departure_plan",plan.id,{student_id:plan.student_id}); await this.emit(tx,schoolId,"departure.updated","departure_plan",plan.id,plan.student_id,{revision:nextRevision,action:input.outcome});
       if(!terminal) await this.enqueueParentAttention(tx,{
         schoolId,studentId:plan.student_id,recipientUserIds:await this.guardianAudience(tx,schoolId,plan.student_id),
         eventType:"departure.updated",aggregateType:"departure_plan",aggregateId:plan.id,
         sourceKind:"departure_handover_exception",sourceId:plan.id,sourceRevision:nextRevision,
         topicKey:`departure-plan:${plan.id}`,title:"Departure handover needs attention",
         body:"School staff recorded a handover concern. Open the departure plan for the current status.",
-        link:`/parent/departure?student_id=${plan.student_id}&date=${plan.service_date}&plan_id=${plan.id}&plan_revision=${nextRevision}`,
+        link:`/areas/departure/plan?scope=dependent&student_id=${plan.student_id}&date=${plan.service_date}&plan_id=${plan.id}&plan_revision=${nextRevision}`,
         action:input.outcome,
       });
       return row;
@@ -1047,7 +1054,7 @@ export class DepartureCoordinationService {
         if(!authority) throw new ForbiddenException("Collection authority is no longer current.");
       }
       const state=action==="ready"?"ready":"cancelled";
-      const row=await tx.updateTable("departure_plans").set({state,revision:current.revision+1,updated_at:new Date()}).where("id","=",current.id).returningAll().executeTakeFirstOrThrow();
+      const row=await tx.updateTable("departure_plans").set({state,revision:current.revision+1,updated_at:executionNow()}).where("id","=",current.id).returningAll().executeTakeFirstOrThrow();
       await this.audit(tx,schoolId,user.id,`plan.${action}`,"departure_plan",row.id,{student_id:row.student_id,note:input.note});
       await this.emit(tx,schoolId,"departure.updated","departure_plan",row.id,row.student_id,{revision:row.revision,action});
       return row;
@@ -1080,8 +1087,8 @@ export class DepartureCoordinationService {
       await this.lockSchool(tx,reference.school_id); await this.familyStudent(user,reference.student_id,tx);
       const request=await tx.selectFrom("departure_change_requests").selectAll().where("id","=",requestId).forUpdate().executeTakeFirstOrThrow();
       if(request.status!=="submitted"||request.revision!==input.expected_revision) throw new ConflictException("The request changed. Reload before withdrawing it.");
-      const row=await tx.updateTable("departure_change_requests").set({status:"withdrawn",revision:request.revision+1,updated_at:new Date()}).where("id","=",request.id).returningAll().executeTakeFirstOrThrow();
-      if(request.current_plan_id) await tx.updateTable("departure_plans").set({state:"planned",revision:sql<number>`revision+1`,updated_at:new Date()}).where("id","=",request.current_plan_id).where("is_current","=",true).where("state","=","change_pending").execute();
+      const row=await tx.updateTable("departure_change_requests").set({status:"withdrawn",revision:request.revision+1,updated_at:executionNow()}).where("id","=",request.id).returningAll().executeTakeFirstOrThrow();
+      if(request.current_plan_id) await tx.updateTable("departure_plans").set({state:"planned",revision:sql<number>`revision+1`,updated_at:executionNow()}).where("id","=",request.current_plan_id).where("is_current","=",true).where("state","=","change_pending").execute();
       await this.audit(tx,reference.school_id,user.id,"request.withdrawn","departure_request",request.id,{student_id:reference.student_id});
       await this.emit(tx,reference.school_id,"departure.updated","departure_request",request.id,reference.student_id,{revision:row.revision,action:"withdrawn"});
       return row;
@@ -1126,13 +1133,13 @@ export class DepartureCoordinationService {
       const rider=await tx.selectFrom("transport_trip_roster").selectAll().where("trip_id","=",current.trip_id).where("student_id","=",input.student_id).forUpdate().executeTakeFirst();
       if(rider&&(rider.boarded_at||rider.state==="exception")) throw new ConflictException("Resolve this learner's journey before changing their departure arrangement.");
       if(rider?.state==="expected") {
-        await tx.updateTable("transport_trip_roster").set({state:"not_riding",revision:rider.revision+1,outcome_note:"Approved departure arrangement changed by school operations",recorded_by:user.id,updated_at:new Date()}).where("trip_id","=",current.trip_id).where("student_id","=",input.student_id).execute();
+        await tx.updateTable("transport_trip_roster").set({state:"not_riding",revision:rider.revision+1,outcome_note:"Approved departure arrangement changed by school operations",recorded_by:user.id,updated_at:executionNow()}).where("trip_id","=",current.trip_id).where("student_id","=",input.student_id).execute();
         await this.audit(tx,schoolId,user.id,"rider.plan_changed","transport_trip",current.trip_id,{student_id:input.student_id,plan_id:current.id});
         await this.emit(tx,schoolId,"transport.updated","transport_trip",current.trip_id,input.student_id,{revision:rider.revision+1,action:"plan_changed"});
       }
     }
-    if(current) await tx.updateTable("departure_plans").set({is_current:false,updated_at:new Date()}).where("id","=",current.id).execute();
-    return tx.insertInto("departure_plans").values({school_id:schoolId,student_id:input.student_id,service_date:input.service_date,revision:(current?.revision??0)+1,mode:input.mode,state:"planned",authority_id:input.authority_id??null,trip_id:input.trip_id??null,stop_id:input.stop_id??null,external_arrangement:input.external_arrangement??"",source:input.source,source_reference_id:input.source_reference_id??null,supersedes_plan_id:current?.id??null,approved_by:user.id,approved_at:new Date(),created_by:user.id}).returningAll().executeTakeFirstOrThrow();
+    if(current) await tx.updateTable("departure_plans").set({is_current:false,updated_at:executionNow()}).where("id","=",current.id).execute();
+    return tx.insertInto("departure_plans").values({school_id:schoolId,student_id:input.student_id,service_date:input.service_date,revision:(current?.revision??0)+1,mode:input.mode,state:"planned",authority_id:input.authority_id??null,trip_id:input.trip_id??null,stop_id:input.stop_id??null,external_arrangement:input.external_arrangement??"",source:input.source,source_reference_id:input.source_reference_id??null,supersedes_plan_id:current?.id??null,approved_by:user.id,approved_at:executionNow(),created_by:user.id}).returningAll().executeTakeFirstOrThrow();
   }
 
   private audit(tx:Transaction<Database>,schoolId:string,actorId:string,action:string,targetType:string,targetId:string,metadata:Record<string,unknown>) { return tx.insertInto("departure_audits").values({school_id:schoolId,actor_id:actorId,action,target_type:targetType,target_id:targetId,metadata}).execute(); }

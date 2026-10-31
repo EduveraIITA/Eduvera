@@ -1,0 +1,11 @@
+.campus-scene-directions { display: grid; min-width: 0; gap: 16px; padding: 16px; border: 1px solid var(--thatcampus-border); border-radius: var(--thatcampus-radius-card); background: var(--thatcampus-surface-row); }
+.campus-scene-directions :is(p,h2) { margin: 0; overflow-wrap: anywhere; }
+.campus-scene-directions p, .campus-scene-route-steps p { font-size: 14px; line-height: 1.5; color: var(--thatcampus-ink-secondary); }
+.campus-scene-route-steps { min-width: 0; }
+.campus-scene-route-steps summary { min-height: 44px; align-content: center; font-weight: 650; }
+.campus-scene-route-steps ol { display: grid; gap: 12px; padding: 8px 0 0; margin: 0; list-style: none; }
+.campus-scene-route-steps li { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 8px; min-width: 0; padding: 12px; border-radius: var(--thatcampus-radius-control); background: var(--thatcampus-surface-strong); }
+.campus-scene-route-steps li > div { min-width: 0; flex: 1 1 150px; }
+.campus-scene-route-steps strong, .campus-scene-route-steps p, .campus-scene-route-steps button { overflow-wrap: anywhere; }
+.campus-scene-route-steps .campus-scene-button { max-width: 100%; }
+.campus-scene-route-steps .campus-scene-button[aria-pressed="true"] { background: var(--thatcampus-action); color: var(--thatcampus-on-action); }

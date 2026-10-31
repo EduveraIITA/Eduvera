@@ -16,7 +16,7 @@ describe("school member administration",()=>{
     expect(within(dialog).getByRole("heading",{name:"Manage Kavita Mehta"})).toHaveFocus();
     expect(within(dialog).getByText("kavita@school.test")).toBeVisible();
     expect(within(dialog).queryByRole("checkbox",{name:"Manage fees"})).not.toBeInTheDocument();
-    expect(within(dialog).getByRole("link",{name:"Manage staff role"})).toHaveAttribute("href","/principal/staff");
+    expect(within(dialog).getByRole("link",{name:"Manage responsibilities"})).toHaveAttribute("href","/more/setup/responsibilities");
     await user.click(within(dialog).getByRole("button",{name:"Save membership"}));
     expect(onSave).toHaveBeenCalledWith({is_active:true});
   });

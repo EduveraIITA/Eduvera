@@ -49,7 +49,7 @@ describe("principal timetable experience routes", () => {
     const rehearsal: TimetableRehearsalIndicator = {
       label: "Simulated school day", status: "running", referenceDate: "2026-10-14",
       simulatedAt: "2026-10-14T09:10:00+05:30", phaseLabel: "Period 1", phaseMode: "lesson",
-      nextChangeAt: null, activeSlotIds: ["slot-1"], timeZone: "Asia/Kolkata", campusPath: "/principal/campus",
+      nextChangeAt: null, activeSlotIds: ["slot-1"], timeZone: "Asia/Kolkata", campusPath: "/more/virtual-campus",
     };
     const current = show("/principal/timetable", rehearsal);
     expect(screen.getByText("Current timetable · Simulated school day")).toBeVisible();

@@ -1,0 +1,84 @@
+import { cleanup, render, screen, waitFor } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { CampusSceneSourceIntake } from "./CampusSceneSourceIntake";
+import { ApiError } from "../../lib/api";
+const capabilities = { image_analysis: { available: false, reason: "Image analysis is not configured." }, map_search: { available: true }, max_image_bytes: 4194304 };
+beforeEach(() => { vi.spyOn(URL, "createObjectURL").mockReturnValue("blob:campus-preview"); vi.spyOn(URL, "revokeObjectURL").mockImplementation(() => undefined); });
+afterEach(() => { cleanup(); vi.restoreAllMocks(); });
+describe("campus source intake", () => {
+  it("requires image rights and preserves the trace fallback when AI is unavailable", async () => {
+    const onImport = vi.fn().mockResolvedValue(undefined);
+    render(<CampusSceneSourceIntake hasElements={false} disabled={false} capabilities={capabilities} onImport={onImport} onClose={vi.fn()} />);
+    await userEvent.click(screen.getByRole("button", { name: "Aerial / plan" }));
+    const file = new File(["image"], "campus.png", { type: "image/png" });
+    await userEvent.upload(screen.getByLabelText("Campus image"), file);
+    const useImage = screen.getByRole("button", { name: "Use image as tracing guide" });
+    expect(useImage).toBeDisabled();
+    await userEvent.click(screen.getByRole("checkbox", { name: /permission to use and adapt/ }));
+    await userEvent.click(useImage);
+    await waitFor(() => expect(onImport).toHaveBeenCalledExactlyOnceWith({ kind: "image", file, label: "campus.png", sourceKind: "aerial_image", rightsConfirmed: true, instructions: undefined }));
+    expect(screen.getByText(/Image analysis is not configured/)).toBeVisible();
+  });
+  it("requires selecting the right campus and explicitly replacing an existing layout", async () => {
+    const location = { id: "map-1", name: "Green Valley School", description: "North campus, Pune", latitude: 18.5, longitude: 73.8, source: "OpenStreetMap" };
+    const onLookup = vi.fn().mockResolvedValue([location]); const onImport = vi.fn().mockResolvedValue(undefined);
+    render(<CampusSceneSourceIntake hasElements disabled={false} capabilities={capabilities} onLookup={onLookup} onImport={onImport} onClose={vi.fn()} />);
+    await userEvent.type(screen.getByRole("searchbox"), "Green Valley Pune");
+    await userEvent.click(screen.getByRole("button", { name: "Find campus" }));
+    await screen.findByRole("radio", { name: /Green Valley School/ });
+    expect(onLookup).toHaveBeenCalledExactlyOnceWith("Green Valley Pune");
+    expect(screen.getByRole("button", { name: "Create editable layout" })).toBeDisabled();
+    await userEvent.click(screen.getByRole("radio", { name: /Green Valley School/ }));
+    expect(screen.getByRole("button", { name: "Create editable layout" })).toBeDisabled();
+    await userEvent.click(screen.getByRole("checkbox", { name: /Replace this draft/ }));
+    await userEvent.click(screen.getByRole("button", { name: "Create editable layout" }));
+    expect(onImport).toHaveBeenCalledExactlyOnceWith({ kind: "location", location, radiusMetres: 300 });
+  });
+  it("shows a source failure with inputs retained for a retry", async () => {
+    const onImport = vi.fn().mockRejectedValue(new Error("The image could not be prepared. Try again."));
+    render(<CampusSceneSourceIntake hasElements={false} disabled={false} capabilities={capabilities} onImport={onImport} onClose={vi.fn()} />);
+    await userEvent.click(screen.getByRole("button", { name: "Aerial / plan" }));
+    await userEvent.upload(screen.getByLabelText("Campus image"), new File(["image"], "site-plan.png", { type: "image/png" }));
+    await userEvent.click(screen.getByRole("checkbox", { name: /permission to use and adapt/ }));
+    await userEvent.click(screen.getByRole("button", { name: "Use image as tracing guide" }));
+    expect(await screen.findByRole("alert")).toHaveTextContent("image could not be prepared");
+    expect(screen.getByText("site-plan.png")).toBeVisible();
+    expect(screen.getByRole("checkbox", { name: /permission to use and adapt/ })).toBeChecked();
+  });
+  it("offers manual tracing after image analysis fails", async () => {
+    const onImport = vi.fn().mockRejectedValueOnce(new Error("Image saved; analysis failed.")).mockResolvedValueOnce(undefined);
+    render(<CampusSceneSourceIntake hasElements={false} disabled={false} capabilities={{ ...capabilities, image_analysis: { available: true } }} onImport={onImport} onClose={vi.fn()} />);
+    await userEvent.click(screen.getByRole("button", { name: "Aerial / plan" }));
+    const file = new File(["image"], "site-plan.png", { type: "image/png" });
+    await userEvent.upload(screen.getByLabelText("Campus image"), file);
+    await userEvent.click(screen.getByRole("checkbox", { name: /permission to use and adapt/ }));
+    await userEvent.click(screen.getByRole("button", { name: "Generate campus draft" }));
+    await userEvent.click(await screen.findByRole("button", { name: "Trace image instead" }));
+    expect(onImport).toHaveBeenLastCalledWith({ kind: "image", file, label: "site-plan.png", sourceKind: "aerial_image", rightsConfirmed: true, traceOnly: true });
+  });
+  it("explains a definitive failure and waits for the user before starting a new attempt", async () => {
+    const onImport = vi.fn().mockRejectedValueOnce(new ApiError("Analysis failed; image saved.", 422, { code: "campus_import_failed", retry_requires_new_key: true })).mockResolvedValueOnce(undefined);
+    render(<CampusSceneSourceIntake hasElements={false} disabled={false} capabilities={{ ...capabilities, image_analysis: { available: true } }} onImport={onImport} onClose={vi.fn()} />);
+    await userEvent.click(screen.getByRole("button", { name: "Aerial / plan" }));
+    await userEvent.upload(screen.getByLabelText("Campus image"), new File(["image"], "campus.png", { type: "image/png" }));
+    await userEvent.click(screen.getByRole("checkbox", { name: /permission to use and adapt/ }));
+    await userEvent.click(screen.getByRole("button", { name: "Generate campus draft" }));
+    const retry = await screen.findByRole("button", { name: "Start a new attempt" });
+    expect(screen.getByText(/AI attempts may use the allowance/)).toBeVisible();
+    expect(screen.getByRole("button", { name: "Trace image instead" })).toBeEnabled();
+    expect(onImport).toHaveBeenCalledOnce();
+    await userEvent.click(retry);
+    expect(onImport).toHaveBeenCalledTimes(2);
+    expect(onImport.mock.calls[1]).toEqual(onImport.mock.calls[0]);
+  });
+  it("clears a previous source permission when changing the source type", async () => {
+    render(<CampusSceneSourceIntake hasElements={false} disabled={false} capabilities={capabilities} onImport={vi.fn()} onClose={vi.fn()} />);
+    await userEvent.click(screen.getByRole("button", { name: "Aerial / plan" }));
+    await userEvent.click(screen.getByRole("checkbox", { name: /permission to use and adapt/ }));
+    await userEvent.click(screen.getByRole("button", { name: "Map data" }));
+    expect(screen.getByRole("checkbox", { name: /permission to adapt this map data/ })).not.toBeChecked();
+    await userEvent.click(screen.getByRole("button", { name: "Aerial / plan" }));
+    expect(screen.getByRole("checkbox", { name: /permission to use and adapt/ })).not.toBeChecked();
+  });
+});

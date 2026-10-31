@@ -4,6 +4,7 @@ import {
   createInvalidationBatcher,
   FULL_SYNC_INVALIDATIONS,
   resolveSchoolEvent,
+  schoolEventMatchesScope,
   SCHOOL_EVENT_TYPES,
   type SchoolEventType,
 } from "./schoolEventProtocol";
@@ -20,6 +21,197 @@ function eventData(type: string, payload: Record<string, unknown>) {
 afterEach(() => vi.useRealTimers());
 
 describe("school event protocol", () => {
+  it("retains server campus/namespace metadata and rejects foreign or missing selected scope", () => {
+    const envelope = { ...JSON.parse(eventData("chat.updated", { refresh: ["messages"] })) as Record<string, unknown>,
+      school_id: "campus-a", namespace_id: "live:campus-a" };
+    const resolved = resolveSchoolEvent(JSON.stringify(envelope), "chat.updated", "member").envelope!;
+    expect(resolved).toMatchObject({ school_id: "campus-a", namespace_id: "live:campus-a" });
+    expect(schoolEventMatchesScope(resolved, { institutionId: "campus-a", namespaceId: "live:campus-a" })).toBe(true);
+    expect(schoolEventMatchesScope(resolved, { institutionId: "campus-b", namespaceId: "live:campus-a" })).toBe(false);
+    expect(schoolEventMatchesScope(resolved, { institutionId: "campus-a", namespaceId: "scenario:a:run:one" })).toBe(false);
+    expect(schoolEventMatchesScope({ ...resolved, school_id: undefined }, { institutionId: "campus-a" })).toBe(false);
+    expect(schoolEventMatchesScope({ ...resolved, namespace_id: undefined }, { namespaceId: "live:campus-a" })).toBe(false);
+    expect(resolveSchoolEvent(JSON.stringify({ ...envelope, school_id: 1 }), "chat.updated").envelope).toBeNull();
+    expect(resolveSchoolEvent(JSON.stringify({ ...envelope, namespace_id: [] }), "chat.updated").envelope).toBeNull();
+  });
+  it("refreshes a private shared visit and Work only within its selected world", async () => {
+    const client = new QueryClient(), prefix = ["execution-environment", "simulation", "simulation:campus:guest-a", "guest-a"];
+    const selected = [...prefix, "gate-visits", "school", "guest", "shared"];
+    const sibling = ["execution-environment", "simulation", "simulation:campus:guest-b", "guest-b", "gate-visits", "school", "guest", "shared"];
+    const live = ["execution-environment", "live", "gate-visits", "school", "guest", "shared"];
+    for (const key of [selected, sibling, live]) client.setQueryData(key, { question: null });
+    const result = resolveSchoolEvent(eventData("gate.visit_shared.updated", { visit_id: "visit", action: "replied", revision: 2,
+      refresh: ["gate-visits", "workspace", "attention"] }), "gate.visit_shared.updated", "guest");
+    expect(result.usedFallback).toBe(false);
+    expect(result.invalidations).toContainEqual({ queryKey: ["gate-visits"], environmentScoped: true });
+    expect(result.invalidations).not.toContainEqual({ queryKey: ["gate-approvals"] });
+    const batcher = createInvalidationBatcher(client, 75, prefix); batcher.enqueue(result.invalidations); await batcher.flush();
+    expect(client.getQueryState(selected)?.isInvalidated).toBe(true);
+    expect(client.getQueryState(sibling)?.isInvalidated).toBe(false);
+    expect(client.getQueryState(live)?.isInvalidated).toBe(false);
+  });
+  it("refreshes public asset signals in only the selected world without opening private Repairs", async () => {
+    const client = new QueryClient(), prefix = ["execution-environment", "simulation", "simulation:campus:assets-a", "assets-a"];
+    const selected = [...prefix, "campus-view", "operations", "school", "member"];
+    const sibling = ["execution-environment", "simulation", "simulation:campus:assets-b", "assets-b", "campus-view", "operations", "school", "member"];
+    const live = ["execution-environment", "live", "campus-view", "operations", "school", "member"];
+    for (const key of [selected, sibling, live]) client.setQueryData(key, { assets: [] });
+    const result = resolveSchoolEvent(eventData("campus_assets.updated", { campus_id: "campus", holding_id: "lamp", revision: 3, refresh: ["campus-assets"] }), "campus_assets.updated", "member");
+    expect(result.usedFallback).toBe(false);
+    expect(result.invalidations).toContainEqual({ queryKey: ["campus-view"], environmentScoped: true });
+    expect(result.invalidations).not.toContainEqual({ queryKey: ["facilities"], environmentScoped: true });
+    const batcher = createInvalidationBatcher(client, 75, prefix); batcher.enqueue(result.invalidations); await batcher.flush();
+    expect(client.getQueryState(selected)?.isInvalidated).toBe(true);
+    expect(client.getQueryState(sibling)?.isInvalidated).toBe(false);
+    expect(client.getQueryState(live)?.isInvalidated).toBe(false);
+  });
+  it("refreshes arranged visits only in the selected world without inventing approval or attention work", async () => {
+    const client = new QueryClient(), prefix = ["execution-environment", "simulation", "simulation:campus:visits-a", "visits-a"];
+    const selected = [...prefix, "gate-visits", "school", "coordinator"];
+    const sibling = ["execution-environment", "simulation", "simulation:campus:visits-b", "visits-b", "gate-visits", "school", "coordinator"];
+    const live = ["execution-environment", "live", "gate-visits", "school", "coordinator"];
+    for (const key of [selected, sibling, live]) client.setQueryData(key, { items: [] });
+    const result = resolveSchoolEvent(eventData("gate.visit_arrangement.updated", { source_id: "visit", revision: 2, refresh: ["gate-visits"] }), "gate.visit_arrangement.updated", "coordinator");
+    expect(result.usedFallback).toBe(false);
+    expect(result.invalidations).toContainEqual({ queryKey: ["gate-visits"], environmentScoped: true });
+    expect(result.invalidations).not.toContainEqual({ queryKey: ["gate-approvals"] });
+    const batcher = createInvalidationBatcher(client, 75, prefix); batcher.enqueue(result.invalidations); await batcher.flush();
+    expect(client.getQueryState(selected)?.isInvalidated).toBe(true);
+    expect(client.getQueryState(sibling)?.isInvalidated).toBe(false);
+    expect(client.getQueryState(live)?.isInvalidated).toBe(false);
+    expect(FULL_SYNC_INVALIDATIONS).toContainEqual({ queryKey: ["gate-visits"], environmentScoped: true });
+  });
+  it("refreshes published campus scenes only in the selected execution world", async () => {
+    const client = new QueryClient(), prefix = ["execution-environment", "simulation", "simulation:campus:scene-a", "scene-a"];
+    const selected = [...prefix, "campus-scenes", "simulation:campus:scene-a", "school", "campus", "published"];
+    const sibling = ["execution-environment", "simulation", "simulation:campus:scene-b", "scene-b", "campus-scenes", "simulation:campus:scene-b", "school", "campus", "published"];
+    const live = ["execution-environment", "live", "campus-scenes", "live:school", "school", "campus", "published"];
+    for (const key of [selected, sibling, live]) client.setQueryData(key, { scene: null });
+    const result = resolveSchoolEvent(eventData("campus_scenes.updated", { refresh: ["campus-scenes", "campus-view"] }), "campus_scenes.updated", "member");
+    expect(result.usedFallback).toBe(false);
+    expect(result.invalidations).toContainEqual({ queryKey: ["campus-scenes"], environmentScoped: true });
+    const batcher = createInvalidationBatcher(client, 75, prefix); batcher.enqueue(result.invalidations); await batcher.flush();
+    expect(client.getQueryState(selected)?.isInvalidated).toBe(true);
+    expect(client.getQueryState(sibling)?.isInvalidated).toBe(false);
+    expect(client.getQueryState(live)?.isInvalidated).toBe(false);
+    expect(FULL_SYNC_INVALIDATIONS).toContainEqual({ queryKey: ["campus-scenes"], environmentScoped: true });
+  });
+  it("refreshes published Dining Calendar in only the selected world even with narrow producer hints", async () => {
+    const client = new QueryClient(), prefix = ["execution-environment", "simulation", "simulation:campus:dining-a", "dining-a"];
+    const selected = [...prefix, "calendar", "dining", "school", "actor", "2026-10-25", 1];
+    const sibling = ["execution-environment", "simulation", "simulation:campus:dining-b", "dining-b", "calendar", "dining", "school", "actor", "2026-10-25", 1];
+    const live = ["execution-environment", "live", "calendar", "dining", "school", "actor", "2026-10-25", 1];
+    for (const key of [selected, sibling, live]) client.setQueryData(key, { items: [] });
+    const result = resolveSchoolEvent(eventData("dining.updated", { refresh: ["dining"] }), "dining.updated", "actor");
+    expect(result.invalidations).toContainEqual({ queryKey: ["calendar"], environmentScoped: true });
+    const batcher = createInvalidationBatcher(client, 75, prefix); batcher.enqueue(result.invalidations); await batcher.flush();
+    expect(client.getQueryState(selected)?.isInvalidated).toBe(true);
+    expect(client.getQueryState(sibling)?.isInvalidated).toBe(false);
+    expect(client.getQueryState(live)?.isInvalidated).toBe(false);
+    expect(FULL_SYNC_INVALIDATIONS).toContainEqual({ queryKey: ["calendar"], environmentScoped: true });
+  });
+  it("refreshes Accommodation and custody-dependent settlement only in the selected world", async () => {
+    const client = new QueryClient(), prefix = ["execution-environment", "simulation", "simulation:campus:stays-a", "stays-a"];
+    const selected = [...prefix, "accommodation", "school", "warden"], sibling = ["execution-environment", "simulation", "simulation:campus:stays-b", "stays-b", "accommodation", "school", "warden"], live = ["execution-environment", "live", "accommodation", "school", "warden"];
+    for (const key of [selected, sibling, live]) client.setQueryData(key, { stays: [] });
+    const result = resolveSchoolEvent(eventData("accommodation.updated", { source_id: "stay-1", revision: 2, refresh: ["accommodation"] }), "accommodation.updated", "warden");
+    expect(result.usedFallback).toBe(false);
+    expect(result.invalidations).toEqual(expect.arrayContaining([{ queryKey: ["accommodation"], environmentScoped: true }, { queryKey: ["responsibility-workspace"] }, { queryKey: ["attention"] }]));
+    const batcher = createInvalidationBatcher(client, 75, prefix); batcher.enqueue(result.invalidations); await batcher.flush();
+    expect(client.getQueryState(selected)?.isInvalidated).toBe(true); expect(client.getQueryState(sibling)?.isInvalidated).toBe(false); expect(client.getQueryState(live)?.isInvalidated).toBe(false);
+    expect(FULL_SYNC_INVALIDATIONS).toContainEqual({ queryKey: ["accommodation"], environmentScoped: true });
+    expect(resolveSchoolEvent(eventData("resources.updated", { refresh: ["resources"] }), "resources.updated", "warden").invalidations).toContainEqual({ queryKey: ["accommodation"], environmentScoped: true });
+  });
+  it("refreshes exact Repairs projections only within the selected execution world", async () => {
+    const client = new QueryClient(), prefix = ["execution-environment", "simulation", "simulation:campus:repairs-a", "repairs-a"];
+    const selected = [...prefix, "facilities", "school", "handler"], sibling = ["execution-environment", "simulation", "simulation:campus:repairs-b", "repairs-b", "facilities", "school", "handler"], live = ["execution-environment", "live", "facilities", "school", "handler"];
+    for (const key of [selected, sibling, live]) client.setQueryData(key, { repairs: [] });
+    const result = resolveSchoolEvent(eventData("facilities.updated", { repair_id: "repair-1", revision: 2, refresh: ["facilities"] }), "facilities.updated", "handler");
+    expect(result.usedFallback).toBe(false);
+    expect(result.invalidations).toEqual(expect.arrayContaining([{ queryKey: ["facilities"], environmentScoped: true }, { queryKey: ["responsibility-workspace"] }, { queryKey: ["attention"] }]));
+    const batcher = createInvalidationBatcher(client, 75, prefix); batcher.enqueue(result.invalidations); await batcher.flush();
+    expect(client.getQueryState(selected)?.isInvalidated).toBe(true); expect(client.getQueryState(sibling)?.isInvalidated).toBe(false); expect(client.getQueryState(live)?.isInvalidated).toBe(false);
+    expect(FULL_SYNC_INVALIDATIONS).toContainEqual({ queryKey: ["facilities"], environmentScoped: true });
+  });
+  it("refreshes borrowing and native Work only in the selected environment", async () => {
+    const client = new QueryClient();
+    const prefix = ["execution-environment", "simulation", "simulation:campus:resources-a", "resources-a"];
+    const selected = [...prefix, "resources", "school", "custodian"];
+    const sibling = ["execution-environment", "simulation", "simulation:campus:resources-b", "resources-b", "resources", "school", "custodian"];
+    const live = ["execution-environment", "live", "resources", "school", "custodian"];
+    for (const key of [selected, sibling, live]) client.setQueryData(key, { loans: [] });
+    const result = resolveSchoolEvent(eventData("resources.updated", { refresh: ["resources"] }), "resources.updated", "custodian");
+    expect(result.usedFallback).toBe(false);
+    expect(result.invalidations).toEqual(expect.arrayContaining([
+      { queryKey: ["resources"], environmentScoped: true },
+      { queryKey: ["responsibility-workspace"] },
+      { queryKey: ["attention"] },
+    ]));
+    const batcher = createInvalidationBatcher(client, 75, prefix);
+    batcher.enqueue(result.invalidations);
+    await batcher.flush();
+    expect(client.getQueryState(selected)?.isInvalidated).toBe(true);
+    expect(client.getQueryState(sibling)?.isInvalidated).toBe(false);
+    expect(client.getQueryState(live)?.isInvalidated).toBe(false);
+    expect(FULL_SYNC_INVALIDATIONS).toContainEqual({ queryKey: ["resources"], environmentScoped: true });
+  });
+  it("accepts shared participation and People hints without a fallback and refreshes their canonical surfaces", () => {
+    const result = resolveSchoolEvent(eventData("attendance.participation.updated", { register_id: "register-1",
+      refresh: ["attendance", "activities", "workspace", "today"] }), "attendance.participation.updated", "recorder-1");
+    expect(SCHOOL_EVENT_TYPES).toContain("attendance.participation.updated");
+    expect(result.usedFallback).toBe(false);
+    expect(result.invalidations).toEqual(expect.arrayContaining([
+      { queryKey: ["activities"], environmentScoped: true }, { queryKey: ["responsibility-workspace"] },
+    ]));
+    const people = resolveSchoolEvent(eventData("people.updated", { refresh: ["people.participants", "activities.catalogue"] }), "people.updated");
+    expect(people.usedFallback).toBe(false);
+    expect(people.invalidations).toContainEqual({ queryKey: ["people.participation-groups"], environmentScoped: true });
+    expect(people.invalidations).toContainEqual({ queryKey: ["activities"], environmentScoped: true });
+    expect(people.invalidations).toContainEqual({ queryKey: ["staff-operations"] });
+  });
+
+  it("binds common feature invalidation to the selected run rather than Live or another simulation", async () => {
+    const client = new QueryClient(), invalidate = vi.spyOn(client, "invalidateQueries").mockResolvedValue();
+    const prefix = ["execution-environment", "simulation", "simulation:campus:run-a", "run-a"];
+    const batcher = createInvalidationBatcher(client, 75, prefix);
+    batcher.enqueue([{ queryKey: ["activities"], environmentScoped: true }, { queryKey: ["people.participants"], environmentScoped: true }]);
+    await batcher.flush();
+    expect(invalidate).toHaveBeenCalledWith({ queryKey: [...prefix, "activities"], exact: undefined });
+    expect(invalidate).toHaveBeenCalledWith({ queryKey: [...prefix, "people.participants"], exact: undefined });
+    expect(invalidate.mock.calls.every(([input]) => input?.queryKey?.[1] === "simulation")).toBe(true);
+    expect(FULL_SYNC_INVALIDATIONS).toContainEqual({ queryKey: ["activities"], environmentScoped: true });
+  });
+  it("refreshes the qualified Live invitation list without invalidating another world's cache", async () => {
+    const client = new QueryClient();
+    const liveKey = ["execution-environment", "live", "invitations", "school"];
+    const simulationKey = ["execution-environment", "simulation", "world", "run", "invitations", "school"];
+    client.setQueryData(liveKey, { invitations: [] });
+    client.setQueryData(simulationKey, { invitations: [] });
+    const result = resolveSchoolEvent(eventData("people.updated", {}), "people.updated");
+    const batcher = createInvalidationBatcher(client);
+    batcher.enqueue(result.invalidations);
+    await batcher.flush();
+    expect(client.getQueryState(liveKey)?.isInvalidated).toBe(true);
+    expect(client.getQueryState(simulationKey)?.isInvalidated).toBe(false);
+    expect(FULL_SYNC_INVALIDATIONS).toContainEqual({ queryKey: ["invitations"], environmentScoped: true });
+  });
+  it.each(["campus_event.updated", "assessment.updated"])("refreshes the common calendar and queue from the authorized owning event %s", (type) => {
+    const result = resolveSchoolEvent(eventData(type, { refresh: type === "campus_event.updated" ? ["campus-events"] : ["assessments"] }), type, "operator-1");
+    expect(result.usedFallback).toBe(false);
+    expect(result.invalidations).toEqual(expect.arrayContaining([
+      { queryKey: ["activities"], environmentScoped: true },
+      { queryKey: ["responsibility-workspace"] },
+      { queryKey: ["attendance-model"] },
+    ]));
+  });
+  it.each(['campus_dates.published', 'campus_dates.corrected', 'campus_dates.cancelled'])(
+    'refreshes only the selected-world Calendar for a public-date invalidation %s', type => {
+      const result = resolveSchoolEvent(eventData(type, { refresh: ['calendar'] }), type, 'operator-1');
+      expect(result.usedFallback).toBe(false);
+      expect(result.invalidations).toEqual(expect.arrayContaining([{ queryKey: ['calendar'], environmentScoped: true }]));
+      expect(result.invalidations.some(item => ['notifications', 'attention', 'attendance-model', 'activities'].includes(String(item.queryKey[0])))).toBe(false);
+      expect(SCHOOL_EVENT_TYPES).toContain(type);
+    });
   it('refreshes gate desks and pending approval popups on visitor decisions',()=>{
     const resolution=resolveSchoolEvent(eventData('gate.visitor.updated',{refresh:['gate','notifications']}),'gate.visitor.updated','host');
     expect(resolution.usedFallback).toBe(false);
@@ -73,12 +265,12 @@ describe("school event protocol", () => {
       {queryKey:["gate-students"]},
       {queryKey:["office","fee-students"]},
       {queryKey:["campus-event-consent-authorities"]},
-      {queryKey:["invitations"]},
+      {queryKey:["invitations"],environmentScoped:true},
       {queryKey:["notice-references"]},
       {queryKey:["calendar"]},
       {queryKey:["institution-activation"]},
       {queryKey:["teacher-attendance"]},
-      {queryKey:["campus-view"]},
+      {queryKey:["campus-view"],environmentScoped:true},
       {queryKey:["attention"]},
     ]));
   });
@@ -116,7 +308,7 @@ describe("school event protocol", () => {
       { queryKey: ["principal-register-history"] },
       { queryKey: ["attendance-model"] },
       { queryKey: ["attendance-continuity"] },
-      { queryKey: ["campus-view"] },
+      { queryKey: ["campus-view"], environmentScoped: true },
       { queryKey: ["notifications", "user-1"] },
     ]));
   });
@@ -148,7 +340,7 @@ describe("school event protocol", () => {
       { queryKey: ["principal-register-history"] },
       { queryKey: ["attendance-model"] },
       { queryKey: ["attendance-continuity"] },
-      { queryKey: ["campus-view"] },
+      { queryKey: ["campus-view"], environmentScoped: true },
     ]));
   });
 
@@ -171,7 +363,7 @@ describe("school event protocol", () => {
       { queryKey: ["principal-register"] },
       { queryKey: ["attendance-model"] },
       { queryKey: ["attendance-continuity"] },
-      { queryKey: ["campus-view"] },
+      { queryKey: ["campus-view"], environmentScoped: true },
       { queryKey: ["notifications", "teacher-1"] },
     ]));
   });
@@ -239,6 +431,9 @@ describe("school event protocol", () => {
       { queryKey: ["school", "parent", "home", "default"] },
       { queryKey: ["school", "parent", "diary", "student-1"] },
       { queryKey: ["school", "parent", "diary", "default"] },
+      { queryKey: ["learning-assignments"], environmentScoped: true },
+      { queryKey: ["teaching-sessions"], environmentScoped: true },
+      { queryKey: ["responsibility-workspace"] },
       { queryKey: ["requests"] },
       { queryKey: ["attention"] },
     ]);
@@ -256,12 +451,14 @@ describe("school event protocol", () => {
 
     expect(result.usedFallback).toBe(false);
     expect(result.invalidations).toEqual(expect.arrayContaining([
-      { queryKey: ["office", "fees"] },
-      { queryKey: ["office", "fee-gateway-review"] },
+      { queryKey: ["office", "fees"], environmentScoped: true },
+      { queryKey: ["office", "fee-gateway-review"], environmentScoped: true },
       { queryKey: ["school", "parent", "home", "student-1"] },
       { queryKey: ["school", "parent", "home", "default"] },
       { queryKey: ["principal-home"] },
       { queryKey: ["principal-insights"] },
+      { queryKey: ["finance-arrangements"], environmentScoped: true },
+      { queryKey: ["responsibility-workspace"] },
     ]));
   });
 
@@ -275,14 +472,14 @@ describe("school event protocol", () => {
     expect(result.invalidations).toEqual(expect.arrayContaining([
       { queryKey: ["office", "administration"] },
       { queryKey: ["institution-setup"] },
-      { queryKey: ["invitations"] },
+      { queryKey: ["invitations"], environmentScoped: true },
       { queryKey: ["operating-rules"] },
       { queryKey: ["workflow-rules"] },
       { queryKey: ["chat", "policy"] },
       { queryKey: ["principal-timetable"] },
       { queryKey: ["calendar"] },
       { queryKey: ["institution-activation"] },
-      { queryKey: ["campus-view"] },
+      { queryKey: ["campus-view"], environmentScoped: true },
       { queryKey: ["analytics"] },
       { queryKey: ["requests"] },
       { queryKey: ["attention"] },
@@ -303,7 +500,7 @@ describe("school event protocol", () => {
       { queryKey: ["office", "administration"] },
       { queryKey: ["institution-setup"] },
       { queryKey: ["operating-rules"] },
-      { queryKey: ["campus-view"] },
+      { queryKey: ["campus-view"], environmentScoped: true },
       { queryKey: ["requests"] },
       { queryKey: ["attention"] },
     ]));
@@ -325,7 +522,7 @@ describe("school event protocol", () => {
       { queryKey: ["school", "parent", "timetable-summary", "default"] },
       { queryKey: ["calendar"] },
       { queryKey: ["institution-activation"] },
-      { queryKey: ["campus-view"] },
+      { queryKey: ["campus-view"], environmentScoped: true },
     ]));
   });
 
@@ -371,7 +568,7 @@ describe("school event protocol", () => {
       { queryKey: ["principal-register-history"] },
       { queryKey: ["attendance-model"] },
       { queryKey: ["attendance-continuity"] },
-      { queryKey: ["campus-view"] },
+      { queryKey: ["campus-view"], environmentScoped: true },
       { queryKey: ["campus-events"] },
       { queryKey: ["campus-event"] },
       { queryKey: ["campus-event-register"] },
@@ -434,7 +631,7 @@ describe("school event protocol", () => {
       { queryKey: ["principal-insights"] },
       { queryKey: ["notifications", "guardian-1"] },
       { queryKey: ["calendar"] },
-      { queryKey: ["campus-view"] },
+      { queryKey: ["campus-view"], environmentScoped: true },
       { queryKey: ["requests"] },
       { queryKey: ["attention"] },
     ]));

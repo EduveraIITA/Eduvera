@@ -18,11 +18,12 @@ async function main() {
     port: configuration.port,
     proxyKey: configuration.proxyKey,
     getStatus: () => runtime.snapshot(),
-    setEnabled: (enabled) => runtime.setEnabled(enabled),
+    setControl: (control) => runtime.setControl(control),
     host: configuration.host,
   });
   console.log(`[campus-lab] status listening on ${configuration.host}:${configuration.port}`);
-  void runtime.bootWithRetry();
+  // The application first provisions an isolated Simulation fork, then sends
+  // the explicit activation control containing its server-created run ID.
 
   const shutdown = () => {
     runtime.stop();

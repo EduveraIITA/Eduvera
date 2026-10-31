@@ -13,6 +13,16 @@ const options=[{class_section_id:'class-a',term_id:'term-1',class_name:'Class 7A
 const row:ImportRow={row_number:2,values:{admission_number:'BULK-1',first_name:'Ishaan',last_name:'Deshmukh',date_of_birth:'2014-04-12',class:'7A',roll_number:'26',enrolled_on:'2026-09-15',guardian_key:'family-1',guardian_first_name:'Nandita',guardian_last_name:'Deshmukh',guardian_phone:'9000011001',guardian_email:'',relationship:'mother'},decision:'include',guardian_choice:{mode:'new'},errors:[],warnings:[],guardian_name:'Nandita Deshmukh',class_name:'7A'};
 const fixture=():ImportDetail=>({id:'import-1',filename:'class-7a.csv',state:'draft',revision:1,row_count:1,created_at:'2026-09-15T12:00:00Z',expires_at:'2026-09-16T12:00:00Z',receipt:null,review:{rows:[structuredClone(row)],classes:[{id:'class-a',label:'7A',room:'204'}],term:{id:'term-1',name:'Term 1',today:'2026-09-15',starts_on:'2026-07-01',ends_on:'2026-12-31'},summary:{total:1,included:1,skipped:0,errors:0,warnings:0,new_guardians:1,existing_guardians:0,registers_reopened:0},validation_token:'token-1'}});
 describe('Complete student import UI',()=>{
+  it.each(['values','normalized'] as const)('shows intentional no-guardian rows and existing-person %s references truthfully',source=>{
+    const job=fixture();const existing={...structuredClone(row),guardian_choice:{mode:'none' as const},guardian_name:'',values:{...row.values,guardian_key:'',...(source==='values'?{person_id:'campus-person',person_revision:'3'}:{})},...(source==='normalized'?{normalized:{person:{id:'campus-person',expected_revision:3}}}:{})};
+    job.review!.rows=[existing];job.review!.summary.new_guardians=0;
+    render(<ImportReview schoolId="school-1" job={job} reload={vi.fn()} onCommitted={vi.fn()}/>);
+    expect(screen.getByText('No guardian linked')).toBeVisible();
+    expect(screen.getByText('Existing campus person')).toBeVisible();
+    expect(screen.queryByText('Guardian missing')).not.toBeInTheDocument();
+    expect(screen.queryByText('Separate guardian')).not.toBeInTheDocument();
+    expect(screen.getByText('Ready')).toBeVisible();expect(commitImport).not.toHaveBeenCalled();
+  });
   it('offers the CSV template and uploads only when the user requests review',async()=>{
     const onUploaded=vi.fn();render(<ImportUpload schoolId="school-1" options={options} onUploaded={onUploaded}/>);const user=userEvent.setup();
     expect(screen.getByRole('link',{name:'CSV template'})).toHaveAttribute('href','/api/v1/people/imports/template?school_id=school-1');

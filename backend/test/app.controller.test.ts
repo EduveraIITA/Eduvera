@@ -22,17 +22,17 @@ describe("AppController monitoring metrics", () => {
     else process.env.METRICS_TOKEN = originalMetricsToken;
   });
 
-  it("sets the Prometheus content type only after a monitoring token is accepted", () => {
+  it("sets the Prometheus content type only after a monitoring token is accepted", async () => {
     const header = vi.fn();
     const controller = new AppController(
-      {} as never,
+      { prometheusMetrics: () => "thatcampus_database_query_failures_total 0\n" } as never,
       { prometheusMetrics: () => "omnischool_event_broker_ready 1\n" } as never,
     );
 
-    expect(() => controller.metrics(undefined, { header } as never)).toThrow(UnauthorizedException);
+    await expect(controller.metrics(undefined, { header } as never)).rejects.toThrow(UnauthorizedException);
     expect(header).not.toHaveBeenCalled();
 
-    expect(controller.metrics(
+    expect(await controller.metrics(
       "Bearer unit-test-metrics-token-that-is-long-enough",
       { header } as never,
     )).toContain("omnischool_event_broker_ready");

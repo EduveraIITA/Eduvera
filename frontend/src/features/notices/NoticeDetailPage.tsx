@@ -1,14 +1,21 @@
+import { applicationNow } from "../simulation/applicationTime";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { AlertCircle, CheckCircle2, Clock3, FileWarning, Pencil, RefreshCw, Send, UsersRound } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Link, useSearchParams } from "react-router-dom";
 import {
   cancelNotice, getNotice, noticeCommandKey, openNotice, publishNotice,
-  type NoticePortal,
+  getWorkspaceNotice, type NoticePortal,
 } from "./api";
 import { NoticeRecipientRow } from "./NoticeRecipientRow";
 import { NoticeResponsePanel } from "./NoticeResponsePanel";
 import { NoticeShell } from "./NoticeShell";
+import {
+  noticeDetailPath,
+  noticeListPath,
+  type NoticeExperienceContext,
+  type NoticeWorkspaceContext,
+} from "./noticeWorkspaceContext";
 
 function formatDate(value: string | null, includeTime = true) {
   if (!value) return null;
@@ -21,15 +28,51 @@ function modeLabel(mode: string) {
   return "Choice";
 }
 
-export function NoticeDetailPage({ portal, noticeId }: { portal: NoticePortal; noticeId: string }) {
+type NoticeDetailPageProps =
+  | { readonly portal: NoticePortal; readonly workspace?: never; readonly noticeId: string }
+  | { readonly portal?: never; readonly workspace: NoticeWorkspaceContext; readonly noticeId: string };
+
+function withListView(path: string, view: string | null, page?: string | null) {
+  const destination = new URL(path, "https://thatcampus.invalid");
+  if (view && ["attention", "published", "draft", "cancelled"].includes(view)) destination.searchParams.set("view", view);
+  if (page && /^\d+$/.test(page) && Number(page) > 1) destination.searchParams.set("updates_page", page);
+  return `${destination.pathname}${destination.search}`;
+}
+
+function editorPath(context: NoticeExperienceContext, noticeId: string, view: string | null, page?: string | null) {
+  const destination = new URL(noticeDetailPath(context, noticeId), "https://thatcampus.invalid");
+  destination.pathname += "/edit";
+  if (view && ["attention", "published", "draft", "cancelled"].includes(view)) destination.searchParams.set("view", view);
+  if (page && /^\d+$/.test(page) && Number(page) > 1) destination.searchParams.set("updates_page", page);
+  return `${destination.pathname}${destination.search}`;
+}
+
+export function NoticeDetailPage(props: NoticeDetailPageProps) {
+  const { noticeId } = props;
   const [params] = useSearchParams();
-  const studentId = portal === "parent" ? params.get("student_id") ?? undefined : undefined;
-  const focusAttention = portal === "principal" && params.get("focus") === "attention";
+  const context: NoticeExperienceContext = props.workspace
+    ? { kind: "workspace", workspace: props.workspace }
+    : {
+        kind: "legacy",
+        portal: props.portal,
+        ...(props.portal === "parent" && params.get("student_id") ? { studentId: params.get("student_id")! } : {}),
+      };
+  const studentId = context.kind === "workspace"
+    ? context.workspace.studentId
+    : context.portal === "parent" ? params.get("student_id") ?? undefined : undefined;
+  const focusAttention = params.get("focus") === "attention";
   const [recipientFilter, setRecipientFilter] = useState<"attention" | "all">(() => focusAttention ? "attention" : "all");
   const attentionSectionRef = useRef<HTMLElement>(null);
   const focusedAttention = useRef("");
   const queryClient = useQueryClient();
-  const query = useQuery({ queryKey: ["notice", portal, noticeId, studentId], queryFn: () => getNotice(portal, noticeId, studentId), staleTime: 10_000 });
+  const contextKey = context.kind === "workspace" ? context.workspace.scope : context.portal;
+  const query = useQuery({
+    queryKey: ["notice", contextKey, noticeId, studentId],
+    queryFn: () => context.kind === "workspace"
+      ? getWorkspaceNotice(context.workspace.scope, noticeId, studentId)
+      : getNotice(context.portal, noticeId, studentId),
+    staleTime: 10_000,
+  });
   const refetchNotice = query.refetch;
   const refreshAll = useCallback(async () => {
     await Promise.all([
@@ -65,23 +108,17 @@ export function NoticeDetailPage({ portal, noticeId }: { portal: NoticePortal; n
     opened.current = revisionToken;
     void openNotice(data.id, studentId).then(refreshAll).catch(() => { opened.current = null; });
   }, [data, ownRecipient, refreshAll, studentId]);
-  const listParams = new URLSearchParams();
-  if (studentId) listParams.set("student_id", studentId);
   const listView = params.get("view");
-  if (["attention", "published", "draft", "cancelled"].includes(listView ?? "")) listParams.set("view", listView!);
-  const backTo = `/${portal}/notices${listParams.size ? `?${listParams}` : ""}`;
-  const editorContext = listView && ["attention", "published", "draft", "cancelled"].includes(listView)
-    ? `?view=${encodeURIComponent(listView)}`
-    : "";
-  if (query.isPending) return <NoticeShell portal={portal} title="Notice" backTo={backTo} studentId={studentId}><div className="notices-workspace"><div className="notice-loading" role="status"><span /><span /><span /></div></div></NoticeShell>;
-  if (query.isError || !data) return <NoticeShell portal={portal} title="Notice" backTo={backTo} studentId={studentId}><div className="notices-workspace"><section className="notice-state notice-state--error" role="alert"><AlertCircle size={24} /><strong>Notice is unavailable</strong><p>{query.error instanceof Error ? query.error.message : "It may no longer be available."}</p><button type="button" onClick={() => void query.refetch()}><RefreshCw size={16} />Try again</button></section></div></NoticeShell>;
+  const backTo = withListView(noticeListPath(context), listView, params.get("updates_page"));
+  if (query.isPending) return <NoticeShell context={context} title={context.kind === "workspace" ? "Update" : "Notice"} backTo={backTo} studentId={studentId}><div className="notices-workspace"><div className="notice-loading" role="status"><span /><span /><span /></div></div></NoticeShell>;
+  if (query.isError || !data) return <NoticeShell context={context} title={context.kind === "workspace" ? "Update" : "Notice"} backTo={backTo} studentId={studentId}><div className="notices-workspace"><section className="notice-state notice-state--error" role="alert"><AlertCircle size={24} /><strong>{context.kind === "workspace" ? "Update" : "Notice"} is unavailable</strong><p>{query.error instanceof Error ? query.error.message : "It may no longer be available."}</p><button type="button" onClick={() => void query.refetch()}><RefreshCw size={16} />Try again</button></section></div></NoticeShell>;
   const actionError = publishMutation.error ?? cancelMutation.error;
   const save = refreshAll;
   const recipients = [...(data.recipients ?? [])].sort((left, right) => {
     const score = (recipient: (typeof left)) => {
       const latest = recipient.deliveries[0];
       if (latest?.status === "failed") return 0;
-      if (!recipient.responded_at && data.response_mode !== "information" && data.due_at && new Date(data.due_at).getTime() < Date.now()) return 1;
+      if (!recipient.responded_at && data.response_mode !== "information" && data.due_at && new Date(data.due_at).getTime() < applicationNow().getTime()) return 1;
       if (!recipient.responded_at && data.response_mode !== "information") return 2;
       if (!recipient.opened_at) return 3;
       return 4;
@@ -93,7 +130,7 @@ export function NoticeDetailPage({ portal, noticeId }: { portal: NoticePortal; n
     return latest?.status === "failed" || (!recipient.responded_at && data.response_mode !== "information");
   });
   const visibleRecipients = recipientFilter === "attention" ? attentionRecipients : recipients;
-  return <NoticeShell portal={portal} title="Notice" backTo={backTo} studentId={studentId}>
+  return <NoticeShell context={context} title={context.kind === "workspace" ? "Update" : "Notice"} backTo={backTo} studentId={studentId}>
     <article className="notices-workspace notice-detail">
       <header className="notice-detail__header">
         <div className="notice-detail__eyebrow"><span className={`notice-priority notice-priority--${data.priority}`}>{data.priority}</span><span>{modeLabel(data.response_mode)}</span>{data.status !== "published" ? <span>{data.status}</span> : null}</div>
@@ -106,7 +143,7 @@ export function NoticeDetailPage({ portal, noticeId }: { portal: NoticePortal; n
       {ownRecipient ? <NoticeResponsePanel notice={data} recipient={ownRecipient} studentId={studentId} onSaved={save} /> : null}
 
       {data.can_manage ? <>
-        {data.status === "draft" ? <div className="notice-draft-actions"><Link to={`/${portal}/notices/${data.id}/edit${editorContext}`}><Pencil size={17} />Edit</Link><button type="button" disabled={publishMutation.isPending} onClick={() => publishMutation.mutate(data.revision)}><Send size={17} />{publishMutation.isPending ? "Publishing…" : "Publish"}</button></div> : null}
+        {data.status === "draft" ? <div className="notice-draft-actions"><Link to={editorPath(context, data.id, listView, params.get("updates_page"))}><Pencil size={17} />Edit</Link><button type="button" disabled={publishMutation.isPending} onClick={() => publishMutation.mutate(data.revision)}><Send size={17} />{publishMutation.isPending ? "Publishing…" : "Publish"}</button></div> : null}
         {actionError ? <p className="notice-form-error" role="alert">{actionError instanceof Error ? actionError.message : "The notice could not be updated."}</p> : null}
         {data.metrics ? <section className="notice-metrics" aria-label="Notice progress">
           <div><UsersRound size={18} /><strong>{data.metrics.recipients}</strong><span>Recipients</span></div>

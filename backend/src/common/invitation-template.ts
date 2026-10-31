@@ -1,3 +1,5 @@
+import { thatCampusWordmark } from './brand-assets.js';
+
 function escapeHtml(value: string) {
   return value.replace(/[&<>"']/g, character => ({'&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'}[character]!));
 }
@@ -7,7 +9,7 @@ export function invitationTemplate(input: {email: string; token: string; expires
   const joinLink = new URL('/join', input.publicUrl);
   joinLink.hash = new URLSearchParams({email: input.email, token: input.token}).toString();
   const joinUrl = input.action?.url ?? joinLink.href;
-  const logoUrl = new URL('/email-assets/thatcampus-logo-v2.png', input.publicUrl).href;
+  const logoUrl = new URL(thatCampusWordmark.emailPath, input.publicUrl).href;
   const expiry = new Date(input.expires_at).toISOString();
   const displayExpiry = new Intl.DateTimeFormat('en-US', {
     month: 'short', day: 'numeric', year: 'numeric', hour: 'numeric', minute: '2-digit',
@@ -20,7 +22,7 @@ export function invitationTemplate(input: {email: string; token: string; expires
 <body style="margin:0;padding:0;background:#f3f6f8;font-family:Arial,Helvetica,sans-serif;color:#101828;-webkit-text-size-adjust:100%">
 <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="background:#f3f6f8"><tr><td class="email-outer" align="center" style="padding:32px 16px">
 <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="max-width:600px;table-layout:fixed;background:#ffffff;border:1px solid #e9edf1;border-radius:28px">
-<tr><td class="email-section" style="padding:36px 40px;border-bottom:1px solid #edf0f3"><table role="presentation" cellspacing="0" cellpadding="0"><tr><td style="vertical-align:middle"><img src="${escapeHtml(logoUrl)}" alt="ThatCampus logo" width="120" height="72" style="display:block;width:120px;height:72px;border:0;padding:12px;border-radius:12px;background-color:#ffffff;background-image:linear-gradient(#ffffff,#ffffff)"><p style="margin:10px 0 0;color:#667085;font-size:13px">Not just any campus. That campus.</p></td></tr></table></td></tr>
+<tr><td class="email-section" style="padding:36px 40px;border-bottom:1px solid #edf0f3"><table role="presentation" cellspacing="0" cellpadding="0"><tr><td style="vertical-align:middle"><img src="${escapeHtml(logoUrl)}" alt="ThatCampus logo" width="180" style="display:block;width:180px;max-width:100%;height:auto;border:0;background-color:#ffffff;background-image:linear-gradient(#ffffff,#ffffff)"><p style="margin:10px 0 0;color:#667085;font-size:13px">Not just any campus. That campus.</p></td></tr></table></td></tr>
 <tr><td class="email-section" style="padding:36px 40px 40px">
 <h1 class="email-heading" style="margin:0 0 16px;font-size:32px;line-height:1.25;letter-spacing:-1px;color:#101828">${escapeHtml(input.action?.title ?? "You're invited to join")}</h1>
 <p style="font-size:17px;line-height:1.7;color:#667085;margin:0 0 32px">${escapeHtml(input.action?.description ?? "Your institution has invited you to collaborate on ThatCampus. Accept below to access your institution workspace.")}</p>

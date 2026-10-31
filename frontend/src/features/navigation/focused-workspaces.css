@@ -1,5 +1,5 @@
 /* Content-first workspaces. The scope deliberately excludes every portal home. */
-.portal-secondary-screen :is(.invitation-toolbar,.import-toolbar,.care-toolbar,.activation-summary) {
+.portal-secondary-screen :is(.invitation-toolbar,.import-toolbar,.care-toolbar) {
   display:flex; align-items:center; justify-content:space-between; flex-wrap:wrap;
   gap:12px; color:var(--thatcampus-ink-secondary); font-size:14px;
 }
@@ -15,18 +15,6 @@
 .portal-secondary-screen .invitation-list li { gap:12px; }
 .portal-secondary-screen .invitation-list li > div { min-width:0; overflow-wrap:anywhere; }
 .portal-secondary-screen .invitation-list li > button { min-height:44px; color:var(--thatcampus-brand); }
-.portal-secondary-screen .activation-summary { padding:8px 0; }
-.portal-secondary-screen .activation-summary strong { color:var(--thatcampus-ink); font-size:16px; }
-.portal-secondary-screen .activation-card { box-shadow:none; padding:16px; }
-.portal-secondary-screen .activation-checklist > header { padding:0; }
-.portal-secondary-screen .activation-checklist h2 { font-size:16px; }
-.portal-secondary-screen .activation-checklist ol { margin-top:8px; }
-.portal-secondary-screen .activation-checklist li > a { min-height:44px; font-size:13px; }
-.portal-secondary-screen .activation-completed > summary { min-height:44px; padding-block:12px; cursor:pointer; font-size:14px; }
-.portal-secondary-screen .activation-completed > summary > span { float:right; }
-.portal-secondary-screen .activation-completed { padding:0 16px; }
-.portal-secondary-screen .activation-checklist li { grid-template-columns:28px minmax(0,1fr) auto; align-items:center; }
-.portal-secondary-screen .activation-checklist li > a { grid-column:auto; width:auto; }
 .portal-secondary-screen .office-invoice-link { display:flex; align-items:center; gap:12px; color:var(--thatcampus-ink); text-decoration:none; min-height:64px; width:100%; }
 .portal-secondary-screen .office-invoice-link > span:first-child { flex:1; min-width:0; }
 .portal-secondary-screen .office-invoice-link small { display:block; color:var(--thatcampus-ink-secondary); font-size:13px; line-height:1.5; margin-top:4px; }
@@ -109,7 +97,7 @@
   border-right:2px solid var(--thatcampus-ink-secondary); border-bottom:2px solid var(--thatcampus-ink-secondary);
   transform:rotate(45deg); pointer-events:none;
 }
-.portal-secondary-screen :is(.invitation-toolbar,.import-toolbar,.care-page,.office-invoice-link,.activation-completed) :focus-visible {
+.portal-secondary-screen :is(.invitation-toolbar,.import-toolbar,.care-page,.office-invoice-link) :focus-visible {
   outline:2px solid var(--thatcampus-brand); outline-offset:3px;
 }
 

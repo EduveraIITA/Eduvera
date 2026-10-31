@@ -9,7 +9,7 @@ export const SCHOOL_EVENT_CHANNEL_VERSION = 1;
 export const SCHOOL_EVENT_CHANNEL_PREFIX = "omnischool:school-events";
 export const SCHOOL_EVENT_LOCK_PREFIX = "omnischool:school-events:leader";
 
-export type SharedStreamStatus = "connected" | "reconnecting" | "offline";
+export type SharedStreamStatus = "connected" | "reconnecting" | "offline" | "superseded";
 
 interface ChannelMessageBase {
   version: typeof SCHOOL_EVENT_CHANNEL_VERSION;
@@ -22,13 +22,14 @@ export type SchoolEventChannelPayload =
   | { kind: "event"; eventType: SchoolEventType; envelope: SchoolEventEnvelope }
   | { kind: "sync" }
   | { kind: "session.expired" }
+  | { kind: "environment.changed" }
   | { kind: "status"; status: SharedStreamStatus }
   | { kind: "hello" };
 
 export type SchoolEventChannelMessage = ChannelMessageBase & SchoolEventChannelPayload;
 
 const eventTypeSet = new Set<string>(SCHOOL_EVENT_TYPES);
-const streamStatusSet = new Set<string>(["connected", "reconnecting", "offline"]);
+const streamStatusSet = new Set<string>(["connected", "reconnecting", "offline", "superseded"]);
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
@@ -67,16 +68,16 @@ export function decodeSchoolEventChannelMessage(value: unknown): SchoolEventChan
       ? { ...base, kind: "status", status: value.status as SharedStreamStatus }
       : null;
   }
-  if (value.kind === "sync" || value.kind === "session.expired" || value.kind === "hello") {
+  if (value.kind === "sync" || value.kind === "session.expired" || value.kind === "environment.changed" || value.kind === "hello") {
     return { ...base, kind: value.kind };
   }
   return null;
 }
 
-export function schoolEventChannelName(userId: string) {
-  return `${SCHOOL_EVENT_CHANNEL_PREFIX}:${userId}`;
+export function schoolEventChannelName(userId: string, environmentIdentity = "live") {
+  return `${SCHOOL_EVENT_CHANNEL_PREFIX}:${environmentIdentity}:${userId}`;
 }
 
-export function schoolEventLockName(userId: string) {
-  return `${SCHOOL_EVENT_LOCK_PREFIX}:${userId}`;
+export function schoolEventLockName(userId: string, environmentIdentity = "live") {
+  return `${SCHOOL_EVENT_LOCK_PREFIX}:${environmentIdentity}:${userId}`;
 }

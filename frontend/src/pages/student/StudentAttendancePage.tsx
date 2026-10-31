@@ -78,10 +78,13 @@ export interface StudentAttendancePageProps {
   data: StudentAttendanceData;
   routes?: Partial<StudentRouteMap>;
   onApplyMedicalExcuse?: () => void;
+  onViewEligibility?: () => void;
   onAskCopilot?: AttendanceCopilotHandler;
   initialCopilotOpen?: boolean;
   onCopilotClose?: () => void;
   activeNav?: StudentNavKey;
+  /** The responsibility-composed Attendance Area owns the shared shell. */
+  embedded?: boolean;
 }
 
 const demoSubjects: StudentAttendanceSubject[] = [
@@ -234,11 +237,13 @@ export function StudentAttendancePage({
   data,
   routes,
   onApplyMedicalExcuse,
+  onViewEligibility,
   onAskCopilot,
   initialCopilotOpen = false,
   proFeaturesEnabled = false,
   onCopilotClose,
   activeNav = "attendance",
+  embedded = false,
 }: StudentAttendancePageProps) {
   const navigate = useNavigate();
   const [params,setParams]=useSearchParams();
@@ -267,8 +272,7 @@ export function StudentAttendancePage({
     return data.subjects;
   }, [data.minimumPercent, data.subjects, filter]);
 
-  return (
-    <StudentShell activeNav={activeNav} routes={routes} className={data.className}>
+  const content = <>
       <div className="student-page-stack student-attendance-page">
         <section className="student-attendance-overview" aria-labelledby="overall-attendance-heading">
           <h2 id="overall-attendance-heading"><span className="sr-only">Overall attendance · </span>{data.termLabel}</h2>
@@ -300,7 +304,8 @@ export function StudentAttendancePage({
         </section>
 
         <section className="student-attendance-tools" aria-label="Attendance options">
-          <button type="button" onClick={onApplyMedicalExcuse??(()=>navigate("/student/leave/new"))}>Apply for leave<ChevronRight size={17} aria-hidden="true"/></button>
+          <button type="button" onClick={onApplyMedicalExcuse??(()=>navigate("/areas/attendance/leave?scope=self&view=apply"))}>Apply for leave<ChevronRight size={17} aria-hidden="true"/></button>
+          <button type="button" onClick={onViewEligibility??(()=>navigate("/areas/attendance/records?scope=self&view=eligibility"))}>Eligibility &amp; documents<ChevronRight size={17} aria-hidden="true"/></button>
           {proFeaturesEnabled && <button type="button" onClick={()=>setCopilotOpen(true)}>Attendance help<ChevronRight size={17} aria-hidden="true"/></button>}
           <button type="button" onClick={event=>{event.currentTarget.focus();setRankingOpen(true);}}>Class attendance<ChevronRight size={17} aria-hidden="true"/></button>
 
@@ -331,6 +336,7 @@ export function StudentAttendancePage({
         </section>
       </div>
       <AttendanceCopilotSheet open={proFeaturesEnabled&&copilotOpen} onClose={() => { setCopilotOpen(false); onCopilotClose?.(); }} onAsk={onAskCopilot} />
-    </StudentShell>
-  );
+    </>;
+  if (embedded) return content;
+  return <StudentShell activeNav={activeNav} routes={routes} className={data.className}>{content}</StudentShell>;
 }

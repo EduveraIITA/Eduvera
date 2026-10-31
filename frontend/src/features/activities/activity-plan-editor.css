@@ -1,0 +1,124 @@
+.activity-form.activity-form--setup {
+  gap:16px;
+  padding:20px;
+}
+
+.activity-form--setup .activity-setup-progress {
+  display:grid;
+  grid-template-columns:auto minmax(0,1fr) auto;
+  gap:4px;
+  margin:0 0 4px;
+  padding:0;
+  list-style:none;
+}
+.activity-form--setup .activity-setup-progress:focus { outline:none; }
+.activity-setup-progress li {
+  display:flex;
+  align-items:center;
+  gap:8px;
+  min-width:0;
+  color:var(--thatcampus-ink-secondary);
+  font-size:14px;
+  line-height:1.4;
+  white-space:nowrap;
+}
+.activity-setup-progress li > span {
+  display:grid;
+  place-items:center;
+  flex:0 0 20px;
+  height:20px;
+  border-radius:50%;
+  background:var(--thatcampus-surface-soft);
+  font-size:12px;
+  font-weight:650;
+}
+.activity-setup-progress li[aria-current=step] {
+  color:var(--thatcampus-brand);
+  font-weight:650;
+}
+.activity-setup-progress li[aria-current=step] > span {
+  color:var(--thatcampus-on-action);
+  background:var(--thatcampus-action);
+}
+.activity-form--setup .activity-setup-fields { display:grid; gap:16px; }
+.activity-form--setup .activity-setup-section { display:grid; gap:12px; }
+.activity-form--setup .activity-setup-section + .activity-setup-section {
+  padding-top:16px;
+  border-top:1px solid var(--thatcampus-border);
+}
+.activity-form--setup .activity-setup-section > legend {
+  display:flex;
+  align-items:center;
+  gap:8px;
+  margin-bottom:8px;
+  font-size:16px;
+}
+.activity-form--setup .activity-setup-section > legend .activity-optional {
+  font-size:14px;
+  font-weight:400;
+}
+.activity-form.activity-form--setup input:not([type=checkbox]),
+.activity-form.activity-form--setup select,
+.activity-form.activity-form--setup textarea { min-height:44px; padding:8px 12px; font-size:16px; }
+.activity-form--setup .activity-setup-fields > label,
+.activity-form--setup .activity-setup-section > label,
+.activity-form--setup .activity-form-pair > label,
+.activity-form--setup details > label { gap:4px; }
+.activity-form.activity-form--setup .activity-form-pair { grid-template-columns:repeat(2,minmax(0,1fr)); }
+.activity-form.activity-form--setup details { display:block; margin:0; padding:0; border:0; }
+.activity-form.activity-form--setup details + details { margin:0; }
+.activity-form.activity-form--setup details[open] > :not(summary) { margin-top:12px; }
+.activity-form.activity-form--setup summary { min-height:44px; padding-block:8px; box-sizing:border-box; }
+.activity-form--setup .activity-time-context { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); align-items:center; gap:12px; }
+.activity-form--setup .activity-time-context .activity-check { gap:8px; }
+.activity-form--setup .activity-time-context > p { min-width:0; text-align:right; line-height:1.4; overflow-wrap:anywhere; }
+.activity-form--setup .activity-time-context strong { display:block; font-weight:500; }
+.activity-form--setup .activity-place-actions { display:flex; flex-wrap:wrap; align-items:center; gap:8px 16px; }
+.activity-form--setup .activity-reserved-place { display:flex; align-items:center; justify-content:space-between; gap:12px; min-height:44px; }
+.activity-form--setup .activity-reserved-place > span { min-width:0; font-size:16px; overflow-wrap:anywhere; }
+.activity-form.activity-form--setup .activity-picker > .activity-search {
+  display:flex;
+  align-items:center;
+  gap:8px;
+}
+.activity-form--setup .activity-picker > .activity-search > svg { flex:none; }
+.activity-form.activity-form--setup .activity-picker > .activity-search > input {
+  flex:1;
+  width:0;
+}
+.activity-form--setup .activity-picker__options small { font-size:14px; }
+.activity-form--setup .activity-review {
+  padding:0 var(--thatcampus-row-inset,16px);
+  border-radius:var(--thatcampus-radius-card);
+  background:var(--thatcampus-surface-row);
+}
+.activity-form--setup .activity-review > div { position:relative; gap:4px; padding:12px 56px 12px 0; }
+.activity-form--setup .activity-review > div:last-child { border-bottom:0; }
+.activity-form--setup .activity-review dt {
+  display:flex;
+  align-items:center;
+  justify-content:space-between;
+  gap:12px;
+  min-height:0;
+}
+.activity-form--setup .activity-review dt > button {
+  position:absolute;
+  top:8px;
+  right:0;
+  flex:none;
+  min-width:44px;
+  min-height:44px;
+  padding:8px;
+  border:0;
+  border-radius:var(--thatcampus-radius-control);
+  background:transparent;
+  color:var(--thatcampus-brand);
+  font-size:14px;
+  font-weight:600;
+}
+.activity-form.activity-form--setup footer { bottom:0; margin:0 -20px -20px; padding-inline:20px; }
+.activity-form.activity-form--setup footer button { min-height:44px; padding:10px 12px; }
+
+@media(max-width:359px) {
+  .activity-setup-progress li { flex-direction:row; align-items:center; gap:4px; }
+}

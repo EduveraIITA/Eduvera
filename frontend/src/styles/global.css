@@ -1,20 +1,20 @@
 :root {
-  color: #0b1c30;
-  background: #f8f9ff;
-  font-family: "Plus Jakarta Sans", ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  color: var(--edura-ink);
+  background: var(--edura-canvas);
+  font-family: ui-sans-serif, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
   font-synthesis: none;
   text-rendering: optimizeLegibility;
   -webkit-font-smoothing: antialiased;
-  --surface: #f8f9ff;
+  --surface: #ffffff;
   --surface-lowest: #ffffff;
-  --surface-low: #eff4ff;
-  --surface-container: #e5eeff;
-  --surface-high: #dce9ff;
-  --surface-highest: #d3e4fe;
-  --on-surface: #0b1c30;
-  --on-surface-variant: #434655;
-  --outline: #747686;
-  --outline-variant: #c4c5d7;
+  --surface-low: #f7f7f7;
+  --surface-container: #f2f2f2;
+  --surface-high: #ebebeb;
+  --surface-highest: #e3e3e3;
+  --on-surface: #222222;
+  --on-surface-variant: #626262;
+  --outline: #767676;
+  --outline-variant: #dddddd;
   --primary: #0037b0;
   --primary-bright: #1d4ed8;
   --primary-fixed: #dce1ff;
@@ -31,14 +31,14 @@
 
   /* Edura design foundations. Role-specific styles alias these tokens instead
      of inventing a separate palette for each portal. */
-  --edura-canvas: #f8f9ff;
+  --edura-canvas: #ffffff;
   --edura-surface: #ffffff;
-  --edura-surface-soft: #eff4ff;
-  --edura-surface-strong: #e5eeff;
-  --edura-ink: #0b1c30;
-  --edura-ink-secondary: #434655;
-  --edura-ink-muted: #5c667a;
-  --edura-border: #dce3f0;
+  --edura-surface-soft: #f7f7f7;
+  --edura-surface-strong: #f2f2f2;
+  --edura-ink: #222222;
+  --edura-ink-secondary: #626262;
+  --edura-ink-muted: #686868;
+  --edura-border: #e5e5e5;
   --edura-brand: #0037b0;
   --edura-brand-bright: #1d4ed8;
   --edura-feature-gradient: linear-gradient(132deg, #164ed0 0%, #2969e7 58%, #3d7af0 100%);
@@ -49,14 +49,14 @@
   --edura-warning-soft: #fff0cf;
   --edura-danger: #ba1a1a;
   --edura-danger-soft: #ffdad6;
-  --edura-radius-control: 10px;
-  --edura-radius-card: 16px;
-  --edura-radius-feature: 22px;
+  --edura-radius-control: 16px;
+  --edura-radius-card: 24px;
+  --edura-radius-feature: 28px;
   --edura-radius-pill: 999px;
-  --edura-shadow-card: 0 1px 2px rgba(15, 23, 42, 0.045), 0 8px 24px rgba(29, 78, 216, 0.045);
-  --edura-shadow-raised: 0 14px 36px rgba(15, 23, 42, 0.13);
+  --edura-shadow-card: 0 2px 4px rgb(0 0 0 / 4%), 0 7px 20px rgb(0 0 0 / 5%);
+  --edura-shadow-raised: 0 12px 32px rgb(0 0 0 / 12%);
   --edura-motion: 220ms cubic-bezier(0.16, 1, 0.3, 1);
-  --edura-page-gutter: 16px;
+  --edura-page-gutter: 20px;
 
   /* ThatCampus is the current product name. Keep these aliases centralized so
      renamed feature styles inherit the established visual system while older
@@ -65,6 +65,9 @@
   --thatcampus-surface: var(--edura-surface);
   --thatcampus-surface-soft: var(--edura-surface-soft);
   --thatcampus-surface-strong: var(--edura-surface-strong);
+  /* Tappable filled entries must not disappear into a white canvas. Plain
+     divider lists keep their transparent surface instead of becoming cards. */
+  --thatcampus-surface-row: #f5f7f6;
   --thatcampus-ink: var(--edura-ink);
   --thatcampus-ink-secondary: var(--edura-ink-secondary);
   --thatcampus-ink-muted: var(--edura-ink-muted);
@@ -80,13 +83,36 @@
   --thatcampus-danger: var(--edura-danger);
   --thatcampus-danger-soft: var(--edura-danger-soft);
   --thatcampus-radius-control: var(--edura-radius-control);
+  --thatcampus-radius-control-inset: calc(var(--thatcampus-radius-control) - 4px);
   --thatcampus-radius-card: var(--edura-radius-card);
   --thatcampus-radius-feature: var(--edura-radius-feature);
+  --thatcampus-radius-row: 20px;
+  --thatcampus-row-inset: 16px;
   --thatcampus-radius-pill: var(--edura-radius-pill);
   --thatcampus-shadow-card: var(--edura-shadow-card);
   --thatcampus-shadow-raised: var(--edura-shadow-raised);
+  --thatcampus-shadow-control: 0 1px 3px rgb(0 0 0 / 9%), 0 3px 9px rgb(0 0 0 / 6%);
+  --thatcampus-shadow-control-pressed: inset 0 1px 3px rgb(0 0 0 / 15%);
+  --thatcampus-shadow-inset: inset 0 1px 3px rgb(0 0 0 / 7%);
   --thatcampus-motion: var(--edura-motion);
   --thatcampus-page-gutter: var(--edura-page-gutter);
+  --thatcampus-line: var(--thatcampus-border);
+  --thatcampus-action: #174fc7;
+  --thatcampus-on-action: #ffffff;
+  --thatcampus-accent: #7155be;
+  --thatcampus-accent-soft: #f0ebfc;
+  /* Supporting logo colours are illustrations, not success/warning states. */
+  --thatcampus-logo-green: #197655;
+  --thatcampus-logo-green-soft: #e9f6ee;
+  --thatcampus-logo-yellow-ink: #805c08;
+  --thatcampus-logo-yellow-soft: #fff4c9;
+  --thatcampus-icon-mint: #bcebd3;
+  --thatcampus-icon-gold: #ffe080;
+  --thatcampus-icon-blue: #295da2;
+  --thatcampus-icon-sky: #c4ddfb;
+  --thatcampus-icon-lilac: #dfd2f8;
+  --thatcampus-icon-rose: #a34164;
+  --thatcampus-icon-rose-soft: #f9e4eb;
 }
 
 * {
@@ -96,7 +122,7 @@
 html {
   min-width: 320px;
   min-height: 100%;
-  background: #f8f9ff;
+  background: var(--edura-canvas);
   scrollbar-width: none;
 }
 
@@ -109,6 +135,8 @@ body {
   min-height: 100vh;
   margin: 0;
   background: var(--edura-canvas);
+  font-size: 16px;
+  line-height: 1.5;
 }
 
 button,
@@ -141,6 +169,13 @@ button:disabled {
   opacity: 0.58;
 }
 
+/* Native-size text fields remain readable without triggering phone keyboard zoom.
+   Checkboxes, radios and the calendar's interactive canvas keep their own sizing. */
+.operations-app :is(input[type="text"], input[type="email"], input[type="password"], input[type="search"], input[type="tel"], input[type="date"], input[type="time"], input[type="number"], select, textarea) {
+  min-width: 0;
+  font-size: 16px;
+}
+
 a {
   color: inherit;
   text-decoration: none;
@@ -152,13 +187,13 @@ svg {
 }
 
 :focus-visible {
-  outline: 3px solid rgba(29, 78, 216, 0.34);
+  outline: 3px solid color-mix(in srgb, var(--thatcampus-brand) 55%, transparent);
   outline-offset: 2px;
 }
 
 ::selection {
-  color: #ffffff;
-  background: #1d4ed8;
+  color: var(--thatcampus-on-action);
+  background: var(--thatcampus-action);
 }
 
 #root {
@@ -202,18 +237,24 @@ svg {
 
 .route-loader__animation {
   display: block;
-  width: 96px;
-  height: 96px;
+  width: 72px;
+  height: 72px;
+}
+.route-loader__animation--dark { display: none; }
+:root[data-theme="dark"] .route-loader__animation--light { display: none; }
+:root[data-theme="dark"] .route-loader__animation--dark { display: block; }
+:root[data-theme="dark"] .route-loader__still,
+:root[data-theme="dark"] .thatcampus-loading-icon__still {
+  background-image: url('/assets/thatcampus-brand-mark-dark.svg');
 }
 
 .route-loader__still {
   display: none;
-  width: 18px;
-  height: 18px;
-  border-radius: 50%;
-  background: var(--edura-brand-bright);
-  box-shadow: 0 0 0 8px var(--edura-brand-soft);
+  width: 72px;
+  height: 72px;
+  background: url('/assets/thatcampus-brand-mark.svg') center / contain no-repeat;
 }
+
 
 .route-loader__label {
   max-width: 28ch;
@@ -224,7 +265,7 @@ svg {
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .route-loader__animation { display: none; }
+  .route-loader__animation { display: none !important; }
   .route-loader__still { display: block; }
 }
 
@@ -366,8 +407,23 @@ svg {
 
 /* Shared brand loading indicators keep local control dimensions. */
 .thatcampus-loading-icon > img { display: block; width: 100%; height: 100%; object-fit: contain; }
+.thatcampus-loading-icon > .thatcampus-loading-icon__dark { display: none; }
+:root[data-theme="dark"] .thatcampus-loading-icon > .thatcampus-loading-icon__light { display: none; }
+:root[data-theme="dark"] .thatcampus-loading-icon > .thatcampus-loading-icon__dark { display: block; }
 .thatcampus-loading-icon__still { display: none; }
 @media (prefers-reduced-motion: reduce) {
-  .thatcampus-loading-icon > img { display: none; }
-  .thatcampus-loading-icon__still { display: block; width: 65%; height: 65%; margin: auto; border-radius: 50%; background: #0054ff; }
+  .thatcampus-loading-icon > img { display: none !important; }
+  .thatcampus-loading-icon__still { display: block; width: 100%; height: 100%; background: url('/assets/thatcampus-brand-mark.svg') center / contain no-repeat; }
 }
+
+/* Transparent feathers follow the local surface: filled primary actions use
+   white ink in either app appearance, while their yellow dot stays yellow. */
+:is(.button--primary, .simulation-button--primary, .campus-scene-button--primary,
+  .student-leave-button--primary, .live-route-error button, .route-error button)
+  .thatcampus-loading-icon__still { background-image: url('/assets/thatcampus-brand-mark-dark.svg'); }
+:is(.button--primary, .simulation-button--primary, .campus-scene-button--primary,
+  .student-leave-button--primary, .live-route-error button, .route-error button)
+  .thatcampus-loading-icon > .thatcampus-loading-icon__light { display: none; }
+:is(.button--primary, .simulation-button--primary, .campus-scene-button--primary,
+  .student-leave-button--primary, .live-route-error button, .route-error button)
+  .thatcampus-loading-icon > .thatcampus-loading-icon__dark { display: block; }

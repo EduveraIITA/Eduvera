@@ -55,6 +55,25 @@ describe("pending staff leave commands", () => {
     expect(next.commandId).not.toBe(pending.commandId);
   });
 
+  it("retains an exact reroute command without colliding with withdrawal or route setup", async () => {
+    const material = { expected_revision: 4 };
+    const first = await pendingStaffLeaveCommand({ ...scope, operation: "reroute" }, material);
+    expect(await pendingStaffLeaveCommand({ ...scope, operation: "reroute" }, material)).toEqual(first);
+    expect((await pendingStaffLeaveCommand({ ...scope, operation: "withdraw" }, material)).commandId).not.toBe(first.commandId);
+    expect((await pendingStaffLeaveCommand({ ...scope, operation: "configure-routing" }, material)).commandId).not.toBe(first.commandId);
+  });
+
+  it("keeps live and isolated-run pending commands independent for the same cloned request", async () => {
+    const material = { expected_revision: 4 };
+    const live = await pendingStaffLeaveCommand(scope, material);
+    const runScope = { ...scope, worldKey: "scenario:one:run:one" };
+    const run = await pendingStaffLeaveCommand(runScope, material);
+    const otherRun = await pendingStaffLeaveCommand({ ...scope, worldKey: "scenario:one:run:two" }, material);
+    expect(new Set([live.commandId, run.commandId, otherRun.commandId]).size).toBe(3);
+    clearPendingStaffLeaveCommand(runScope, run);
+    expect(await pendingStaffLeaveCommand({ ...scope, worldKey: "live" }, material)).toEqual(live);
+  });
+
   it("retains retryable and ambiguous failures but identifies definitive client responses", () => {
     expect(isDefinitiveStaffLeaveFailure(new TypeError("network failed"))).toBe(false);
     expect(isDefinitiveStaffLeaveFailure(new ApiError("interrupted", 200))).toBe(false);

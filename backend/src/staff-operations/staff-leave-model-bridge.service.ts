@@ -12,6 +12,7 @@ import {
   type GovernanceDecisionAuthorityPort,
   type GovernanceDecisionAuthorityReceipt,
 } from "../governance/decision-authority.port.js";
+import { matchesLeaveReviewRouteBasis } from "./staff-leave-review-routing.contracts.js";
 
 export interface StaffLeaveSubmittedBridgeInput {
   school_id: string;
@@ -32,6 +33,7 @@ export interface StaffLeaveSubmittedBridgeInput {
   command_id: string;
   occurred_at: string;
   decision_owner: GovernanceDecisionAuthorityReceipt;
+  reroute?: { correlation_id: string; previous_event_id: string; previous_message_id: string; source_command_id: string };
 }
 
 export interface StaffLeaveDecisionBridgeInput {
@@ -102,10 +104,44 @@ export class StaffLeaveModelBridgeService {
     );
   }
 
+  async deliveryReady(transaction: Transaction<Database>, schoolId: string, owner: GovernanceDecisionAuthorityReceipt, at: string) {
+    const route = await this.coordination.resolveEventRoute(transaction, { school_id: schoolId, source_domain: "staff_operations",
+      event_type: "staff.leave.submitted", selector_key: "leave_decision_owner", occurred_at: at });
+    if (route.status !== "matched" || route.message_kind !== "request" || route.message_schema_version !== 1
+      || route.response_due_after_seconds !== null || route.expires_after_seconds !== null || route.reaction_kind !== "staff_leave_decision_review"
+      || route.selector.required_capability !== "staff_leave:decide" || route.selector.scope_mode !== "institution"
+      || route.selector.min_recipients !== 1 || route.selector.max_recipients !== 1) return false;
+    const config = route.behaviour_configuration as Record<string, unknown> | null;
+    if (!config || config.workflow !== "staff_leave_decision_review" || config.reviewer_user_id !== owner.user_id
+      || config.reviewer_person_id !== owner.person.id || !matchesLeaveReviewRouteBasis(config.authority_basis, owner)) return false;
+    const recipients = await this.coordination.authorizeCandidateRecipients(transaction, { school_id: schoolId,
+      behaviour_version_id: route.behaviour_version_id, subscription_id: route.subscription_id, occurred_at: at,
+      recipients: [{ agent_kind: "human", user_id: owner.user_id }], scope: null });
+    return recipients.authorised.length === 1 && recipients.unresolved.length === 0 && recipients.unauthorized.length === 0;
+  }
+
+  async supersedeReview(transaction: Transaction<Database>, input: { school_id: string; command_id: string;
+    request_id: string; previous_revision: number; previous_event_id: string; previous_message_id: string;
+    resulting_event_id: string; correlation_id: string; occurred_at: string; capability: string }) {
+    const trace = await this.coordination.findExactTrace(transaction, { school_id: input.school_id, source_domain: "staff_operations",
+      source_record_id: input.request_id, event_type: "staff.leave.submitted", source_revision: input.previous_revision,
+      message_id: input.previous_message_id });
+    if (!trace || trace.event_id !== input.previous_event_id || trace.message_id !== input.previous_message_id
+      || trace.correlation_id !== input.correlation_id || !trace.message_state) throw new ConflictException("The exact previous leave-review handoff is unavailable.");
+    if (["cancelled", "responded", "expired", "dead_letter"].includes(trace.message_state)) return null;
+    return this.coordination.supersedeDomainMessage(transaction, { school_id: input.school_id, command_id: input.command_id,
+      message_id: input.previous_message_id, previous_event_id: input.previous_event_id, resulting_event_id: input.resulting_event_id,
+      required_capability: input.capability, occurred_at: input.occurred_at,
+      idempotency_key: `staff-leave-supersede:${input.command_id}:${input.previous_message_id}` });
+  }
+
   async publishSubmitted(
     transaction: Transaction<Database>,
     input: StaffLeaveSubmittedBridgeInput,
   ): Promise<MatchedCoordinationPublishReceipt> {
+    if (!await this.deliveryReady(transaction, input.school_id, input.decision_owner, input.occurred_at)) {
+      throw new ConflictException("The current leave reviewer must confirm delivery of review requests before this request can be submitted.");
+    }
     const receipt = await this.coordination.publishAcceptedEvent(transaction, {
       school_id: input.school_id,
       source_outbox_event_id: input.source_outbox_event_id,
@@ -136,8 +172,8 @@ export class StaffLeaveModelBridgeService {
       source_domain: "staff_operations",
       source_record_id: input.request.id,
       source_revision: input.request.revision,
-      correlation_id: input.command_id,
-      causation_event_id: null,
+      correlation_id: input.reroute?.correlation_id ?? input.command_id,
+      causation_event_id: input.reroute?.previous_event_id ?? null,
       idempotency_key: `staff-leave-submitted:${input.request.id}:${input.request.revision}`,
       // Deliberately omit the private reason and handover note. The assigned
       // owner reads those only through the authorized Staff Operations API.
@@ -151,6 +187,8 @@ export class StaffLeaveModelBridgeService {
         requested_days: input.request.requested_days,
         status: input.request.status,
         revision: input.request.revision,
+        ...(input.reroute ? { action: "review_rerouted", source_command_id: input.reroute.source_command_id,
+          previous_message_id: input.reroute.previous_message_id } : {}),
       },
       message: {
         subject: "Review staff leave request",

@@ -1,0 +1,34 @@
+/* Agenda-first Calendar only; the shared picker and owning content keep their
+   established behavior, while routine controls occupy one compact line. */
+.cal-page.cal-page--agenda { display: flex; gap: .75rem; padding-bottom: 1rem; }
+.cal-page--agenda .cal-context-label { margin: 0; color: var(--thatcampus-ink-muted); font-size: .875rem; line-height: 1.5; }
+.cal-page--agenda > .cal-picker { display: grid; grid-template-columns: minmax(0, 1fr) 44px; align-items: start; gap: 0 .5rem; position: static; padding: 0; border: 0; background: transparent; }
+.cal-picker > .date-navigation { display: contents; }
+.cal-picker .date-navigation__toolbar { grid-column: 1; grid-row: 1; min-width: 0; padding: 0; }
+.cal-picker .date-navigation__heading { font-size: .875rem; }
+.cal-picker > .date-navigation > div[id] { grid-column: 1 / -1; min-width: 0; }
+.cal-picker .date-navigation__weekdays { margin-top: .5rem; }
+.cal-picker .date-navigation__day { min-height: 44px; padding-block: .125rem; }
+.cal-picker .date-navigation__day strong { width: 28px; height: 28px; font-size: 1rem; }
+.cal-page.cal-page--agenda .cal-picker .date-navigation__toggle { display: none; }
+.cal-page--agenda .cal-picker-toggle { display: grid; grid-column: 2; grid-row: 1; place-items: center; min-width: 44px; min-height: 44px; padding: 0; border: 1px solid transparent; border-radius: var(--thatcampus-radius-control); background: var(--thatcampus-surface-row); color: var(--thatcampus-ink); box-shadow: var(--thatcampus-shadow-control); cursor: pointer; }
+.cal-picker-toggle[aria-expanded="true"] { background: var(--thatcampus-brand-soft); }
+.cal-picker-toggle:hover { background: var(--thatcampus-surface-soft); }
+.cal-picker .cal-key { grid-column: 1 / -1; }
+.cal-picker .cal-key > summary { padding-inline: 0; }
+.cal-picker .cal-legend { padding-inline: 0; }
+.cal-page--agenda > .cal-agenda { border: 0; background: transparent; }
+.cal-agenda > .cal-detail { padding: .5rem 0 0; gap: .75rem; }
+.cal-agenda .cal-detail__head h3 { font-size: 1.25rem; line-height: 1.4; }
+.cal-agenda .cal-section-title { font-size: .875rem; text-transform: none; }
+.cal-agenda .cal-row__body strong { font-size: 1rem; }
+.cal-agenda .cal-row__body small { font-size: .875rem; }
+.cal-agenda .cal-row--holiday, .cal-agenda .cal-row--calendar-change { grid-template-columns: 36px minmax(0, 1fr) auto; gap: .75rem; padding: .75rem var(--thatcampus-row-inset); border: 0; border-radius: var(--thatcampus-radius-row); background: var(--thatcampus-surface-row); }
+.cal-agenda .cal-row--attention { margin-inline: 0; }
+@media (max-width: 359px) {
+  .cal-picker .date-navigation__heading { font-size: .8125rem; }
+  .cal-picker .date-navigation__heading > svg { display: none; }
+  .cal-agenda .cal-row--holiday, .cal-agenda .cal-row--calendar-change { grid-template-columns: 28px minmax(0, 1fr); gap: .5rem; }
+  .cal-agenda .cal-row--holiday > .cal-pill, .cal-agenda .cal-row--calendar-change > .cal-pill { grid-column: 2; justify-self: start; }
+  .cal-agenda .cal-event-icon { width: 28px; height: 36px; }
+}

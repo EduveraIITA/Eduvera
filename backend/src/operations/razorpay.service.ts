@@ -8,6 +8,7 @@ import type { Database } from "../database/types.js";
 import { RazorpayClient, type RazorpayOrder, type RazorpayPayment } from "./razorpay.client.js";
 import { enqueuePaymentEmail, readPaymentDocument } from './payment-email.service.js';
 import { paymentReceiptPdf } from './payment-receipt.js';
+import { executionEnvironmentStorage } from '../campus-model-core/execution-time.runtime.js';
 
 interface Order { id: string; school_id: string; invoice_id: string; created_by: string; amount_paise: number; currency: string; key_id: string; provider_order_id: string; provider_payment_id: string | null; payment_id: string | null; state: string }
 type Db = DatabaseService | Transaction<Database>;
@@ -18,7 +19,7 @@ const verifySchema = z.object({ razorpay_order_id: providerId, razorpay_payment_
 @Injectable()
 export class RazorpayService implements OnModuleInit, OnModuleDestroy {
   private timer?: ReturnType<typeof setInterval>;
-  private reconciling = false;
+  private readonly reconciling = new Set<string>();
   private readonly logger = new Logger(RazorpayService.name);
   constructor(private readonly db: DatabaseService, private readonly gateway: RazorpayClient) {}
   onModuleInit() {
@@ -32,16 +33,18 @@ export class RazorpayService implements OnModuleInit, OnModuleDestroy {
     if (!result.rows.length) throw new ForbiddenException("An active linked guardian is required.");
   }
   private async balance(db: Db, school: string, invoice: string) {
+    await sql`SELECT id FROM fee_invoices WHERE school_id=${school}::uuid AND id=${invoice}::uuid FOR UPDATE`.execute(db);
     const row = (await sql<{ student_id: string; balance: number }>`SELECT i.student_id,
       greatest(0, greatest(0,i.amount_paise-coalesce((SELECT sum(amount_paise) FROM fee_invoice_credits WHERE school_id=i.school_id AND invoice_id=i.id),0))
-      - greatest(0,coalesce((SELECT sum(amount_paise) FROM fee_payments WHERE school_id=i.school_id AND invoice_id=i.id),0)
+      - greatest(0,coalesce((SELECT sum(amount_paise) FROM fee_effective_payments WHERE school_id=i.school_id AND invoice_id=i.id),0)
       - coalesce((SELECT sum(amount_paise) FROM fee_refunds WHERE school_id=i.school_id AND invoice_id=i.id),0)))::int AS balance
-      FROM fee_invoices i WHERE i.school_id=${school}::uuid AND i.id=${invoice}::uuid FOR UPDATE OF i`.execute(db)).rows[0];
+      FROM fee_effective_invoices i WHERE i.school_id=${school}::uuid AND i.id=${invoice}::uuid`.execute(db)).rows[0];
     if (!row) throw new NotFoundException("Invoice not found.");
     return row;
   }
   private async lock(db: Db, school: string) { await sql`SELECT pg_advisory_xact_lock(hashtextextended(${school},0))`.execute(db); }
-  private checkout(order: Order) { return { id: order.id, key_id: order.key_id, order_id: order.provider_order_id, amount: order.amount_paise, currency: "INR", sandbox: true }; }
+  private checkout(order: Order) { return { id: order.id, key_id: order.key_id, order_id: order.provider_order_id, amount: order.amount_paise, currency: "INR", sandbox: true,
+    ...(executionEnvironmentStorage.getStore()?.kind === 'simulation' ? { evidence_mode: 'simulation', external_checkout: false, money_moved: false } : {}) }; }
   async create(user: AuthUser, school: string, invoice: string, body: unknown) {
     z.uuid().parse(school); z.uuid().parse(invoice); const data = createSchema.parse(body);
     if (!this.gateway.enabled()) throw new ServiceUnavailableException("Razorpay sandbox is not configured.");
@@ -49,8 +52,9 @@ export class RazorpayService implements OnModuleInit, OnModuleDestroy {
       await this.lock(db, school); await this.guardian(db, user, school, invoice);
       const balance = await this.balance(db, school, invoice);
       if (data.amount_paise > balance.balance) throw new BadRequestException("Amount exceeds the outstanding balance.");
-      const pending = await sql`SELECT 1 FROM fee_review_requests r WHERE r.school_id=${school}::uuid AND r.invoice_id=${invoice}::uuid AND r.kind='payment'
-        AND NOT EXISTS(SELECT 1 FROM fee_review_decisions d WHERE d.request_id=r.id)`.execute(db);
+      const pending = await sql`SELECT 1 FROM fee_native_review_requests r WHERE r.school_id=${school}::uuid AND r.invoice_id=${invoice}::uuid AND r.kind='payment'
+        AND NOT EXISTS(SELECT 1 FROM fee_native_review_decisions d WHERE d.school_id=r.school_id AND d.review_id=r.id)
+        AND NOT EXISTS(SELECT 1 FROM fee_native_review_withdrawals w WHERE w.school_id=r.school_id AND w.review_id=r.id)`.execute(db);
       if (pending.rows.length) throw new ConflictException("A payment is awaiting school verification. Check it before paying again.");
       const previous = (await sql<Order>`SELECT * FROM fee_gateway_orders WHERE school_id=${school}::uuid AND invoice_id=${invoice}::uuid AND state IN ('created','review_required') ORDER BY created_at DESC LIMIT 1`.execute(db)).rows[0];
       if (previous) {
@@ -159,13 +163,14 @@ export class RazorpayService implements OnModuleInit, OnModuleDestroy {
     else {const latest=items.find(payment=>payment.status==='authorized')??items[0];if(latest)await this.settle(order,latest);}
   }
   async reconcilePending() {
-    if (this.reconciling || !this.gateway.enabled()) return;
-    this.reconciling = true;
+    const namespace=executionEnvironmentStorage.getStore()?.namespace_id??'live';
+    if (this.reconciling.has(namespace) || !this.gateway.enabled()) return;
+    this.reconciling.add(namespace);
     try {
       const rows = (await sql<Order>`SELECT * FROM fee_gateway_orders WHERE state='created' ORDER BY checked_at LIMIT 20`.execute(this.db)).rows;
       for (const row of rows) { try { await this.reconcile(row); } catch { this.logger.warn("Sandbox payment reconciliation deferred; will retry."); } }
     } catch { this.logger.warn("Sandbox payment reconciliation unavailable; will retry."); }
-    finally { this.reconciling = false; }
+    finally { this.reconciling.delete(namespace); }
   }
   async webhook(rawBody: Buffer | undefined, signature: string, eventId: string) {
     if (!rawBody || !eventId || eventId.length > 200) throw new BadRequestException("Webhook body and event ID required.");

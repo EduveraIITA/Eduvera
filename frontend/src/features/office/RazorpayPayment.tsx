@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import { apiFetch } from "../../lib/api";
 import { rupees } from "./api";
 import { loadRazorpay, type RazorpayResult } from "./razorpay";
-interface Order { key_id: string; order_id: string; amount: number; currency: string }
+interface Order { key_id: string; order_id: string; amount: number; currency: string; evidence_mode?: 'simulation'; external_checkout?: boolean }
 interface Status { id?:string; state: string; payment_id: string | null; amount_paise?:number; provider_payment_id?:string; email_status?:string; checked_at?:string }
 export function RazorpayPayment({ schoolId, invoiceId, amount, onSaved }: { schoolId: string; invoiceId: string; amount: number; onSaved: () => Promise<unknown> }) {
   const [busy, setBusy] = useState(false);
@@ -62,8 +62,13 @@ export function RazorpayPayment({ schoolId, invoiceId, amount, onSaved }: { scho
     inFlight.current = true; setBusy(true); setError(""); setMessage("");
     try {
       if (!Number.isSafeInteger(amount) || amount < 100) throw new Error("Enter at least ₹1 for Razorpay.");
-      await loadRazorpay();
       const order = await apiFetch<Order>(`${path}/order/`, { method: "POST", body: JSON.stringify({ amount_paise: amount }) });
+      if (order.evidence_mode === 'simulation') {
+        setMessage('Payment order captured in Simulation. No checkout was opened, no money moved, and no payment or receipt was invented.');
+        done();
+        return;
+      }
+      await loadRazorpay();
       const checkout = new window.Razorpay!({ key: order.key_id, order_id: order.order_id, amount: order.amount, currency: order.currency,
         name: "ThatCampus", description: "School fee · Sandbox test", theme: { color: "#2563eb" },
         handler: result => { void verify(result); },

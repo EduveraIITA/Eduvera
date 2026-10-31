@@ -376,6 +376,7 @@ export function ImportReview({
                         <strong>
                           {row.values.first_name} {row.values.last_name}
                         </strong>
+                        {row.normalized?.person || row.values.person_id ? <small>Existing campus person</small> : null}
                         <span>
                           {row.values.admission_number || "No admission number"}
                         </span>
@@ -385,14 +386,9 @@ export function ImportReview({
                       <small>Roll {row.values.roll_number || "Not set"}</small>
                       </td>
                       <td>
-                        {row.guardian_name || "Guardian missing"}
-                        <small>
-                          {row.values.guardian_key
-                            ? `Family: ${row.values.guardian_key}`
-                            : row.guardian_choice.mode === "existing"
-                              ? "Existing guardian"
-                              : "Separate guardian"}
-                        </small>
+                        {row.guardian_choice.mode === "none" ? "No guardian linked" : <>{row.guardian_name || "Guardian missing"}<small>
+                          {row.guardian_choice.mode === "person" ? "Existing campus person" : row.guardian_choice.mode === "existing" ? "Existing guardian" : row.values.guardian_key ? `Family: ${row.values.guardian_key}` : "Separate guardian"}
+                        </small></>}
                       </td>
                       <td>
                         <span

@@ -27,13 +27,42 @@ This extends blueprint sections 3, 6–8; it does not replace the shared navigat
 
 ## Experience
 
-Updated by user decision, 14 October: the principal's calendar is the canonical
-recurring timetable workspace. Select a lesson to inspect/edit it in a sheet;
+Updated by user decision, 14 October, and the later responsibility-composed
+application contract: Timetable is the canonical recurring schedule workspace;
+editing depends on current scoped authority, not a separate job-title portal.
+Select a lesson to inspect/edit it in a sheet;
 select free time to plan; review a class draft and its effective dates from the
 same calendar. Academic settings keeps academic-year preparation, school dates
 and coverage targets, without a second class-editor list. Old class-pattern
 links redirect with their context. One-date changes retain the existing Daily
-Plan workflow. Parents and teachers retain their existing compact readers.
+Plan workflow. Readers retain compact, appropriately scoped access. Campus
+Calendar owns important dates and changes, not a second routine-session editor.
+
+## Teaching preferences and reviewed suggestions
+
+Accepted owner direction, 17 October. This is a target, not a claim that a general
+timetable generator or preference collection workflow has shipped.
+
+- **Manage Timetable** is an assignable, institution-scoped permission. Reuse
+  canonical people, staff, classes, subjects, terms and spaces; do not introduce
+  another teacher or room catalogue or infer permission from a job title.
+- A preference invitation is an owned Request with typed Core command, event,
+  message and outcome lineage. Teachers author their own availability and subject
+  preferences; responding does not grant management access or accept an assignment.
+  Recheck tenant, actor, recipient, effective assignment, deadline and revision.
+- Mutable reminders, escalation and suggestion behavior require approved,
+  institution-versioned configuration. No hidden automation, inferred consent,
+  inferred eligibility or invented physical evidence.
+- Suggestions use bounded deterministic, conflict-aware search. Show hard
+  constraints, objective, input revisions and limitations. Exhausting the search
+  bound is not proof that no solution exists; do not claim global optimality
+  without proof.
+- Accepting a suggestion saves a native revision-checked draft. Publication is a
+  separate authorized operation through normal conflict validators. Preserve
+  published history, attendance, substitutions, closures and effective dates.
+- Live and Simulation use the same domain owners and selected-world clock,
+  authority and isolation. Acceptance includes mobile review, loading/failure,
+  stale responses, retry and correction, not only a generated result.
 
 ## Evidence sources
 

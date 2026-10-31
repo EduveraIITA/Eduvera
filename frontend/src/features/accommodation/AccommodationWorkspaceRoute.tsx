@@ -1,0 +1,71 @@
+import { useState, type FormEvent, type ReactNode } from "react";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { Link, useSearchParams } from "react-router-dom";
+import { ChevronLeft, ChevronRight, Plus, Search } from "lucide-react";
+import { ApiError } from "../../lib/api";
+import { ProductIcon } from "../../components/ProductIcon";
+import { OperationsShell } from "../../pages/operations/OperationsShell";
+import { useOptionalAuth } from "../auth/AuthContext";
+import { useExecutionEnvironment } from "../simulation/ExecutionEnvironmentContext";
+import { executionEnvironmentQueryKey } from "../simulation/executionEnvironmentQueryKey";
+import { manifestMatchesEnvironment } from "../workspace/ResponsibilityWorkspace";
+import { useWorkspaceManifest } from "../workspace/useWorkspaceManifest";
+import { WorkspaceState } from "../workspace/WorkspaceState";
+import { getAccommodation, getAccommodationRoom, getStay } from "./accommodationApi";
+import { AccommodationEmpty, AccommodationPages, AccommodationReadError, accommodationDate, stayLabel } from "./AccommodationPrimitives";
+import { AccommodationRoomDialog } from "./AccommodationRoomDialog";
+import { AccommodationRoomView } from "./AccommodationRoomView";
+import { RoomTypesDialog } from "./RoomTypesDialog";
+import { StayDetailView } from "./StayDetailView";
+import { StayOfferDialog } from "./StayOfferDialog";
+import "./accommodation.css";
+
+export function AccommodationWorkspaceRoute() {
+  const environment = useExecutionEnvironment(), auth = useOptionalAuth(), manifest = useWorkspaceManifest();
+  const shell = (body: ReactNode) => <OperationsShell active="areas" title="Accommodation" backTo="/areas">{body}</OperationsShell>;
+  if (environment.mode === "simulation" && environment.unavailable) return shell(<WorkspaceState state="unavailable" />);
+  if (manifest.isPending) return shell(<WorkspaceState state="loading" />);
+  if (manifest.error) return shell(<WorkspaceState state={manifest.error instanceof ApiError && manifest.error.status === 403 ? "revoked" : "error"} error={manifest.error} onRetry={manifest.refetch} />);
+  if (!manifest.data || !manifestMatchesEnvironment(manifest.data, environment) || !manifest.data.areas.some(area => area.key === "accommodation")) return shell(<WorkspaceState state="revoked" />);
+  const schoolId = manifest.data.context.institution_id, actorId = auth?.user?.id ?? manifest.data.context.actor_user_id;
+  if (!schoolId || !actorId) return shell(<WorkspaceState state="revoked" />);
+  const key = JSON.stringify([schoolId, actorId, environment.mode, environment.mode === "simulation" ? environment.namespaceId : "live"]);
+  return shell(<AccommodationWorkspace key={key} schoolId={schoolId} actorId={actorId} timezone={manifest.data.context.time_zone ?? "UTC"} />);
+}
+const accessLost = (error: unknown) => error instanceof ApiError && [401, 403, 404, 410].includes(error.status);
+const positivePage = (value: string | null) => { const number = Number(value); return Number.isFinite(number) ? Math.max(1, Math.floor(number) || 1) : 1; };
+export function AccommodationWorkspace({ schoolId, actorId, timezone }: { schoolId: string; actorId: string; timezone: string }) {
+  const environment = useExecutionEnvironment(), client = useQueryClient(), [params, setParams] = useSearchParams();
+  const view = params.get("view") === "rooms" ? "rooms" : "stays", state = params.get("state") === "closed" ? "closed" : params.get("state") === "all" ? "all" : "active";
+  const search = params.get("search") ?? "", page = positivePage(params.get("page")), historyPage = positivePage(params.get("history_page")), stayId = params.get("stay_id"), roomId = params.get("room_id"), repairId = params.get("repair_id");
+  const [offering, setOffering] = useState(params.get("offer") === "1"), [addingRoom, setAddingRoom] = useState(params.get("create") === "room"), [types, setTypes] = useState(false), [notice, setNotice] = useState("");
+  const root = executionEnvironmentQueryKey(environment, ["accommodation", schoolId, actorId]);
+  const list = useQuery({ queryKey: [...root, "list", view, state, search, page], queryFn: () => getAccommodation(schoolId, { view, state, search, page }), enabled: !stayId });
+  const stay = useQuery({ queryKey: [...root, "stay", stayId, historyPage], queryFn: () => getStay(schoolId, stayId!, historyPage), enabled: Boolean(stayId) });
+  const room = useQuery({ queryKey: [...root, "room", roomId], queryFn: () => getAccommodationRoom(schoolId, roomId!), enabled: Boolean(roomId && !stayId) });
+  const readOnly = Boolean(environment.mode === "simulation" && (environment.unavailable || environment.runStatus === "stopped" || environment.runStatus === "completed"));
+  const change = (values: Record<string, string | undefined>) => { const next = new URLSearchParams(params); for (const [key, value] of Object.entries(values)) if (value) next.set(key, value); else next.delete(key); setParams(next); };
+  const href = (kind: "stay" | "room", id: string) => { const next = new URLSearchParams(params); next.set(`${kind}_id`, id); next.delete(kind === "stay" ? "room_id" : "stay_id"); next.delete("history_page"); return `/areas/accommodation?${next}`; };
+  const refresh = async () => { await client.invalidateQueries({ queryKey: root, refetchType: "none" }); await (stayId ? stay.refetch({ throwOnError: true }) : roomId ? room.refetch({ throwOnError: true }) : list.refetch({ throwOnError: true })); await client.invalidateQueries({ queryKey: ["responsibility-workspace"] }); await client.invalidateQueries({ queryKey: ["onboarding"] }); };
+  const transferred = async () => { client.removeQueries({ queryKey: root }); setNotice("Responsibility transferred. This stay is no longer in your current view."); change({ stay_id: undefined, history_page: undefined }); await client.invalidateQueries({ queryKey: ["responsibility-workspace"] }); };
+  if (stayId) return <div className="accommodation-workspace"><button type="button" className="is-text accommodation-back" onClick={() => change({ stay_id: undefined, history_page: undefined })}><ChevronLeft size={18} aria-hidden="true" />Back to stays</button>{stay.isPending ? <WorkspaceState state="loading" /> : !stay.data || accessLost(stay.error) ? <AccommodationReadError error={stay.error} onRetry={() => void stay.refetch()} /> : <>{stay.error ? <p className="accommodation-error" role="alert">The stay could not refresh. Actions are paused. <button className="is-text" type="button" onClick={() => void stay.refetch()}>Try again</button></p> : null}<StayDetailView key={stayId} schoolId={schoolId} actorId={actorId} stay={stay.data} timezone={timezone} readOnly={Boolean(readOnly || stay.error)} refresh={refresh} historyPage={historyPage} onHistoryPage={value => change({ history_page: String(value) })} onTransferred={transferred} /></>}</div>;
+  if (list.isPending || roomId && room.isPending) return <WorkspaceState state="loading" />;
+  if (!list.data || accessLost(list.error)) return <div className="accommodation-workspace"><AccommodationReadError error={list.error} onRetry={() => void list.refetch()} /></div>;
+  const data = list.data, disabled = Boolean(readOnly || list.error || room.error);
+  if (view === "rooms" && !data.can_manage) return <div className="accommodation-workspace"><AccommodationEmpty title="Room setup belongs to its responsible team" action={<button type="button" className="is-secondary" onClick={() => change({ view: "stays", room_id: undefined })}>My stays</button>}>Your own arrangements remain available in Stays.</AccommodationEmpty></div>;
+  return <div className="accommodation-workspace">{notice ? <p className="accommodation-saved" role="status">{notice}</p> : null}
+    {roomId ? <><button type="button" className="is-text accommodation-back" onClick={() => change({ room_id: undefined })}><ChevronLeft size={18} aria-hidden="true" />Back to rooms</button>{!room.data || accessLost(room.error) ? <AccommodationReadError error={room.error} onRetry={() => void room.refetch()} /> : <AccommodationRoomView key={roomId} schoolId={schoolId} actorId={actorId} room={room.data} canManage={data.can_manage} canOffer={data.can_offer} readOnly={disabled} refresh={refresh} onOffer={() => setOffering(true)} />}</> : <>
+      <header className="accommodation-heading"><p className="accommodation-caption">{view === "stays" ? `${data.totals.active} active${data.totals.offered ? ` · ${data.totals.offered} awaiting response` : ""}` : "Rooms and sleeping capacity"}</p>{view === "stays" && data.can_offer ? <button type="button" disabled={disabled} onClick={() => setOffering(true)}><Plus size={18} aria-hidden="true" />Assign room</button> : view === "rooms" && data.can_manage ? <button type="button" disabled={disabled} onClick={() => setAddingRoom(true)}><Plus size={18} aria-hidden="true" />Add room</button> : null}</header>
+      {data.can_manage ? <nav className="accommodation-tabs" aria-label="Accommodation views">{(["stays", "rooms"] as const).map(value => <button type="button" className="is-secondary" key={value} aria-pressed={view === value} onClick={() => change({ view: value, page: undefined, search: undefined })}>{value === "stays" ? "Stays" : "Rooms"}</button>)}</nav> : null}
+      {repairId ? <p className="accommodation-caption">Related repair <Link to={`/areas/facilities?repair_id=${encodeURIComponent(repairId)}`}>Back to repair</Link></p> : null}
+      {list.error ? <p role="alert" className="accommodation-error">This view could not refresh. Actions are paused. <button type="button" className="is-text" onClick={() => void list.refetch()}>Try again</button></p> : null}
+      <div className="accommodation-filter"><AccommodationSearch key={search} initial={search} label={view === "rooms" ? "Find room" : "Find stay"} onSearch={value => change({ search: value || undefined, page: undefined })} /><label><span className="accommodation-sr">Status</span><select value={state} onChange={event => change({ state: event.target.value, page: undefined })}><option value="active">{view === "rooms" ? "Active" : "Open"}</option><option value="closed">{view === "rooms" ? "Inactive" : "Closed"}</option><option value="all">All</option></select></label></div>
+      {view === "rooms" ? <>{data.can_manage ? <button type="button" className="is-text accommodation-back" onClick={() => setTypes(true)}>Room types</button> : null}{data.rooms.length ? <ul className="accommodation-list" aria-label="Rooms">{data.rooms.map(item => <li key={item.id}><Link to={href("room", item.id)} className="accommodation-entry"><ProductIcon name="accommodation" size={28} /><span><strong>{item.space.label}</strong>{item.location_path?.length ? <small>{item.location_path.filter(place => place.id !== item.space.id).map(place => place.label).join(" · ")}</small> : null}<small>{item.room_type.label} · {item.sleeping_capacity} sleeping places</small><small>{item.allocation_mode === "shared" ? "Shared places" : "Whole room"}</small></span><span className="accommodation-entry-end"><span className="accommodation-status">{item.active ? "Active" : "Inactive"}</span><ChevronRight size={16} aria-hidden="true" /></span></Link></li>)}</ul> : <AccommodationEmpty title={search ? "No matching rooms" : "Start with one room"}>Set sleeping capacity and how places are allocated. No full hostel setup or bed inventory needed.</AccommodationEmpty>}</> : data.stays.length ? <ul className="accommodation-list" aria-label="Stays">{data.stays.map(item => <li key={item.id}><Link to={href("stay", item.id)} className="accommodation-entry"><ProductIcon name="accommodation" size={28} /><span><strong>{item.resident.label}</strong><small>{item.room.label}{item.place ? ` · ${item.place.label}` : ""}</small><small>{accommodationDate(item.planned_starts_at, timezone, false)} – {accommodationDate(item.planned_ends_at, timezone, false)}</small></span><span className="accommodation-entry-end"><span className={`accommodation-status is-${item.state}`}>{item.overstayed ? "Expected end passed" : stayLabel(item)}</span><ChevronRight size={16} aria-hidden="true" /></span></Link></li>)}</ul> : <AccommodationEmpty title={search ? "No matching stays" : "No open stays"} action={data.can_manage ? <button type="button" className="is-secondary" onClick={() => change({ view: "rooms", page: undefined })}>View rooms</button> : undefined}>Offers, resident responses and actual moves stay together.</AccommodationEmpty>}
+      <AccommodationPages page={data.pagination.page} hasMore={data.pagination.page * data.pagination.page_size < data.pagination.total} onChange={value => change({ page: String(value) })} />
+    </>}
+    {offering && !disabled && data.can_offer ? <StayOfferDialog schoolId={schoolId} actorId={actorId} {...(repairId ? { repairId } : {})} {...(roomId ? { initialRoomId: roomId } : {})} refresh={refresh} onTransferred={transferred} onClose={() => { setOffering(false); change({ offer: undefined }); }} onSaved={id => { setOffering(false); change({ stay_id: id, room_id: undefined, offer: undefined, history_page: undefined }); }} /> : null}
+    {addingRoom && !disabled && data.can_manage ? <AccommodationRoomDialog schoolId={schoolId} actorId={actorId} refresh={refresh} onClose={() => { setAddingRoom(false); change({ create: undefined }); }} onSaved={id => { setAddingRoom(false); change({ view: "rooms", room_id: id, create: undefined }); }} /> : null}
+    {types ? <RoomTypesDialog schoolId={schoolId} actorId={actorId} readOnly={disabled} onClose={() => setTypes(false)} /> : null}
+  </div>;
+}
+function AccommodationSearch({ initial, label, onSearch }: { initial: string; label: string; onSearch: (value: string) => void }) { const [value, setValue] = useState(initial); return <form className="accommodation-search" role="search" onSubmit={(event: FormEvent) => { event.preventDefault(); onSearch(value.trim()); }}><label className="accommodation-sr" htmlFor="accommodation-search">{label}</label><input id="accommodation-search" type="search" maxLength={80} value={value} onChange={event => setValue(event.target.value)} placeholder={label} /><button type="submit" className="is-secondary" aria-label={label}><Search size={18} aria-hidden="true" /></button></form>; }

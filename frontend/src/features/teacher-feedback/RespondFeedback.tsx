@@ -12,7 +12,7 @@ export function RespondFeedback({school,campaign,onSubmitted,focused=false}:{sch
     <h2>{campaign.teacher_name}</h2><p>{campaign.title} · Class {campaign.class_name}</p>
     <p>Low: needs improvement · Okay: meets expectations · High: doing well. Choose Not sure if you have not observed something.</p>
     {campaign.parameters.map((parameter,index)=><fieldset key={parameter}><legend>{parameter}</legend><RatingSelector name={`${campaign.id}-${index}`} value={ratings[parameter]} disabled={busy} onChange={rating=>setRatings(old=>{const next={...old};if(rating)next[parameter]=rating;else delete next[parameter];return next;})}/></fieldset>)}
-    <p>Your account prevents duplicate responses. Your name and individual answers are not shown to teachers or in principal results; authorised system operators can access stored records. Only grouped results appear after closing with at least 5 responses.</p>
+    <p>Your account prevents duplicate responses. Your name and individual answers are not shown to teachers or in coordination results; authorised system operators can access stored records. Only grouped results appear after closing with at least 5 responses.</p>
     <p>Closes {new Date(campaign.closes_at).toLocaleString()} · One submission per person.</p>
     {error?<p role="alert">{error}</p>:null}<button className="teacher-feedback__primary" disabled={busy||Object.keys(ratings).length!==campaign.parameters.length}>{busy?'Submitting…':'Submit feedback'}</button>
   </form>;

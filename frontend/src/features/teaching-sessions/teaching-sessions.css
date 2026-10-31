@@ -1,0 +1,69 @@
+.teaching-sessions { display: grid; gap: 20px; min-width: 0; padding-bottom: 20px; }
+.teaching-sessions :is(h2,h3,p), .teaching-session-form :is(h3,p) { margin: 0; }
+.teaching-sessions h2 { font-size: 20px; line-height: 1.4; }
+.teaching-sessions h3, .teaching-session-form h3 { font-size: 16px; line-height: 1.5; }
+.teaching-caption, .teaching-sessions small { color: var(--thatcampus-ink-secondary); font-size: 14px; line-height: 1.5; }
+.teaching-prose { white-space: pre-wrap; overflow-wrap: anywhere; line-height: 1.5; }
+.teaching-sessions button, .teaching-session-form button, .teaching-primary-link { display: inline-flex; justify-content: center; align-items: center; gap: 8px; min-height: 44px; padding: 8px 16px; border: 0; border-radius: var(--thatcampus-radius-control); font: inherit; font-weight: 600; color: var(--thatcampus-ink); background: var(--thatcampus-surface-row); box-shadow: var(--thatcampus-shadow-control); text-decoration: none; cursor: pointer; }
+.teaching-sessions button:disabled, .teaching-session-form button:disabled { opacity: .55; cursor: default; }
+.teaching-sessions :is(button,a,input,summary):focus-visible, .teaching-session-form :is(button,a,input,textarea,summary):focus-visible { outline: 3px solid var(--thatcampus-brand); outline-offset: 3px; }
+.teaching-session-form .is-primary, .teaching-sessions .teaching-primary-link { background: var(--thatcampus-action); color: var(--thatcampus-on-action); }
+.teaching-text-action { display: inline-flex; gap: 8px; align-items: center; min-height: 44px; color: var(--thatcampus-brand); font-weight: 600; text-decoration: none; }
+.teaching-text-action:hover { text-decoration: underline; }
+.teaching-date { display: flex; align-items: center; justify-content: space-between; gap: 12px; font-size: 14px; color: var(--thatcampus-ink-secondary); }
+.teaching-date input { width: auto; max-width: 100%; font: inherit; font-size: 16px; min-height: 44px; padding: 8px 12px; border: 1px solid var(--thatcampus-border); border-radius: var(--thatcampus-radius-control); background: var(--thatcampus-surface); color: var(--thatcampus-ink); }
+.teaching-session-summary { display: grid; gap: 12px; padding: 16px; border-radius: var(--thatcampus-radius-card); background: var(--thatcampus-surface-row); }
+.teaching-session-status { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px 12px; font-size: 14px; line-height: 1.5; }
+.teaching-session-status > :is(span,strong), .teaching-summary-facts dt { display: inline-flex; align-items: center; gap: 8px; }
+.teaching-session-status > span { color: var(--thatcampus-ink-secondary); }
+.teaching-summary-facts { display: grid; margin: 0; gap: 8px; }
+.teaching-summary-facts > div { display: grid; grid-template-columns: 72px minmax(0,1fr); gap: 12px; align-items: start; line-height: 1.5; }
+.teaching-summary-facts dt { color: var(--thatcampus-ink-secondary); font-size: 14px; }
+.teaching-summary-facts dd { min-width: 0; margin: 0; overflow-wrap: anywhere; }
+.teaching-summary-facts dd small { display: block; }
+.teaching-summary-actions, .teaching-related-actions { display: flex; flex-wrap: wrap; gap: 8px 16px; align-items: center; }
+.teaching-session-section, .teaching-previous { display: grid; gap: 12px; min-width: 0; }
+.teaching-session-section > header, .teaching-previous > div { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.teaching-session-section > header > button { background: transparent; box-shadow: none; color: var(--thatcampus-brand); padding-inline: 8px; }
+.teaching-previous { border-bottom: 1px solid var(--thatcampus-border); padding-bottom: 16px; }
+.teaching-lesson-record { display: grid; gap: 8px; }
+.teaching-disclosure { min-width: 0; border-top: 1px solid var(--thatcampus-border); }
+.teaching-disclosure > summary { min-height: 44px; cursor: pointer; font-size: 14px; color: var(--thatcampus-ink-secondary); padding-block: 12px; }
+.teaching-disclosure > :not(summary) { margin-bottom: 12px; }
+.teaching-resource-list { display: grid; gap: 12px; }
+.teaching-resource { min-width: 0; display: grid; gap: 8px; padding: 16px; border-radius: var(--thatcampus-radius-row); background: var(--thatcampus-surface-row); }
+.teaching-resource > header { display: flex; align-items: start; gap: 12px; }
+.teaching-resource > header > span:first-child { display: flex; padding-top: 4px; color: var(--thatcampus-brand); }
+.teaching-resource > header > span:last-child { min-width: 0; overflow-wrap: anywhere; }
+.teaching-resource > button.teaching-resource-version { justify-self: start; color: var(--thatcampus-brand); background: transparent; box-shadow: none; padding-inline: 0; }
+.teaching-code { margin: 0; white-space: pre-wrap; overflow-wrap: anywhere; font-size: 14px; line-height: 1.5; }
+.teaching-session-list { display: grid; gap: 12px; }
+.teaching-session-list > a { display: flex; align-items: center; gap: 12px; padding: 16px; min-height: 72px; border-radius: var(--thatcampus-radius-row); background: var(--thatcampus-surface-row); box-shadow: var(--thatcampus-shadow-card); color: var(--thatcampus-ink); text-decoration: none; }
+.teaching-session-list > a > span { flex: 1; min-width: 0; display: grid; gap: 4px; overflow-wrap: anywhere; }
+.teaching-empty { display: grid; justify-items: start; gap: 12px; padding-block: 16px; }
+.teaching-session-form { display: grid; gap: 16px; min-width: 0; padding: 16px; }
+.teaching-session-form fieldset { display: grid; gap: 16px; margin: 0; padding: 0; border: 0; min-width: 0; }
+.teaching-session-form label { display: grid; gap: 8px; min-width: 0; }
+.teaching-session-form input:not([type=checkbox]), .teaching-session-form textarea { box-sizing: border-box; width: 100%; min-width: 0; min-height: 44px; padding: 12px 16px; border: 1px solid var(--thatcampus-border); border-radius: var(--thatcampus-radius-control); background: var(--thatcampus-surface); color: var(--thatcampus-ink); font: inherit; font-size: 16px; }
+.teaching-session-form textarea { resize: vertical; }
+.teaching-session-form summary { min-height: 44px; cursor: pointer; line-height: 1.5; padding-block: 8px; }
+.teaching-session-form summary > span { display: block; }
+.teaching-actions { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.teaching-actions > button { flex: 1 1 120px; }
+.teaching-choices { display: grid; grid-template-columns: repeat(3,minmax(0,1fr)); gap: 4px; padding: 4px; border-radius: var(--thatcampus-radius-control); background: var(--thatcampus-surface-row); }
+.teaching-choices > button { min-width: 0; padding: 8px; background: transparent; box-shadow: none; font-size: 14px; }
+.teaching-choices > button[aria-pressed=true] { background: var(--thatcampus-surface); color: var(--thatcampus-brand); box-shadow: var(--thatcampus-shadow-control); }
+.teaching-session-form .teaching-checkbox { display: flex; align-items: center; gap: 12px; min-height: 44px; line-height: 1.5; }
+.teaching-checkbox input { width: 20px; height: 20px; accent-color: var(--thatcampus-action); flex-shrink: 0; }
+.teaching-review { display: grid; gap: 12px; padding: 16px; border-radius: var(--thatcampus-radius-row); background: var(--thatcampus-surface-row); }
+.teaching-session-form .teaching-work-options { display: grid; gap: 12px; }
+.teaching-session-form .teaching-work-options label { display: flex; align-items: center; gap: 12px; padding: 12px 16px; min-height: 44px; border-radius: var(--thatcampus-radius-row); background: var(--thatcampus-surface-row); cursor: pointer; }
+.teaching-work-options label.is-selected { box-shadow: inset 0 0 0 2px var(--thatcampus-brand); }
+.teaching-session-form .teaching-work-options input { width: 20px; height: 20px; min-height: 20px; padding: 0; accent-color: var(--thatcampus-action); flex: 0 0 20px; }
+.teaching-work-options label > span { display: grid; gap: 4px; min-width: 0; overflow-wrap: anywhere; }
+.teaching-work-options small { font-size: 14px; color: var(--thatcampus-ink-secondary); }
+.teaching-history article { display: grid; gap: 8px; padding-block: 12px; border-bottom: 1px solid var(--thatcampus-border); }
+.teaching-history article header { display: grid; gap: 4px; }
+.teaching-error { color: var(--thatcampus-danger); line-height: 1.5; }
+@media (min-width: 768px) { .teaching-summary-facts { grid-template-columns: repeat(3,minmax(0,1fr)); gap: 16px; } .teaching-summary-facts > div { grid-template-columns: 1fr; gap: 4px; } }
+@media (forced-colors: active) { .teaching-session-summary, .teaching-resource, .teaching-session-list > a, .teaching-choices { outline: 1px solid CanvasText; } .teaching-choices > button[aria-pressed=true] { outline: 2px solid Highlight; } }

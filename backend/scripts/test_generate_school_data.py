@@ -13,22 +13,21 @@ class MediumSchoolGeneratorTests(unittest.TestCase):
         student_ids = {row[0] for row in self.dataset["students"]}
         guardian_student_ids = {row[2] for row in self.dataset["guardians"]}
         enrollment_student_ids = {row[1] for row in self.dataset["enrollments"]}
-        attendance_student_ids = {row[1] for row in self.dataset["attendance"]}
         self.assertEqual(200, len(student_ids))
         self.assertEqual(student_ids, guardian_student_ids)
         self.assertEqual(student_ids, enrollment_student_ids)
-        self.assertEqual(student_ids, attendance_student_ids)
+        self.assertEqual([], self.dataset["attendance"])
 
-    def test_every_student_has_full_two_month_history_and_subject_totals(self) -> None:
-        school_days = self.summary["school_days"]
-        attendance_counts: dict[str, int] = {}
+    def test_bootstrap_leaves_participation_unknown_and_subject_counters_empty(self) -> None:
         subject_counts: dict[str, int] = {}
-        for row in self.dataset["attendance"]:
-            attendance_counts[row[1]] = attendance_counts.get(row[1], 0) + 1
         for row in self.dataset["subject_attendance"]:
             subject_counts[row[1]] = subject_counts.get(row[1], 0) + 1
-        self.assertTrue(all(count == school_days for count in attendance_counts.values()))
         self.assertTrue(all(count == len(generator.SUBJECTS) for count in subject_counts.values()))
+        self.assertTrue(all(row[4:] == (0, 0, 0) for row in self.dataset["subject_attendance"]))
+        self.assertEqual(0, self.summary["attendance_records"])
+        self.assertEqual(200, self.summary["relationship_invariants"]["students_without_attendance_history"])
+        self.assertIn("owning Attendance services", self.summary["attendance_seed_contract"])
+        self.assertFalse(any(row[2] == "attendance" for row in self.dataset["notifications"]))
 
     def test_seed_is_non_destructive_and_transactionally_asserted(self) -> None:
         sql = generator.render_sql(self.dataset, self.summary)
@@ -96,30 +95,25 @@ class MediumSchoolGeneratorTests(unittest.TestCase):
         self.assertGreater(len(self.dataset["campus_event_checklist_completions"]), 0)
         self.assertTrue(all(row[4] for row in self.dataset["campus_event_checklist_items"]))
 
-    def test_event_attendance_is_source_complete_without_inferred_absence(self) -> None:
-        annual_id = generator.deterministic_id("campus-event-annual-function-2026")
-        picnic_id = generator.deterministic_id("campus-event-class-7a-picnic-2026")
-        class_test_id = generator.deterministic_id("campus-event-class-7a-mathematics-test-2026")
-        participants = {
-            (row[1], row[2]): row for row in self.dataset["campus_event_participants"]
-        }
-        records = self.dataset["campus_event_attendance"]
-
-        self.assertGreater(len(records), 0)
-        self.assertEqual([], [row for row in records if row[2] == picnic_id])
-        self.assertEqual([], [row for row in records if row[2] == class_test_id])
-        self.assertTrue(all(row[2] == annual_id for row in records))
-        self.assertTrue(all(participants[(row[2], row[4])][3] == "mandatory" for row in records))
-        self.assertIn("no_show", {row[5] for row in records})
-        self.assertEqual(len(records), len(self.dataset["campus_event_attendance_revisions"]))
+    def test_event_rosters_do_not_fabricate_reports_or_final_registers(self) -> None:
+        self.assertEqual([], self.dataset["campus_event_attendance"])
+        self.assertEqual([], self.dataset["campus_event_attendance_revisions"])
+        self.assertEqual(0, self.summary["campus_event_attendance_records"])
+        self.assertTrue(all(row[9] == "open" for row in self.dataset["campus_event_sessions"]))
 
     def test_event_seed_is_idempotent_without_rewriting_review_activity(self) -> None:
         sql = generator.render_sql(self.dataset, self.summary)
         self.assertIn("INSERT INTO campus_events", sql)
         self.assertIn("INSERT INTO campus_event_consents", sql)
         self.assertIn("INSERT INTO campus_event_session_participants", sql)
-        self.assertIn("INSERT INTO campus_event_attendance_records", sql)
-        self.assertIn("INSERT INTO campus_event_attendance_revisions", sql)
+        for table in ["attendance_records", "attendance_record_revisions", "attendance_session_records", "campus_event_attendance_records",
+                      "campus_event_attendance_revisions", "attendance_records_legacy_source", "campus_event_attendance_records_legacy_source",
+                      "activity_attendance_entries", "activity_attendance_entry_revisions", "activity_attendance_evidence"]:
+            self.assertNotIn(f"INSERT INTO {table}", sql)
+            self.assertNotIn(f"UPDATE {table}", sql)
+            self.assertNotIn(f"ALTER TABLE {table}", sql)
+        self.assertNotIn("DISABLE TRIGGER", sql)
+        self.assertNotIn("classes_held=excluded", sql)
         self.assertIn("INSERT INTO fee_invoices", sql)
         self.assertIn("INSERT INTO fee_payments", sql)
         self.assertIn("campus event attendance must remain separate from academic attendance", sql)

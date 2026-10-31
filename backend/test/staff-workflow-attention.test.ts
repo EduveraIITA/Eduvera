@@ -63,17 +63,17 @@ describe("staff workflow notification attention", () => {
 
   it("persists exact workflow destinations from every producer", () => {
     for (const fragment of [
-      "`/teacher/responsibilities?assignment=${assignment.id}&assignment_revision=${assignment.revision}`",
-      "`/principal/staff/${assignment.staff_profile_id}?assignment=${assignmentId}&assignment_revision=${updated.revision}`",
-      "`/teacher/responsibilities?assignment=${assignmentId}&assignment_revision=${updated.revision}`",
+      "`/areas/responsibilities/mine?assignment=${assignment.id}&assignment_revision=${assignment.revision}`",
+      "`/more/setup/responsibilities/${assignment.staff_profile_id}?assignment=${assignmentId}&assignment_revision=${updated.revision}`",
+      "`/areas/responsibilities/mine?assignment=${assignmentId}&assignment_revision=${updated.revision}`",
       "`/work/staff-leave?school=${schoolId}&request=${request.id}&request_revision=${request.revision}`",
-      "`/teacher/responsibilities?coverage=${task.id}&coverage_revision=${updated.revision}`",
-      "`/principal/staff?section=leave&coverage=${task.id}&coverage_revision=${updated.revision}`",
+      "`/areas/responsibilities/mine?coverage=${task.id}&coverage_revision=${updated.revision}`",
+      "`/areas/responsibilities/coverage?section=leave&coverage=${task.id}&coverage_revision=${updated.revision}`",
     ]) expect(staffProducer).toContain(fragment);
 
     for (const fragment of [
-      "`/teacher/transport?swap=${row.id}&swap_revision=${row.revision}`",
-      "`/principal/departure?section=roster&swap=${row.id}&swap_revision=${row.revision}`",
+      "`/areas/departure/operate?swap=${row.id}&swap_revision=${row.revision}`",
+      "`/areas/departure/manage?section=roster&swap=${row.id}&swap_revision=${row.revision}`",
     ]) expect(transportProducer).toContain(fragment);
   });
 

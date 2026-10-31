@@ -25,7 +25,7 @@ const data: PrincipalHomeResponse = {
   date: "2026-10-08", principal: { id: "admin", name: "Principal" },
   summary: { students: 203, marked: 0, attending: 0, absent: 0, late: 0, attendance_percentage: 0, classes_total: 8, classes_submitted: 0 },
   classes: [cls], exceptions: [{ id: "student-1", admission_number: "ST-1", name: "Anaya Test", class_section_id: "class-a", class_name: "Class 7A", recorded_days: 12, percentage: 75, threshold: 85 }],
-  home_actions: [{ id: "event", kind: "event_duty", priority: "info", title: "Discovery Picnic", detail: "Upcoming school event at the park", status_label: "Upcoming event", action_label: "Review event", href: "/principal/events/event-1", source_id: "event-1", occurs_at: "2026-10-10T01:00:00Z", due_at: null }],
+  home_actions: [{ id: "event", kind: "event_duty", priority: "info", title: "Discovery Picnic", detail: "Upcoming school event at the park", status_label: "Upcoming event", action_label: "Review event", href: "/areas/events/manage/event-1", source_id: "event-1", occurs_at: "2026-10-10T01:00:00Z", due_at: null }],
 };
 let client: QueryClient;
 beforeEach(() => {
@@ -129,7 +129,7 @@ describe("focused principal overview", () => {
   it("shows event date and time without repeating the event's status and explanation", () => {
     mount();
     const event = screen.getByRole("link", { name: /Discovery Picnic/ });
-    expect(event).toHaveAttribute("href", "/principal/events/event-1");
+    expect(event).toHaveAttribute("href", "/areas/events/manage/event-1");
     expect(event).toHaveTextContent("6:30 am");
     expect(event).not.toHaveTextContent("Upcoming school event");
   });
@@ -182,6 +182,6 @@ describe("focused principal overview", () => {
     expect(screen.getByText("You have an assigned duty")).toBeInTheDocument();
     unmount(); mount({ data: { ...data, home_actions: [] } });
     expect(screen.getByText("No upcoming events to show.")).toBeInTheDocument();
-    expect(screen.getByRole("link", { name: "All events" })).toHaveAttribute("href", "/principal/events");
+    expect(screen.getByRole("link", { name: "All events" })).toHaveAttribute("href", "/areas/events/manage");
   });
 });

@@ -10,15 +10,18 @@ import {
   rememberPortalLocation,
 } from "./portalHistory";
 import { portalReturnTarget, samePortalHref } from "./portalReturnState";
+import type { GuardedPopIntent } from "./useUnsavedChangesGuard";
 
 export interface PortalPageTitleProps {
   title: string;
   rootPath: string;
   backTo?: string;
   onBack?: () => void;
-  beforeBack?: () => boolean | void;
+  beforeBack?: (intent?: GuardedPopIntent) => boolean | void;
   trailing?: ReactNode;
   className?: string;
+  /** The domain content owns its visible H1; retain only the back affordance here. */
+  contentHasHeading?: boolean;
 }
 
 export function PortalPageTitle({
@@ -29,6 +32,7 @@ export function PortalPageTitle({
   beforeBack,
   trailing,
   className = "",
+  contentHasHeading = false,
 }: PortalPageTitleProps) {
   const location = useLocation();
   const navigate = useNavigate();
@@ -40,8 +44,8 @@ export function PortalPageTitle({
   }, [currentHref]);
 
   const goBack = () => {
-    if (beforeBack?.() === false) return;
     if (onBack) {
+      if (beforeBack?.() === false) return;
       onBack();
       return;
     }
@@ -49,15 +53,22 @@ export function PortalPageTitle({
     const historyIndex = browserHistoryIndex();
     const previousHref = previousPortalLocation(historyIndex);
     const explicitReturnTo = portalReturnTarget(location.state, currentHref);
+    const popToPrevious = explicitReturnTo
+      ? samePortalHref(previousHref, explicitReturnTo)
+      : canPopPortalHistory(currentHref, previousHref, parent);
+    const popIntent: GuardedPopIntent | undefined = popToPrevious && historyIndex !== null && previousHref
+      ? { kind: "pop", fromIndex: historyIndex, toIndex: historyIndex - 1, fromHref: currentHref, toHref: previousHref }
+      : undefined;
+    if (beforeBack?.(popIntent) === false) return;
     if (explicitReturnTo) {
-      if (samePortalHref(previousHref, explicitReturnTo)) {
+      if (popToPrevious) {
         void navigate(-1);
         return;
       }
       void navigate(explicitReturnTo, { replace: true });
       return;
     }
-    if (canPopPortalHistory(currentHref, previousHref, parent)) {
+    if (popToPrevious) {
       void navigate(-1);
       return;
     }
@@ -65,13 +76,13 @@ export function PortalPageTitle({
   };
 
   return (
-    <div className={`portal-page-title ${className}`.trim()}>
+    <div className={`portal-page-title${trailing ? " portal-page-title--with-actions" : ""} ${className}`.trim()}>
       {!isRoot ? (
         <button className="portal-page-title__back" type="button" aria-label="Go back" onClick={goBack}>
           <ArrowLeft size={20} strokeWidth={2.2} aria-hidden="true" />
         </button>
       ) : null}
-      <h1 className="portal-page-title__text">{title}</h1>
+      {contentHasHeading ? <span className="sr-only">{title}</span> : <h1 className="portal-page-title__text">{title}</h1>}
       {trailing ? <div className="portal-page-title__trailing">{trailing}</div> : null}
     </div>
   );

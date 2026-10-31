@@ -1,246 +1,112 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { cleanup, render, screen } from "@testing-library/react";
+import { cleanup, render, screen, within } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
 import { MemoryRouter } from "react-router-dom";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { OperationsShell } from "../../pages/operations/OperationsShell";
 import { ParentShell } from "../../pages/parent/ParentShell";
-import type { AttentionResponse } from "./api";
+import { ResponsibilityWorkspace, WorkspaceExperience } from "../workspace/ResponsibilityWorkspace";
+import { getWorkspaceManifest } from "../workspace/api";
+import type { WorkspaceManifest } from "../workspace/types";
+import { ExecutionEnvironmentProvider } from "../simulation/ExecutionEnvironmentContext";
+import { ApiError } from "../../lib/api";
 
-const state = vi.hoisted<{
-  data: AttentionResponse | undefined;
-  bellUnread: number;
-  attentionError: boolean;
-  studentLookupError: boolean;
-  emptyStudents: boolean;
-  guardianSchoolName: string | null;
-  useAttention: ReturnType<typeof vi.fn>;
-}>(() => ({ data: undefined, bellUnread: 0, attentionError: false, studentLookupError: false, emptyStudents: false, guardianSchoolName: "Cambridge International School", useAttention: vi.fn() }));
-
-vi.mock("./useAttention", () => ({
-  useAttention: (...arguments_: unknown[]) => {
-    state.useAttention(...arguments_);
-    return { data: state.data, isError: state.attentionError };
-  },
-}));
-vi.mock("../auth/AuthContext", () => ({
-  useOptionalAuth: () => ({
-    status: "authenticated",
-    user: { id: "user-1", active_school_id: "school-1" },
-    memberships: [
-      { role: "guardian", school_id: "school-1", school_name: state.guardianSchoolName },
-      { role: "admin", school_id: "school-1", school_name: "Cambridge International School" },
-      { role: "staff", school_id: "school-1", school_name: "Cambridge International School", permissions: ["attendance.view", "timetable.view", "messages.view", "safeguarding.review"] },
-    ],
-  }),
-}));
+const state = vi.hoisted<{bellUnread:number;studentLookupError:boolean;emptyStudents:boolean;schoolName:string|null}>(() => ({ bellUnread: 0, studentLookupError: false, emptyStudents: false, schoolName: "Test campus" }));
+vi.mock("../workspace/api", () => ({ getWorkspaceManifest: vi.fn() }));
+vi.mock("../auth/AuthContext", () => ({ useOptionalAuth: () => ({
+  status: "authenticated", user: { id: "user-1", active_school_id: "school-1" },
+  memberships: [{ role: "guardian", school_id: "school-1", school_name: state.schoolName }],
+}) }));
 vi.mock("../auth/useProFeatures", () => ({ useProFeatures: () => ({ enabled: false }) }));
 vi.mock("../auth/AccountMenu", () => ({ AccountMenu: () => null }));
-vi.mock("../notifications/NotificationCenter", () => ({
-  NotificationCenter: () => <button type="button" aria-label={state.bellUnread ? `Notifications, ${state.bellUnread} unread` : "Notifications"} />,
-}));
-vi.mock("../school/api", () => ({
-  getAccessibleStudents: () => state.studentLookupError ? Promise.reject(new Error("offline")) : Promise.resolve({
-    results: state.emptyStudents ? [] : [{ id: "child-2", user: { display_name: "Ananya Sharma" }, current_enrollment: { grade: "7", section: "A" } }],
-  }),
-}));
+vi.mock("../notifications/NotificationCenter", () => ({ NotificationCenter: () => <button type="button" aria-label={state.bellUnread ? `Notifications, ${state.bellUnread} unread` : "Notifications"} /> }));
+vi.mock("../school/api", () => ({ getAccessibleStudents: () => state.studentLookupError ? Promise.reject(new Error("offline")) : Promise.resolve({ results: state.emptyStudents ? [] : [{ id: "child-2", user: { display_name: "Learner Two" }, current_enrollment: { grade: "7", section: "A" } }] }) }));
 
-function renderWithProviders(content: React.ReactNode, route: string) {
-  const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
-  return render(<QueryClientProvider client={client}><MemoryRouter initialEntries={[route]}>{content}</MemoryRouter></QueryClientProvider>);
+function manifest(): WorkspaceManifest {
+  return {
+    revision: "1", generated_at: "2026-10-19T08:00:00Z",
+    context: { institution_id: "school-1", environment: { kind: "live" } },
+    today: { now: [], attention: { total: 1, overdue: 0, due_soon: 1 }, next: [] },
+    work: { total: 3, counts: { needs_me: 1, waiting: 2 }, coverage: "complete", items: [
+      { id: "register", title: "Class 7A register", kind: "task", urgency: "due_soon", direction: "needs_me", href: "/areas/attendance/registers?class_section_id=7a&date=2026-10-19", action_label: "Open register" },
+      { id: "leave-1", title: "Personal leave", kind: "request", urgency: "normal", direction: "waiting", state: "waiting_for_review", status_label: "Waiting for review", href: "/areas/responsibilities/leave?request=leave-1", action_label: "View request" },
+      { id: "leave-2", title: "Medical leave", kind: "request", urgency: "normal", direction: "waiting", state: "waiting_for_review", status_label: "Waiting for review", href: "/areas/responsibilities/leave?request=leave-2", action_label: "View request" },
+    ] },
+    areas: [{ key: "attendance", label: "Attendance", href: "/areas/attendance", attention_count: 3, capabilities: ["attendance.view"], scopes: [], surfaces: [] }],
+    more: { setup: [] }, freshness: { state: "current", as_of: "8:00 AM", source_revision: "1" },
+  };
 }
-
-function response(summary: AttentionResponse["summary"]): AttentionResponse {
-  return { portal: "parent", generated_at: "2026-10-13T08:00:00.000Z", summary, modules: {}, items: [] };
+function show(content: React.ReactNode, path = "/today") {
+  return render(<QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}><ExecutionEnvironmentProvider environment={{mode:"live",namespaceId:"live-school-1"}}><MemoryRouter initialEntries={[path]}>{content}</MemoryRouter></ExecutionEnvironmentProvider></QueryClientProvider>);
 }
-
-beforeEach(() => {
-  state.data = undefined;
-  state.bellUnread = 0;
-  state.attentionError = false;
-  state.studentLookupError = false;
-  state.emptyStudents = false;
-  state.guardianSchoolName = "Cambridge International School";
-  state.useAttention.mockReset();
-});
+beforeEach(() => { vi.clearAllMocks(); state.bellUnread = 0; state.studentLookupError = false; state.emptyStudents = false; state.schoolName = "Test campus"; });
 afterEach(cleanup);
 
-describe("attention navigation", () => {
-  it("scopes the parent More path to the selected child", () => {
-    state.data = response({ total: 2, new: 2, action_required: 0, exceptions: 0, urgent: 0 });
-    renderWithProviders(
-      <ParentShell active="attendance" pageLabel="Attendance" selectedChildId="child-2"><span>Content</span></ParentShell>,
-      "/parent/attendance?student_id=child-2",
-    );
-
-    expect(state.useAttention).toHaveBeenCalledWith("parent", "child-2");
-    const more = screen.getByRole("link", { name: "More, 2 new items" });
-    expect(more).toHaveAttribute("href", "/parent/more?student_id=child-2");
-    expect(more.querySelector(".attention-indicator--nav")).toBeInTheDocument();
+describe("responsibility-composed attention navigation", () => {
+  it("keeps Today, Work, Areas and More stable while owned work and Area attention remain distinct", () => {
+    show(<WorkspaceExperience manifest={manifest()} />);
+    const navigation = screen.getByRole("navigation", { name: "Workspace" });
+    expect(within(navigation).getAllByRole("button").map((item) => item.textContent)).toEqual(["Today", "1Work", "3Areas", "More"]);
+    expect(within(navigation).getByRole("button", { name: "Today" })).toHaveAttribute("aria-current", "page");
+    expect(screen.getByRole("link", { name: "1 work items need attention, view all work" })).toHaveAttribute("href", "/work");
+    expect(screen.getByText("1 due soon")).toBeVisible();
   });
-
-  it("shows the descendant More dot in principal desktop and mobile navigation", () => {
-    state.data = { ...response({ total: 1, new: 0, action_required: 1, exceptions: 0, urgent: 0 }), portal: "principal" };
-    const view = renderWithProviders(
-      <OperationsShell portal="principal" active="home" title="Overview"><span>Content</span></OperationsShell>,
-      "/principal",
-    );
-
-    const moreLinks = view.container.querySelectorAll('a[aria-label="More, 1 action required"]');
-    expect(moreLinks).toHaveLength(2);
-    expect(view.container.querySelectorAll(".attention-indicator--nav")).toHaveLength(2);
+  it("opens the exact owned domain action without replacing an Area entry with an attention target", async () => {
+    show(<WorkspaceExperience manifest={manifest()} />);const user = userEvent.setup();
+    await user.click(screen.getByRole("button", { name: /Work/ }));
+    expect(screen.getByRole("link", { name: "Task: Class 7A register, Open register" })).toHaveAttribute("href", "/areas/attendance/registers?class_section_id=7a&date=2026-10-19");
+    await user.click(screen.getByRole("button", { name: /Areas/ }));
+    expect(screen.getByRole("link", { name: /Open Attendance/ })).toHaveAttribute("href", "/areas/attendance");
   });
-
-  it("does not turn a global notification count into More attention", () => {
-    state.bellUnread = 9;
-    state.data = { ...response({ total: 0, new: 0, action_required: 0, exceptions: 0, urgent: 0 }), portal: "principal" };
-    const view = renderWithProviders(
-      <OperationsShell portal="principal" active="home" title="Overview"><span>Content</span></OperationsShell>,
-      "/principal",
-    );
-
-    expect(screen.getByRole("button", { name: "Notifications, 9 unread" })).toBeInTheDocument();
-    expect(view.container.querySelectorAll('a[aria-label="More"]')).toHaveLength(2);
+  it("aggregates Area attention separately from Work and caps only its visible badge", () => {
+    const data = manifest();show(<WorkspaceExperience manifest={{ ...data, work: { total: 1, counts: { needs_me: 1, waiting: 0 }, coverage: "complete", items: data.work.items.filter(item => item.direction === "needs_me") }, areas: [...data.areas, { ...data.areas[0]!, key: "timetable", label: "Timetable", href: "/areas/timetable", attention_count: 100 }] }} />);
+    const navigation = screen.getByRole("navigation", { name: "Workspace" });
+    expect(within(navigation).getByRole("button", { name: /103 items need attention.*Areas/ })).toHaveTextContent("99+");
+    expect(within(navigation).getByRole("button", { name: /1 items need attention.*Work/ })).toHaveTextContent("1");
+  });
+  it("keeps waiting requests discoverable without counting them as Work or Today attention", async () => {
+    const data = manifest();
+    show(<WorkspaceExperience manifest={{ ...data, today: { ...data.today, attention: { total: 0, overdue: 0, due_soon: 0 } }, work: { total: 2, counts: { needs_me: 0, waiting: 2 }, coverage: "complete", items: data.work.items.filter(item => item.direction === "waiting") } }} />);
+    const navigation = screen.getByRole("navigation", { name: "Workspace" });
+    const workButton = within(navigation).getByRole("button", { name: "Work", exact: true });
+    expect(workButton).not.toHaveTextContent("2");
+    expect(within(navigation).getByRole("button", { name: /3 items need attention.*Areas/ })).toBeVisible();
+    expect(screen.queryByRole("link", { name: /work items? needs? attention/ })).not.toBeInTheDocument();
+    await userEvent.click(workButton);
+    await userEvent.click(screen.getByRole("button", { name: "Waiting 2", exact: true }));
+    expect(screen.getByRole("link", { name: /Personal leave/ })).toBeVisible();
+    expect(screen.getByRole("link", { name: /Medical leave/ })).toBeVisible();
+  });
+  it("keeps both operations navigation surfaces canonical and separates unread notifications", () => {
+    state.bellUnread = 9;const view = show(<OperationsShell active="home" title="Today"><span>Content</span></OperationsShell>);
+    for (const navigation of screen.getAllByRole("navigation", { name: "Workspace" })) {
+      expect(within(navigation).getAllByRole("link").map((link) => link.getAttribute("href"))).toEqual(["/today", "/work", "/areas", "/more"]);
+      expect(within(navigation).getByRole("link", { name: "More" })).not.toHaveTextContent("9");
+    }
+    expect(screen.getByRole("button", { name: "Notifications, 9 unread" })).toBeVisible();
     expect(view.container.querySelector(".attention-indicator--nav")).not.toBeInTheDocument();
   });
-
-  it("marks the owning parent tab as well as the aggregate More destination", () => {
-    state.data = {
-      ...response({ total: 1, new: 0, action_required: 1, exceptions: 0, urgent: 0 }),
-      modules: {
-        attendance: { total: 1, new: 0, action_required: 1, exceptions: 0, urgent: 0, href: "/parent/attendance?student_id=child-2", first_item_href: "/parent/home?student_id=child-2&followup=f-1" },
-      },
-    };
-    renderWithProviders(
-      <ParentShell active="home" pageLabel="Home" selectedChildId="child-2"><span>Content</span></ParentShell>,
-      "/parent/home?student_id=child-2",
-    );
-
-    expect(screen.getByRole("link", { name: "Attendance, 1 action required" })).toHaveAttribute("href", "/parent/attendance?student_id=child-2");
-    expect(screen.getByRole("link", { name: "More, 1 action required" })).toBeInTheDocument();
+  it("preserves the selected learner inside the domain while shared navigation remains canonical", async () => {
+    show(<ParentShell active="attendance" pageLabel="Attendance" selectedChildId="child-2"><a href="/areas/attendance/leave?scope=dependent&student_id=child-2">Learner leave</a></ParentShell>, "/areas/attendance/leave?scope=dependent&student_id=child-2");
+    expect(screen.getByRole("link", { name: "More" })).toHaveAttribute("href", "/more");
+    expect(screen.getByRole("link", { name: "Learner leave" })).toHaveAttribute("href", "/areas/attendance/leave?scope=dependent&student_id=child-2");
+    expect(await screen.findByText("Learner Two · Class 7A")).toBeVisible();
   });
-
-  it("combines teacher register and follow-up attention on the Attendance destination", () => {
-    state.data = {
-      ...response({ total: 3, new: 0, action_required: 3, exceptions: 0, urgent: 0 }),
-      portal: "teacher",
-      modules: {
-        registers: { total: 2, new: 0, action_required: 2, exceptions: 0, urgent: 0, href: "/teacher/attendance", first_item_href: "/teacher/attendance?class_section_id=7a" },
-        attendance: { total: 1, new: 0, action_required: 1, exceptions: 0, urgent: 0, href: "/teacher/attendance", first_item_href: "/teacher?followup=f-1" },
-      },
-    };
-    const view = renderWithProviders(
-      <OperationsShell portal="teacher" active="home" title="Today"><span>Content</span></OperationsShell>,
-      "/teacher",
-    );
-
-    expect(view.container.querySelectorAll('a[aria-label="Attendance, 3 actions required"]')).toHaveLength(2);
-    expect(view.container.querySelectorAll('a[aria-label="Attendance, 3 actions required"]')[0]).toHaveAttribute("href", "/teacher/attendance");
+  it.each(["offline", "access revoked"])("does not call failed workspace attention an all-clear state: %s", async (message) => {
+    vi.mocked(getWorkspaceManifest).mockRejectedValue(message === "access revoked" ? new ApiError(message,403) : new Error(message));show(<ResponsibilityWorkspace />);
+    expect(await screen.findByRole("alert")).toHaveTextContent(message === "access revoked" ? "Your workspace access changed" : "We couldn’t load your workspace");
+    expect(screen.queryByText("Nothing needs you right now")).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Refresh workspace" })).toBeEnabled();
   });
-
-  it("combines schedule and calendar attention on the Timetable destination", () => {
-    state.data = {
-      ...response({ total: 3, new: 1, action_required: 2, exceptions: 0, urgent: 0 }),
-      portal: "principal",
-      modules: {
-        weekly: { total: 2, new: 0, action_required: 2, exceptions: 0, urgent: 0, href: "/principal/timetable", first_item_href: "/principal/timetable/day?plan=plan-1" },
-        calendar: { total: 1, new: 1, action_required: 0, exceptions: 0, urgent: 0, href: "/principal/calendar", first_item_href: "/principal/calendar?date=2026-10-15" },
-      },
-    };
-    const view = renderWithProviders(
-      <OperationsShell portal="principal" active="home" title="Overview"><span>Content</span></OperationsShell>,
-      "/principal",
-    );
-
-    expect(view.container.querySelectorAll('a[aria-label="Timetable, 2 actions required"]')).toHaveLength(1);
-    expect(view.container.querySelectorAll('a[aria-label="Timetable, 2 actions required"]')[0]).toHaveAttribute("href", "/principal/timetable");
+  it.each(["failed", "empty"])("does not substitute a demo learner for an unavailable relationship: %s", async (kind) => {
+    state.studentLookupError = kind === "failed";state.emptyStudents = kind === "empty";
+    show(<ParentShell active="attendance" pageLabel="Attendance"><span>Content</span></ParentShell>, "/areas/attendance/leave");
+    expect(await screen.findByText("Student information unavailable")).toBeVisible();
+    expect(screen.queryByText("Aarav Sharma")).not.toBeInTheDocument();
   });
-
-  it("keeps an operations tab stable when one exact attention target exists", () => {
-    state.data = {
-      ...response({ total: 1, new: 0, action_required: 1, exceptions: 0, urgent: 0 }),
-      portal: "principal",
-      modules: {
-        attendance: { total: 1, new: 0, action_required: 1, exceptions: 0, urgent: 0, href: "/principal/attendance", first_item_href: "/principal/followups?followup=f-9" },
-      },
-    };
-    const view = renderWithProviders(
-      <OperationsShell portal="principal" active="home" title="Overview"><span>Content</span></OperationsShell>,
-      "/principal",
-    );
-
-    const links = view.container.querySelectorAll('a[aria-label="Attendance, 1 action required"]');
-    expect(links).toHaveLength(2);
-    expect(links[0]).toHaveAttribute("href", "/principal/attendance");
-    expect(links[1]).toHaveAttribute("href", "/principal/attendance");
-  });
-
-  it("does not present a failed attention read as an all-clear state", () => {
-    state.attentionError = true;
-    const view = renderWithProviders(
-      <OperationsShell portal="principal" active="home" title="Overview"><span>Content</span></OperationsShell>,
-      "/principal",
-    );
-
-    expect(view.container.querySelectorAll('a[aria-label="More, attention status unavailable"]')).toHaveLength(2);
-    expect(view.container.querySelectorAll('a[aria-label="Attendance, attention status unavailable"]')).toHaveLength(2);
-    expect(view.container.querySelectorAll('a[aria-label="Timetable, attention status unavailable"]')).toHaveLength(1);
-    expect(view.container.querySelectorAll('a[aria-label="Messages, attention status unavailable"]')).toHaveLength(1);
-    expect(view.container.querySelectorAll('a[aria-label="Student concerns, attention status unavailable"]')).toHaveLength(1);
-    expect(view.container.querySelectorAll(".attention-indicator--unavailable")).toHaveLength(7);
-  });
-
-  it("does not present failed parent module reads as clear", () => {
-    state.attentionError = true;
-    const view = renderWithProviders(
-      <ParentShell active="home" pageLabel="Home" selectedChildId="child-2"><span>Content</span></ParentShell>,
-      "/parent/home?student_id=child-2",
-    );
-
-    expect(screen.getByRole("link", { name: "Attendance, attention status unavailable" })).toBeInTheDocument();
-    expect(screen.getByRole("link", { name: "Diary, attention status unavailable" })).toBeInTheDocument();
-    expect(screen.getByRole("link", { name: "More, attention status unavailable" })).toBeInTheDocument();
-    expect(view.container.querySelectorAll(".attention-indicator--unavailable")).toHaveLength(3);
-  });
-
-  it("does not present a failed parent child-scope lookup as clear", async () => {
-    state.studentLookupError = true;
-    const view = renderWithProviders(
-      <ParentShell active="home" pageLabel="Home"><span>Content</span></ParentShell>,
-      "/parent/home",
-    );
-
-    expect(await screen.findByRole("link", { name: "Attendance, attention status unavailable" })).toBeInTheDocument();
-    expect(screen.getByRole("link", { name: "Diary, attention status unavailable" })).toBeInTheDocument();
-    expect(screen.getByRole("link", { name: "More, attention status unavailable" })).toBeInTheDocument();
-    expect(view.container.querySelectorAll(".attention-indicator--unavailable")).toHaveLength(3);
-  });
-
-  it("does not present an authenticated guardian with no linked learner as clear", async () => {
-    state.emptyStudents = true;
-    const view = renderWithProviders(
-      <ParentShell active="attendance" pageLabel="Attendance"><span>Content</span></ParentShell>,
-      "/parent/attendance",
-    );
-
-    expect(await screen.findByRole("link", { name: "Attendance, attention status unavailable" })).toBeInTheDocument();
-    expect(screen.getByRole("link", { name: "Diary, attention status unavailable" })).toBeInTheDocument();
-    expect(screen.getByRole("link", { name: "More, attention status unavailable" })).toBeInTheDocument();
-    expect(view.container.querySelectorAll(".attention-indicator--unavailable")).toHaveLength(3);
-    expect(state.useAttention).toHaveBeenLastCalledWith("parent", undefined);
-    expect(
-      await screen.findByText("Student information unavailable"),
-    ).toBeVisible();
-    expect(screen.queryByText(/Aarav Sharma/)).not.toBeInTheDocument();
-  });
-
-  it("uses neutral school context when an authenticated guardian profile has no school name", () => {
-    state.guardianSchoolName = null;
-    renderWithProviders(
-      <ParentShell active="home" pageLabel="Home" selectedChildId="child-2"><span>Content</span></ParentShell>,
-      "/parent/home?student_id=child-2",
-    );
-
-    expect(screen.getByLabelText("School information unavailable")).toBeInTheDocument();
-    expect(screen.queryByText("Cambridge International School")).not.toBeInTheDocument();
+  it("uses neutral school context when an authenticated guardian has no school name", () => {
+    state.schoolName = null;show(<ParentShell active="home" pageLabel="Today" selectedChildId="child-2"><span>Content</span></ParentShell>);
+    expect(screen.getByLabelText("School information unavailable")).toBeVisible();
+    expect(screen.queryByText("Test campus")).not.toBeInTheDocument();
   });
 });

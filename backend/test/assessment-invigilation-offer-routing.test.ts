@@ -88,8 +88,8 @@ describe("configured assessment invigilation Offer coordination",()=>{
   });
 
   it("binds an accept or decline to the exact current recipient, assignment revision and message deadline",()=>{
-    expect(bridge).toContain("CURRENT_TIMESTAMP<=response_due_at AS before_due");
-    expect(bridge).toContain("CURRENT_TIMESTAMP<expires_at AS before_expiry");
+    expect(bridge).toContain('${executionNow()}::timestamptz<=response_due_at AS before_due');
+    expect(bridge).toContain('${executionNow()}::timestamptz<expires_at AS before_expiry');
     expect(bridge).toContain("input.actor_user_id!==input.binding.selected_user_id");
     expect(bridge).toContain("input.assignment.user_id!==input.binding.selected_user_id");
     expect(bridge).toContain("input.source_assignment_revision!==input.binding.source_assignment_revision");
@@ -98,7 +98,8 @@ describe("configured assessment invigilation Offer coordination",()=>{
     expect(bridge).toContain("This invigilation response command was already used for different work.");
 
     const response=operations.slice(operations.indexOf("async respondInvigilator"),operations.indexOf("async prepareForSchedule"));
-    expect(response.indexOf("retainedResponseCommand")).toBeLessThan(response.indexOf("forUpdate()"));
+    expect(response.indexOf("resolveAccountEndpoint")).toBeLessThan(response.indexOf("retainedResponseCommand"));
+    expect(response.indexOf("forUpdate()")).toBeLessThan(response.indexOf("retainedResponseCommand"));
     expect(response.indexOf("currentResponseBinding")).toBeLessThan(response.indexOf('updateTable("assessment_sitting_invigilators")'));
     expect(response).toContain("this.invigilationOffers.recordResponse");
     expect(response).toContain("Only the invited invigilator can respond.");

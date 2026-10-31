@@ -131,8 +131,29 @@ describe('agent capability boundary',()=>{
   });
   it('rejects unobserved identifiers and unsafe screen links',()=>{
     expect(()=>assertKnownIds({id:child},new Set([school]))).toThrow(/Read/);
-    for(const path of ['https://example.com','//evil','/api/v1/auth','/principal\\evil'])expect(()=>assertLocalScreen(path)).toThrow();
+    for(const path of ['https://example.com','//evil','/api/v1/auth','/principal\\evil','/principal/../api/v1/auth',
+      '/areas/unreviewed','/areas/people/classes/extra','/areas/people/classes//','/areas/events/manage/not-a-record',
+      '/areas/people/%63lasses','/areas/people/classes/../classes','/areas/people/classes#unreviewed',
+      '/areas/people/classes\n','/areas/people/classes%2f..%2fauth'])expect(()=>assertLocalScreen(path)).toThrow();
     expect(assertLocalScreen('/parent/diary?student_id='+child)).toContain(child);
+  });
+  it('accepts only the reviewed neutral catalogue destinations without granting their record authority',()=>{
+    for(const [name,input,actor] of [
+      ['class_registers',{date:'2026-10-23'},scope],['class_updates',{date:'2026-10-23'},scope],
+      ['attendance_register',{class_section_id:child,date:'2026-10-23'},scope],
+      ['conversations',{},scope],['assessment_details',{id:child},scope],['event_details',{id:child},scope],
+      ['event_details',{id:child},{...scope,portal:'parent',studentId:child}],
+      ['principal_review',{topic:'attendance'},{...scope,portal:'principal'}],
+    ] as const){
+      const capability=CAPABILITIES.find(item=>item.name===name)!;
+      const destination=capability.screen(input,actor);
+      expect(destination).toMatch(/^\/areas\//);
+      expect(assertLocalScreen(destination)).toBe(destination);
+    }
+    for(const path of [`/areas/departure/manage/journeys/${child}`,`/areas/departure/operate/${child}`,
+      '/areas/insights/learning-review?scope=assigned','/areas/assessments/results?scope=dependent&student_id='+child]){
+      expect(assertLocalScreen(path)).toBe(path);
+    }
   });
   it('uses simple action fields while the server owns evidence binding',()=>{
     const cap=CAPABILITIES.find(cap=>cap.name==='read_notification')!;
@@ -243,9 +264,22 @@ describe('agent capability boundary',()=>{
   });
   it('links receipts to the created record and preserves parent child context',()=>{
     const cap=(name:string)=>CAPABILITIES.find(item=>item.name===name)!;
-    expect(verificationScreen(cap('plan_transport_trip'),{body:{}},{...scope,portal:'principal'},{id:child})).toBe('/principal/departure/journeys/'+child);
+    expect(verificationScreen(cap('plan_transport_trip'),{body:{}},{...scope,portal:'principal',accountRole:'admin'},{id:child})).toBe('/areas/departure/manage/journeys/'+child);
     expect(verificationScreen(cap('create_staff_profile'),{body:{}},{...scope,portal:'principal'},{id:child})).toBe('/principal/staff/'+child);
     expect(verificationScreen(cap('read_notification'),{id:school},{...scope,portal:'parent',studentId:child})).toBe('/parent/home?notifications=open&student_id='+child);
-    expect(verificationScreen(cap('send_message'),{id:school},{...scope,portal:'parent',studentId:child})).toBe('/parent/messages?conversation='+school+'&student_id='+child);
+    expect(verificationScreen(cap('send_message'),{id:school},{...scope,portal:'parent',studentId:child})).toBe('/areas/messages/conversations?scope=dependent&student_id='+child+'&conversation='+school);
+    expect(verificationScreen(cap('send_message'),{id:school},{...scope,portal:'student',studentId:child})).toBe('/areas/messages/conversations?scope=self&student_id='+child+'&conversation='+school);
+    expect(verificationScreen(cap('send_message'),{id:school},{...scope,portal:'principal',studentId:null})).toBe('/areas/messages/conversations?conversation='+school);
+    expect(cap('event_details').screen({id:school},{...scope,portal:'parent',studentId:child})).toBe('/areas/events/calendar/'+school+'?scope=dependent&student_id='+child);
+    expect(cap('event_details').screen({id:school},{...scope,portal:'student',studentId:child})).toBe('/areas/events/calendar/'+school+'?scope=self&student_id='+child);
+    expect(cap('event_details').screen({id:school},{...scope,portal:'teacher',studentId:null})).toBe('/areas/events/assigned/'+school);
+    expect(cap('event_details').screen({id:school},{...scope,portal:'principal',studentId:null,accountRole:'admin'})).toBe('/areas/events/manage/'+school);
+    expect(cap('my_results').screen({}, {...scope,portal:'parent',studentId:child})).toBe('/areas/assessments/results?scope=dependent&student_id='+child);
+    expect(cap('assessment_details').screen({id:school},{...scope,portal:'teacher',studentId:null})).toBe('/areas/assessments/assigned?assessment='+school);
+    expect(cap('assessment_details').screen({id:school},{...scope,portal:'principal',studentId:null,accountRole:'admin'})).toBe('/areas/assessments/manage?assessment='+school);
+    expect(cap('insights').screen({period:'90'},{...scope,portal:'teacher',studentId:null})).toBe('/areas/insights?scope=assigned&period=90');
+    expect(cap('insights').screen({period:'30'},{...scope,portal:'parent',studentId:child})).toBe('/areas/insights?scope=dependent&student_id='+child+'&period=30');
+    expect(cap('principal_review').screen({topic:'fees',date:'2026-10-07'},{...scope,portal:'principal',studentId:null,accountRole:'admin'})).toBe('/areas/insights/finance?scope=institution&date=2026-10-07');
+    expect(verificationScreen(cap('insights'),{period:'90',chart:'results_comparison'},{...scope,portal:'student',studentId:child})).toBe('/areas/insights/results?scope=self&student_id='+child+'&period=90');
   });
 });

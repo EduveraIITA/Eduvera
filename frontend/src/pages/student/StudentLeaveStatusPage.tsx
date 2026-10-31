@@ -50,9 +50,12 @@ export interface StudentLeaveStatusData {
 
 export interface StudentLeaveStatusPageProps {
   data: StudentLeaveStatusData;
+  /** Render inside the neutral responsibility workspace instead of a persona shell. */
+  embedded?: boolean;
   routes?: Partial<StudentRouteMap>;
   onBack?: () => void;
   onApplyLeave?: () => void;
+  onViewEligibility?: () => void;
   onViewPrescription?: (documentUrl: string, requestId: string) => void;
   onWithdraw?: (requestId: string) => void | Promise<void>;
 }
@@ -64,7 +67,7 @@ export const demoLeaveStatusData: StudentLeaveStatusData = {
   dates: "28 Oct - 29 Oct 2026 - Full School Days",
   duration: "2 Days",
   stages: [
-    { id: "submitted", title: "Submitted by Student", detail: "27 Oct, 08:30 PM", state: "complete", note: "Application generated via ThatCampus Student Portal" },
+    { id: "submitted", title: "Submitted by student", detail: "27 Oct, 08:30 PM", state: "complete", note: "Application generated in ThatCampus" },
     { id: "parent", title: "Parent Sign-Off", detail: "Pooja Sharma (Mother) - 27 Oct, 09:15 PM", state: "complete", badge: "Verified", note: "Doctor prescribed complete bed rest and viral medication for 48 hours." },
     { id: "teacher", title: "Class Teacher Review", detail: "Mrs. K. Sharma (Homeroom Advisor)", state: "active", badge: "In Review" },
     { id: "register", title: "Official Attendance Record", detail: "Auto-syncs 'Excused Medical (EM)' code to portal upon teacher approval", state: "pending" },
@@ -105,9 +108,11 @@ function safeDocumentUrl(value?: string) {
 
 export function StudentLeaveStatusPage({
   data,
+  embedded = false,
   routes,
   onBack,
   onApplyLeave,
+  onViewEligibility,
   onViewPrescription,
   onWithdraw,
 }: StudentLeaveStatusPageProps) {
@@ -142,16 +147,16 @@ export function StudentLeaveStatusPage({
     }
   }
 
-  return (
-    <StudentShell activeNav="launcher" variant="platform" routes={routes} pageTitle="Leave" onBack={onBack}>
+  const content = (
+    <>
       <div className="student-page-stack leave-status-page">
         <div className="page-context-row">
           <span className="title-with-badge"><b>{data.activeCount} Active</b></span>
-          <button className="square-soft-button" type="button" aria-label="Leave policy information" onClick={() => navigate("/student/attendance/eligibility")}><Info size={20} /></button>
+          <button className="square-soft-button" type="button" aria-label="Leave policy information" onClick={onViewEligibility ?? (() => navigate(embedded ? "/areas/attendance/records?scope=self&view=eligibility" : "/student/attendance/eligibility"))}><Info size={20} /></button>
         </div>
 
         <div className="segmented-control" role="tablist" aria-label="Leave tracker views">
-          <button type="button" role="tab" aria-selected="false" onClick={onApplyLeave ?? (() => navigate("/student/leave/new"))}><Send size={16} />Apply for leave</button>
+          <button type="button" role="tab" aria-selected="false" onClick={onApplyLeave ?? (() => navigate(embedded ? "/areas/attendance/leave?scope=self&view=apply" : "/student/leave/new"))}><Send size={16} />Apply for leave</button>
           <button className="is-active" type="button" role="tab" aria-selected="true"><History size={16} />Requests {data.activeCount > 0 ? <i /> : null}</button>
         </div>
 
@@ -215,6 +220,12 @@ export function StudentLeaveStatusPage({
         </section>
       </div>
       {toast && <div className="student-toast" role="status"><Send size={18} /><span>{toast}</span></div>}
+    </>
+  );
+  if (embedded) return <div className="student-app student-app--embedded">{content}</div>;
+  return (
+    <StudentShell activeNav="launcher" variant="platform" routes={routes} pageTitle="Leave" onBack={onBack}>
+      {content}
     </StudentShell>
   );
 }

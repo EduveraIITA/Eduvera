@@ -105,7 +105,7 @@ export function AttendanceContinuityPanel({ data, classes, date, loading, error,
       <summary><FileInput size={20} aria-hidden="true" /><span>Enter a paper register</span><ChevronDown size={18} aria-hidden="true" /></summary>
       <div className="attendance-paper-capture__form">
         <p>{attendanceDate(date)} · Entries need review before updating attendance.</p>
-        {selectedClass ? <><label>Class<span className="attendance-paper-capture__select"><select value={selectedClass} onChange={(event) => setPaperClass(event.target.value)}>{classes.map((item) => <option value={item.class_section_id} key={item.class_section_id}>{item.class_name}</option>)}</select><ChevronDown size={16} aria-hidden="true" /></span></label><Link to={`/principal/attendance?class_section_id=${encodeURIComponent(selectedClass)}&date=${date}&source=paper`}>Enter sheet <ArrowRight size={16} /></Link></> : <p>No classes available for paper entry.</p>}
+        {selectedClass ? <><label>Class<span className="attendance-paper-capture__select"><select value={selectedClass} onChange={(event) => setPaperClass(event.target.value)}>{classes.map((item) => <option value={item.class_section_id} key={item.class_section_id}>{item.class_name}</option>)}</select><ChevronDown size={16} aria-hidden="true" /></span></label><Link to={`/areas/attendance/coordination?class_section_id=${encodeURIComponent(selectedClass)}&date=${date}&source=paper`}>Enter sheet <ArrowRight size={16} /></Link></> : <p>No classes available for paper entry.</p>}
       </div>
     </details>
     {workspace && workspace.summary.accepted + workspace.summary.rejected > 0 ? <details className="attendance-continuity__processed">

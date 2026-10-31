@@ -17,7 +17,7 @@ export default function CampusLabProjectionProvider({ children }: { children: Re
   const statusQuery = useQuery({
     queryKey: ["campus-lab", "projection"],
     queryFn: ({ signal }) => getCampusLabStatus(signal),
-    enabled: auth?.user?.role === "admin",
+    enabled: Boolean(auth?.user),
     refetchInterval: (query) => query.state.data?.control?.enabled === false ? false : 2_000,
     retry: 1,
   });

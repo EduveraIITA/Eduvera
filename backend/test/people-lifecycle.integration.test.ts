@@ -1,23 +1,29 @@
 import {randomUUID} from "node:crypto";
 import {Pool} from "pg";
-import {afterAll,beforeAll,describe,expect,it} from "vitest";
+import {afterAll,beforeAll,describe,expect,it,vi} from "vitest";
 import {DatabaseService} from "../src/database/database.service.js";
 import {PeopleService} from "../src/people/people.service.js";
-import {SchoolEventService} from "../src/school/school-event.service.js";
 import type {AuthenticatedRequest,AuthUser} from "../src/common/request.js";
+import type {CampusModelCoreService} from "../src/campus-model-core/campus-model-core.service.js";
+import {ProgressiveWorkspaceProvisioner} from "../src/institution-onboarding/progressive-workspace.provisioner.js";
+import {academicParticipationTestServices} from './academic-participation.test-support.js';
+import {requireIsolatedTestDatabaseUrl} from "./test-database.js";
 
 const isolated=process.env.TEST_DATABASE_ISOLATED==="true";
 const suite=isolated?describe:describe.skip;
 suite("connected student enrollment lifecycle",()=>{
-  const pool=new Pool({connectionString:process.env.DATABASE_URL,max:2});
-  let database:DatabaseService,people:PeopleService,admin:AuthenticatedRequest,schoolId:string,studentId:string,termId:string,classA:string,classB:string,today:string;
+  const pool=new Pool({connectionString:isolated?requireIsolatedTestDatabaseUrl(process.env.DATABASE_URL):"postgresql://invalid.invalid/unused_test",max:2});
+  let database:DatabaseService,people:PeopleService,core:CampusModelCoreService,admin:AuthenticatedRequest,schoolId:string,studentId:string,termId:string,classA:string,classB:string,today:string;
   const request=(user:AuthUser)=>({authUser:user,requestId:randomUUID(),protocol:"http",headers:{host:"localhost"},ip:"127.0.0.1"}) as AuthenticatedRequest;
   beforeAll(async()=>{
-    database=new DatabaseService();people=new PeopleService(database,new SchoolEventService(database));
-    const user=(await pool.query<AuthUser>("SELECT users.* FROM users JOIN school_memberships membership ON membership.user_id=users.id WHERE membership.role='admin' AND membership.is_active LIMIT 1")).rows[0]!;
-    admin=request(user);
-    schoolId=(await pool.query("INSERT INTO schools(name,code,timezone) VALUES('Connected student test',$1,'Asia/Kolkata') RETURNING id",[`connected-${randomUUID().slice(0,8)}`])).rows[0].id;
-    await pool.query("INSERT INTO school_memberships(user_id,school_id,role) VALUES($1,$2,'admin')",[user.id,schoolId]);
+    database=new DatabaseService();const shared=academicParticipationTestServices(database);core=shared.core;
+    people=new PeopleService(database,shared.events,core,core,core,shared.bridge);
+    const suffix=randomUUID();
+    const user=await database.insertInto("users").values({username:`connected-${suffix}`,email:`connected-${suffix}@example.test`,
+      password_hash:"isolated-fixture-only",first_name:"Lifecycle",last_name:"Owner",role:"admin"})
+      .returning(["id","username","email","first_name","last_name","role","is_active"]).executeTakeFirstOrThrow();
+    schoolId=await database.transaction().execute(tx=>new ProgressiveWorkspaceProvisioner(core).createForAccount(tx,user,"Asia/Kolkata"));
+    admin=request({...user,active_school_id:schoolId});
     today=(await pool.query("SELECT (now() AT TIME ZONE 'Asia/Kolkata')::date::text today")).rows[0].today;
     termId=(await pool.query("INSERT INTO academic_terms(school_id,academic_year,name,starts_on,ends_on,attendance_threshold,is_active) VALUES($1,'2026-27','Term 1',$2::date-90,$2::date+90,85,true) RETURNING id",[schoolId,today])).rows[0].id;
     const classes=(await pool.query("INSERT INTO class_sections(school_id,academic_year,grade,section) VALUES($1,'2026-27','7','A'),($1,'2026-27','7','B') RETURNING id,section",[schoolId])).rows;
@@ -26,30 +32,60 @@ suite("connected student enrollment lifecycle",()=>{
     studentId=(await pool.query("INSERT INTO students(person_id,school_id,admission_number,date_of_birth) VALUES($1,$2,'CONNECTED-1','2014-03-04') RETURNING id",[person,schoolId])).rows[0].id;
     await pool.query("INSERT INTO enrollments(student_id,class_section_id,term_id,roll_number,enrolled_on) VALUES($1,$2,$3,1,$4)",[studentId,classA,termId,today]);
     const subject=(await pool.query("INSERT INTO subjects(school_id,code,name,short_name) VALUES($1,'ENG-CON','English','Eng') RETURNING id",[schoolId])).rows[0].id;
-    await pool.query("INSERT INTO timetable_slots(class_section_id,term_id,subject_id,weekday,period_number,starts_at,ends_at,slot_type) VALUES($1,$3,$4,1,1,'09:00','09:45','class'),($2,$3,$4,1,1,'09:00','09:45','class')",[classA,classB,termId,subject]);
-    await pool.query("INSERT INTO attendance_registers(school_id,class_section_id,term_id,date,state,revision,submitted_by,submitted_at) VALUES($1,$2,$4,$5,'submitted',1,$6,now()),($1,$3,$4,$5,'submitted',1,$6,now())",[schoolId,classA,classB,termId,today,user.id]);
+    await pool.query("INSERT INTO timetable_slots(class_section_id,term_id,subject_id,weekday,period_number,starts_at,ends_at,slot_type) SELECT class_id,$3,$4,day,1,'09:00','09:45','class' FROM unnest(ARRAY[$1::uuid,$2::uuid]) class_id CROSS JOIN generate_series(1,7) day",[classA,classB,termId,subject]);
+    const otherPerson=(await pool.query("INSERT INTO school_people(school_id,first_name) VALUES($1,'Destination original') RETURNING id",[schoolId])).rows[0].id;
+    const otherStudent=(await pool.query("INSERT INTO students(school_id,person_id,admission_number) VALUES($1,$2,'DESTINATION-1') RETURNING id",[schoolId,otherPerson])).rows[0].id;
+    await pool.query("INSERT INTO enrollments(student_id,class_section_id,term_id,roll_number,enrolled_on) VALUES($1,$2,$3,1,$4)",[otherStudent,classB,termId,today]);
+    for(const [classId,personId] of [[classA,person],[classB,otherPerson]]){
+      const prepared=await shared.bridge.prepareDaily(admin.authUser,schoolId,classId,today,true);
+      await shared.kernel.submitRecords(admin.authUser,schoolId,prepared.register_id,{expected_revision:0,records:[{person_id:personId,status:'present'}]},
+        {...admin,requestId:randomUUID(),headers:{...admin.headers,'idempotency-key':randomUUID()}});
+    }
   });
   afterAll(async()=>{
-    if(schoolId){
-      await pool.query("DELETE FROM event_outbox WHERE school_id=$1",[schoolId]);await pool.query("DELETE FROM audit_events WHERE school_id=$1",[schoolId]);
-      await pool.query("DELETE FROM student_enrollment_change_reviews WHERE school_id=$1",[schoolId]);await pool.query("DELETE FROM subject_attendance WHERE student_id=$1",[studentId]);
-      await pool.query("DELETE FROM attendance_registers WHERE school_id=$1",[schoolId]);await pool.query("DELETE FROM timetable_slots WHERE class_section_id IN($1,$2)",[classA,classB]);
-      await pool.query("DELETE FROM subjects WHERE school_id=$1",[schoolId]);await pool.query("DELETE FROM enrollments WHERE student_id=$1",[studentId]);
-      const person=(await pool.query("DELETE FROM students WHERE id=$1 RETURNING person_id",[studentId])).rows[0]?.person_id;
-      await pool.query("DELETE FROM school_memberships WHERE school_id=$1",[schoolId]);await pool.query("DELETE FROM class_sections WHERE school_id=$1",[schoolId]);await pool.query("DELETE FROM academic_terms WHERE school_id=$1",[schoolId]);
-      if(person) await pool.query("DELETE FROM school_people WHERE id=$1",[person]);await pool.query("DELETE FROM schools WHERE id=$1",[schoolId]);
-    }
+    // Retain the random isolated fixture and immutable Core evidence together;
+    // partial cleanup must not erase the source beneath its retained outcome.
     await database?.destroy();await pool.end();
+  });
+  it("does not promote a resource-only exception into campus People management",async()=>{
+    const suffix=randomUUID();
+    const account=await database.insertInto("users").values({username:`people-scope-${suffix}`,email:`people-scope-${suffix}@example.test`,
+      password_hash:"isolated-fixture-only",first_name:"Scoped",last_name:"Operator",role:"staff"})
+      .returning(["id","username","email","first_name","last_name","role","is_active"]).executeTakeFirstOrThrow();
+    await database.insertInto("school_memberships").values({school_id:schoolId,user_id:account.id,role:"staff",is_active:true}).execute();
+    const staff=request({...account,active_school_id:schoolId});
+    const exception=(await pool.query(`INSERT INTO school_access_exceptions(school_id,user_id,permission,reason,source_kind,
+      scope_kind,valid_from,valid_until,review_due_on,created_by) VALUES($1,$2,'sis.manage','Isolated scope regression',
+      'manual','assigned_resources',$3::date,$3::date+2,$3::date+1,$4) RETURNING id`,[schoolId,account.id,today,admin.authUser.id])).rows[0];
+    const current=(await people.lifecycle(admin.authUser,studentId,schoolId)).current as {id:string;revision:number};
+    const input={school_id:schoolId,action:"move_class",expected_enrollment_id:current.id,expected_revision:current.revision,
+      effective_on:today,target_class_section_id:classB,target_term_id:termId,roll_number:4,reason:"Scope review only"};
+    await expect(people.lifecycle(staff.authUser,studentId,schoolId)).rejects.toThrow("Institution-scoped school permission");
+    await expect(people.previewLifecycle(staff,studentId,input)).rejects.toThrow("Institution-scoped school permission");
+    await pool.query("UPDATE school_access_exceptions SET scope_kind='institution',revision=revision+1 WHERE id=$1",[exception.id]);
+    expect((await people.lifecycle(staff.authUser,studentId,schoolId)).current).toMatchObject({id:current.id});
+    expect(await people.previewLifecycle(staff,studentId,input)).toMatchObject({input:{expected_enrollment_id:current.id}});
   });
   it("reviews and commits a same-term move without deleting the prior placement",async()=>{
     const lifecycle=await people.lifecycle(admin.authUser,studentId,schoolId);const current=lifecycle.current as {id:string;revision:number};
     const preview=await people.previewLifecycle(admin,studentId,{school_id:schoolId,action:"move_class",expected_enrollment_id:current.id,expected_revision:current.revision,effective_on:today,target_class_section_id:classB,target_term_id:termId,roll_number:4,reason:"Balanced class placement"});
     expect(preview).toMatchObject({target:{class_name:"Class 7B"},impact:{submitted_registers:2}});
+    const refusal=vi.spyOn(core,"recordAcceptedEvent").mockRejectedValueOnce(new Error("Isolated model journal refusal"));
+    await expect(people.commitLifecycle(admin,preview.id)).rejects.toThrow("Isolated model journal refusal");refusal.mockRestore();
+    expect((await people.lifecycle(admin.authUser,studentId,schoolId)).current).toMatchObject({id:current.id,revision:current.revision});
+    expect((await pool.query("SELECT count(*)::int total FROM campus_model_commands WHERE school_id=$1 AND idempotency_key=$2",[schoolId,`enrollment-lifecycle:${preview.id}`])).rows[0].total).toBe(0);
     const first=await people.commitLifecycle(admin,preview.id);const retry=await people.commitLifecycle(admin,preview.id);expect(retry).toEqual(first);
     const rows=(await pool.query("SELECT class_section_id,is_active,exit_kind,exit_reason FROM enrollments WHERE student_id=$1 ORDER BY is_active",[studentId])).rows;
     expect(rows).toHaveLength(2);expect(rows[0]).toMatchObject({class_section_id:classA,is_active:false,exit_kind:"class_move",exit_reason:"Balanced class placement"});expect(rows[1]).toMatchObject({class_section_id:classB,is_active:true});
     expect((await pool.query("SELECT state,revision FROM attendance_registers WHERE school_id=$1 ORDER BY class_section_id",[schoolId])).rows).toEqual([{state:"draft",revision:2},{state:"draft",revision:2}]);
     expect((await pool.query("SELECT count(*)::int total FROM event_outbox WHERE school_id=$1 AND idempotency_key=$2",[schoolId,`enrollment-change:${preview.id}`])).rows[0].total).toBe(1);
+    const trace=(await pool.query(`SELECT command.state,outcome.status,event.event_type,event.correlation_id,
+        event.payload->>'closure' AS closure,outcome.metadata->>'authority_or_account_access_changed' AS access_changed
+      FROM campus_model_commands command JOIN campus_model_command_outcomes outcome ON outcome.command_id=command.id
+      JOIN campus_model_events event ON event.id=(outcome.metadata->>'model_event_id')::uuid
+      WHERE command.school_id=$1 AND command.idempotency_key=$2`,[schoolId,`enrollment-lifecycle:${preview.id}`])).rows;
+    expect(trace).toEqual([{state:"accepted",status:"accepted",event_type:"people.enrollment.changed",correlation_id:preview.id,
+      closure:"terminal_domain_decision",access_changed:"false"}]);
   });
   it("ends an enrollment but preserves the connected student and placement history",async()=>{
     const current=(await people.lifecycle(admin.authUser,studentId,schoolId)).current as {id:string;revision:number};

@@ -6,14 +6,15 @@ import {
 } from "@nestjs/common";
 import { z } from "zod";
 import { sql } from "kysely";
+import { executionNow } from "../campus-model-core/execution-time.runtime.js";
 import type { AuthenticatedRequest, AuthUser } from "../common/request.js";
-import { config } from "../config.js";
 import { DatabaseService } from "../database/database.service.js";
 import { SchoolService } from "../school/school.service.js";
 import { AttendanceModelService } from "../attendance-model/attendance-model.service.js";
 import type { PhotoAttendanceAnalysis, VisionSession } from "./contracts.js";
 import { PhotoAttendanceVisionClient } from "./vision-client.js";
 import { proFeaturesEnabled, requireProFeatures } from '../auth/pro-features.js';
+import { findAcademicParticipationRegister } from "../attendance/participation-continuity.js";
 
 export interface UploadedPhoto {
   filename: string;
@@ -43,8 +44,6 @@ type AttendanceScreen = Awaited<ReturnType<SchoolService["teacherAttendanceScree
 
 @Injectable()
 export class PhotoAttendanceService {
-  private readonly settings = config();
-
   constructor(
     private readonly db: DatabaseService,
     private readonly school: SchoolService,
@@ -124,7 +123,7 @@ export class PhotoAttendanceService {
     let health: Awaited<ReturnType<PhotoAttendanceVisionClient["health"]>> | null = null;
     let llm: Awaited<ReturnType<PhotoAttendanceVisionClient["llmStatus"]>> | null = null;
     let unavailableReason: string | null = null;
-    if (this.settings.PHOTO_ATTENDANCE_ENABLED) {
+    if (this.vision.available) {
       try {
         health = await this.vision.health();
         if (!health.model_files_present) unavailableReason = "The local face models are not installed.";
@@ -136,7 +135,7 @@ export class PhotoAttendanceService {
       unavailableReason = "Photo attendance is disabled for this environment.";
     }
     return {
-      enabled: this.settings.PHOTO_ATTENDANCE_ENABLED,
+      enabled: this.vision.available,
       available: Boolean(health?.model_files_present),
       unavailable_reason: unavailableReason,
       accuracy_validated: false,
@@ -191,6 +190,7 @@ export class PhotoAttendanceService {
       .where("school_id", "=", schoolId)
       .where("class_section_id", "=", classSectionId)
       .executeTakeFirst();
+    if (binding && this.vision.simulationActive) return binding.provider_class_id;
     const classes = await this.vision.classes();
     if (binding && classes.some((item) => item.id === binding.provider_class_id)) {
       return binding.provider_class_id;
@@ -200,11 +200,11 @@ export class PhotoAttendanceService {
     if (binding) {
       await this.db.transaction().execute(async (tx) => {
         await tx.updateTable("photo_attendance_class_bindings")
-          .set({ provider_class_id: provider.id, updated_at: new Date() })
+          .set({ provider_class_id: provider.id, updated_at: executionNow() })
           .where("id", "=", binding.id)
           .execute();
         await tx.updateTable("photo_attendance_profiles")
-          .set({ sample_count: 0, model_id: null, revoked_at: new Date(), updated_at: new Date() })
+          .set({ sample_count: 0, model_id: null, revoked_at: executionNow(), updated_at: executionNow() })
           .where("school_id", "=", schoolId)
           .where("class_section_id", "=", classSectionId)
           .execute();
@@ -239,6 +239,7 @@ export class PhotoAttendanceService {
       .where("class_section_id", "=", input.classSectionId)
       .where("student_id", "=", input.student.id)
       .executeTakeFirst();
+    if (existing && !existing.revoked_at && this.vision.simulationActive) return existing;
     const providerStudents = await this.vision.students(input.providerClassId);
     if (existing && !existing.revoked_at && providerStudents.some((item) => item.id === existing.provider_student_id)) {
       return existing;
@@ -258,8 +259,8 @@ export class PhotoAttendanceService {
         model_id: null,
         authorization_reference: input.authorizationReference,
         enrolled_by: input.actorId,
-        enrolled_at: new Date(),
-        updated_at: new Date(),
+        enrolled_at: executionNow(),
+        updated_at: executionNow(),
         revoked_at: null,
       }).where("id", "=", existing.id).returningAll().executeTakeFirstOrThrow();
     }
@@ -314,7 +315,7 @@ export class PhotoAttendanceService {
         sample_count: result.total_samples,
         model_id: result.model_id,
         authorization_reference: input.authorization_reference,
-        updated_at: new Date(),
+        updated_at: executionNow(),
       }).where("id", "=", profile.id).execute();
       await tx.insertInto("audit_events").values({
         action: "photo_attendance.reference.enrolled",
@@ -374,13 +375,16 @@ export class PhotoAttendanceService {
       period: input.period,
       useLlm: input.analysis_mode === "multimodal",
     });
-    const observedAt = new Date();
+    const observedAt = executionNow();
     const inserted = await this.db.transaction().execute(async (tx) => {
+      const participation = await findAcademicParticipationRegister(tx, { school_id: screen.class.school_id,
+        class_section_id: classSectionId, term_id: screen.class.term_id, date: input.date, attendance_session_id: input.session_id ?? null });
       const session = await tx.insertInto("photo_attendance_sessions").values({
         school_id: screen.class.school_id,
         class_section_id: classSectionId,
         term_id: screen.class.term_id,
         attendance_session_id: input.session_id ?? null,
+        participation_register_id: participation?.register_id ?? null,
         date: input.date,
         period: input.period,
         provider_session_id: providerSession.id,
@@ -399,8 +403,8 @@ export class PhotoAttendanceService {
             .filter((studentId): studentId is string => Boolean(studentId)),
         },
         observed_at: observedAt,
-        received_at: new Date(),
-        expires_at: new Date(Date.now() + 7 * 86_400_000),
+        received_at: executionNow(),
+        expires_at: new Date(executionNow().getTime() + 7 * 86_400_000),
         applied_at: null,
         applied_submission_id: null,
       }).returningAll().executeTakeFirstOrThrow();
@@ -429,7 +433,7 @@ export class PhotoAttendanceService {
     const stored = await this.db.selectFrom("photo_attendance_sessions")
       .selectAll().where("id", "=", sessionId).executeTakeFirst();
     if (!stored) throw new NotFoundException("Photo-attendance analysis not found.");
-    if (stored.expires_at < new Date()) throw new NotFoundException("Photo-attendance analysis has expired.");
+    if (stored.expires_at < executionNow()) throw new NotFoundException("Photo-attendance analysis has expired.");
     const screen = await this.attendanceScreen(
       user,
       stored.class_section_id,
@@ -472,6 +476,7 @@ export class PhotoAttendanceService {
       expires_at: new Date(stored.expires_at).toISOString(),
       model: { id: provider.result.model_id, accuracy_validated: false },
       analysis_mode: provider.result.analysis_mode,
+      provenance: provider.result.provenance,
       summary: {
         roster: screen.roster.length,
         enrolled: profiles.filter((profile) => profile.sample_count > 0).length,

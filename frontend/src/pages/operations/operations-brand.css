@@ -1,8 +1,8 @@
 .operations-brand .school-brand__crest {
   width: 37px;
   height: 37px;
-  color: #fff;
-  background: var(--thatcampus-brand);
+  color: var(--thatcampus-on-action);
+  background: var(--thatcampus-action);
 }
 
 .operations-brand .school-brand__name {

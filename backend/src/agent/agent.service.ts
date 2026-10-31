@@ -1,6 +1,7 @@
-import { BadRequestException, ConflictException, ForbiddenException, HttpException, Injectable, NotFoundException, type OnModuleDestroy } from '@nestjs/common';
+import { BadRequestException, ConflictException, ForbiddenException, HttpException, Injectable, NotFoundException, UnauthorizedException, type OnModuleDestroy } from '@nestjs/common';
 import { randomUUID } from 'node:crypto';
-import { sql } from 'kysely';
+import { sql,type Transaction } from 'kysely';
+import type { Database } from '../database/types.js';
 import { z } from 'zod';
 import type { AuthenticatedRequest, AuthUser } from '../common/request.js';
 import { DatabaseService } from '../database/database.service.js';
@@ -8,6 +9,7 @@ import { RolesService } from '../roles/roles.service.js';
 import { SchoolService } from '../school/school.service.js';
 import { availableCapabilities, capabilityTool, findCapabilities, verificationScreen, type AgentScope, type Capability, type Portal } from './catalogue.js';
 import { proFeaturesEnabled, requireProFeatures } from '../auth/pro-features.js';
+import { nativeSessionToken } from '../auth/session-transport.js';
 import { AgentGateway, assertKnownIds, assertLocalScreen, collectIds, stableHash, type AgentCredentials, type Evidence } from './gateway.js';
 import { agentContextWindowTokens, agentSettings, createAgentModel, modelAvailability, type ModelMessage, type ToolDefinition } from './providers.js';
 import { recordReferences, resolveReferences, reportsUnverifiedWrite, type RecordReference } from './references.js';
@@ -93,17 +95,39 @@ export class AgentService implements OnModuleDestroy {
   onModuleDestroy() { for (const controller of this.running.values()) controller.abort(); }
 
   private credentials(request: AuthenticatedRequest): AgentCredentials {
-    if (request.internalAgentDelegation) return { requestId:request.requestId,delegatedUser:request.authUser };
+    if (request.executionEnvironmentView?.mode === 'simulation' || request.executionEnvironment?.kind === 'simulation') {
+      throw new ForbiddenException('This connected service is not modelled in this Simulation. No Live service was contacted.');
+    }
+    const context = { requestId:request.requestId, actorId:request.authUser.id,
+      executionNamespace:request.executionEnvironmentView?.namespace_id ?? request.executionEnvironment?.namespace_id
+        ?? (request.authUser.active_school_id ? `live:${request.authUser.active_school_id}` : 'live:global') };
+    if (request.internalAgentDelegation) return { ...context, delegatedUser:request.authUser };
+    if (request.sessionTransport === 'bearer') {
+      const nativeToken = nativeSessionToken(request);
+      if (!nativeToken) throw new UnauthorizedException('A valid native Bearer session is required.');
+      // Keep the original credential only in this bounded server execution. Each
+      // internal tool request must resolve its current session again; a copied
+      // user/delegation would lose revocation and selected-environment checks.
+      return { ...context, nativeToken };
+    }
     // The HTTP guard compares the signed cookie value, not its unsigned session secret.
-    return { cookie: request.headers.cookie ?? '', csrf: request.cookies.csrftoken ?? '', requestId: request.requestId };
+    return { ...context, cookie: request.headers.cookie ?? '', csrf: request.cookies.csrftoken ?? '' };
   }
   private delegatedRequest(user:AuthUser,requestId:string,body:unknown={}):AuthenticatedRequest {
     return {authUser:user,requestId,body,headers:{},cookies:{},internalAgentDelegation:true,
       sessionHash:`agent:${requestId}`,csrfToken:'internal-agent-delegation'} as unknown as AuthenticatedRequest;
   }
 
-  async createChannelThread(user:AuthUser,requestId:string,portal:Portal,studentId?:string|null) {
-    return this.create(this.delegatedRequest(user,requestId,{portal,...(studentId?{student_id:studentId}:{})}));
+  async createChannelThread<T>(user:AuthUser,requestId:string,portal:Portal,studentId:string|null,
+    commit:(tx:Transaction<Database>,threadId:string)=>Promise<T>):Promise<T> {
+    const scope=await this.scope(this.delegatedRequest(user,requestId),portal,studentId);
+    // The one-use link, scoped thread and binding commit as one unit. Failure
+    // cannot consume a link while leaving the owner unable to connect.
+    return this.db.transaction().execute(async tx=>{
+      const thread=(await sql<{id:string}>`INSERT INTO agent_threads(owner_id,school_id,portal,student_id)
+        VALUES(${scope.userId}::uuid,${scope.schoolId}::uuid,${scope.portal},${scope.studentId}::uuid) RETURNING id`.execute(tx)).rows[0]!;
+      return commit(tx,thread.id);
+    });
   }
 
   async channelScope(user:AuthUser,requestId:string,portal:Portal,studentId?:string|null) {
@@ -115,10 +139,14 @@ export class AgentService implements OnModuleDestroy {
   }
 
   async channelRun(user:AuthUser,requestId:string,threadId:string,runId:string) {
-    await this.owned(this.delegatedRequest(user,requestId),threadId);
+    const request=this.delegatedRequest(user,requestId);
+    const {scope}=await this.owned(request,threadId);
     const run=(await sql<{id:string;status:string;answer:string;progress:string}>`SELECT id,status,answer,progress FROM agent_runs
       WHERE id=${runId}::uuid AND thread_id=${threadId}::uuid`.execute(this.db)).rows[0];
     if(!run)throw new NotFoundException('Request not found.');
+    const steps=(await sql<Step>`SELECT * FROM agent_tool_steps WHERE run_id=${runId}::uuid AND kind='read'`.execute(this.db)).rows;
+    if(!await this.currentSourcesVisible(scope,this.credentials(request))(steps))return {...run,status:'completed',
+      progress:'Access changed',answer:'This answer’s sources are no longer available with your current access. Open a new request in ThatCampus to check what you can see now.',action:null};
     const action=(await sql<{id:string;status:string}>`SELECT id,status FROM agent_actions WHERE run_id=${runId}::uuid`.execute(this.db)).rows[0]??null;
     return {...run,action};
   }
@@ -194,8 +222,7 @@ export class AgentService implements OnModuleDestroy {
       const key=step.capability+stableHash(step.input);
       if(!freshReads.has(key)) {
         const cap=available.find(item=>item.name===step.capability&&item.kind==='read');
-        freshReads.set(key,cap?this.gateway.dispatch(cap,step.input,scope,credentials)
-          .then(data=>({available:true,data}),()=>({available:false})):Promise.resolve({available:false}));
+        freshReads.set(key,cap?this.currentSourceRead(cap,step.input,scope,credentials):Promise.resolve({available:false}));
       }
       const fresh=await freshReads.get(key)!;
       if(!fresh.available)return { visible:false, data:undefined };
@@ -204,6 +231,22 @@ export class AgentService implements OnModuleDestroy {
       const visibleIds=collectIds(fresh.data);
       return { visible:[...collectIds(step.result)].every(id=>visibleIds.has(id)), data:fresh.data };
     };
+  }
+  private async currentSourceRead(capability:Capability,input:Record<string,unknown>,scope:AgentScope,credentials:AgentCredentials):Promise<{available:boolean;data?:unknown}> {
+    let timer:ReturnType<typeof setTimeout>|undefined;
+    try {
+      // A stalled read must never leave an external delivery waiting indefinitely
+      // or fall back to its retained private answer. This dispatch is read-only.
+      return await Promise.race([
+        this.gateway.dispatch(capability,input,scope,credentials).then(data=>({available:true,data}),()=>({available:false})),
+        new Promise<{available:boolean}>(resolve=>{timer=setTimeout(()=>resolve({available:false}),12_000);timer.unref();}),
+      ]);
+    } finally {if(timer)clearTimeout(timer);}
+  }
+  private currentSourcesVisible(scope:AgentScope,credentials:AgentCredentials) {
+    const available=availableCapabilities(scope),mayRead=this.sourceVisibility(scope,credentials);
+    return async(steps:readonly Step[])=>steps.every(step=>available.some(cap=>cap.name===step.capability&&cap.kind==='read'))
+      &&(await Promise.all(steps.map(mayRead))).every(item=>item.visible);
   }
   async detail(request: AuthenticatedRequest, id: string) {
     const { thread,scope } = await this.owned(request,id);
@@ -214,12 +257,11 @@ export class AgentService implements OnModuleDestroy {
     const available = availableCapabilities(scope);
     const steps = (await sql<Step>`SELECT step.* FROM agent_tool_steps step WHERE step.kind='read' AND step.run_id IN
       (SELECT id FROM agent_runs WHERE thread_id=${id}::uuid ORDER BY created_at DESC LIMIT 50)`.execute(this.db)).rows;
-    const mayRead=this.sourceVisibility(scope,this.credentials(request));
+    const sourcesVisible=this.currentSourcesVisible(scope,this.credentials(request));
     return { id:thread.id, title:thread.title, runs: await Promise.all(runs.map(async run => {
       // Owning an old answer must not bypass revoked class/relationship access.
       const runSteps=steps.filter(step=>step.run_id===run.id);
-      const permitted=runSteps.every(step=>available.some(cap=>cap.name===step.capability))
-        && (await Promise.all(runSteps.map(mayRead))).every(item=>item.visible);
+      const permitted=await sourcesVisible(runSteps);
       if (!permitted) return { id:run.id,question:run.question,answer:'This answer’s sources are no longer available with your current access. Open a new request to check what you can see now.',status:'completed',progress:'Access changed',provider:run.provider,model:run.model,evidence:[],created_at:run.created_at,action:null };
       const action = actions.find(item => item.run_id === run.id);
       const capability = available.find(item => item.name === action?.capability);
@@ -242,13 +284,16 @@ export class AgentService implements OnModuleDestroy {
     const limits = assertAgentEnabled();
     const created = await this.db.transaction().execute(async tx => {
       await sql`SELECT pg_advisory_xact_lock(hashtext('school_agent_capacity'))`.execute(tx);
+      await sql`SELECT pg_advisory_xact_lock(hashtext('agent_cloud_budget'))`.execute(tx);
       const previous = (await sql<Run>`SELECT * FROM agent_runs WHERE thread_id=${id}::uuid AND client_id=${input.client_id}::uuid`.execute(tx)).rows[0];
       if (previous) { if (previous.question !== input.question) throw new ConflictException('This message key was already used.'); return { id:previous.id, existing:true }; }
       const counts = (await sql<{ total:number; own:number }>`SELECT count(*)::int AS total,count(*) FILTER(WHERE thread.owner_id=${scope.userId}::uuid)::int AS own
         FROM agent_runs run JOIN agent_threads thread ON thread.id=run.thread_id WHERE run.status='running' AND run.lease_expires_at>now()`.execute(tx)).rows[0]!;
       if (counts.own >= 1 || counts.total >= 2) throw new ConflictException('The assistant is finishing another request. Wait or cancel it first.');
-      const recent=(await sql<{hour:number;day:number}>`SELECT count(*) FILTER(WHERE run.created_at>now()-interval '1 hour')::int AS hour,count(*)::int AS day FROM agent_runs run JOIN agent_threads thread ON thread.id=run.thread_id
-        WHERE thread.owner_id=${scope.userId}::uuid AND run.created_at>now()-interval '24 hours'`.execute(tx)).rows[0]!;
+      const recent=(await sql<{hour:number;day:number}>`SELECT count(*) FILTER(WHERE created_at>now()-interval '1 hour')::int AS hour,count(*)::int AS day FROM
+        (SELECT run.created_at FROM agent_runs run JOIN agent_threads thread ON thread.id=run.thread_id WHERE thread.owner_id=${scope.userId}::uuid
+         UNION ALL SELECT created_at FROM campus_scene_import_runs WHERE actor_user_id=${scope.userId}::uuid AND reserved_micros>0) usage
+        WHERE created_at>now()-interval '24 hours'`.execute(tx)).rows[0]!;
       if (recent.hour>=limits.hourly || recent.day>=limits.daily) throw new AgentLimitError('Your AI message allowance has been reached. Please use the app directly for now.');
       const pending = (await sql`SELECT action.id FROM agent_actions action JOIN agent_runs run ON run.id=action.run_id WHERE run.thread_id=${id}::uuid AND action.status IN ('pending','executing') LIMIT 1`.execute(tx)).rows;
       if (pending.length) throw new ConflictException('Confirm or dismiss the pending action before sending another message.');

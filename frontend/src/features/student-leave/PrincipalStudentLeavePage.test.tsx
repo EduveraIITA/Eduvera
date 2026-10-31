@@ -67,12 +67,24 @@ afterEach(() => {
 });
 
 describe("PrincipalStudentLeavePage", () => {
+  it("pages the review queue and keeps campus context in the exact request link", async () => {
+    const queue = Array.from({ length: 21 }, (_, index) => leave(`request-${index}`, `Person ${index}`));
+    render(<MemoryRouter initialEntries={["/areas/attendance/leave/review?school=school-1"]}><PrincipalStudentLeaveView queue={queue} selected={null} onDecide={vi.fn()} /></MemoryRouter>);
+    const user = userEvent.setup();
+    expect(screen.getByRole("link", { name: /^Person 0 / })).toBeVisible();
+    expect(screen.queryByRole("link", { name: /Person 20 / })).not.toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "Next", exact: true }));
+    const destination = new URL(screen.getByRole("link", { name: /Person 20 / }).getAttribute("href")!, window.location.origin);
+    expect(destination.pathname).toBe("/areas/attendance/leave/review");
+    expect(Object.fromEntries(destination.searchParams)).toEqual({ school: "school-1", request: "request-20", leave_page: "2" });
+    expect(screen.getByText("Page 2 of 2 · 21 requests")).toBeVisible();
+  });
   it("opens the exact request from attention navigation while retaining the pending queue", async () => {
     renderRoute();
     expect(await screen.findByRole("heading", { name: "Rohan Verma" })).toBeVisible();
     expect(getLeaveRequest).toHaveBeenCalledWith("request-2");
     expect(getSchoolLeaveRequests).toHaveBeenCalledWith("authorized");
-    expect(screen.getByRole("link", { name: /Aarav Sharma/ })).toHaveAttribute("href", "/principal/student-leave?request=request-1");
+    expect(screen.getByRole("link", { name: /Aarav Sharma/ })).toHaveAttribute("href", "/areas/attendance/leave/review?request=request-1");
     expect(screen.getAllByRole("heading", { level: 1 })).toHaveLength(1);
     await waitFor(() => expect(document.activeElement).toHaveAttribute("id", "student-leave-request-request-2"));
   });
@@ -93,7 +105,7 @@ describe("PrincipalStudentLeavePage", () => {
     renderRoute();
 
     expect(await screen.findByRole("heading", { name: "Request not available" })).toBeVisible();
-    expect(screen.getByRole("link", { name: "Open the current queue" })).toHaveAttribute("href", "/principal/student-leave");
+    expect(screen.getByRole("link", { name: "Open the current queue" })).toHaveAttribute("href", "/areas/attendance/leave/review");
     expect(screen.queryByText("Request not found.")).not.toBeInTheDocument();
   });
 

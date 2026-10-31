@@ -25,7 +25,7 @@ const rehearsal: TimetableRehearsalIndicator = {
   nextChangeAt: null,
   activeSlotIds: ["slot-1"],
   timeZone: "Asia/Kolkata",
-  campusPath: "/principal/campus",
+  campusPath: "/more/virtual-campus",
 };
 
 const days: TimetableDay[] = [{

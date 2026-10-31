@@ -1,14 +1,16 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { cleanup, render, screen, within } from "@testing-library/react";
+import { act, cleanup, render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { MemoryRouter } from "react-router-dom";
+import { MemoryRouter, useSearchParams } from "react-router-dom";
 import { CampusReplicaManager } from "./CampusReplicaManager";
-import { getInstitutionSetup, type InstitutionSetup } from "./api";
+import { createCampus, createSpace, getInstitutionSetup, type InstitutionSetup } from "./api";
 
 vi.mock("./api", async (original) => ({
   ...await original<typeof import("./api")>(),
   getInstitutionSetup: vi.fn(),
+  createCampus: vi.fn(),
+  createSpace: vi.fn(),
 }));
 
 afterEach(() => {
@@ -43,12 +45,86 @@ const setup = (): InstitutionSetup => ({
   summary: { campuses: 1, spaces: 1, resources: 0, classes: 1, classes_with_home_space: 1, staff: 1, complete: true },
 });
 
-function show() {
+function show(initialCampusId?: string) {
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
-  return render(<MemoryRouter><QueryClientProvider client={client}><CampusReplicaManager schoolId="school-1" /></QueryClientProvider></MemoryRouter>);
+  return render(<MemoryRouter><QueryClientProvider client={client}><CampusReplicaManager schoolId="school-1" initialCampusId={initialCampusId}/></QueryClientProvider></MemoryRouter>);
 }
 
 describe("campus setup", () => {
+  it("does not silently open another campus when a guided campus is unavailable", async () => {
+    vi.mocked(getInstitutionSetup).mockResolvedValue(setup()); show("missing-campus");
+    expect(await screen.findByRole("heading", { name: "Choose an available campus" })).toBeVisible();
+    expect(screen.queryByRole("button", { name: "Add space" })).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Main campus" })).toBeVisible();
+  });
+  it("follows guided campus A → B → A in the same mounted manager and ignores a late B save", async () => {
+    const data = setup(); data.campuses.push({ ...data.campuses[0]!, id: "campus-2", name: "East campus", code: "EAST", is_primary: false });
+    vi.mocked(getInstitutionSetup).mockResolvedValue(data);
+    let finish!: (space: InstitutionSetup["spaces"][number]) => void;
+    vi.mocked(createSpace).mockImplementation(() => new Promise(resolve => { finish = resolve; }));
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    const source = (campusId: string) => <MemoryRouter><QueryClientProvider client={client}><CampusReplicaManager schoolId="school-1" initialCampusId={campusId}/></QueryClientProvider></MemoryRouter>;
+    const mounted = render(source("campus-1"));
+    expect(await screen.findByRole("button", { name: "Edit Room 204" })).toBeVisible();
+    mounted.rerender(source("campus-2")); expect(screen.queryByRole("button", { name: "Edit Room 204" })).not.toBeInTheDocument();
+    await userEvent.click(screen.getByRole("button", { name: "Add space" }));
+    const dialog = screen.getByRole("dialog", { name: "Add space" }); expect(within(dialog).getByLabelText("Campus")).toHaveValue("campus-2");
+    await userEvent.type(within(dialog).getByLabelText("Space name"), "East seminar room"); await userEvent.type(within(dialog).getByLabelText(/^Code/), "E201"); await userEvent.click(within(dialog).getByRole("button", { name: "Save" }));
+    const fetches = vi.mocked(getInstitutionSetup).mock.calls.length;
+    mounted.rerender(source("campus-1")); expect(screen.queryByRole("dialog")).not.toBeInTheDocument(); expect(screen.getByRole("button", { name: "Edit Room 204" })).toBeVisible();
+    await act(async () => { finish({ ...data.spaces[0]!, id: "late-room", campus_id: "campus-2", name: "East seminar room" }); await Promise.resolve(); });
+    expect(getInstitutionSetup).toHaveBeenCalledTimes(fetches); expect(screen.queryByText("East seminar room")).not.toBeInTheDocument();
+  });
+  it("keeps guided campus selection and context in the URL when choosing an available campus", async () => {
+    vi.mocked(getInstitutionSetup).mockResolvedValue(setup());
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    function GuidedManager() { const [params] = useSearchParams(); return <><output>{params.toString()}</output><CampusReplicaManager schoolId="school-1" initialCampusId={params.get("campus_id") ?? undefined}/></>; }
+    render(<MemoryRouter initialEntries={["/more/setup/institution/campus?setup=whole-campus&setup_step=connect&campus_id=missing"]}><QueryClientProvider client={client}><GuidedManager/></QueryClientProvider></MemoryRouter>);
+    await userEvent.click(await screen.findByRole("button", { name: "Main campus" }));
+    expect(screen.getByRole("button", { name: "Add space" })).toBeVisible(); expect(screen.getByRole("status")).toHaveTextContent("setup=whole-campus&setup_step=connect&campus_id=campus-1");
+  });
+  it("switches an ordinary explicit campus URL without losing its existing parameters", async () => {
+    const data = setup(); data.campuses.push({ ...data.campuses[0]!, id: "campus-2", name: "East campus", code: "EAST", is_primary: false }); vi.mocked(getInstitutionSetup).mockResolvedValue(data);
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    function Manager() { const [params] = useSearchParams(); return <><output>{params.toString()}</output><CampusReplicaManager schoolId="school-1" initialCampusId={params.get("campus_id") ?? undefined}/></>; }
+    render(<MemoryRouter initialEntries={["/more/setup/institution/campus?campus_id=campus-1&source=places"]}><QueryClientProvider client={client}><Manager/></QueryClientProvider></MemoryRouter>);
+    await userEvent.click(await screen.findByRole("tab", { name: "East campus" }));
+    expect(screen.getByRole("tab", { name: "East campus" })).toHaveAttribute("aria-selected", "true"); expect(screen.getByRole("status")).toHaveTextContent("campus_id=campus-2&source=places"); expect(screen.queryByRole("button", { name: "Edit Room 204" })).not.toBeInTheDocument();
+  });
+  it.each(["hostel", "residential_room"] as const)("retains the owning %s kind when editing a residential place", async kind => {
+    const data = setup(); data.spaces[0]!.kind = kind;
+    vi.mocked(getInstitutionSetup).mockResolvedValue(data);
+    const user = userEvent.setup(); show();
+    await user.click(await screen.findByRole("button", { name: "Edit Room 204" }));
+    expect(within(screen.getByRole("dialog", { name: "Edit space" })).getByLabelText("Type")).toHaveValue(kind);
+  });
+  it.each(["UTC", "Europe/Paris"])("uses the owning institution's %s timezone for a new campus", async (timezone) => {
+    const data = setup();
+    data.school.timezone = timezone;
+    vi.mocked(getInstitutionSetup).mockResolvedValue(data);
+    vi.mocked(createCampus).mockResolvedValue({ ...data.campuses[0], id: "campus-2", timezone });
+    const user = userEvent.setup();
+    show();
+
+    await user.click(await screen.findByRole("button", { name: "Add campus" }));
+    const dialog = screen.getByRole("dialog", { name: "Add campus" });
+    expect(within(dialog).getByLabelText("Timezone")).toHaveValue(timezone);
+    await user.type(within(dialog).getByLabelText("Campus name"), "Alternative wing");
+    await user.type(within(dialog).getByLabelText("Code"), "ALT");
+    await user.click(within(dialog).getByRole("button", { name: "Save" }));
+    expect(createCampus).toHaveBeenCalledWith("school-1", expect.objectContaining({ name: "Alternative wing", code: "ALT", timezone }));
+  });
+
+  it("retains an existing campus's own timezone when the institution uses another", async () => {
+    const data = setup();
+    data.school.timezone = "UTC";
+    vi.mocked(getInstitutionSetup).mockResolvedValue(data);
+    const user = userEvent.setup();
+    show();
+    await user.click(await screen.findByRole("button", { name: "Edit Main campus" }));
+    expect(within(screen.getByRole("dialog", { name: "Edit campus" })).getByLabelText("Timezone")).toHaveValue("Asia/Kolkata");
+  });
+
   it("uses campus language while presenting connected operational records", async () => {
     vi.mocked(getInstitutionSetup).mockResolvedValue(setup());
     show();
@@ -85,7 +161,7 @@ describe("campus setup", () => {
     expect(await screen.findByRole("heading", { name: "Signals to review" })).toBeVisible();
     expect(screen.getByText("Aarav Sharma has records to cross-check")).toBeVisible();
     expect(screen.getByText(/does not change attendance or infer absence/i)).toBeVisible();
-    expect(screen.getByRole("link", { name: "Attendance" })).toHaveAttribute("href", "/principal/attendance");
+    expect(screen.getByRole("link", { name: "Attendance" })).toHaveAttribute("href", "/areas/attendance/coordination");
   });
 
   it("shows registered sources with their authority and immediate lifecycle control", async () => {

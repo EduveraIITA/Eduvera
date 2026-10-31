@@ -1,3 +1,4 @@
+import { applicationNow } from "../simulation/applicationTime";
 export interface TimetableRehearsalIndicator {
   label: string;
   status: "booting" | "running" | "paused" | "degraded";
@@ -21,7 +22,7 @@ export function resolveTimetableDisplayDate(
 
 export function timetableRehearsalInstant(
   rehearsal: TimetableRehearsalIndicator | null | undefined,
-  fallback = new Date(),
+  fallback = applicationNow(),
 ) {
   if (!rehearsal) return fallback;
   const simulated = new Date(rehearsal.simulatedAt);

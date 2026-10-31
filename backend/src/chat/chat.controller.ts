@@ -65,8 +65,8 @@ export class ChatController {
 
   @Get("conversations/")
   @RequirePermission("messages.view")
-  conversations(@Req() request: AuthenticatedRequest) {
-    return this.chat.conversations(request.authUser);
+  conversations(@Req() request: AuthenticatedRequest, @Query("pagination") pagination?: string, @Query("q") q?: string, @Query("cursor") cursor?: string, @Query("student_id") studentId?: string) {
+    return this.chat.conversations(request.authUser, { pagination, q, cursor, student_id: studentId });
   }
 
   @Get("conversations/:conversationId/")
@@ -81,8 +81,8 @@ export class ChatController {
 
   @Get("recipients/")
   @RequirePermission("messages.view")
-  recipients(@Req() request: AuthenticatedRequest, @Query("student_id") studentId?: string) {
-    return this.chat.recipients(request.authUser, studentId);
+  recipients(@Req() request: AuthenticatedRequest, @Query("student_id") studentId?: string, @Query("purpose") purpose?: "direct" | "group") {
+    return this.chat.recipients(request.authUser, studentId, purpose ?? "direct");
   }
 
   @Post("groups/")
@@ -97,11 +97,6 @@ export class ChatController {
     return this.chat.policyForUser(request.authUser);
   }
 
-  @Patch("policy/")
-  updatePolicy(@Req() request: AuthenticatedRequest, @Body() body: Record<string, unknown>) {
-    return this.chat.updatePolicy(request.authUser, body, request);
-  }
-
   @Post("conversations/")
   @RequirePermission("messages.send")
   createConversation(@Req() request: AuthenticatedRequest) {
@@ -114,8 +109,10 @@ export class ChatController {
     @Req() request: AuthenticatedRequest,
     @Param("conversationId") conversationId: string,
     @Query("before") before?: string,
+    @Query("cursor") cursor?: string,
+    @Query("through_cursor") throughCursor?: string,
   ) {
-    return this.chat.messages(request.authUser, conversationId, before);
+    return this.chat.messages(request.authUser, conversationId, before, cursor, throughCursor);
   }
 
   @Post("conversations/:conversationId/messages/")
@@ -164,6 +161,8 @@ export class ChatController {
     const filename = result.attachment.original_name.replace(/[\r\n"]/g, "_");
     reply.type(result.attachment.content_type || "application/octet-stream");
     reply.header("Content-Disposition", `inline; filename="${filename}"`);
+    reply.header("X-ThatCampus-Evidence-Mode", result.evidence_mode);
+    reply.header("X-ThatCampus-Source-Content-Omitted", String(result.source_content_omitted));
     return reply.send(result.stream);
   }
 }

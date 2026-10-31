@@ -5,6 +5,7 @@ import type {
   CancelledScheduleSubstitutionProjection,
   CalendarClosureProjection,
   CampusTemporalContextQuery,
+  CampusTemporalContextBatchQuery,
   PublishedDayPlanProjection,
   PublishedScheduleProjection,
   ImportedAcceptedScheduleSubstitutionProjection,
@@ -140,8 +141,10 @@ export interface ObservedTemporalAssertion {
   } | null;
   observation: {
     kind: string;
-    state: "pending" | "accepted" | "quarantined";
+    state: "pending" | "accepted" | "quarantined" | "unknown";
     payload: unknown;
+    state_recorded_at: Date | string | null;
+    state_basis: "ingress" | "domain_transition" | "migration_current_state" | "history_unavailable";
   };
   observed_at: Date | string;
   recorded_at: Date | string;
@@ -161,7 +164,54 @@ export interface ObservedTemporalAssertion {
 
 export type CampusTemporalAssertion = ExpectedTemporalAssertion | ObservedTemporalAssertion;
 
+export interface CampusOperatingDayOccurrence {
+  id: string;
+  occurrence_id: string;
+  occurrence_date: string;
+  period_number: number;
+  class_entity_id: string;
+  class_domain_id: string;
+  class_label: string;
+  period_domain_id: string;
+  subject_entity_id: string | null;
+  subject_label: string | null;
+  space_entity_id: string | null;
+  space_label: string | null;
+  /** Exact owning-domain identity; absent on retained legacy projections. */
+  space_domain_id?: string | null;
+  responsible_agent_id: string | null;
+  responsible_agent_label: string | null;
+  title: string;
+  slot_type: "class" | "break" | "activity";
+  starts_at: Date | string;
+  ends_at: Date | string;
+  source_domain: "timetable" | "day_plan";
+  source_record_id: string;
+  source_revision: number;
+  change_kind:
+    | "published"
+    | "overridden"
+    | "closure_cancelled"
+    | "closure_restored"
+    | "day_plan_cancelled"
+    | "substituted"
+    | "substitution_cancelled"
+    | "source_changed"
+    | "source_removed"
+    | "projection_backfill";
+}
+
+export interface CampusOperatingDayQuery {
+  school_id: string;
+  date: string;
+  recorded_as_of: string;
+  responsible_agent_id?: string;
+  /** Optional application-authorized class scope, applied before the result bound. */
+  class_section_ids?: string[];
+}
+
 export interface TemporalContextPort {
+  listOperatingDay(input: CampusOperatingDayQuery): Promise<CampusOperatingDayOccurrence[]>;
   recordPublishedSchedule(
     transaction: Transaction<Database>,
     input: PublishedScheduleProjection,
@@ -191,4 +241,6 @@ export interface TemporalContextPort {
     input: CancelledScheduleSubstitutionProjection,
   ): Promise<SubstitutionInvalidationReceipt>;
   resolveAt(input: CampusTemporalContextQuery): Promise<CampusTemporalAssertion[]>;
+  /** Same temporal point, one result per requested position; duplicates and empty groups remain. */
+  resolveAtBatch(input: CampusTemporalContextBatchQuery): Promise<CampusTemporalAssertion[][]>;
 }

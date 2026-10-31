@@ -56,7 +56,7 @@ export function CampusScenarioPlanner({ schoolId, campusId, timezone, teachers, 
   const targetCatalogue = useQuery({
     queryKey: ["campus-view", "scenario-targets", schoolId, campusId ?? "all", horizon],
     queryFn: ({ signal }) => getCampusScenarioTargets(schoolId, { campusId, horizonDays: horizon }, signal),
-    enabled: Boolean(schoolId),
+    enabled: Boolean(schoolId && campusId),
     staleTime: 5 * 60_000,
     retry: false,
   });
@@ -80,9 +80,17 @@ export function CampusScenarioPlanner({ schoolId, campusId, timezone, teachers, 
   const time = new Intl.DateTimeFormat("en-IN", { hour: "numeric", minute: "2-digit", timeZone: timezone });
 
   const create = useMutation({
-    mutationFn: () => {
+    mutationFn: (kind: "intervention" | "baseline_snapshot") => {
+      if (kind === "baseline_snapshot") {
+        return createCampusScenario(schoolId, {
+          kind,
+          ...(campusId ? { campus_id: campusId } : {}),
+          horizon_days: horizon,
+        });
+      }
       if (!selectedWindow) throw new Error("An eligible scheduled time window is required.");
       return createCampusScenario(schoolId, {
+        kind,
         campus_id: campusId,
         horizon_days: horizon,
         intervention: { type: resolvedType, target_id: selectedTargetId, ...selectedWindow },
@@ -108,7 +116,7 @@ export function CampusScenarioPlanner({ schoolId, campusId, timezone, teachers, 
 
   const submit = (event: FormEvent) => {
     event.preventDefault();
-    if (selectedTargetId && selectedWindow) create.mutate();
+    if (selectedTargetId && selectedWindow) create.mutate("intervention");
   };
   const changeType = (next: CampusScenarioInterventionType) => {
     setType(next);
@@ -134,7 +142,15 @@ export function CampusScenarioPlanner({ schoolId, campusId, timezone, teachers, 
     </section>
     <div className="campus-scenario-safety" role="note"><ShieldCheck size={17} aria-hidden="true" /><p><strong>No live changes or messages.</strong> The run cannot write to operations, contact people or call production connectors.</p></div>
 
-    {targetCatalogue.isPending && !hasFallbackTargets ? <div className="campus-scenario-catalogue-state" aria-busy="true" aria-label="Loading planning options">
+    {!campusId ? <div className="campus-scenario-catalogue-state" role="status">
+      <CalendarClock size={22} aria-hidden="true" />
+      <strong>No campus structure yet</strong>
+      <p>You can still capture the institution’s supported baseline. This snapshot will not invent a campus, simulate attendance behaviour or provide full-app parity.</p>
+      {create.isError ? <p className="campus-scenario-error" role="alert"><AlertCircle size={15} aria-hidden="true" />We couldn’t create the isolated snapshot. No Live record was changed.</p> : null}
+      <div className="campus-scenario-empty-actions" aria-label="Snapshot option">
+        <button type="button" disabled={create.isPending} onClick={() => create.mutate("baseline_snapshot")}><Play size={15} aria-hidden="true" />{create.isPending ? "Creating snapshot…" : "Create snapshot simulation"}</button>
+      </div>
+    </div> : targetCatalogue.isPending && !hasFallbackTargets ? <div className="campus-scenario-catalogue-state" aria-busy="true" aria-label="Loading planning options">
       <span className="campus-scenario-catalogue-state__spinner" aria-hidden="true" />
       <strong>Checking the published plan</strong>
       <p>Finding teachers, spaces and exact future session times for this campus.</p>
@@ -146,8 +162,10 @@ export function CampusScenarioPlanner({ schoolId, campusId, timezone, teachers, 
     </div> : targetCatalogue.isSuccess && !hasTargets ? <div className="campus-scenario-catalogue-state" role="status">
       <CalendarClock size={22} aria-hidden="true" />
       <strong>No future sessions available</strong>
-      <p>This campus has no eligible teacher or space sessions in the next {horizon} days. Publish the timetable or choose another horizon, then refresh.</p>
+      <p>This campus has no eligible teacher or space sessions in the next {horizon} days. You can still create an isolated snapshot of the supported campus baseline; it will not simulate attendance behaviour or provide full-app parity.</p>
+      {create.isError ? <p className="campus-scenario-error" role="alert"><AlertCircle size={15} aria-hidden="true" />We couldn’t create the isolated snapshot. No Live record was changed.</p> : null}
       <div className="campus-scenario-empty-actions" aria-label="Planning options">
+        <button type="button" disabled={create.isPending} onClick={() => create.mutate("baseline_snapshot")}><Play size={15} aria-hidden="true" />{create.isPending ? "Creating snapshot…" : "Create snapshot simulation"}</button>
         {horizons.filter((days) => days !== horizon).map((days) => <button key={days} type="button" onClick={() => changeHorizon(days)}>Check {days} days</button>)}
         <button type="button" onClick={() => void targetCatalogue.refetch()}><RefreshCw size={15} aria-hidden="true" />Refresh</button>
       </div>

@@ -34,10 +34,20 @@ const workspace: GovernanceWorkspace = {
 };
 
 function LocationProbe() { const location = useLocation(); const navigate=useNavigate(); return <><span data-testid="location">{location.pathname}{location.search}</span><button type="button" onClick={()=>navigate(-1)}>Browser back</button></>; }
-function shell(children: React.ReactNode, entry = "/principal/governance") { return render(<QueryClientProvider client={new QueryClient()}><MemoryRouter initialEntries={[entry]}><LocationProbe />{children}</MemoryRouter></QueryClientProvider>); }
+function shell(children: React.ReactNode, entry = "/more/governance") { return render(<QueryClientProvider client={new QueryClient()}><MemoryRouter initialEntries={[entry]}><LocationProbe />{children}</MemoryRouter></QueryClientProvider>); }
 afterEach(cleanup);
 
 describe("governance policy centre", () => {
+  it("exposes the current section without relying on its colour", async () => {
+    shell(<GovernanceAdminPage schoolId="school-1" data={workspace} refresh={vi.fn().mockResolvedValue(undefined)} />);
+    const navigation = screen.getByRole("navigation", { name: "Governance sections" });
+    const authority = within(navigation).getByRole("button", { name: "Authority" });
+    const policies = within(navigation).getByRole("button", { name: "Policy register" });
+    expect(authority).toHaveAttribute("aria-current", "page");
+    await userEvent.setup().click(policies);
+    expect(authority).not.toHaveAttribute("aria-current");
+    expect(policies).toHaveAttribute("aria-current", "page");
+  });
   it('opens the complete decision route without the authority directory',async()=>{
     const user=userEvent.setup();shell(<GovernanceAdminPage schoolId="school-1" data={workspace} refresh={vi.fn().mockResolvedValue(undefined)}/>);
     await user.click(screen.getByRole('button',{name:/Annual budget/}));
@@ -88,7 +98,7 @@ describe("governance policy centre", () => {
 
   it("presents version-specific acknowledgement without calling it consent", async () => {
     const published: PublishedPolicy = { id: "version-1", code: family.code, category: family.category, title: family.title, summary: "How our institution protects children.", body_markdown: family.work_body_markdown!, audience_roles: ["staff"], requires_acknowledgement: true, version: 1, effective_on: "2026-10-04", review_due_on: "2027-10-04", source_note: "Reviewed against the safety plan.", source_references: family.source_references, acknowledgement_id: null, acknowledged_at: null, guidance: family.guidance };
-    shell(<PolicyLibraryPage portal="teacher" schoolId="school-1" data={{ policies: [published], membership_roles: ["staff"] }} refresh={vi.fn().mockResolvedValue(undefined)} />);
+    shell(<PolicyLibraryPage schoolId="school-1" data={{ policies: [published], membership_roles: ["staff"] }} refresh={vi.fn().mockResolvedValue(undefined)} />, "/more/policies");
     expect(screen.getByText(/Acknowledgement records the version you have read/)).toBeVisible();
     expect(screen.getByText("Action needed")).toBeVisible();
     await userEvent.setup().click(screen.getByText(family.title));
@@ -98,16 +108,32 @@ describe("governance policy centre", () => {
   it("clears an exact attention target when returning to the policy list", async () => {
     const published: PublishedPolicy = { id: "version-1", code: family.code, category: family.category, title: family.title, summary: "How our institution protects children.", body_markdown: family.work_body_markdown!, audience_roles: ["staff"], requires_acknowledgement: true, version: 1, revision: 4, effective_on: "2026-10-04", review_due_on: "2027-10-04", source_note: "Reviewed against the safety plan.", source_references: family.source_references, acknowledgement_id: null, acknowledged_at: null, guidance: family.guidance };
     shell(
-      <PolicyLibraryPage portal="teacher" schoolId="school-1" data={{ policies: [published], membership_roles: ["staff"] }} refresh={vi.fn().mockResolvedValue(undefined)} />,
-      "/teacher/policies?policy=version-1&policy_revision=4&attention_notification_id=10000000-0000-4000-a000-000000000001&from=requests",
+      <PolicyLibraryPage schoolId="school-1" data={{ policies: [published], membership_roles: ["staff"] }} refresh={vi.fn().mockResolvedValue(undefined)} />,
+      "/more/policies?policy=version-1&policy_revision=4&attention_notification_id=10000000-0000-4000-a000-000000000001&from=requests",
     );
 
     await userEvent.setup().click(screen.getByRole("button", { name: "Go back" }));
 
-    await waitFor(() => expect(screen.getByTestId("location")).toHaveTextContent("/teacher/policies?from=requests"));
+    await waitFor(() => expect(screen.getByTestId("location")).toHaveTextContent("/more/policies?from=requests"));
     const policyLink = screen.getByRole("link", { name: /Child protection and mandatory reporting/ });
     expect(policyLink.getAttribute("href")).not.toContain("policy_revision");
     expect(policyLink.getAttribute("href")).not.toContain("attention_notification_id");
+  });
+
+  it("presents an optional policy as reading rather than an acknowledgement action", async () => {
+    const optional: PublishedPolicy = {
+      id: "optional-policy", code: "campus_guide", category: "operations", title: "Campus guide",
+      summary: "Practical campus information.", body_markdown: "Opening hours and everyday campus contacts.",
+      audience_roles: ["staff"], requires_acknowledgement: false, version: 1, effective_on: "2026-10-04",
+      review_due_on: null, source_note: "", source_references: [], acknowledgement_id: null,
+      acknowledged_at: null, guidance: "Read when helpful.",
+    };
+    shell(<PolicyLibraryPage schoolId="school-1" data={{ policies: [optional], membership_roles: ["staff"] }} refresh={vi.fn().mockResolvedValue(undefined)} />, "/more/policies");
+    expect(screen.getByText("Read")).toHaveClass("is-read");
+    await userEvent.setup().click(screen.getByRole("link", { name: /Campus guide/ }));
+    expect(screen.getByRole("heading", { name: "Campus guide" })).toBeVisible();
+    expect(screen.queryByRole("button", { name: "Acknowledge this version" })).not.toBeInTheDocument();
+    expect(screen.getByText(/It is not consent or a waiver/)).toBeVisible();
   });
 
   it("opens a scheduled policy directly from its publication attention", () => {
@@ -122,8 +148,8 @@ describe("governance policy centre", () => {
       acknowledged_at: null, guidance: family.guidance,
     };
     shell(
-      <PolicyLibraryPage portal="teacher" schoolId="school-1" data={{ policies: [scheduled], membership_roles: ["staff"] }} refresh={vi.fn().mockResolvedValue(undefined)} />,
-      "/teacher/policies?policy=version-scheduled&policy_revision=1&attention_notification_id=10000000-0000-4000-a000-000000000001",
+      <PolicyLibraryPage schoolId="school-1" data={{ policies: [scheduled], membership_roles: ["staff"] }} refresh={vi.fn().mockResolvedValue(undefined)} />,
+      "/more/policies?policy=version-scheduled&policy_revision=1&attention_notification_id=10000000-0000-4000-a000-000000000001",
     );
 
     expect(screen.getByRole("heading", { name: "Safeguarding policy for next term" })).toBeVisible();

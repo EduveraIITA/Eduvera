@@ -1,0 +1,15 @@
+.collection-view { display: grid; min-width: 0; gap: 16px; }
+.collection-view__tools { display: flex; flex-wrap: wrap; align-items: end; gap: 12px; }
+.collection-view__tools label { display: grid; min-width: 0; flex: 1 1 200px; gap: 6px; color: var(--thatcampus-ink-secondary); font-size: 14px; }
+.collection-view__tools :is(input, select) { width: 100%; min-width: 0; min-height: 48px; padding: 10px 14px; border: 1px solid var(--thatcampus-border); border-radius: var(--thatcampus-radius-control); background: var(--thatcampus-surface); color: var(--thatcampus-ink); font: inherit; font-size: 16px; }
+.collection-view__pages { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 12px; }
+.collection-view__pages > span, .collection-view__count, .collection-view__empty { margin: 0; color: var(--thatcampus-ink-muted); font-size: 14px; line-height: 1.5; }
+.collection-view__pages button { display: inline-flex; min-height: 44px; align-items: center; justify-content: center; gap: 6px; padding: 10px 14px; border: 1px solid transparent; border-radius: var(--thatcampus-radius-control); background: var(--thatcampus-surface); color: var(--thatcampus-action); box-shadow: var(--thatcampus-shadow-control); font: inherit; font-size: 14px; font-weight: 650; cursor: pointer; }
+.collection-view__pages button:active { box-shadow: var(--thatcampus-shadow-control-pressed); }
+.collection-view__pages button:disabled { opacity: .5; box-shadow: none; cursor: not-allowed; }
+.collection-view__empty button { min-height: 44px; padding: 8px; border: 0; background: transparent; color: var(--thatcampus-action); font: inherit; font-weight: 650; }
+.collection-view :is(input, select, button):focus-visible { outline: 3px solid var(--thatcampus-action); outline-offset: 3px; }
+@media (max-width: 480px) {
+  .collection-view__pages > span { order: -1; flex-basis: 100%; text-align: center; }
+}
+@media print { .collection-view__tools, .collection-view__pages, .collection-view__count { display: none; } }

@@ -13,7 +13,7 @@
   min-width: 9px;
   height: 9px;
   color: #fff;
-  background: #0b57c9;
+  background: var(--thatcampus-action);
   box-shadow: 0 0 0 3px var(--thatcampus-surface);
 }
 
@@ -28,14 +28,14 @@
 .attention-indicator--nav {
   width: 7px;
   height: 7px;
-  background: #0b57c9;
-  box-shadow: 0 0 0 2px rgba(255, 255, 255, .96);
+  background: var(--thatcampus-action);
+  box-shadow: 0 0 0 2px var(--thatcampus-surface);
 }
 
-.attention-indicator--action { background: #a45b00; }
-.attention-indicator--exception { background: #b42332; }
+.attention-indicator--action { background: var(--thatcampus-warning); }
+.attention-indicator--exception { background: var(--thatcampus-danger); }
 .attention-indicator--unavailable {
-  border: 2px solid #a45b00;
+  border: 2px solid var(--thatcampus-warning);
   background: transparent;
 }
 
@@ -45,11 +45,11 @@
   display: flex;
   align-items: flex-start;
   gap: 9px;
-  border: 1px solid color-mix(in srgb, #a45b00 28%, transparent);
+  border: 1px solid color-mix(in srgb, var(--thatcampus-warning) 28%, var(--thatcampus-border));
   border-radius: var(--thatcampus-radius-control, 14px);
-  color: #6f4200;
-  background: color-mix(in srgb, #fff2cc 62%, white);
-  font-size: .86rem;
+  color: var(--appearance-warning, #6f4200);
+  background: var(--thatcampus-warning-soft);
+  font-size: 14px;
   line-height: 1.4;
 }
 

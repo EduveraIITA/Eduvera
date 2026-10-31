@@ -1,27 +1,27 @@
+import { findDraftPeriod } from '../../../../packages/contracts/src/academic-planner';
+export { findDraftPeriod } from '../../../../packages/contracts/src/academic-planner';
 import { useEffect, useRef, useState, type FormEvent, type ReactNode } from "react";
 import { Clock3, MapPin, Repeat2, UserRound, X } from "lucide-react";
 import { Link } from "react-router-dom";
 import { TemporalInput } from "../../components/forms/TemporalInput";
 import { shiftDate } from "../calendar/monthGrid";
-import { cleanPeriod, getScheduleSettings, scheduleCommand, type SchedulePeriod, type ScheduleScreen, type ScheduleVersion } from "../schedule-planning/api";
+import { cleanPeriod, getScheduleSettings, scheduleCommand, type ScheduleScreen, type ScheduleVersion } from "../schedule-planning/api";
 import type { PlannerPeriod } from "./PrincipalPlannerRoute";
+import { useDialogVisualViewport } from "./useDialogVisualViewport";
+import "./principal-planner.css";
 
 const dateLabel = (date: string) => new Intl.DateTimeFormat("en-IN", { day: "numeric", month: "short", year: "numeric" }).format(new Date(`${date}T12:00:00`));
 const timeLabel = (time: string) => new Intl.DateTimeFormat("en-IN", { hour: "numeric", minute: "2-digit" }).format(new Date(`2000-01-01T${time.slice(0, 5)}`));
 
 export function PlannerDialog({ title, subtitle, children, onClose, busy = false }: { title: string; subtitle?: string; children: ReactNode; onClose: () => void; busy?: boolean }) {
   const ref = useRef<HTMLDialogElement>(null);
+  useDialogVisualViewport(ref);
   useEffect(() => { const dialog = ref.current; dialog?.showModal(); return () => dialog?.close(); }, []);
   return <dialog ref={ref} className="planner-dialog" aria-label={title} onCancel={(event) => { event.preventDefault(); if (!busy) onClose(); }} onClick={(event) => { if (event.target === event.currentTarget && !busy) onClose(); }}>
     <div className="planner-dialog__surface"><header><div><h2>{title}</h2>{subtitle ? <p>{subtitle}</p> : null}</div><button type="button" disabled={busy} aria-label="Close" onClick={onClose}><X size={20} /></button></header>{children}</div>
   </dialog>;
 }
 
-// Draft creation copies periods with new IDs. Match the original series within its class,
-// never merely by subject, because a subject can have multiple lessons on the same day.
-export function findDraftPeriod(draft: ScheduleVersion, original: SchedulePeriod) {
-  return draft.periods.find((item) => item.id === original.id) ?? draft.periods.find((item) => item.weekday === original.weekday && item.period_number === original.period_number && item.subject_id === original.subject_id && item.starts_at.slice(0, 5) === original.starts_at.slice(0, 5));
-}
 
 async function editableDraft(data: ScheduleScreen, period: PlannerPeriod, date: string) {
   let draft = data.versions.find((version) => version.class_section_id === period.class_section_id && version.state === "draft");
@@ -38,7 +38,7 @@ async function editableDraft(data: ScheduleScreen, period: PlannerPeriod, date: 
   return { draft, match };
 }
 
-export function PlannerLessonSheet({ data, period, date, onClose, onSaved }: { data: ScheduleScreen; period: PlannerPeriod; date: string; onClose: () => void; onSaved: (message: string) => void }) {
+export function PlannerLessonSheet({ data, period, date, onClose, onSaved, dayPlanPath = "/principal/timetable/day", plannerPath = "/principal/timetable" }: { data: ScheduleScreen; period: PlannerPeriod; date: string; onClose: () => void; onSaved: (message: string) => void; dayPlanPath?: string; plannerPath?: string }) {
   const [editing, setEditing] = useState(false);
   const [subject, setSubject] = useState(period.subject_id ?? "");
   const [teacher, setTeacher] = useState(period.teacher_user_id ?? "");
@@ -72,7 +72,7 @@ export function PlannerLessonSheet({ data, period, date, onClose, onSaved }: { d
       <footer><button type="button" className="is-secondary" disabled={busy} onClick={() => setEditing(false)}>Back</button><button type="submit" disabled={busy}>{busy ? "Saving…" : "Save changes"}</button></footer>
     </form> : <div className="planner-lesson-detail">
       <dl><div><Clock3 size={18} /><dt>Time</dt><dd>{timeLabel(period.starts_at)} – {timeLabel(period.ends_at)}</dd></div>{teaching ? <div><UserRound size={18} /><dt>Teacher</dt><dd>{period.teacher_name ?? "Not assigned"}</dd></div> : null}{period.room ? <div><MapPin size={18} /><dt>Room</dt><dd>{period.room}</dd></div> : null}<div><Repeat2 size={18} /><dt>Repeats</dt><dd>Every {weekday}</dd></div></dl>
-      <footer><button type="button" onClick={() => setEditing(true)}>Edit recurring {teaching ? "class" : "period"}</button>{date >= data.school_date ? <Link to={`/principal/timetable/day?${new URLSearchParams({ date, class: period.class_section_id, mode: "edit", return_to: `/principal/timetable?date=${date}&class=${period.class_section_id}` })}`}>Change only this date</Link> : null}</footer>
+      <footer><button type="button" onClick={() => setEditing(true)}>Edit recurring {teaching ? "class" : "period"}</button>{date >= data.school_date ? <Link to={`${dayPlanPath}?${new URLSearchParams({ date, class: period.class_section_id, mode: "edit", return_to: `${plannerPath}?date=${date}&class=${period.class_section_id}` })}`}>Change only this date</Link> : null}</footer>
     </div>}
   </PlannerDialog>;
 }

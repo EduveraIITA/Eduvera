@@ -3,7 +3,7 @@
 Status: accepted living blueprint
 Version: 2.0
 Accepted: 16 October 2026
-Supersedes: `School_Operations_Blueprint.pdf` v1.0 as the primary product and engineering authority
+Supersedes: the archived September2026 v1 blueprint as the primary product and engineering authority
 
 ## 1. Product vision
 
@@ -21,6 +21,15 @@ The public brand promise remains: **Not just any campus. That campus.**
 
 ## 2. Product constitution
 
+> **Outside-in product rule:** Begin every substantial capability with a real person,
+> their current responsibility, the situation they are in, the outcome they need and
+> the simplest safe way to complete it. Define what they see, do, understand, recover
+> from and hand off—including empty, failure and correction paths—before choosing APIs,
+> schemas, automation or Model Core extensions. Backend architecture is then derived
+> to support that reviewed experience while preserving authority, evidence, domain
+> invariants and future growth; backend primitives must never dictate the user's
+> mental model.
+
 ### 2.1 Model the campus, do not mirror bureaucracy
 
 The model begins with real campus concepts and relationships. A room, class, learner, teacher, session, route and request are created once and reused wherever relevant. The product must reduce duplicate entry instead of reproducing paper departments on-screen.
@@ -33,7 +42,10 @@ When another capability is activated, ThatCampus reuses existing identities and 
 
 ### 2.3 Backend intelligence, domain-specific experience
 
-The backend uses a digital-twin and agent-based architecture. The frontend never exposes that machinery. Users see language and workflows native to their role and institution: Attendance, Exam, Class, Room, Staff, Transport, Request and Operating rules.
+The backend uses a digital-twin and agent-based architecture. The frontend never
+exposes that machinery. Users see language and workflows native to their current
+responsibilities and institution: Attendance, Exam, Class, Room, Staff, Transport,
+Request and Operating rules. They do not choose a job-title portal to reach them.
 
 The model is the campus operating thread, not a reporting copy beside the product.
 Every person who acts in ThatCampus or through an approved external channel is linked
@@ -72,6 +84,17 @@ Capabilities share a core identity, context and event model, but each domain own
 
 Manual, assisted, paper-backed and offline participation are valid paths. The platform supports real campus work; it does not require every learner or guardian to own a phone.
 
+Owner clarification, 25 October 2026: model detail must not become mandatory human
+interaction. Digitise only the detail needed for a real decision, coordination,
+accountability or required evidence. Before adding an action, identify the work,
+time or repeated decision it removes and who must supply the information. Prefer
+reusing authorised existing sources, stable arrangements, bulk actions and exception
+reporting over repeated person-by-person confirmations. People must not maintain a
+fictional complete campus merely to use one capability. Missing detail may remain
+unknown; estimates stay labelled and cannot stand in for consent, payment or
+physical evidence. More granular workflows remain available only where the campus's
+actual operating need justifies their interaction and configuration cost.
+
 ### 2.9 Keep the living development campus until market release cleanup
 
 During product development, Cambridge International School (`cis`) is ThatCampus's
@@ -91,6 +114,81 @@ the reusable Model Core, Campus View and isolated what-if runtime remain product
 capabilities. Until that decision, preserve the full implementation and record any
 runtime exclusion as an open deployment boundary rather than deleting its source.
 
+### 2.10 One authoritative campus, transient Simulation forks
+
+ThatCampus has one authoritative Live campus environment. An authorized user may
+fork its digital-twin state into an isolated, optionally time-bounded Simulation
+environment:
+
+- **Live** uses the real clock, real actor endpoints and authoritative domain APIs.
+  Its events, observations, commands and outcomes can change campus operation.
+- **Simulation** is a transient fork of a privacy-minimized point-in-time snapshot
+  into a run-scoped
+  namespace with a virtual clock, run-local actor counterparts, snapshot/fake domain
+  executors and sink-only effects. It can never write, message or authenticate into
+  Live.
+
+Simulation is a product capability for every institution, not a second permanent
+platform, onboarding mode or Cambridge-only feature. An administrator starts from the institution's
+current digital-twin state; ThatCampus automatically copies the eligible topology,
+actors, plans, effective rules and configuration required by registered scenario
+adapters. The institution does not recreate its people or timetable. Missing modelled
+behaviour remains visibly unsupported or unknown unless an approved, versioned
+scenario policy supplies it; the core never invents a person's intent.
+
+The server contributes one canonical Simulation workspace for every active institution
+administrator without checking an institution code, demo identity or development
+flag. A newly onboarded institution therefore sees the capability immediately, while
+the workspace truthfully explains when a timetable, eligible target or domain adapter
+is still needed for a particular run. Cambridge uses this exact product path; its
+separate actor harness remains development conformance tooling and has no product
+navigation contribution.
+
+The selected execution context is application-wide. An authorized user operates the same
+ThatCampus application, routes, navigation, modules and domain language in Live and
+Simulation. Live retains the established blue application palette. Simulation changes
+the complete application theme to the reviewed warm amber palette, including canvas,
+surfaces, actions, borders and focus treatment; it must not add a floating environment
+pill over account or profile controls. Simulation exposes its virtual date/time and a
+clear switch back to Live in its owning workspace without becoming a separate mini-app.
+
+Today, timetable, attendance, Messages, Requests, Campus View, KPIs and every other
+enabled module resolve through the same domain contracts against the environment held
+by the server-authoritative user session. They must all read and write one selected
+Live or run-scoped Simulation state and clock. The browser cannot select an
+environment by supplying a date, route parameter or caller-controlled header. An
+environment switch clears or partitions caches and realtime subscriptions before the
+same screen is rendered from the new environment.
+
+Both baseline and editable scenario runs may continue indefinitely until stopped,
+or end at an optionally specified virtual instant. Retention is separate from run
+duration and applies to ended worlds under the reviewed resource policy. Neither
+the fork's data nor its actions become
+Live campus truth. A scenario result may later be used to prepare a reviewed Live
+draft, but that is a new authorized Live command with fresh rule, authority, revision
+and invariant checks—not a merge of environments.
+
+During incremental development a domain with no scenario adapter fails closed and is
+reported as an implementation gap; it must never fall back to Live data. That state is
+not acceptable release parity. Production acceptance requires a snapshot, read,
+command and projection adapter for every module enabled for that institution so the
+whole familiar application remains operable in Simulation.
+
+Simulation must evolve with the platform. Every change to an operational capability,
+schema, worker, permission, rule, effect, artifact or projection includes the matching
+Simulation adapter and tests in the same delivery. Version/conformance checks block
+stale coverage; an agent must not defer that work and still report the platform
+feature complete. Missing behaviour is an explicit product gap, never a Live fallback.
+
+The Cambridge Campus Lab is a separate development conformance harness around a
+synthetic fixture. It is not imported by product composition, contributes no product
+route, cannot bind a normal product session and cannot act as a Simulation provider.
+Its control flow forces the invoking product session back to Live before exercising
+the guarded fixture. Cambridge administrators use the same `/more/simulation`
+workspace, transient-run catalogue, snapshot adapter and execution-environment
+contract as every other institution. The fixture remains only to test conformance;
+it grants no Cambridge-specific product behavior.
+
 ## 3. Who the product serves
 
 ### Institution shapes
@@ -103,7 +201,7 @@ runtime exclusion as an open deployment boundary rather than deleting its source
 
 Institution shape is configuration and capability context, not a forked product.
 
-### People and operating roles
+### People and operating responsibilities
 
 - institution administrator: creates and configures the digital campus, accounts, roles, integrations and Operating rules;
 - principal/operations lead: owns daily operational outcomes and exceptions within assigned scope;
@@ -115,7 +213,11 @@ Institution shape is configuration and capability context, not a forked product.
 - guardian/learner: sees and acts only within explicit relationships and permissions;
 - ThatCampus support/operator: time-bound, purpose-specific, audited access only.
 
-One person may hold multiple effective-dated assignments. The interface opens in the chosen working context and does not silently merge authority.
+One person may hold multiple effective-dated assignments. The application composes
+their current work and available areas in one stable shell; it does not require a
+Teacher, Principal, Gatekeeper or Administrator portal choice. Each command still
+retains and rechecks the distinct assignment, scope and authority that permits it, so
+composition never silently merges authority.
 
 ## 4. The campus model
 
@@ -169,7 +271,7 @@ location, or collect/retain data merely because a digital twin can represent it.
 
 The normative technical contract is [Campus digital twin and agency architecture](CAMPUS_DIGITAL_TWIN_AND_AGENCY_ARCHITECTURE.md).
 
-### 4.6 Campus View and later spatial visualization
+### 4.6 Campus View and versioned spatial visualization
 
 Campus View is a first-class, read-only administrator capability. Its mobile 2D
 scene projects stable campuses and spaces together with explicitly separated
@@ -185,6 +287,14 @@ uses the same contract; neither the current nor future view is a second source o
 truth or may imply continuous knowledge of a person's location from schedules or
 sparse observations.
 
+The owner's 25 October direction advances that richer presentation into a
+programmable 2.5D virtual campus. Administrators draft from licensed images, open
+map geometry or manual drawing, correct asset placement and place links, then
+explicitly review and publish a member-visible scene. Source imagery stays private;
+AI-proposed geometry is never verified topology, occupancy or an indoor plan. The
+owning contract is [Programmable virtual campus](CAMPUS_VISUAL_SCENES.md); delivery
+and Simulation acceptance are recorded separately from this direction.
+
 The read-only operational measurement contract for this surface is [Campus View
 operational KPIs](CAMPUS_VIEW_OPERATIONAL_KPIS.md). It keeps expected, observed,
 accepted and unknown evidence separate; forbids inferred occupancy and opaque
@@ -196,7 +306,9 @@ back to the owning domain action.
 The detailed implementation contract is [ThatCampus Model Core
 blueprint](THATCAMPUS_MODEL_CORE_BLUEPRINT.md). It defines the core capabilities,
 primitives, domain-adapter boundary, configured reaction runtime, simulation contract,
-failure semantics and acceptance gates.
+failure semantics and acceptance gates. Its domain-neutral realm, environment-qualified
+identity, semantic-catalogue and extension rules are defined by the accepted [universal
+institution model](UNIVERSAL_INSTITUTION_MODEL.md).
 
 The bounded operational specialization for transient baseline-versus-alternative
 planning and future KPI ranges is [Campus scenario simulation](CAMPUS_SCENARIO_SIMULATION.md).
@@ -218,7 +330,31 @@ Rules:
 
 ### 6.1 No mandatory full-campus onboarding
 
-Account creation produces an institution administrator context and a minimal institution identity. The user selects a first outcome, not an implementation checklist.
+Account creation produces a stable account identity and a private provisional administrator
+context. It does **not** require the person to classify themselves as a school, college,
+coaching centre or other organisation, enter a campus name, complete organisation
+verification, or choose a permanent product edition.
+
+The first product question is purpose-first and multi-select: **What would you like
+ThatCampus to help you run?** The user may choose one or several outcomes. Their choices
+prioritise the first journey and its missing prerequisites; they never hide, disable or
+permanently scope the rest of ThatCampus. Every supported capability remains available to
+add later to the same connected campus.
+
+The platform creates its stable internal realm/workspace identity without asking the user to
+invent a public-facing name. It requests a campus or institution display name only when that
+name has a concrete use, such as inviting other people, issuing an outward-facing record,
+adding another location, configuring branding or beginning organisation verification.
+Previously entered people, places, schedules, rules and evidence are reused rather than
+entered again.
+
+Organisation verification is a progressive trust task inside the working application, not a
+gate to private core operations. It may gate an explicitly trust-sensitive action such as a
+verified organisation claim, claimed domain/SSO, regulated payment or approved external
+integration. The boundary must explain why verification is needed without invalidating work
+already completed. Account/session security remains separate from organisation verification.
+
+The user selects first outcomes, not an implementation checklist or an exclusive module.
 
 Examples:
 
@@ -226,6 +362,9 @@ Examples:
 - **Manage examinations:** create/import learners, academic grouping, subjects, examination cycle and responsible staff.
 - **Track gate entry:** create/import people, gate, approved capture method and exception owner.
 - **Run one teacher's class:** create teacher, learner group and schedule only as needed.
+
+The full interaction contract, exact progressive-campus promise and acquisition-to-first-value
+story are defined in [Progressive capability onboarding](PROGRESSIVE_CAPABILITY_ONBOARDING.md).
 
 ### 6.2 Shared prerequisite resolver
 
@@ -249,10 +388,10 @@ A capability pack contains:
 
 - domain feature flag;
 - prerequisite schema;
-- default roles and permissions;
+- optional responsibility/role templates and permissions;
 - eligible Operating rule types;
 - required states/fallbacks;
-- navigation contributions;
+- Today, Work and Areas contributions;
 - data/export contract;
 - activation and deactivation checks;
 - acceptance scenarios.
@@ -277,18 +416,40 @@ Readiness is computed per enabled capability. An empty resource catalogue does n
 
 The setup experience uses a connected campus overview, progressive disclosure and contextual completion. It must not become a dashboard of arbitrary percentage scores or a collection of unrelated forms.
 
+Owner clarification, 21 October 2026: ground-up campus building and starting with
+one subsystem remain equal entry intents into this same model. Whole-campus
+guidance can be paused or reordered as soon as a chosen operation is ready. Adding
+another capability reuses accepted identities, context and history; it must not
+require restarting setup. Readiness is specific to the requested operation, actor,
+scope and effective rules, not a campus-wide record count. Applicant/join entry is
+separate from founding a campus and cannot grant administrator authority. The
+delivery contract is [End-to-end campus workflows](END_TO_END_CAMPUS_WORKFLOWS.md).
+
 Detailed topology decisions live in [Institution and campus replica model](INSTITUTION_CAMPUS_REPLICA.md); that document is a domain projection of this blueprint, not the product architecture itself.
 
 ## 8. User experience architecture
 
 The normative interaction and workflow contract is [ThatCampus operating
 experience](THATCAMPUS_OPERATING_EXPERIENCE.md). It translates the hidden model and
-agent runtime into role-specific campus language, attention, automation explanations,
-domain workspaces and acceptance scenarios.
+agent runtime into responsibility-appropriate campus language, attention, automation
+explanations, domain workspaces and acceptance scenarios. The application-composition
+contract, neutral routes and first proof journey are defined by
+[Responsibility-composed application](RESPONSIBILITY_COMPOSED_APPLICATION.md).
 
-### 8.1 Stable, role-specific navigation
+### 8.1 One stable responsibility-composed shell
 
-Daily navigation is built from current capability and permission manifests. It remains stable for a working context. An event can create a badge or action but must not unpredictably reorder the navigation.
+Every authenticated person uses the stable **Today / Work / Areas / More** shell.
+Its positions do not vary by job title or reorder when events arrive. Current
+responsibilities, relationships, authority, capability readiness, owned work and time
+determine the content and domain entries within those destinations. Roles are optional
+assignment templates, not navigation modes. A campus/scope selector appears only when
+it materially changes the records in view; there is no role or portal selector.
+
+Domain workspaces use neutral canonical routes rather than persona-prefixed route
+trees. During a bounded migration an old bookmark may redirect one way to the
+canonical route, but it cannot remain a second configured experience, authority path
+or editor. Administrator membership never implies Principal, teaching or other
+operating responsibility.
 
 ### 8.2 Domain-native screens
 
@@ -351,9 +512,27 @@ Owns campuses, spaces, operational resources and dated placements. It is not a f
 
 Owns terms, closures, schedules, sessions, events, dated changes, rooms and responsible staff. View and edit occur in one coherent time-based experience; duplicated Calendar/Planner/Timetable concepts are avoided.
 
+Owner clarification, 20 October 2026: scheduling is activity- and person-based, not
+a student planner plus a separate staff/guard planner. One foundation represents
+people/groups, purpose, time, places/resources and participation expectations.
+Academic class/term/subject rules are a typed specialization, not prerequisites for
+every duty, training or meeting. Other owning planning domains keep their invariants
+and authoritative editor while contributing through the shared neutral occurrence
+contract. The transformation and compatibility gates are defined in
+[Activity scheduling and attendance](PEOPLE_SCHEDULING_AND_ATTENDANCE.md); they are
+requirements, not claims of delivery.
+
 ### 10.4 Attendance and presence
 
 Supports institution-configured modes: scheduled subject/session attendance, daily class attendance, campus entry/exit presence or combinations with clear semantics. Capture can be staff, QR, registered device, reviewed camera assistance, office or paper. No method silently proves another context.
+
+Attendance uses one person + participation context + occurrence/window foundation
+across eligible campus people. Do not build Student versus Staff attendance engines
+or require app accounts for passive participants. One responsibility-scoped
+workspace and shared register/evidence/correction lifecycle retain typed eligibility
+and context rules. Activity participation, gate presence, work completion and physical
+handover remain distinct facts. This is the same Digital Twin command/observation,
+domain-outcome and isolated Simulation architecture, not a parallel ERP subsystem.
 
 ### 10.5 Learning, assessment and examinations
 
@@ -378,6 +557,27 @@ Owns narrowly scoped cases, responsible handlers and outcomes. Public/cross-doma
 ### 10.10 Assistant and channels
 
 ThatCampus AI is one authorized interface to domain APIs, not the model core or system authority. Web, Telegram and future providers share the same conversation/tool contracts and recheck current scope for every turn.
+
+### 10.11 Full campus lifecycle and service workflows
+
+The owner's 21 October 2026 direction includes all 22 Riverview acceptance
+journeys: application/admission through daily learning, changes, money, private
+support, clubs/events/visits, campus services, placements, responsibility takeover,
+completion and oversight. This expands target delivery scope; it does not claim
+that the existing enrollment, request or event records already implement those
+journeys. It supersedes the earlier parked pre-admission scope limit.
+
+Extend existing domain owners and introduce bounded Admissions, mentoring-plan,
+Placement, Financial Aid, Facilities, Resource Loans and Completion/document-family
+owners where truth is currently absent. Reuse canonical people/groups/places,
+scoped authority, artifacts, scheduling, Finance and Model Core coordination ports.
+Do not turn topology into maintenance ERP, restricted care into general mentoring,
+or Core/Requests into a universal writable business-case engine. Typed learning
+offerings and concurrent course enrollment extend, rather than corrupt, retained
+school class placement. New capabilities must include themed progressive entry,
+multi-person handoff, correction/closure and same-application Simulation evidence.
+The boundaries, dependency sequence and all-story acceptance gate are specified in
+[End-to-end campus workflows](END_TO_END_CAMPUS_WORKFLOWS.md).
 
 ## 11. Data and engineering architecture
 
@@ -427,7 +627,17 @@ Connect campuses, spaces, resources and dated staff/class placement through doma
 
 ### Foundation 3 - People and authority
 
-Complete person/enrollment lifecycle, explicit admin versus Principal assignment, account invitations, scoped roles and authority projections.
+Complete person/enrollment lifecycle, explicit admin versus Principal responsibility,
+account invitations, generalized scoped responsibilities and authority projections.
+
+### Foundation 4 - Responsibility-composed application
+
+Replace persona portal selection with one Today / Work / Areas / More shell and
+neutral routes. Compose it from effective responsibilities and real domain
+contributions, proving one person can teach a class, maintain a lab and hold a timed
+gate duty without parallel accounts, portals or editors. Remove the legacy route,
+navigation and implicit-authority architecture after parity rather than retaining it
+behind a feature toggle.
 
 ### Connected operation 1 - Timetable to attendance
 
@@ -486,6 +696,8 @@ Avoid vanity totals, fake unread numbers and inferred completion.
 
 - forcing a complete institution setup before first use;
 - copying a generic ERP menu/module structure;
+- creating a portal, route tree or navigation configuration for every job title;
+- keeping legacy and responsibility-composed experiences as selectable alternatives;
 - exposing the twin as a graph editor;
 - supporting arbitrary administrator code or workflows;
 - treating AI as a school administrator;
@@ -499,6 +711,9 @@ Avoid vanity totals, fake unread numbers and inferred completion.
 
 This Markdown file is the living product blueprint and is version controlled with the implementation. Material product decisions update this file or a linked normative companion in the same change.
 
-`School_Operations_Blueprint.pdf` v1.0 is historical provenance. It is not the default authority. A v1 constraint remains binding only where v2 or a linked current domain contract explicitly retains it.
+Earlier blueprints are archived provenance, not current authority. A historical
+constraint remains binding only where v2 or a linked current domain contract
+explicitly retains it. See the [documentation recovery record](../VERIFICATION.md#documentation-recovery)
+for the original sources; do not restore them as competing active contracts.
 
 The current delivery state, verification evidence and unresolved acceptance gates live in [Implementation plan](IMPLEMENTATION_PLAN.md). Proposed target architecture must never be reported as implemented until that plan records verified evidence.

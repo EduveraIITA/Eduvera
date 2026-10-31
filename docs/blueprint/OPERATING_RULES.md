@@ -11,7 +11,7 @@ The admin entry point is Institute settings → Operating rules.
 | Event attendance | Observation hours before/after a session | School-scoped database rule, active-admin authorization, revision conflict check, audit; used by register validation |
 | Leave cover | Automatic resolution enabled, deadline, fallback kind/label, responsible staff | Staff operations coverage rule and resolution engine; existing revision and authorization checks |
 | Departure & transport | Enabled arrangements, same-day change cutoff, location retention and stale-location threshold | Departure coordination policy API and journey/location workflows |
-| Messaging | Student/parent direct messaging and group replies, attachments, communication hours, message retention | Messaging policy API and relationship-based access checks |
+| Messaging | Student/parent direct messaging and group replies, attachments, communication hours | One institution-scoped Operating Rules writer and current relationship-based access checks; automatic retention is unavailable |
 | Daily attendance | Submission deadline in institution timezone | Existing school deadline drives overdue requests/notifications; central editor now available |
 | Event operating windows | Entry opens 0–168 hours before; staff entry/locking closes 0–720 hours after | Event detail, register capabilities, write gates and Requests projection use the same stored rules |
 | Journey window | Boarding lead time 0–240 minutes; duty changes close at that boundary | Server journey controls/duty-swap gates and UI availability use the same calculation |
@@ -20,9 +20,9 @@ The admin entry point is Institute settings → Operating rules.
 Editors use the existing domain APIs rather than a generic unvalidated settings
 blob. Register screens no longer edit institution rules. Staff entitlement settings,
 transport setup and messaging privacy help link to the central editors.
-Messaging currently uses the signed-in active institution; the central editor blocks
-editing if that scope differs from the selected institution. Messaging does not yet
-have optimistic revision checking like event attendance, coverage and departure.
+Messaging policy reads use the signed-in selected institution; reads never create
+configuration. The category editor is the only writer and requires both workflow
+and domain revisions. There is no separate writable chat-policy endpoint/editor.
 
 ## Platform-owned configuration and protected invariants
 
@@ -35,7 +35,7 @@ have optimistic revision checking like event attendance, coverage and departure.
 | Messaging | Attachment type validation, reporting/relationship safeguards | Approved formats and safety constraints remain enforced; size/edit limits are configurable above |
 | AI operations | Daily/monthly budgets, rate/step limits, context compaction and memory caps | Deployment-managed configuration below; school admins cannot raise shared billing caps |
 | Sessions / uploads / workers | Session expiry, request/upload bounds, worker intervals | Backend config and domain validation; deployment-managed |
-| Data retention | Transport location and chat retention editable above; audit and other record retention | Other retention is service-managed; do not expose destructive cleanup as a casual setting |
+| Data retention | Transport location retention above; historical chat retention values remain stored but are not editable or enforced | Automatic message deletion is not enabled; do not claim it is active or expose destructive cleanup as a casual setting |
 
 This is an inventory of the reviewed configuration surfaces, not a claim that every
 numeric constant has been migrated. Each remaining candidate needs a defined scope,
@@ -79,3 +79,35 @@ transport state invariants are intentionally not arbitrary school-admin switches
 Immediate operating-rule updates do not implement the blueprint's proposed full
 draft/rehearsal/approval/scheduled-policy lifecycle. Existing records are not rewritten
 when observation windows change. Cloud rollout and phone acceptance remain separate gates.
+
+## Messaging enforcement — 27 October 2026
+
+The existing category controls govern both new and already-open conversations.
+Direct-message switches concern learner/guardian-to-staff pairs. Current campus
+memberships and conversation authority apply, not the global role assigned when an
+account first signed up. A campus administrator role does not override a learner
+relationship's restriction. An explicitly appointed group moderator retains that
+conversation's posting authority; ordinary group members follow its reply rules.
+
+Communication hours use the institution timezone and selected Live/Simulation
+clock. The start is inclusive and the end exclusive. Overnight ranges cross
+midnight; equal start and end means all day. Outside the window, new direct
+conversations, sends and edits are refused with a useful explanation. Reading,
+mark-read and reporting remain available. Recipient discovery still
+works outside hours, but direct-policy-ineligible pairs are not offered. Governed
+group member selection has its own permission-checked purpose and does not grant
+direct-message access.
+
+Queued Matrix sends/edits recheck the same policy before provider effects. Closed
+hours retain ordered pending work; disabled direct/reply/attachment rules block
+it. Redactions remain possible rather than waiting for communication hours.
+This is an outgoing optional bridge, not a claim of real provider delivery or E2EE.
+
+Automatic class-thread membership is a mechanical projection over canonical
+class, enrollment and dated access sources, not a read-time setup action or an
+autonomous agent decision. The same current class authority guards REST,
+attachments, notifications, realtime and provider access even if a stale
+participant row remains. History is retained when someone leaves a class.
+The source projection must not invent a human creator or require an extra user
+confirmation for routine roster changes. Delivery evidence belongs in the
+implementation plan/QA record; this contract alone is not proof of release.

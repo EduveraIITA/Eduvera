@@ -1,4 +1,5 @@
 import { randomUUID } from 'node:crypto';
+import { ensureFixtureGuardianProfile } from './fixture-guardian-profile.test-support.js';
 import { Pool } from 'pg';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import type { AuthUser } from '../src/common/request.js';
@@ -34,6 +35,7 @@ suite('teacher feedback institution, eligibility and lifecycle boundaries',()=>{
       await pool.query("INSERT INTO enrollments(student_id,class_section_id,term_id,roll_number,enrolled_on) VALUES($1,$2,$3,$4,current_date-10)",[id,classId,term,i+1]);
     }
     const guardian=(await row('INSERT INTO parents(user_id) VALUES($1) RETURNING id',[parent.id])).id;
+    await ensureFixtureGuardianProfile(pool,{schoolId:school,guardianId:guardian,firstName:parent.first_name,lastName:parent.last_name});
     await pool.query("INSERT INTO guardian_relationships(guardian_id,student_id,relationship) VALUES($1,$2,'guardian')",[guardian,studentId]);
     campaignId=(await service.create(admin,school,input())).id;
   });

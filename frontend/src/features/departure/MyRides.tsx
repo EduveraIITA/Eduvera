@@ -21,7 +21,7 @@ export function MyRides({trips}:{trips:CollectorTrip[]}) {
     const key=["boarding","in_progress"].includes(trip.state)?"In progress":trip.service_date===trip.local_date?"Today":trip.service_date<(trip.local_date??"")?`Past · ${dateLabel}`:dateLabel;
     groups.set(key,[...(groups.get(key)??[]),trip]);
   }
-  return <div className="ride-list">{[...groups].map(([label,items])=><section key={label} aria-label={label}><h2>{label}</h2><div className="ride-list-group">{items.map(trip=><Link key={trip.id} to={`/teacher/transport/${trip.id}`} className="ride-list-row">
+  return <div className="ride-list">{[...groups].map(([label,items])=><section key={label} aria-label={label}><h2>{label}</h2><div className="ride-list-group">{items.map(trip=><Link key={trip.id} to={`/areas/departure/operate/${trip.id}`} className="ride-list-row">
     <div className="ride-list-time"><strong>{trip.scheduled_departure_time.slice(0,5)}</strong>{trip.direction==="to_institution"?<ArrowDownLeft size={18}/>:<ArrowUpRight size={18}/>}</div>
     <div className="ride-list-content"><h3>{trip.route_name}</h3><p>{trip.direction==="to_institution"?"To school":"From school"} · {trip.roster.length} {trip.roster.length===1?"rider":"riders"}</p><span className={`ride-list-status ${["boarding","in_progress"].includes(trip.state)||trip.controls_available?"is-active":trip.collector_assignment_status==="pending"?"is-pending":""}`}>{rideStatus(trip)}</span></div>
     <ChevronRight size={19} aria-hidden="true"/>

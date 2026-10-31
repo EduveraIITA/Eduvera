@@ -1,4 +1,5 @@
-import { ArrowRight, CalendarDays, CheckCircle2, Clock3, MapPin, UsersRound } from "lucide-react";
+import { ArrowRight, CheckCircle2, Clock3, MapPin, UsersRound } from "lucide-react";
+import { ProductIcon } from "../../components/ProductIcon";
 import { Link } from "react-router-dom";
 import type { CampusEventDto, CampusEventStatus, CampusEventType } from "./types";
 
@@ -84,7 +85,7 @@ export function CampusEventCard({ event, to, dutyLabel }: { event: CampusEventDt
 export function EventEmptyState({ title, detail }: { title: string; detail: string }) {
   return (
     <div className="campus-event-empty" role="status">
-      <span><CalendarDays size={24} /></span>
+      <span><ProductIcon name="calendar" size={32} /></span>
       <h2>{title}</h2>
       <p>{detail}</p>
     </div>

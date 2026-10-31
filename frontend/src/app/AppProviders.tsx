@@ -4,6 +4,7 @@ import { AuthProvider } from "../features/auth/AuthContext";
 import { AttendanceContinuitySync } from "../features/attendance/AttendanceContinuitySync";
 import { SchoolEventBridge } from "../features/school/SchoolEventBridge";
 import { VisitorApprovalCenter } from "../features/gate/VisitorApprovalCenter";
+import { ApplicationExecutionEnvironmentProvider } from "../features/simulation/ApplicationExecutionEnvironment";
 
 export function AppProviders({ children }: { children: ReactNode }) {
   const [queryClient] = useState(
@@ -33,10 +34,12 @@ export function AppProviders({ children }: { children: ReactNode }) {
   return (
     <QueryClientProvider client={queryClient}>
       <AuthProvider>
-        <SchoolEventBridge />
-        <AttendanceContinuitySync />
-        <VisitorApprovalCenter />
-        {children}
+        <ApplicationExecutionEnvironmentProvider>
+          <SchoolEventBridge />
+          <AttendanceContinuitySync />
+          <VisitorApprovalCenter />
+          {children}
+        </ApplicationExecutionEnvironmentProvider>
       </AuthProvider>
     </QueryClientProvider>
   );

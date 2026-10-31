@@ -4,12 +4,14 @@ import {ShieldCheck,X} from "lucide-react";
 import {changeGuardianAuthority,getGuardianAuthority,type AuthorityCommand,type AuthoritySnapshot,type GuardianAuthority} from "./api";
 
 import { TemporalInput } from "../../components/forms/TemporalInput";
+import { useExecutionEnvironment } from "../simulation/ExecutionEnvironmentContext";
+import { executionEnvironmentQueryKey } from "../simulation/executionEnvironmentQueryKey";
 function dateLabel(value:string){return new Intl.DateTimeFormat("en-IN",{day:"numeric",month:"short",year:"numeric",timeZone:"UTC"}).format(new Date(`${value}T00:00:00Z`));}
 function bounds(value:AuthoritySnapshot){return value.enabled?`${value.valid_from?`From ${dateLabel(value.valid_from)}`:"Existing grant"}${value.valid_until?` through ${dateLabel(value.valid_until)}`:" · no end date"}`:"Leave signing is not permitted.";}
 export function GuardianAuthorityPanel({schoolId,id,onClose}:{schoolId:string;id:string;onClose:()=>void}){
   const heading=useRef<HTMLHeadingElement>(null);
-  const client=useQueryClient();const [editing,setEditing]=useState<GuardianAuthority|null>(null);const [saved,setSaved]=useState(false);
-  const query=useQuery({queryKey:["school","people","authority",schoolId,id],queryFn:()=>getGuardianAuthority(schoolId,id)});
+  const client=useQueryClient(),environment=useExecutionEnvironment();const [editing,setEditing]=useState<GuardianAuthority|null>(null);const [saved,setSaved]=useState(false);
+  const query=useQuery({queryKey:executionEnvironmentQueryKey(environment,["school","people","authority",schoolId,id]),queryFn:()=>getGuardianAuthority(schoolId,id)});
   useEffect(()=>{const previous=document.activeElement instanceof HTMLElement?document.activeElement:null;heading.current?.focus();return()=>{if(previous?.isConnected)previous.focus();};},[]);
   const data=query.data;
   return <section className="people-panel people-authority" aria-labelledby="authority-heading">
@@ -25,8 +27,7 @@ export function GuardianAuthorityPanel({schoolId,id,onClose}:{schoolId:string;id
         {!editing?<button type="button" className="people-secondary" onClick={()=>{setSaved(false);setEditing(data);}}>Review permission</button>:null}
       </div>
       {editing?<AuthorityEditor schoolId={schoolId} data={editing} stale={editing.revision!==data.revision} onCancel={()=>setEditing(null)} onSaved={async()=>{
-        setEditing(null);setSaved(true);await client.invalidateQueries({queryKey:["school","people"]});
-        await client.invalidateQueries({queryKey:["school","parent"]});await client.invalidateQueries({queryKey:["school","student","leave"]});
+        setEditing(null);setSaved(true);await Promise.all([["school","people"],["school","parent"],["school","student","leave"]].map(key=>client.invalidateQueries({queryKey:executionEnvironmentQueryKey(environment,key)})));
       }}/>:null}
       <details className="people-authority-history"><summary>Permission history{data.history.length?` (${data.history.length})`:""}</summary>
         {data.history.length?<><p className="people-muted">Latest 50 changes. Dates use the school's calendar.</p><ol>{data.history.map(h=><li key={h.id}><strong>{h.result.enabled?"Grant recorded":"Permission revoked"}</strong><span>{bounds(h.result)}</span><p>{h.reason}</p><small>{h.actor_name} · {new Intl.DateTimeFormat("en-IN",{dateStyle:"medium",timeStyle:"short"}).format(new Date(h.recorded_at))}</small></li>)}</ol></>:<p className="people-muted">No permission changes recorded here yet.</p>}

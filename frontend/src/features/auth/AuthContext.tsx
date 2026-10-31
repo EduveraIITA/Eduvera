@@ -9,10 +9,16 @@ import {
   type ReactNode,
 } from "react";
 import { ApiError, apiFetch, type DemoPersona, type Persona } from "../../lib/api";
+import {
+  LIVE_EXECUTION_ENVIRONMENT,
+  ExecutionEnvironmentInvariantError,
+  executionEnvironmentFromWire,
+  type ExecutionEnvironment,
+  type ExecutionEnvironmentWireDescriptor,
+} from "../simulation/executionEnvironment";
 
-export type AccountRole = Persona | "staff" | "admin";
-export type MembershipRole = "student" | "guardian" | "staff" | "admin";
-export type Portal = "parent" | "student" | "teacher" | "principal";
+export type AccountRole = Persona | "staff" | "admin" | "member";
+export type MembershipRole = "student" | "guardian" | "staff" | "admin" | "member";
 
 export interface AuthUser {
   id: string;
@@ -28,6 +34,7 @@ export interface AuthUser {
 }
 
 export interface SchoolMembership {
+  access_scope?: "campus" | "assigned_work";
   id: string;
   school_id: string;
   school_name: string;
@@ -44,6 +51,7 @@ interface SessionResponse {
   demo_mode: boolean;
   demo_profile_switcher?: boolean;
   public_demo?: boolean;
+  execution_environment?: ExecutionEnvironmentWireDescriptor;
 }
 
 interface MeResponse {
@@ -55,6 +63,38 @@ interface MeResponse {
   memberships: SchoolMembership[];
   demo_mode: boolean;
   public_demo?: boolean;
+  execution_environment?: ExecutionEnvironmentWireDescriptor;
+  onboarding?: OnboardingSummary;
+}
+
+type ProgressiveOnboardingGoal = "attendance" | "gate" | "timetable" | "assignments" | "fees" | "examinations" | "performance" | "staff" | "messages";
+
+interface OnboardingSummary {
+  status: "workspace_required" | "purpose_required" | "ready";
+  guidance?: "whole_campus" | null;
+  guidance_resume?: {
+    kind: "whole_campus";
+    path: "/more/setup/whole-campus";
+    actor_user_id: string;
+    school_id: string;
+    requires_recheck: true;
+  } | null;
+  has_school_access?: boolean;
+  message?: string;
+  selected_goal_count?: number;
+  resume?: {
+    step: "purpose" | "first_use" | "operating";
+    goal: ProgressiveOnboardingGoal | null;
+    path: string;
+    continuation?: {
+      kind: "activity_plan" | "learning_assignment";
+      actor_user_id: string;
+      school_id: string;
+      source_id: string;
+      source_revision: number;
+      requires_recheck: true;
+    };
+  } | null;
 }
 
 interface AuthResponse {
@@ -63,11 +103,8 @@ interface AuthResponse {
   demo_mode: boolean;
   demo_profile_switcher?: boolean;
   public_demo?: boolean;
-  onboarding?: {
-    status: "pending_school_membership";
-    has_school_access: boolean;
-    message: string;
-  };
+  execution_environment?: ExecutionEnvironmentWireDescriptor;
+  onboarding?: OnboardingSummary;
   verification?: { delivery: string; development_token?: string; expires_at?: string };
 }
 
@@ -84,25 +121,22 @@ export interface LoginInput {
 export interface RegisterInput {
   email: string;
   password: string;
-  first_name: string;
-  last_name: string;
-  role: Persona | "admin";
 }
 
 interface AuthState {
   companyOperator?:boolean;
   setupRequired?:boolean;
+  onboarding?: OnboardingSummary;
   status: "loading" | "anonymous" | "authenticated";
   user: AuthUser | null;
   memberships: SchoolMembership[];
   demoMode: boolean;
   publicDemo: boolean;
   serviceError: string | null;
+  executionEnvironment: ExecutionEnvironment;
 }
 
 export interface AuthContextValue extends AuthState {
-  portals: Portal[];
-  hasPortal: (portal: Portal) => boolean;
   login: (input: LoginInput) => Promise<{ challengeToken: string | null; demoProfileSwitcher?: boolean }>;
   googleLogin: (credential: string) => Promise<{ challengeToken: string | null }>;
   completeMfa: (challengeToken: string, code: string) => Promise<void>;
@@ -110,7 +144,7 @@ export interface AuthContextValue extends AuthState {
   enterDemo: (persona: DemoPersona) => Promise<void>;
   enterPublicDemo: (persona: "student" | "parent" | "staff" | "admin") => Promise<void>;
   logout: () => Promise<void>;
-  refresh: () => Promise<void>;
+  refresh: () => Promise<ExecutionEnvironment | null>;
 }
 
 const initialState: AuthState = {
@@ -120,22 +154,12 @@ const initialState: AuthState = {
   demoMode: false,
   publicDemo: false,
   serviceError: null,
+  executionEnvironment: LIVE_EXECUTION_ENVIRONMENT,
 };
 
 const AuthContext = createContext<AuthContextValue | undefined>(undefined);
 const LOGGED_OUT_KEY = "omnischool:explicitly-logged-out";
 const LOGGED_OUT_DEMO_MODE_KEY = "omnischool:logged-out-demo-mode";
-
-function getPortals(memberships: SchoolMembership[]): Portal[] {
-  const portals = new Set<Portal>();
-  for (const membership of memberships) {
-    if (membership.role === "guardian") portals.add("parent");
-    if (membership.role === "student") portals.add("student");
-    if (membership.role === "staff") portals.add("teacher");
-    if (membership.role === "admin") portals.add("principal");
-  }
-  return [...portals];
-}
 
 function retryableCsrfFailure(error: unknown) {
   return !(error instanceof ApiError) || error.status === 408 || error.status === 429 || error.status >= 500;
@@ -167,6 +191,15 @@ async function authMutation<T>(path: string, body: unknown): Promise<T> {
   }
 }
 
+function confirmedEnvironment(
+  descriptor?: ExecutionEnvironmentWireDescriptor,
+  fallback?: ExecutionEnvironmentWireDescriptor,
+) {
+  if (descriptor) return executionEnvironmentFromWire(descriptor);
+  if (fallback) return executionEnvironmentFromWire(fallback);
+  return LIVE_EXECUTION_ENVIRONMENT;
+}
+
 export function AuthProvider({ children }: { children: ReactNode }) {
   const queryClient = useQueryClient();
   const [state, setState] = useState<AuthState>(initialState);
@@ -174,26 +207,38 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const loadProfile = useCallback(async (fallback?: AuthResponse) => {
     try {
       const profile = await apiFetch<MeResponse>("/api/v1/auth/me/");
+      const executionEnvironment = confirmedEnvironment(
+        profile.execution_environment,
+        fallback?.execution_environment,
+      );
       setState({
         status: "authenticated",
         user: profile.user,
         companyOperator:profile.company_operator===true,
         setupRequired:profile.institution_setup_required===true,
-        memberships: (profile.user.active_school_id ? profile.memberships.filter((m) => m.school_id === profile.user.active_school_id) : profile.memberships).map(m=>({...m,...profile.school_permissions?.find(p=>p.school_id===m.school_id)})),
+        onboarding: profile.onboarding ?? fallback?.onboarding,
+        memberships: (profile.user.active_school_id ? profile.memberships.filter((m) => m.school_id === profile.user.active_school_id) : profile.memberships).map(m=>({...profile.school_permissions?.find(p=>p.school_id===m.school_id),...m})),
         demoMode: profile.demo_mode,
         publicDemo: profile.public_demo ?? fallback?.public_demo ?? false,
         serviceError: null,
+        executionEnvironment,
       });
+      return executionEnvironment;
     } catch (error) {
+      if (error instanceof ExecutionEnvironmentInvariantError) throw error;
       if (!fallback) throw error;
+      const executionEnvironment = confirmedEnvironment(fallback.execution_environment);
       setState({
         status: "authenticated",
         user: fallback.user,
+        onboarding: fallback.onboarding,
         memberships: [],
         demoMode: fallback.demo_mode,
         publicDemo: fallback.public_demo ?? false,
         serviceError: null,
+        executionEnvironment,
       });
+      return executionEnvironment;
     }
   }, []);
 
@@ -209,8 +254,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         demoMode: retainedDemoMode === null ? import.meta.env.DEV : retainedDemoMode === "1",
         publicDemo: false,
         serviceError: null,
+        executionEnvironment: LIVE_EXECUTION_ENVIRONMENT,
       });
-      return;
+      return LIVE_EXECUTION_ENVIRONMENT;
     }
     try {
       const session = await apiFetch<SessionResponse>("/api/v1/auth/session/");
@@ -222,14 +268,16 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           demoMode: session.demo_mode,
           publicDemo: false,
           serviceError: null,
+          executionEnvironment: LIVE_EXECUTION_ENVIRONMENT,
         });
-        return;
+        return LIVE_EXECUTION_ENVIRONMENT;
       }
-      await loadProfile({
+      return await loadProfile({
         user: session.user,
         csrf_token: session.csrf_token,
         demo_mode: session.demo_mode,
         public_demo: session.public_demo,
+        execution_environment: session.execution_environment,
       });
     } catch (error) {
       const isUnauthorized = error instanceof ApiError && error.status === 401;
@@ -242,7 +290,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         serviceError: isUnauthorized
           ? null
           : "We couldn't reach the school service. You can retry in a moment.",
+        executionEnvironment: LIVE_EXECUTION_ENVIRONMENT,
       });
+      return isUnauthorized ? LIVE_EXECUTION_ENVIRONMENT : null;
     }
   }, [loadProfile]);
 
@@ -263,6 +313,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         demoMode: current.demoMode,
         publicDemo: false,
         serviceError: null,
+        executionEnvironment: LIVE_EXECUTION_ENVIRONMENT,
       }));
     };
     window.addEventListener("omnischool:session-expired", handleSessionExpiry);
@@ -316,10 +367,12 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       setState({
         status: "authenticated",
         user: response.user,
+        onboarding: response.onboarding,
         memberships: [],
         demoMode: response.demo_mode,
         publicDemo: response.public_demo ?? false,
         serviceError: null,
+        executionEnvironment: confirmedEnvironment(response.execution_environment),
       });
       if (response.verification?.development_token) {
         window.sessionStorage.setItem("omnischool:development-verification-token", response.verification.development_token);
@@ -362,6 +415,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       demoMode: current.demoMode,
       publicDemo: false,
       serviceError: null,
+      executionEnvironment: LIVE_EXECUTION_ENVIRONMENT,
     }));
     try {
       await apiFetch<void>("/api/v1/auth/logout/", { method: "POST" });
@@ -371,12 +425,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }
   }, [queryClient, state.demoMode]);
 
-  const portals = useMemo(() => getPortals(state.memberships), [state.memberships]);
   const value = useMemo<AuthContextValue>(
     () => ({
       ...state,
-      portals,
-      hasPortal: (portal) => portals.includes(portal),
       login,
       googleLogin,
       completeMfa,
@@ -386,7 +437,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       logout,
       refresh,
     }),
-    [googleLogin, completeMfa, enterDemo, enterPublicDemo, login, logout, portals, refresh, register, state],
+    [googleLogin, completeMfa, enterDemo, enterPublicDemo, login, logout, refresh, register, state],
   );
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
@@ -402,18 +453,4 @@ export function useOptionalAuth() {
   return useContext(AuthContext);
 }
 
-export function authDestination(auth: Pick<AuthContextValue, "status" | "portals" | "memberships" | "companyOperator" | "setupRequired"> & { user?: AuthUser | null }) {
-  if (auth.status !== "authenticated") return "/login";
-  if (auth.user?.email_verified === false) return "/account/security";
-  if (auth.companyOperator) return "/company";
-  if (auth.portals.includes("parent")) return "/parent/home";
-  if (auth.portals.includes("student")) return "/student";
-  if (auth.portals.includes("teacher")) {
-    if (auth.memberships.filter(m=>m.role==="staff").every(m=>!m.permissions?.length)) return "/workspace";
-    const gateOnly=auth.memberships.some(m=>m.role==="staff"&&m.permissions?.includes("gate.manage")&&m.permissions.every(p=>p==="gate.manage"));
-    return gateOnly ? "/gate" : "/teacher";
-  }
-  if (auth.portals.includes("principal")) return auth.setupRequired ? "/principal/activation" : "/principal";
-  if (auth.memberships.length === 0) return "/onboarding/start";
-  return "/workspace";
-}
+export { authDestination } from "../../../../packages/contracts/src/auth-entry";

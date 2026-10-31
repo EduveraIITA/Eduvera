@@ -2,6 +2,7 @@ import { timingSafeEqual } from 'node:crypto';
 import { BadRequestException, ServiceUnavailableException, UnauthorizedException } from '@nestjs/common';
 import { config } from '../../config.js';
 import type { ChannelSendInput,ChannelSendResult,MessagingChannelProvider,NormalizedChannelUpdate } from './provider.js';
+import { ChannelDeliveryError,type ChannelDeliveryCheckpoint } from './provider.js';
 
 export interface TelegramSettings {
   enabled:boolean;
@@ -44,7 +45,7 @@ export class TelegramChannelProvider implements MessagingChannelProvider {
     const envelope=result as {ok?:boolean;result?:{is_bot?:boolean;username?:string};description?:string}|null;
     const username=envelope?.result?.username;
     if(!response.ok||!envelope?.ok||envelope.result?.is_bot!==true||!username||!/^[A-Za-z0-9_]{5,64}$/.test(username)) {
-      throw new ServiceUnavailableException(`Telegram bot identity check failed${envelope?.description?`: ${envelope.description.slice(0,180)}`:''}.`);
+      throw new ServiceUnavailableException('Telegram bot identity check is temporarily unavailable.');
     }
     this.values.username=username;
   }
@@ -73,17 +74,36 @@ export class TelegramChannelProvider implements MessagingChannelProvider {
       messageId:String(row.message_id),senderLabel:[fromRow.first_name,fromRow.last_name].filter(item=>typeof item==='string').join(' ').slice(0,120),
       text,...(start?.[1]?{linkToken:start[1]}:{})};
   }
-  async send(input:ChannelSendInput):Promise<ChannelSendResult>{
+  async send(input:ChannelSendInput,checkpoint?:ChannelDeliveryCheckpoint):Promise<ChannelSendResult>{
     if(!this.configured())throw new ServiceUnavailableException('Telegram is not configured.');
     const parts=chunks(input.text);const messageIds:string[]=[];
     for(let index=0;index<parts.length;index++){
+      const dispatch=async()=>{
+      const part:ChannelSendInput={externalChatId:input.externalChatId,text:parts[index]!,
+        ...(index===parts.length-1&&input.action?{action:input.action}:{})};
+      const prior=checkpoint?await checkpoint.beforePart(index,parts.length,part):null;
+      if(prior!==null)return prior;
       const payload:Record<string,unknown>={chat_id:input.externalChatId,text:parts[index],disable_web_page_preview:true};
       if(index===parts.length-1&&input.action)payload.reply_markup={inline_keyboard:[[{text:input.action.label,url:input.action.url}]]};
-      const response=await this.request(`https://api.telegram.org/bot${this.values.token}/sendMessage`,{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify(payload),signal:AbortSignal.timeout(12_000)});
-      let result:unknown;try{result=await response.json();}catch{result=null;}
-      const envelope=result as {ok?:boolean;result?:{message_id?:number};description?:string}|null;
-      if(!response.ok||!envelope?.ok)throw new ServiceUnavailableException(`Telegram delivery failed${envelope?.description?`: ${envelope.description.slice(0,180)}`:''}.`);
-      messageIds.push(String(envelope.result?.message_id??''));
+      let messageId:string;
+      try {
+        const response=await this.request(`https://api.telegram.org/bot${this.values.token}/sendMessage`,{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify(payload),signal:AbortSignal.timeout(12_000)});
+        let result:unknown;try{result=await response.json();}catch{result=null;}
+        const envelope=result as {ok?:boolean;result?:{message_id?:number}}|null;
+        if(envelope?.ok===false)throw new ChannelDeliveryError('rejected');
+        if(!response.ok||envelope?.ok!==true||!Number.isSafeInteger(envelope.result?.message_id))throw new ChannelDeliveryError('unknown');
+        messageId=String(envelope.result!.message_id);
+      } catch(error) {
+        const acceptance=error instanceof ChannelDeliveryError?error.acceptance:'unknown';
+        await checkpoint?.failed(index,acceptance);
+        throw error instanceof ChannelDeliveryError?error:new ChannelDeliveryError(acceptance);
+      }
+      // Persist the acknowledgement before moving on. A lost DB acknowledgement
+      // leaves 'sending', which recovery treats as uncertain, never as unsent.
+      await checkpoint?.accepted(index,messageId);
+      return messageId;
+      };
+      messageIds.push(await(checkpoint?.withPart?checkpoint.withPart(dispatch):dispatch()));
     }
     return {messageIds};
   }

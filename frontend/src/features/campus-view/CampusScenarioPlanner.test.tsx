@@ -5,16 +5,21 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { CampusScenarioPlanner } from "./CampusScenarioPlanner";
 import { createCampusScenario, discardCampusScenario, getCampusScenario, getCampusScenarioTargets } from "./scenarioApi";
 import type { CampusScenarioResponse } from "./scenarioApi";
+import { ApplicationExecutionEnvironmentProvider } from "../simulation/ApplicationExecutionEnvironment";
+import { selectExecutionEnvironment } from "../simulation/executionEnvironmentApi";
+import { createSimulationExecutionEnvironment } from "../simulation/executionEnvironment";
 
 vi.mock("./scenarioApi", async (importOriginal) => {
   const actual = await importOriginal<typeof import("./scenarioApi")>();
   return { ...actual, createCampusScenario: vi.fn(), getCampusScenario: vi.fn(), getCampusScenarioTargets: vi.fn(), discardCampusScenario: vi.fn() };
 });
+vi.mock("../simulation/executionEnvironmentApi", () => ({ selectExecutionEnvironment: vi.fn() }));
 
 const createMock = vi.mocked(createCampusScenario);
 const getMock = vi.mocked(getCampusScenario);
 const targetsMock = vi.mocked(getCampusScenarioTargets);
 const discardMock = vi.mocked(discardCampusScenario);
+const selectEnvironmentMock = vi.mocked(selectExecutionEnvironment);
 
 const result: CampusScenarioResponse = {
   schema_version: 1,
@@ -22,6 +27,7 @@ const result: CampusScenarioResponse = {
   run: {
     id: "scenario-1",
     status: "completed",
+    scenario_kind: "intervention",
     created_at: "2026-10-17T08:00:00.000Z",
     snapshot_at: "2026-10-17T08:00:00.000Z",
     expires_at: "2026-10-18T08:00:00.000Z",
@@ -42,6 +48,28 @@ const result: CampusScenarioResponse = {
     }],
     progress: 100,
     failure_reason: null,
+    execution_environment: {
+      mode: "simulation",
+      namespace_id: "scenario:scenario-1",
+      run_id: "scenario-1",
+      virtual_clock: { now: "2026-10-19T09:00:00.000+05:30", time_zone: "Asia/Kolkata" },
+      source_snapshot_at: "2026-10-17T08:00:00.000Z",
+      expires_at: "2026-10-18T08:00:00.000Z",
+    },
+    projection_capabilities: {
+      supported: ["campus_performance"],
+      unsupported: ["today", "timetable", "attendance", "requests", "notifications", "campus_view"],
+    },
+    run_local_counterpart_coverage: {
+      scope: "captured_active_model_core_agents",
+      source_agent_count: 3,
+      counterpart_count: 3,
+      coverage: "complete",
+      counterparts_by_kind: { human: 2, team: 0, device: 1, integration: 0, software: 0 },
+      readiness: { modelled: 1, passive: 2, unsupported: 0 },
+      behaviour_parity: false,
+      explanation: "Every captured active source agent has a distinct run-local counterpart.",
+    },
     side_effect_policy: { mode: "sink_only", production_writes: false, production_messages: false, production_connectors: false },
     source_snapshot: {
       hash: "snapshot-hash",
@@ -49,7 +77,14 @@ const result: CampusScenarioResponse = {
       space_revision_max: 3,
       agent_revision_max: 2,
       coverage_evidence_revision: null,
-      counts: { sessions: 40, spaces: 28, teachers: 17, enrolments: 200 },
+      counts: {
+        sessions: 40,
+        spaces: 28,
+        teachers: 17,
+        agents: 3,
+        agent_kinds: { human: 2, team: 0, device: 1, integration: 0, software: 0 },
+        enrolments: 200,
+      },
       captured_at: "2026-10-17T08:00:00.000Z",
       consistency: "repeatable_read_transaction",
     },
@@ -58,15 +93,46 @@ const result: CampusScenarioResponse = {
   },
 };
 
-function renderPlanner(overrides?: { teachers?: Array<{ id: string; label: string }>; spaces?: Array<{ id: string; label: string }> }) {
+function baselineResult(): CampusScenarioResponse {
+  return {
+    ...result,
+    run: {
+      ...result.run,
+      scenario_kind: "baseline_snapshot",
+      intervention: null,
+      metrics: [],
+      assumptions: ["Attendance behaviour and outcomes are not modelled by this adapter."],
+      unsupported_domains: ["attendance_outcomes"],
+      source_snapshot: {
+        ...result.run.source_snapshot,
+        counts: {
+          ...result.run.source_snapshot.counts,
+          sessions: 0,
+          teachers: 0,
+          enrolments: 0,
+        },
+      },
+    },
+  };
+}
+
+function renderPlanner(overrides?: {
+  campusId?: string | null;
+  teachers?: Array<{ id: string; label: string }>;
+  spaces?: Array<{ id: string; label: string }>;
+}) {
   const client = new QueryClient({ defaultOptions: { queries: { retry: false, gcTime: 0 }, mutations: { retry: false } } });
-  return render(<QueryClientProvider client={client}><CampusScenarioPlanner
-    schoolId="school-1"
-    campusId="campus-1"
-    timezone="Asia/Kolkata"
-    teachers={overrides?.teachers ?? [{ id: "teacher-1", label: "Kavita Mehta" }]}
-    spaces={overrides?.spaces ?? [{ id: "room-201", label: "Classroom 201" }]}
-  /></QueryClientProvider>);
+  return render(<QueryClientProvider client={client}>
+    <ApplicationExecutionEnvironmentProvider confirmedEnvironment={{ mode: "live" }}>
+      <CampusScenarioPlanner
+        schoolId="school-1"
+        campusId={overrides?.campusId === null ? undefined : (overrides?.campusId ?? "campus-1")}
+        timezone="Asia/Kolkata"
+        teachers={overrides?.teachers ?? [{ id: "teacher-1", label: "Kavita Mehta" }]}
+        spaces={overrides?.spaces ?? [{ id: "room-201", label: "Classroom 201" }]}
+      />
+    </ApplicationExecutionEnvironmentProvider>
+  </QueryClientProvider>);
 }
 
 beforeEach(() => {
@@ -74,6 +140,7 @@ beforeEach(() => {
   getMock.mockReset();
   targetsMock.mockReset();
   discardMock.mockReset();
+  selectEnvironmentMock.mockReset();
   createMock.mockResolvedValue(result);
   getMock.mockResolvedValue(result);
   targetsMock.mockResolvedValue({
@@ -115,6 +182,7 @@ describe("CampusScenarioPlanner", () => {
     await waitFor(() => expect(createMock).toHaveBeenCalledOnce());
     expect(createMock.mock.calls[0]?.[0]).toBe("school-1");
     expect(createMock.mock.calls[0]?.[1]).toEqual({
+      kind: "intervention",
       campus_id: "campus-1",
       horizon_days: 30,
       intervention: {
@@ -131,10 +199,50 @@ describe("CampusScenarioPlanner", () => {
     expect(screen.getByText(/Point estimate from this snapshot/i)).toBeInTheDocument();
     expect(screen.queryByText(/P10–P90/i)).not.toBeInTheDocument();
     expect(screen.getByText(/Transport routing/i)).toBeInTheDocument();
+    expect(screen.getByText(/3 of 3/i)).toBeInTheDocument();
+    expect(screen.getByText(/identity coverage, not behaviour parity/i)).toBeInTheDocument();
+    expect(screen.getByText("Comparison only")).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Enter simulation" })).not.toBeInTheDocument();
 
     await user.click(screen.getByRole("button", { name: "Discard scenario" }));
     await waitFor(() => expect(discardMock).toHaveBeenCalledWith("school-1", "scenario-1"));
     expect(await screen.findByRole("button", { name: "Run isolated scenario" })).toBeInTheDocument();
+  });
+
+  it("allows same-app entry only when the server confirms complete projection parity", async () => {
+    const operable: CampusScenarioResponse = {
+      ...result,
+      run: {
+        ...result.run,
+        expires_at: "2099-10-20T08:00:00.000Z",
+        execution_environment: {
+          ...result.run.execution_environment,
+          expires_at: "2099-10-20T08:00:00.000Z",
+        },
+        projection_capabilities: {
+          application_parity: true,
+          supported: ["today", "timetable", "attendance", "requests", "notifications", "campus_view"],
+          unsupported: [],
+        },
+      },
+    };
+    createMock.mockResolvedValue(operable);
+    getMock.mockResolvedValue(operable);
+    selectEnvironmentMock.mockResolvedValue(createSimulationExecutionEnvironment({
+      namespaceId: "scenario:scenario-1",
+      runId: "scenario-1",
+      virtualClock: { now: "2026-10-19T09:00:00.000+05:30", timeZone: "Asia/Kolkata" },
+      expiresAt: "2099-10-20T08:00:00.000Z",
+    }));
+    const user = userEvent.setup();
+    renderPlanner();
+    await screen.findByText(/Eligible teachers and spaces come from scheduled sessions/i);
+    await user.click(screen.getByRole("button", { name: "Run isolated scenario" }));
+
+    const enter = await screen.findByRole("button", { name: "Enter simulation" });
+    expect(screen.queryByText("Comparison only")).not.toBeInTheDocument();
+    await user.click(enter);
+    await waitFor(() => expect(selectEnvironmentMock).toHaveBeenCalledWith({ mode: "simulation", run_id: "scenario-1" }));
   });
 
   it("does not expose free-form identifiers when the snapshot has no eligible teacher", async () => {
@@ -149,7 +257,10 @@ describe("CampusScenarioPlanner", () => {
     await user.click(screen.getByRole("button", { name: "Run isolated scenario" }));
     await waitFor(() => expect(createMock).toHaveBeenCalledOnce());
     expect(createMock.mock.calls[0]?.[0]).toBe("school-1");
-    expect(createMock.mock.calls[0]?.[1].intervention).toMatchObject({ type: "space_unavailable", target_id: "room-201" });
+    expect(createMock.mock.calls[0]?.[1]).toMatchObject({
+      kind: "intervention",
+      intervention: { type: "space_unavailable", target_id: "room-201" },
+    });
   });
 
   it("shows a recoverable catalogue error instead of unusable disabled controls", async () => {
@@ -164,7 +275,7 @@ describe("CampusScenarioPlanner", () => {
     await waitFor(() => expect(targetsMock).toHaveBeenCalledTimes(2));
   });
 
-  it("explains an empty published plan and lets the operator broaden or refresh it", async () => {
+  it("runs a snapshot-only Simulation when an attendance-first campus has no future targets", async () => {
     const user = userEvent.setup();
     targetsMock.mockResolvedValue({
       schema_version: 1,
@@ -175,10 +286,14 @@ describe("CampusScenarioPlanner", () => {
       teachers: [],
       spaces: [],
     });
+    const baseline = baselineResult();
+    createMock.mockResolvedValue(baseline);
+    getMock.mockResolvedValue(baseline);
     renderPlanner();
 
     expect(await screen.findByText("No future sessions available")).toBeInTheDocument();
     expect(screen.getByText(/no eligible teacher or space sessions/i)).toBeInTheDocument();
+    expect(screen.getByText(/will not simulate attendance behaviour or provide full-app parity/i)).toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "Run isolated scenario" })).not.toBeInTheDocument();
     await user.click(screen.getByRole("button", { name: "Check 14 days" }));
     await waitFor(() => expect(targetsMock).toHaveBeenLastCalledWith(
@@ -186,6 +301,37 @@ describe("CampusScenarioPlanner", () => {
       { campusId: "campus-1", horizonDays: 14 },
       expect.anything(),
     ));
+    await user.click(screen.getByRole("button", { name: "Create snapshot simulation" }));
+    await waitFor(() => expect(createMock).toHaveBeenCalledWith("school-1", {
+      kind: "baseline_snapshot",
+      campus_id: "campus-1",
+      horizon_days: 14,
+    }));
+    expect(await screen.findByRole("heading", { name: "Campus snapshot ready" })).toBeInTheDocument();
+    expect(screen.getAllByText("Snapshot only")).toHaveLength(2);
+    expect(screen.getByRole("heading", { name: "Supported baseline" })).toBeInTheDocument();
+    expect(screen.getByText(/full app remains disabled/i)).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Enter simulation" })).not.toBeInTheDocument();
+  });
+
+  it("creates an institution-scoped snapshot before an attendance-first setup has a campus", async () => {
+    const baseline = baselineResult();
+    createMock.mockResolvedValue(baseline);
+    getMock.mockResolvedValue(baseline);
+    const user = userEvent.setup();
+    renderPlanner({ campusId: null, teachers: [], spaces: [] });
+
+    expect(screen.getByText("No campus structure yet")).toBeInTheDocument();
+    expect(screen.getByText(/will not invent a campus, simulate attendance behaviour or provide full-app parity/i)).toBeInTheDocument();
+    expect(targetsMock).not.toHaveBeenCalled();
+    await user.click(screen.getByRole("button", { name: "Create snapshot simulation" }));
+    await waitFor(() => expect(createMock).toHaveBeenCalledWith("school-1", {
+      kind: "baseline_snapshot",
+      horizon_days: 30,
+    }));
+    expect(await screen.findByRole("heading", { name: "Campus snapshot ready" })).toBeInTheDocument();
+    expect(screen.getByText(/full app remains disabled/i)).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Enter simulation" })).not.toBeInTheDocument();
   });
 
   it("does not present an unavailable behaviour estimate as zero", async () => {

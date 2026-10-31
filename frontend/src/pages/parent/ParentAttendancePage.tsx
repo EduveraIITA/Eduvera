@@ -29,6 +29,8 @@ export interface ParentAttendancePageProps {
   onRequestLeave?: () => ParentPageAction;
   onMessageTeacher?: () => ParentPageAction;
   focusDate?: string;
+  /** The responsibility-composed Attendance Area owns the shared shell and scope selector. */
+  embedded?: boolean;
 }
 
 type MessageState = "idle" | "sending" | "sent" | "error";
@@ -40,6 +42,7 @@ export function ParentAttendancePage({
   onRequestLeave,
   onMessageTeacher,
   focusDate,
+  embedded = false,
 }: ParentAttendancePageProps) {
   const hasAttendance = data.stats.totalDays > data.stats.excusedCount;
   const navigate = useNavigate();
@@ -67,7 +70,7 @@ export function ParentAttendancePage({
       await onRequestLeave();
       return;
     }
-    await navigate("/parent/leave?tab=apply");
+    await navigate("/areas/attendance/leave?scope=dependent&tab=apply");
   };
 
   const messageTeacher = async () => {
@@ -82,8 +85,7 @@ export function ParentAttendancePage({
     }
   };
 
-  return (
-    <ParentShell active="attendance" pageLabel="Attendance" child={data.child} onSelectChild={onSelectChild}>
+  const content =
       <div className="parent-stack attendance-page attendance-family-simple">
         <div className="attendance-context-row">
           <span><span className="presence-dot" />Campus Presence</span>
@@ -231,8 +233,7 @@ export function ParentAttendancePage({
             </article>
           </div>
         </section></details>
-
-      </div>
-    </ParentShell>
-  );
+      </div>;
+  if (embedded) return content;
+  return <ParentShell active="attendance" pageLabel="Attendance" child={data.child} onSelectChild={onSelectChild}>{content}</ParentShell>;
 }

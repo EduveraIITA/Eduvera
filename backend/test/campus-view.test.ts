@@ -1,4 +1,5 @@
 import "reflect-metadata";
+import { setImmediate } from "node:timers/promises";
 import { RequestMethod } from "@nestjs/common";
 import { METHOD_METADATA, PATH_METADATA } from "@nestjs/common/constants.js";
 import { describe, expect, it, vi } from "vitest";
@@ -13,6 +14,8 @@ import { CampusViewController } from "../src/campus-view/campus-view.controller.
 import type { CampusViewRepository } from "../src/campus-view/campus-view.repository.js";
 import { CampusViewService } from "../src/campus-view/campus-view.service.js";
 import { generatedSchematic, type CampusViewSpaceRecord } from "../src/campus-view/contracts.js";
+import { createSimulationExecutionEnvironment } from "../src/campus-model-core/execution-environment.runtime.js";
+import { executionEnvironmentStorage } from "../src/campus-model-core/execution-time.runtime.js";
 
 const ids = {
   user: "00000000-0000-4000-8000-000000000001",
@@ -106,7 +109,8 @@ function observation(id: string, dimension: "observed" | "accepted", state: "pen
     assertion_type: "direct_observation",
     subject: { type: "entity", id: "person-1", label: "Aarav Sharma", kind: "student" },
     context: { entity_id: ids.gate, label: "North gate", kind: "space" },
-    observation: { kind: "movement.gate_observed", state, payload: { direction: "in" } },
+    observation: { kind: "movement.gate_observed", state, payload: { direction: "in" },
+      state_recorded_at: "2026-10-16T03:35:01.000Z", state_basis: "ingress" },
     observed_at: "2026-10-16T03:35:00.000Z",
     recorded_at: "2026-10-16T03:35:01.000Z",
     source: {
@@ -132,18 +136,19 @@ function dependencies(options: { authorized?: boolean } = {}) {
     spaces: vi.fn().mockResolvedValue(spaces),
     examSpaceExpectations: vi.fn().mockResolvedValue([]),
     dayOccurrences: vi.fn().mockResolvedValue([]),
+    motionParticipants: vi.fn().mockResolvedValue([]),
     gateActivityToday: vi.fn().mockResolvedValue([]),
     activeVisitorCount: vi.fn().mockResolvedValue(0),
   };
   const temporalContext = {
-    resolveAt: vi.fn().mockImplementation(({ subject }: { subject: { domain_id: string } }) => {
-      if (subject.domain_id === ids.room) return Promise.resolve([expected]);
-      if (subject.domain_id === ids.gate) return Promise.resolve([
+    resolveAtBatch: vi.fn().mockImplementation(({ subjects }: { subjects: { domain_id: string }[] }) => Promise.resolve(subjects.map(subject => {
+      if (subject.domain_id === ids.room) return [expected];
+      if (subject.domain_id === ids.gate) return [
         observation(ids.observed, "observed", "pending"),
         observation(ids.accepted, "accepted", "accepted"),
-      ]);
-      return Promise.resolve([]);
-    }),
+      ];
+      return [];
+    }))),
   };
   const campusModel = {
     recentActivity: vi.fn().mockResolvedValue([{
@@ -165,7 +170,133 @@ function dependencies(options: { authorized?: boolean } = {}) {
   return { service, repository, temporalContext, campusModel };
 }
 
+function readBarrier() {
+  let release!: () => void;
+  const ready = new Promise<void>(resolve => { release = resolve; });
+  return { ready, release };
+}
+
+describe("Campus View read admission", () => {
+  it("leaves operational pool capacity while overlapping large-campus views enrich every space in their own world", async () => {
+    const { service, repository, temporalContext, campusModel } = dependencies();
+    const rows = Array.from({ length: 217 }, (_, index) => ({ ...spaces[1]!, parent_space_id: null,
+      id: `00000000-0000-4000-8000-${String(index + 100).padStart(12, "0")}`, name: `Space ${index}`, code: `S${index}` }));
+    repository.spaces.mockResolvedValue(rows);
+    const gate = readBarrier();
+    let activeLoans = 0;
+    let peakLoans = 0;
+    const contexts: Array<{ before: string | undefined; after: string | undefined }> = [];
+    const borrow = async <T>(operation: () => Promise<T> | T): Promise<T> => {
+      // Ten is the retained Simulation pool's current upper bound. This check
+      // models admission only; native driver/transaction behavior is separate.
+      if (activeLoans >= 10) throw new Error("The operational read has no pool capacity.");
+      activeLoans += 1;
+      peakLoans = Math.max(peakLoans, activeLoans);
+      try { return await operation(); }
+      finally { activeLoans -= 1; }
+    };
+    const project = <T>(value: () => T) => borrow(async () => {
+      const before = executionEnvironmentStorage.getStore()?.namespace_id;
+      await gate.ready;
+      await Promise.resolve();
+      contexts.push({ before, after: executionEnvironmentStorage.getStore()?.namespace_id });
+      return value();
+    });
+    temporalContext.resolveAtBatch.mockImplementation(({ subjects, at }: { subjects: { domain_id: string }[]; at: string }) => project(() => subjects.map(subject => [{
+      ...expected, assertion_id: subject.domain_id, subject: { ...expected.subject, id: subject.domain_id },
+      context: { ...expected.context, title: `${subject.domain_id}:${at}` },
+    }])));
+    campusModel.recentActivity.mockImplementation(() => project(() => []));
+    campusModel.operationalSignals.mockImplementation(() => project(() => []));
+    repository.examSpaceExpectations.mockImplementation(() => project(() => []));
+    repository.dayOccurrences.mockImplementation(() => project(() => []));
+    repository.gateActivityToday.mockImplementation(() => project(() => []));
+    repository.activeVisitorCount.mockImplementation(() => project(() => 0));
+    const world = (run: string, at: string) => createSimulationExecutionEnvironment({ institution_id: ids.school,
+      scenario_id: ids.observed, run_id: run, source_snapshot_ref: "snapshot:admission-fixture",
+      coverage_gate: { status: "passed", manifest_ref: "fixture:admission", checked_at: at },
+      virtual_clock: { now: () => new Date(at), nowIso: () => at, advanceBy: () => at, advanceTo: () => at },
+      expires_at: "2099-01-01T00:00:00Z" });
+    const firstWorld = world(ids.observed, "2026-10-16T03:45:00.000Z");
+    const secondWorld = world(ids.accepted, "2026-10-17T03:45:00.000Z");
+    const first = executionEnvironmentStorage.run(firstWorld, () => service.view(user, ids.school, {}));
+    const second = executionEnvironmentStorage.run(secondWorld, () => service.view(user, ids.school, {}));
+    void first.catch(() => undefined); void second.catch(() => undefined);
+    try {
+      await setImmediate();
+      expect(activeLoans).toBe(2);
+      expect(temporalContext.resolveAtBatch).toHaveBeenCalledTimes(2);
+      expect(await borrow(() => "ordinary operations read")).toBe("ordinary operations read");
+    } finally { gate.release(); }
+    const results = await Promise.all([first, second]);
+    expect(peakLoans).toBe(3); // Two enrichers plus the admitted operational read.
+    expect(activeLoans).toBe(0);
+    expect(temporalContext.resolveAtBatch).toHaveBeenCalledTimes(Math.ceil(rows.length / 64) * 2);
+    expect(temporalContext.resolveAtBatch.mock.calls.every(([input]) => input.subjects.length <= 64)).toBe(true);
+    expect(contexts).toHaveLength((Math.ceil(rows.length / 64) + 6) * 2);
+    expect(contexts.every(context => context.before === context.after)).toBe(true);
+    expect(new Set(contexts.map(context => context.before))).toEqual(new Set([firstWorld.namespace_id, secondWorld.namespace_id]));
+    for (const [index, result] of results.entries()) {
+      const selected = index === 0 ? firstWorld : secondWorld;
+      expect(result.generated_at).toBe(selected.virtual_clock.nowIso());
+      expect(result.spaces.map(space => space.id)).toEqual(rows.map(space => space.id));
+      expect(result.spaces.map(space => space.expected_activity)).toEqual(rows.map(space => `${space.id}:${selected.virtual_clock.nowIso()}`));
+    }
+  });
+
+  it("stops remaining per-view reads after failure, drains started reads and releases admission for the next view", async () => {
+    const { service, temporalContext, repository, campusModel } = dependencies();
+    const rows = Array.from({ length: 217 }, (_, index) => ({ ...spaces[1]!, id: `00000000-0000-4000-8000-${String(index + 100).padStart(12, "0")}` }));
+    repository.spaces.mockResolvedValue(rows);
+    const failure = new Error("The selected world's temporal evidence is unavailable.");
+    const fail = readBarrier(), finish = readBarrier();
+    temporalContext.resolveAtBatch.mockImplementationOnce(async () => { await fail.ready; throw failure; });
+    temporalContext.resolveAtBatch.mockImplementationOnce(async ({ subjects }) => { await finish.ready; return subjects.map(() => []); });
+    let settled = false;
+    const request = service.view(user, ids.school, {}).finally(() => { settled = true; });
+    const rejected = expect(request).rejects.toBe(failure);
+    try {
+      await setImmediate();
+      expect(temporalContext.resolveAtBatch).toHaveBeenCalledTimes(2);
+      fail.release();
+      await setImmediate();
+      expect(settled).toBe(false);
+      expect(temporalContext.resolveAtBatch).toHaveBeenCalledTimes(2);
+      expect(campusModel.recentActivity).not.toHaveBeenCalled();
+      expect(repository.dayOccurrences).not.toHaveBeenCalled();
+    } finally {
+      fail.release(); finish.release();
+      await rejected;
+    }
+    repository.spaces.mockResolvedValue(spaces);
+    temporalContext.resolveAtBatch.mockImplementation(async ({ subjects }) => subjects.map(() => []));
+    expect((await service.view(user, ids.school, {})).spaces).toHaveLength(spaces.length);
+    expect(temporalContext.resolveAtBatch).toHaveBeenCalledTimes(3);
+  });
+});
+
+describe("Campus View batched temporal integrity", () => {
+  it("refuses incomplete positional evidence instead of manufacturing empty state", async () => {
+    const { service, temporalContext } = dependencies();
+    temporalContext.resolveAtBatch.mockResolvedValue([]);
+    await expect(service.view(user, ids.school, {})).rejects.toThrow("incomplete batch");
+    expect(temporalContext.resolveAtBatch).toHaveBeenCalledTimes(1);
+  });
+  it("does not call temporal storage when the authorized campus has no spaces", async () => {
+    const { service, repository, temporalContext } = dependencies();
+    repository.spaces.mockResolvedValue([]);
+    expect((await service.view(user, ids.school, {})).spaces).toEqual([]);
+    expect(temporalContext.resolveAtBatch).not.toHaveBeenCalled();
+  });
+});
+
 describe("Campus View route and authorization", () => {
+  it("refuses a different selected institution before reading operational data", async () => {
+    const { service, repository } = dependencies();
+    await expect(service.view({ ...user, active_school_id: ids.otherCampus }, ids.school, {})).rejects.toThrow("current world");
+    expect(repository.hasActiveAdminMembership).not.toHaveBeenCalled();
+    expect(repository.school).not.toHaveBeenCalled();
+  });
   it("publishes the stable school-scoped GET route", () => {
     const routeHandler = Object.getOwnPropertyDescriptor(CampusViewController.prototype, "view")?.value as object;
     expect(Reflect.getMetadata(PATH_METADATA, CampusViewController)).toBe("api/v1/schools/:schoolId/campus-view");
@@ -185,7 +316,8 @@ describe("Campus View route and authorization", () => {
     const { service, repository, temporalContext } = dependencies({ authorized: false });
     await expect(service.view(user, ids.school, {})).rejects.toThrow("active institution administrator");
     expect(repository.school).not.toHaveBeenCalled();
-    expect(temporalContext.resolveAt).not.toHaveBeenCalled();
+    expect(temporalContext.resolveAtBatch).not.toHaveBeenCalled();
+    expect(repository.motionParticipants).not.toHaveBeenCalled();
   });
 
   it("rejects an invalid school or time before querying membership", async () => {
@@ -200,11 +332,45 @@ describe("Campus View route and authorization", () => {
     await expect(service.view(user, ids.school, { campus_id: ids.otherCampus })).rejects.toThrow("Campus not found in this institution");
     expect(repository.campuses).toHaveBeenCalledWith(ids.school);
     expect(repository.spaces).not.toHaveBeenCalled();
-    expect(temporalContext.resolveAt).not.toHaveBeenCalled();
+    expect(temporalContext.resolveAtBatch).not.toHaveBeenCalled();
   });
 });
 
 describe("Campus View projection", () => {
+  it("supports an incrementally onboarded institution without inventing a campus population", async () => {
+    const { service, repository } = dependencies(); repository.campuses.mockResolvedValue([]);
+    const result = await service.view(user, ids.school, { at: "2026-10-16T03:45:00.000Z" });
+    expect(result.motion).toMatchObject({ school_id: ids.school, campus_id: null, subjects: [], points: [],
+      as_of: "2026-10-16T03:45:00.000Z", limits: { source_limited: false } });
+    expect(repository.motionParticipants).not.toHaveBeenCalled();
+  });
+
+  it("uses the selected world's exact virtual clock without advancing it against wall time", async () => {
+    const { service } = dependencies();
+    const at = "2026-10-16T03:45:00.000Z";
+    const environment = createSimulationExecutionEnvironment({ institution_id: ids.school, scenario_id: ids.observed, run_id: ids.accepted,
+      virtual_clock: { now: () => new Date(at), nowIso: () => at, advanceBy: () => { throw new Error("read-only"); },
+        advanceTo: () => { throw new Error("read-only"); } }, source_snapshot_ref: "snapshot:fixture",
+      coverage_gate: { status: "passed", manifest_ref: "fixture:scoped", checked_at: at }, expires_at: "2099-01-01T00:00:00Z" });
+    const result = await executionEnvironmentStorage.run(environment, () => service.view(user, ids.school, {}));
+    expect(result.motion).toMatchObject({ as_of: at, environment: { kind: "simulation", namespace_id: environment.namespace_id } });
+    expect(result.generated_at).toBe(at);
+  });
+
+  it("does not turn quarantined or unrelated observations into people scan pulses", async () => {
+    const { service, temporalContext } = dependencies();
+    const quarantined = observation(ids.observed, "observed", "pending"); quarantined.observation.state = "quarantined";
+    const unrelated = observation(ids.accepted, "accepted", "accepted"); unrelated.source.source_type = "unrelated.source";
+    temporalContext.resolveAtBatch.mockImplementation(async ({ subjects }) => subjects.map(() => [quarantined, unrelated]));
+    expect((await service.view(user, ids.school, { at: "2026-10-16T03:45:00.000Z" })).motion.points).toEqual([]);
+  });
+
+  it("falls back from an invalid retained campus timezone before day queries", async () => {
+    const { service, repository } = dependencies();
+    repository.campuses.mockResolvedValue([{ ...campus, timezone: "Unknown/Campus" }]);
+    await service.view(user, ids.school, { at: "2026-10-16T03:45:00.000Z" });
+    expect(repository.dayOccurrences).toHaveBeenCalledWith(ids.school, ids.campus, "2026-10-16T03:45:00.000Z", "Asia/Kolkata");
+  });
   it("keeps timetable, point observations, accepted evidence and unknown state distinct", async () => {
     const { service, repository, temporalContext } = dependencies();
     const result = await service.view(user, ids.school, { at: "2026-10-16T03:45:00.000Z" });
@@ -216,8 +382,8 @@ describe("Campus View projection", () => {
       plan: { source_kind: "generated_schematic", surveyed: false },
     });
     expect(repository.spaces).toHaveBeenCalledWith(ids.school, ids.campus);
-    expect(temporalContext.resolveAt).toHaveBeenCalledTimes(3);
-    expect(temporalContext.resolveAt).toHaveBeenCalledWith(expect.objectContaining({
+    expect(temporalContext.resolveAtBatch).toHaveBeenCalledTimes(1);
+    expect(temporalContext.resolveAtBatch).toHaveBeenCalledWith(expect.objectContaining({
       school_id: ids.school,
       at: "2026-10-16T03:45:00.000Z",
       recorded_as_of: expect.any(String),
@@ -246,6 +412,11 @@ describe("Campus View projection", () => {
       spatial_claim: "point_observation_only",
     });
     expect(JSON.stringify(result)).not.toMatch(/live_location|known_location|continuous_presence/u);
+    expect(result.motion.points).toEqual(expect.arrayContaining([
+      expect.objectContaining({ id: ids.accepted, space_id: ids.gate, observed_at: "2026-10-16T03:35:00.000Z",
+        dimension: "accepted", spatial_claim: "point_observation_only" }),
+    ]));
+    expect(JSON.stringify(result.motion)).not.toMatch(/Aarav|person-1|device-1|captured_by|subject_entity/);
   });
 
   it("labels cross-domain signals without turning gate or attendance evidence into room location", async () => {
@@ -271,8 +442,11 @@ describe("Campus View projection", () => {
       title: "Mathematics",
       slot_type: "class",
       class_label: "Class 6A",
+      class_entity_id: "class-1",
       subject_label: "Mathematics",
       responsible_agent_id: "teacher-agent-1",
+      responsible_person_id: "teacher-person-1",
+      expected_includes_responsible: false,
       teacher_label: "Kavita Mehta",
       expected_count: 25,
       starts_at: "2026-10-16T03:30:00.000Z",
@@ -322,6 +496,10 @@ describe("Campus View projection", () => {
       expect.objectContaining({ title: "North gate", state_dimension: "accepted", spatial_claim: "point_observation_only" }),
     ]));
     expect(JSON.stringify(result)).not.toMatch(/teacher_present|current_teacher_location|currently_inside/u);
+    expect(result.motion.subjects.map(subject => subject.kind).sort()).toEqual(["group", "person"]);
+    expect(result.motion.subjects.flatMap(subject => subject.claims).map(claim => claim.expected_count).sort((a, b) => a - b)).toEqual([1, 25]);
+    expect(repository.motionParticipants).toHaveBeenCalledWith(ids.school, ["occurrence-revision-1"]);
+    expect(JSON.stringify(result.motion)).not.toMatch(/teacher-agent-1|teacher-person-1|Kavita|class-1/);
   });
 
   it("projects an accepted examination plan as expected room use with an exact domain link", async () => {
@@ -346,7 +524,7 @@ describe("Campus View projection", () => {
     expect(exam).toMatchObject({
       context: { title: "English mid-term examination", class_label: "Class 7A", expected_count: 27 },
       source: { label: "Scheduled examination", record_id: "00000000-0000-4000-8000-000000000011" },
-      target_path: "/principal/assessments?assessment=00000000-0000-4000-8000-000000000011",
+      target_path: "/areas/assessments/manage?assessment=00000000-0000-4000-8000-000000000011",
       spatial_claim: "expected_context_only",
     });
   });
@@ -356,7 +534,7 @@ describe("Campus View projection", () => {
     repository.campuses.mockResolvedValue([]);
     const result = await service.view(user, ids.school, {});
     expect(result).toMatchObject({ selected_campus_id: null, plan: null, spaces: [], activity: [], signals: [] });
-    expect(temporalContext.resolveAt).not.toHaveBeenCalled();
+    expect(temporalContext.resolveAtBatch).not.toHaveBeenCalled();
   });
 
   it("generates deterministic, floor-aware rectangles from real space identities", () => {

@@ -41,6 +41,8 @@ export interface CampusEventSession {
   title: string;
   session_type: EventSessionType;
   venue: string;
+  space_id?: string | null;
+  use_event_space?: boolean;
   starts_at: string;
   ends_at: string;
   attendance_mode: AttendanceMode;
@@ -110,6 +112,7 @@ export interface CampusEventDto {
   title: string;
   description: string;
   venue: string;
+  space_id?: string | null;
   starts_at: string;
   ends_at: string;
   audience: CampusEventAudience;
@@ -152,6 +155,7 @@ export interface EventCatalogResponse {
   students: Array<{ id: string; name: string; class_section_id: string; admission_number: string }>;
   staff: Array<{ user_id: string; name: string }>;
   subjects: Array<{ id: string; name: string; short_name: string; class_section_ids: string[] }>;
+  places?: Array<{ id: string; name: string; campus_id: string; campus_name: string }>;
 }
 
 export interface CampusEventInput {
@@ -160,6 +164,7 @@ export interface CampusEventInput {
   title: string;
   description: string;
   venue: string;
+  space_id?: string | null;
   starts_at: string;
   ends_at: string;
   audience: CampusEventAudience;
@@ -174,6 +179,8 @@ export interface CampusEventInput {
     title: string;
     session_type: EventSessionType;
     venue: string;
+    space_id?: string | null;
+    use_event_space?: boolean;
     starts_at: string;
     ends_at: string;
     attendance_mode: AttendanceMode;

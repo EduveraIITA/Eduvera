@@ -6,10 +6,14 @@ import { StaffLeaveModelBridgeService } from "./staff-leave-model-bridge.service
 import { StaffOperationsService } from "./staff-operations.service.js";
 import { AccessRolesService } from "../roles/access-roles.service.js";
 import { StaffCoverageReconciliationModule } from "./staff-coverage-reconciliation.module.js";
+import { StaffLeaveWorkProjection } from "./staff-leave-work.projection.js";
+import { StaffLeaveReviewRoutingService } from "./staff-leave-review-routing.service.js";
+import { StaffLeaveReviewRoutingController } from "./staff-leave-review-routing.controller.js";
 
 @Module({
   imports: [CampusModelCoreModule, GovernanceModule, StaffCoverageReconciliationModule],
-  controllers: [StaffOperationsController],
-  providers: [StaffOperationsService, StaffLeaveModelBridgeService, AccessRolesService],
+  controllers: [StaffOperationsController, StaffLeaveReviewRoutingController],
+  providers: [StaffOperationsService, StaffLeaveModelBridgeService, StaffLeaveWorkProjection, StaffLeaveReviewRoutingService, AccessRolesService],
+  exports: [StaffOperationsService, StaffLeaveWorkProjection],
 })
 export class StaffOperationsModule {}

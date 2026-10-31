@@ -14,11 +14,17 @@ const options: Array<{ id: TimetableExperience; name: string; description: strin
   { id: "timeline", name: "Timeline", description: "A Teams-inspired day and week canvas with positional planning.", badge: "Experimental" },
 ];
 
-export default function ExperimentalSettingsPage() {
+export default function ExperimentalSettingsPage({
+  backTo = "/more",
+  campusLabHref = "/more/development/campus-lab",
+}: {
+  backTo?: string;
+  campusLabHref?: string;
+} = {}) {
   const auth = useOptionalAuth();
   const userId = auth?.user?.id ?? "anonymous";
   const selected = useTimetableExperience(userId);
-  return <OperationsShell portal="principal" active="more" title="Experimental settings" backTo="/principal/more">
+  return <OperationsShell active="more" title="Development settings" backTo={backTo}>
     <div className="experimental-settings">
       <section aria-labelledby="timetable-experience-title">
         <header>
@@ -39,8 +45,8 @@ export default function ExperimentalSettingsPage() {
           <div><h2 id="synthetic-school-day-title">Synthetic school day</h2><p>Cambridge's dummy students, staff and families perform normal app work in this testing environment.</p></div>
         </header>
         {CampusLabControl ? <Suspense fallback={<p className="experimental-settings__control-loading">Checking simulation…</p>}><CampusLabControl /></Suspense> : null}
-        <Link to="/principal/campus"><span><strong>See synthetic activity in Campus view</strong><small>The development actors appear as an explicitly simulated layer over the normal admin feature.</small></span><ChevronRight size={19} /></Link>
-        <p className="experimental-settings__note">Testing only and isolated to Cambridge. Campus View itself is a permanent admin feature and does not depend on this simulation.</p>
+        <Link to={campusLabHref}><span><strong>Open Cambridge Campus Lab</strong><small>Inspect the development actor overlay without changing Live Campus View or its date.</small></span><ChevronRight size={19} /></Link>
+        <p className="experimental-settings__note">Testing only and isolated to Cambridge. Campus Lab exercises the disposable Live fixture; product what-if runs use a separate isolated Simulation environment.</p>
       </section> : null}
     </div>
   </OperationsShell>;

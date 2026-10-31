@@ -1,4 +1,5 @@
 import { randomUUID } from "node:crypto";
+import { ensureFixtureGuardianProfile } from "./fixture-guardian-profile.test-support.js";
 import { Pool, type PoolClient } from "pg";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import {
@@ -69,9 +70,10 @@ describe("SchoolEventService campus_event.updated replay authorization", () => {
         [studentUser, person, school, `AUTH-${suffix.slice(0, 8)}`],
       )).rows[0]!.id;
       const parent = (await client.query<{ id: string }>(
-        "INSERT INTO parents(user_id,phone) VALUES($1,'9000000000') RETURNING id",
+        "INSERT INTO parents(user_id) VALUES($1) RETURNING id",
         [guardianUser],
       )).rows[0]!.id;
+      await ensureFixtureGuardianProfile(client,{schoolId:school,guardianId:parent,firstName:"Guardian",lastName:"User",contactPhone:"9000000000"});
       const relationship = (await client.query<{ id: string }>(`
         INSERT INTO guardian_relationships(school_id,guardian_id,student_id,relationship,is_primary)
         VALUES($1,$2,$3,'mother',true) RETURNING id

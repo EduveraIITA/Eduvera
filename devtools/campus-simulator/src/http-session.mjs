@@ -119,4 +119,14 @@ export class ApiSession {
     this.user = result.user;
     return result;
   }
+
+  async enterCampusLabSimulation(virtualNow) {
+    const result = await this.request("/api/v1/auth/campus-lab-simulation/", {
+      method: "POST", body: virtualNow ? { virtual_now: virtualNow } : {},
+    });
+    if (result?.execution_environment?.mode !== "simulation") {
+      throw new Error("The application did not bind this actor to the isolated Simulation environment.");
+    }
+    return result.execution_environment;
+  }
 }

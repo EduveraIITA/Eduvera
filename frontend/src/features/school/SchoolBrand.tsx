@@ -1,6 +1,5 @@
 import "./school-brand.css";
-
-const appMark = "/assets/thatcampus-logo-light.png";
+import { BrandLogo } from "../../components/BrandLogo";
 
 export function SchoolBrand({
   name,
@@ -19,7 +18,7 @@ export function SchoolBrand({
       <span className={`school-brand__marks school-brand__marks--${showAppMark ? marksLayout : "school-only"}`} aria-hidden="true">
         <span className="school-brand__crest">{crest}</span>
         {showAppMark ? <span className="school-brand__eduvera">
-          <img src={appMark} alt="" />
+          <BrandLogo alt=""/>
         </span> : null}
       </span>
       <span className="school-brand__name">{name}</span>

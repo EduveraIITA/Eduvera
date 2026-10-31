@@ -12,6 +12,11 @@ import {
 } from "../src/day-plans/schedule.js";
 import type { AuthUser, AuthenticatedRequest } from "../src/common/request.js";
 import { requireIsolatedTestDatabaseUrl } from "./test-database.js";
+import { sql } from 'kysely';
+import { academicParticipationTestServices,rollbackAcademicFixture } from './academic-participation.test-support.js';
+import { linkFixtureStaffIdentity } from './fixture-human-identity.test-support.js';
+import { executionEnvironmentStorage } from '../src/campus-model-core/execution-time.runtime.js';
+import { createLiveExecutionEnvironment } from '../src/campus-model-core/execution-environment.runtime.js';
 import {
   createStaffCoverageReconciliationTestDouble,
   type StaffCoverageReconciliationTestDouble,
@@ -770,54 +775,25 @@ describe("Daily school plans", () => {
     const p = await start();
     await save(p.id, { subject_id: subjectId });
     await publish(p.id);
-    // Place the published test fixture in recorded history without depending on the wall-clock hour.
-    const historical = (
-      await pool.query("SELECT ($1::date-1)::text AS date", [today])
-    ).rows[0].date;
-    await pool.query("UPDATE day_plans SET date=$2 WHERE id=$1", [
-      p.id,
-      historical,
-    ]);
-    await pool.query(
-      "INSERT INTO attendance_records(student_id,class_section_id,date,status) VALUES($1,$2,$3,'present')",
-      [studentId, classA, historical],
-    );
-    try {
-      await school.refreshSubjectAttendance(db, [studentId]);
-      expect(
-        (
-          await pool.query(
-            "SELECT classes_held,classes_attended FROM subject_attendance WHERE student_id=$1 AND subject_id=$2",
-            [studentId, subjectId],
-          )
-        ).rows,
-      ).toEqual([{ classes_held: 1, classes_attended: 1 }]);
-      await pool.query(
-        "UPDATE day_plan_periods SET cancelled=true WHERE plan_id=$1",
-        [p.id],
-      );
-      await school.refreshSubjectAttendance(db, [studentId]);
-      expect(
-        (
-          await pool.query(
-            "SELECT classes_held FROM subject_attendance WHERE student_id=$1 AND subject_id=$2",
-            [studentId, subjectId],
-          )
-        ).rows,
-      ).toHaveLength(0);
-      expect(
-        (
-          await pool.query(
-            "SELECT status FROM attendance_records WHERE student_id=$1 AND date=$2",
-            [studentId, historical],
-          )
-        ).rows[0].status,
-      ).toBe("present");
-    } finally {
-      await pool.query(
-        "DELETE FROM attendance_records WHERE student_id=$1 AND date=$2",
-        [studentId, historical],
-      );
-    }
+    const now=new Date(`${p.date}T17:00:00Z`);
+    // Advance this fixture's domain clock; do not backdate a published plan or
+    // insert a fact into the compatibility view. Its entire ledger rolls back.
+    await executionEnvironmentStorage.run(createLiveExecutionEnvironment({institution_id:schoolId,clock:{now:()=>now,nowIso:()=>now.toISOString()}}),
+      ()=>rollbackAcademicFixture(db,async(transactional,tx)=>{
+        await linkFixtureStaffIdentity(transactional,{school_id:schoolId,user_id:admin.authUser.id,owner_user_id:admin.authUser.id});
+        const shared=academicParticipationTestServices(transactional),actor={...admin.authUser,active_school_id:schoolId};
+        const screen=await shared.school.teacherAttendanceScreen(actor,classA,p.date);
+        await shared.school.saveStudentAttendance(actor,{class_section_id:classA,date:p.date,student_id:studentId,status:'present',
+          expected_revision:screen.register.revision},{...admin,authUser:actor,headers:{...admin.headers,'idempotency-key':randomUUID()}});
+        expect((await sql`SELECT classes_held,classes_attended FROM subject_attendance
+          WHERE student_id=${studentId}::uuid AND subject_id=${subjectId}::uuid`.execute(tx)).rows)
+          .toEqual([{classes_held:1,classes_attended:1}]);
+        await sql`UPDATE day_plan_periods SET cancelled=true WHERE plan_id=${p.id}::uuid`.execute(tx);
+        await shared.school.refreshSubjectAttendance(tx,[studentId]);
+        expect((await sql`SELECT classes_held FROM subject_attendance WHERE student_id=${studentId}::uuid
+          AND subject_id=${subjectId}::uuid`.execute(tx)).rows).toHaveLength(0);
+        expect((await sql<{status:string}>`SELECT status FROM attendance_records WHERE student_id=${studentId}::uuid
+          AND date=${p.date}::date`.execute(tx)).rows[0]!.status).toBe('present');
+      }));
   });
 });

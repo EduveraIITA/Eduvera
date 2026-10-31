@@ -1,8 +1,10 @@
 import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, beforeAll, describe, expect, it, vi } from "vitest";
+import { readFileSync } from "node:fs";
+import { join } from "node:path";
 import { MemoryRouter } from "react-router-dom";
-import { findDraftPeriod, PlannerLessonSheet, PlannerPublishSheet } from "./PlannerLessonSheet";
+import { findDraftPeriod, PlannerDialog, PlannerLessonSheet, PlannerPublishSheet } from "./PlannerLessonSheet";
 import { getScheduleSettings, scheduleCommand, type ScheduleScreen, type ScheduleVersion } from "../schedule-planning/api";
 import type { PlannerPeriod } from "./PrincipalPlannerRoute";
 
@@ -17,6 +19,34 @@ const draft: ScheduleVersion = { id: "draft-1", class_section_id: "class-1", ter
 const data: ScheduleScreen = { school_id: "school-1", school_date: "2026-10-14", selected_term_id: "term-1", terms: [{ id: "term-1", academic_year: "2026-27", name: "Term 1", starts_on: "2026-04-01", ends_on: "2027-03-31", is_active: true }], classes: [{ id: "class-1", name: "Class 6A", grade: "6", section: "A", room_number: "201" }], subjects: [{ id: "math", name: "Mathematics", code: "MATH", short_name: "Math", color: "blue" }], teachers: [{ id: "teacher-1", name: "Meera Kapoor" }], versions: [draft], slots: [], conflicts: [], coverage: [], calendar_exceptions: [] };
 
 describe("calendar lesson workflow", () => {
+  it("owns the shared dialog styles without requiring a visit to the lazy timetable route", () => {
+    const owner = readFileSync(join(process.cwd(), "src/features/planner/PlannerLessonSheet.tsx"), "utf8");
+    const styles = readFileSync(join(process.cwd(), "src/features/planner/principal-planner.css"), "utf8");
+    expect(owner).toMatch(/^import ["']\.\/principal-planner\.css["'];?$/m);
+    expect(styles).toMatch(/\.planner-dialog\s*\{[^}]*position:\s*fixed/);
+    expect(styles).toMatch(/\.planner-dialog::backdrop\s*\{/);
+    render(<PlannerDialog title="Attendance history" onClose={vi.fn()}><p>Retained register decisions</p></PlannerDialog>);
+    const dialog = screen.getByRole("dialog", { name: "Attendance history" });
+    expect(dialog).toHaveClass("planner-dialog");
+    expect(dialog.querySelector(".planner-dialog__surface")).toContainElement(screen.getByText("Retained register decisions"));
+    expect(screen.getByRole("button", { name: "Close" })).toBeVisible();
+  });
+  it("keeps a one-day change inside the canonical workspace when route contracts are provided", () => {
+    render(<MemoryRouter><PlannerLessonSheet
+      data={data}
+      period={period}
+      date="2026-10-21"
+      dayPlanPath="/areas/timetable/planning/day"
+      plannerPath="/areas/timetable/planning"
+      onClose={vi.fn()}
+      onSaved={vi.fn()}
+    /></MemoryRouter>);
+
+    const link = screen.getByRole("link", { name: "Change only this date" });
+    expect(link).toHaveAttribute("href", expect.stringContaining("/areas/timetable/planning/day?"));
+    expect(link).toHaveAttribute("href", expect.stringContaining("return_to=%2Fareas%2Ftimetable%2Fplanning"));
+  });
+
   it("opens details without writing, then saves an edit only to the selected draft", async () => {
     const saved = vi.fn(), close = vi.fn();
     vi.mocked(scheduleCommand).mockResolvedValue({ revision: 5 });

@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { BadgeCheck, CheckCircle2, Copy, RefreshCw } from "lucide-react";
 import { Link } from "react-router-dom";
-import { invoiceStatusLabel, rupees, type Invoice, type Payment } from "./api";
+import { invoiceCollectionDue, invoiceStatusLabel, rupees, type Invoice, type Payment } from "./api";
 import { feeDate, PrintFeeButton } from "./FamilyFeeRecords";
 export function FamilyInvoiceStatement({ invoice, payments, year, receiptHref, onSync, syncing }: { invoice: Invoice; payments: Payment[]; year?: string; receiptHref: (id: string) => string; onSync: () => Promise<unknown>; syncing: boolean }) {
   const [message, setMessage] = useState("");
@@ -10,7 +10,7 @@ export function FamilyInvoiceStatement({ invoice, payments, year, receiptHref, o
   const settled = invoice.balance_paise === 0 && invoice.refund_due_paise === 0;
   return <div className="fee-statement">
     <div className="family-fee-detail-heading"><div><p className="fee-eyebrow">{year ? `Academic year ${year}` : "Fee statement"}</p><h2>{invoice.description || "School fee"}</h2></div><PrintFeeButton label="Print invoice" /></div>
-    <div className="fee-statement-meta"><span>{invoice.reference}</span><button type="button" aria-label="Copy invoice reference" onClick={() => void copy()}><Copy size={15}/></button><span>Due {feeDate(invoice.due_on)}</span></div>{message ? <p role="status" className="office-hint">{message}</p> : null}
+    <div className="fee-statement-meta"><span>{invoice.reference}</span><button type="button" aria-label="Copy invoice reference" onClick={() => void copy()}><Copy size={15}/></button><span>{invoice.payment_plan_state&&invoice.payment_plan_state!=='none'?'Original due':'Due'} {feeDate(invoice.original_due_on??invoice.due_on)}</span>{invoice.payment_plan_state==='active'&&invoiceCollectionDue(invoice)?<span>Next agreed date {feeDate(invoiceCollectionDue(invoice)!)}</span>:invoice.payment_plan_state==='needs_review'?<span>Agreed dates need review</span>:null}</div>{message ? <p role="status" className="office-hint">{message}</p> : null}
     <div className="fee-breakdown-label"><span>Fee breakdown</span><span>Amount (INR)</span></div>
     <dl className="fee-statement-lines"><div><dt>Original charge<small>Issued academic fee</small></dt><dd>{rupees(invoice.amount_paise)}</dd></div><div><dt>Credits & waivers<small>Adjustments applied by school</small></dt><dd>{credits > 0 ? "−" : ""}{rupees(credits)}</dd></div></dl>
     {payments.map(payment => <Link className="fee-statement-payment" key={payment.id} to={receiptHref(payment.id)}><CheckCircle2 size={18}/><span>Paid via {payment.method.replaceAll("_", " ")}<small>Receipt · {payment.reference}</small></span><strong>−{rupees(payment.amount_paise)}</strong></Link>)}

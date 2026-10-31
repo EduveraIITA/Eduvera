@@ -29,7 +29,7 @@
 .attendance-ranking__close:focus-visible { outline: 3px solid rgba(29,78,216,.28); outline-offset: 2px; }
 .attendance-ranking__list { display: grid; gap: 7px; min-height: 0; overflow-y: auto; overscroll-behavior: contain; padding: 4px 22px 18px; scrollbar-gutter: stable; }
 .attendance-ranking__row { display: flex; align-items: center; gap: 10px; min-height: 64px; padding: 9px 11px; border: 1px solid var(--thatcampus-border); border-radius: var(--thatcampus-radius-card); background: var(--thatcampus-canvas); }
-.attendance-ranking__row--current { border-color: #86a7ff; background: var(--thatcampus-brand-soft); box-shadow: inset 3px 0 var(--thatcampus-brand); }
+.attendance-ranking__row--current { border-color: var(--appearance-border, #86a7ff); background: var(--thatcampus-brand-soft); box-shadow: inset 3px 0 var(--thatcampus-brand); }
 .attendance-ranking__position { flex: 0 0 28px; color: var(--thatcampus-brand); font-size: 11px; font-weight: 800; }
 .attendance-ranking__portrait { display: grid; flex: 0 0 37px; width: 37px; height: 37px; overflow: hidden; place-items: center; border-radius: 50%; background: var(--thatcampus-brand-soft); color: var(--thatcampus-brand); font-size: 11px; font-weight: 800; }
 .attendance-ranking__portrait img { width: 100%; height: 100%; object-fit: cover; }

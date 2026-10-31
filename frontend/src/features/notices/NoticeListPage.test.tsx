@@ -34,6 +34,18 @@ function show(portal: "parent" | "principal", path: string) {
 afterEach(() => { cleanup(); vi.clearAllMocks(); });
 
 describe("notice attention drill-down", () => {
+  it("uses finite update pages and retains the page in the exact detail destination", async () => {
+    vi.mocked(getNotices).mockResolvedValue({ portal: "principal", school_id: "school-1", student_id: null, attention: { total: 0, unread: 0, action_required: 0, exceptions: 0 }, results: Array.from({ length: 21 }, (_, index) => notice({ id: `notice-${index}`, title: `Update ${index}`, attention_reasons: [], status: "draft", can_manage: true })) });
+    show("principal", "/principal/notices");
+    expect(await screen.findByRole("link", { name: "Update 0. Draft" })).toBeVisible();
+    expect(screen.queryByRole("link", { name: "Update 20. Draft" })).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Next", exact: true }));
+    expect(screen.getByRole("link", { name: "Update 20. Draft" })).toHaveAttribute("href", "/principal/notices/notice-20?updates_page=2");
+    expect(screen.getByText("Page 2 of 2 · 21 updates")).toBeVisible();
+    fireEvent.click(screen.getByRole("button", { name: "Drafts" }));
+    expect(screen.getByRole("link", { name: "Update 0. Draft" })).toBeVisible();
+    expect(screen.getByText("Page 1 of 2 · 21 updates")).toBeVisible();
+  });
   it("marks the exact active-child notice as new and keeps its required action distinct", async () => {
     vi.mocked(getNotices).mockResolvedValue({ portal: "parent", school_id: "school-1", student_id: "student-1",
       attention: { total: 1, unread: 1, action_required: 1, exceptions: 0 }, results: [notice()] });

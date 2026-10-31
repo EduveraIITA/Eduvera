@@ -10,6 +10,24 @@ function Location(){return <output data-testid="attendance-location">{useLocatio
 function mount(data:StudentAttendanceData=demoStudentAttendanceData,search='',onApplyMedicalExcuse?:()=>void){return render(<TestQueryProvider><MemoryRouter initialEntries={['/student/attendance'+search]}><Location/><StudentAttendancePage data={data} onApplyMedicalExcuse={onApplyMedicalExcuse}/></MemoryRouter></TestQueryProvider>);}
 
 describe("StudentAttendancePage", () => {
+  it("embeds the complete attendance record without restoring the student portal shell", async () => {
+    const apply = vi.fn();
+    const { container } = render(
+      <TestQueryProvider><MemoryRouter>
+        <StudentAttendancePage
+          data={demoStudentAttendanceData}
+          embedded
+          onApplyMedicalExcuse={apply}
+        />
+      </MemoryRouter></TestQueryProvider>,
+    );
+
+    expect(container.querySelector(".student-app")).not.toBeInTheDocument();
+    expect(screen.getByRole("region", { name: /Overall attendance/ })).toBeVisible();
+    await userEvent.setup().click(screen.getByRole("button", { name: "Apply for leave" }));
+    expect(apply).toHaveBeenCalledOnce();
+  });
+
   it('shows compact subject rows and reveals scheduling details only when opened',async()=>{
     const {container}=mount();
     expect(container.querySelector('.subject-progress')).toBeNull();

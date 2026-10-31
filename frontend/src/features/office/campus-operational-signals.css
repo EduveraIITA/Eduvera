@@ -29,8 +29,8 @@
   margin: 0;
   padding: 10px 14px 12px;
   border-top: 1px solid var(--thatcampus-line);
-  color: var(--thatcampus-text-secondary);
-  font-size: 11px;
+  color: var(--thatcampus-ink-secondary);
+  font-size: 14px;
   line-height: 1.45;
 }
 
@@ -44,3 +44,7 @@
     width: fit-content;
   }
 }
+
+.campus-replica__activity-state.is-signal-important { color: var(--thatcampus-danger); background: var(--thatcampus-danger-soft); }
+.campus-replica__signal-note { font-size: 14px; line-height: 1.6; }
+.campus-replica__signals a.campus-replica__activity-state { min-height: 44px; padding-inline: 12px; }
