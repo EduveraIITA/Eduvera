@@ -19,7 +19,7 @@ function runtime(job = false) {
     serviceAccountName: `dt-${job ? 'migrator' : 'runtime'}@${TARGET.project}.iam.gserviceaccount.com`,
     ...(job ? { maxRetries: 0 } : {}),
     containers: [{ image: `${TARGET.image}@${digest}`, ...(job ? { command: ['node'], args: ['dist/database/migrate.js'] } : {}), env: job ? [{ name: 'DEPLOYMENT_ENVIRONMENT', value: 'production' }, { name: 'NODE_ENV', value: 'production' }, secret('MIGRATION_DATABASE_URL', 'thatcampus-dt-migration-database-url')] : [
-      ...Object.entries({ NODE_ENV: 'production', DEPLOYMENT_ENVIRONMENT: 'production', PUBLIC_URL: TARGET.origin, ALLOWED_ORIGINS: TARGET.origin, SESSION_COOKIE_NAME: TARGET.cookie, COOKIE_SECURE: 'true', UPLOAD_DIR: TARGET.filesMount, DATABASE_POOL_MAX: '2', SIMULATION_MAX_RUNNING_RUNS_PER_INSTITUTION: '1', SIMULATION_MAX_LEASES_PER_INSTITUTION: '1', SIMULATION_WORKER_MAX_RUNS_PER_POLL: '1' }).map(([name, value]) => ({ name, value })),
+      ...Object.entries({ NODE_ENV: 'production', DEPLOYMENT_ENVIRONMENT: 'production', PUBLIC_URL: TARGET.origin, ALLOWED_ORIGINS: TARGET.origin, SESSION_COOKIE_NAME: TARGET.cookie, COOKIE_SECURE: 'true', UPLOAD_DIR: TARGET.filesMount, DATABASE_POOL_MAX: '4', SIMULATION_MAX_RUNNING_RUNS_PER_INSTITUTION: '1', SIMULATION_MAX_LEASES_PER_INSTITUTION: '1', SIMULATION_WORKER_MAX_RUNS_PER_POLL: '1' }).map(([name, value]) => ({ name, value })),
       secret('DATABASE_URL', 'thatcampus-dt-database-url'), secret('EVENT_DATABASE_URL', 'thatcampus-dt-database-url'), secret('CAMPUS_SIMULATION_DATABASE_URL', 'thatcampus-dt-simulation-database-url'), secret('COOKIE_SECRET', 'thatcampus-dt-cookie-secret'),
       secret('METRICS_TOKEN', 'thatcampus-dt-metrics-token'), secret('RESTRICTED_CASE_ENCRYPTION_KEY', 'thatcampus-dt-restricted-case-key'),
     ], ...(job ? {} : { volumeMounts: [{ name: 'private-files', mountPath: TARGET.filesMount }] }) }],
@@ -41,7 +41,7 @@ function publicFetch(override = () => undefined) {
     if (path.endsWith('.js')) return new Response('globalThis.ThatCampusApp=true;'.repeat(20), { headers: { 'Content-Type': 'text/javascript' } });
     if (path === wasm.path) return new Response(wasmBytes, { headers: { 'Content-Type': 'application/wasm' } });
     if (path === '/api/v1/workspace') return Response.json({ message: 'Sign in required' }, { status: 401 });
-    if (path === '/api/v1/auth/native/login/') return Response.json({ message: 'Identifier and password are required' }, { status: 400 });
+    if (path === '/api/v1/auth/native/login/') return Response.json({ error: { status: 400, code: 'validation_error', detail: 'Check the submitted fields and try again.', fields: { identifier: ['Required'], password: ['Required'] } } }, { status: 400 });
     throw new Error(`Unexpected smoke request ${path}`);
   };
   return { fetcher, calls };
@@ -163,6 +163,7 @@ test('candidate checks validate release, readiness, actual JS/WASM bytes, anonym
 
 test('stale release, missing assets, HTML fallbacks, untrusted scripts, bad WASM and native cookies prevent migration/promotion', async () => {
   const cases = [
+    path => path === '/api/v1/auth/native/login/' ? Response.json({ message: 'An unrelated 400 error' }, { status: 400 }) : undefined,
     path => path === '/releasez' ? Response.json({ release_sha: 'wrong', environment: 'production' }) : undefined,
     path => path === '/readyz' ? Response.json({ status: 'starting' }) : undefined,
     path => path.endsWith('.js') ? new Response('<html>fallback</html>', { headers: { 'Content-Type': 'text/html' } }) : undefined,

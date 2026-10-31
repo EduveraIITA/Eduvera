@@ -633,6 +633,24 @@ export class CampusModelCoreService implements CampusModelCorePort, ObservationI
       ORDER BY person_id,effective_from DESC,endpoint_id`.execute(transaction)).rows;
   }
 
+  async listCurrentAccountEndpoints(transaction: Transaction<Database>, rawInput: {
+    school_id: string; at: string; person_ids?: string[];
+  }) {
+    const input = z.object({ school_id: uuid, at: z.string().datetime({ offset: true }), person_ids: z.array(uuid).max(1_000).optional() }).strict().parse(rawInput);
+    const environment = this.executionScope?.current() ?? executionEnvironmentStorage.getStore();
+    const namespace = executionNamespaceForSchool(input.school_id, environment);
+    const executor = (await sql<{ namespace: string | null }>`SELECT current_setting('thatcampus.namespace_id',true) AS namespace`.execute(transaction)).rows[0];
+    if (environment?.kind === 'simulation' ? executor?.namespace !== namespace
+      : Boolean(executor?.namespace && executor.namespace !== namespace)) {
+      throw new ForbiddenException('Current account endpoints require the selected execution data plane.');
+    }
+    if (input.person_ids?.length === 0) return [];
+    const selector = input.person_ids === undefined ? sql`true` : sql`person_id=ANY(${input.person_ids}::uuid[])`;
+    return (await sql<{ person_id: string; user_id: string }>`SELECT person_id,user_id
+      FROM campus_model_current_account_endpoints(${input.school_id}::uuid,NULL,${input.at}::timestamptz)
+      WHERE ${selector} ORDER BY endpoint_id`.execute(transaction)).rows;
+  }
+
   async listPersonAccountStates(transaction: Transaction<Database>, rawInput: {
     school_id: string; person_ids: string[]; at: string; viewer_user_id?: string;
   }) {

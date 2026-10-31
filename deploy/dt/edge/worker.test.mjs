@@ -33,7 +33,7 @@ test('native bearer and browser cookie/Origin remain separate and forwarded with
       assert.equal(request.headers.has('authorization'), 'Authorization' in headers);
       assert.equal(request.headers.has('cookie'), 'Cookie' in headers);
       assert.equal(request.redirect, 'manual');
-      assert.equal(options.cf.cacheTtl, 0);
+      assert.equal(options.cf.cacheTtlByStatus['100-599'], -1);
       return new Response('ok', { headers: { 'Set-Cookie': 'thatcampus_dt_session=new; Secure; HttpOnly', 'Cache-Control': 'private, no-store' } });
     });
     assert.equal(response.headers.get('Cache-Control'), 'private, no-store');

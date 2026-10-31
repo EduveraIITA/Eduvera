@@ -245,11 +245,16 @@ export class VisitArrangementsService {
       WHERE visit.school_id=${visit.school_id}::uuid AND visit.id=${visit.id}::uuid`.execute(tx);
     await tx.insertInto('audit_events').values({ actor_id: user.id, school_id: visit.school_id, action: `gate.visit_arrangement.${action}`, target_type: 'gate_visit_arrangement', target_id: visit.id, request_id: command.command_id, ip_hash: '', metadata: { revision: visit.revision, actor_person_id: actor.person_id } }).execute();
     await this.gateway.completeDomainCommand(tx, { school_id: visit.school_id, command_id: command.command_id, terminal_state: 'accepted', code: 'visit_arrangement_accepted', explanation: 'This exact visit action was saved. Its meeting place does not reserve a room; confirmation does not record arrival, attendance or completed work.', resulting_revision: visit.revision, domain_event_id: outbox.id, metadata: { id: visit.id, revision: visit.revision, action }, completed_at: visit.updated_at.toISOString() });
-    const audience = action === 'changed' || action === 'cancelled' ? (await sql<{ user_id: string }>`
+    const refreshesShare = action === 'changed' || action === 'cancelled';
+    const share = refreshesShare ? await tx.selectFrom('gate_visit_shares').select(['organiser_person_id', 'owner_person_id'])
+      .where('school_id', '=', visit.school_id).where('visit_id', '=', visit.id).orderBy('revision', 'desc').limit(1).executeTakeFirst() : undefined;
+    const endpoints = share ? await this.identities.listCurrentAccountEndpoints(tx, { school_id: visit.school_id,
+      person_ids: [share.organiser_person_id, share.owner_person_id], at: visit.updated_at.toISOString() }) : [];
+    const audience = refreshesShare ? (await sql<{ user_id: string }>`
       SELECT DISTINCT candidate.user_id FROM(
         SELECT ${user.id}::uuid AS user_id UNION ALL
         SELECT endpoint.user_id FROM gate_visit_shares share
-        JOIN campus_model_current_account_endpoints(${visit.school_id}::uuid,NULL,${visit.updated_at}::timestamptz) endpoint
+        JOIN jsonb_to_recordset(${JSON.stringify(endpoints)}::jsonb) AS endpoint(person_id uuid,user_id uuid)
           ON endpoint.person_id IN(share.organiser_person_id,share.owner_person_id)
         WHERE share.school_id=${visit.school_id}::uuid AND share.visit_id=${visit.id}::uuid
           AND NOT EXISTS(SELECT 1 FROM gate_visit_shares later WHERE later.school_id=share.school_id AND later.visit_id=share.visit_id AND later.revision>share.revision)

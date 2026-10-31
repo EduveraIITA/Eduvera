@@ -3,6 +3,14 @@ name: Digital Twin deployment
 on:
   push:
     branches: [codex/campus-digital-twin]
+    paths:
+      - "backend/**"
+      - "mobile/**"
+      - "packages/contracts/**"
+      - "frontend/src/**"
+      - "deploy/dt/**"
+      - "!deploy/dt/**/*.md"
+      - ".github/workflows/digital-twin-deploy.yml"
   workflow_dispatch:
 
 permissions:

@@ -147,8 +147,8 @@ export class VisitSharingService {
       status: share.status, previous_share_id: share.previous_share_id };
   }
   private async audience(tx: Tx, share: Share) {
-    const rows = (await sql<{ user_id: string }>`SELECT endpoint.user_id FROM campus_model_current_account_endpoints(${share.school_id}::uuid,NULL,${executionNow()}::timestamptz) endpoint
-      WHERE endpoint.person_id IN(${share.organiser_person_id}::uuid,${share.owner_person_id}::uuid)`.execute(tx)).rows;
+    const rows = await this.identities.listCurrentAccountEndpoints(tx, { school_id: share.school_id,
+      person_ids: [share.organiser_person_id, share.owner_person_id], at: executionNow().toISOString() });
     return rows.map(row => row.user_id);
   }
   async share(user: AuthUser, school: string, id: string, raw: unknown) {
@@ -331,6 +331,7 @@ export class VisitSharingService {
   async work(user: AuthUser, school: string): Promise<{ needs_me: VisitQuestionWorkRecord[]; waiting: VisitQuestionWorkRecord[] }> {
     try { return await this.db.transaction().execute(async tx => {
       const actor = await this.actor(tx, user, school), manager = await this.manages(tx, user.id, school), at = executionNow();
+      const endpoints = await this.identities.listCurrentAccountEndpoints(tx, { school_id: school, at: at.toISOString() });
       const questions = (await sql<{ id: string; visit_id: string; share_root_id: string; revision: number; created_at: Date; coordination_receipt: unknown;
         owner_person_id: string; organiser_person_id: string; owner_label: string; owner_user_id: string | null }>`
         SELECT question.id,question.visit_id,question.share_root_id,question.revision,question.created_at,question.coordination_receipt,
@@ -338,7 +339,7 @@ export class VisitSharingService {
         FROM gate_visit_questions question
         JOIN LATERAL(SELECT * FROM gate_visit_shares candidate WHERE candidate.school_id=question.school_id AND candidate.visit_id=question.visit_id ORDER BY candidate.revision DESC LIMIT 1) share ON share.root_id=question.share_root_id
         JOIN school_people owner ON owner.school_id=share.school_id AND owner.id=share.owner_person_id
-        LEFT JOIN LATERAL(SELECT candidate.user_id FROM campus_model_current_account_endpoints(${school}::uuid,NULL,${at}::timestamptz) candidate
+        LEFT JOIN LATERAL(SELECT candidate.user_id FROM jsonb_to_recordset(${JSON.stringify(endpoints)}::jsonb) AS candidate(person_id uuid,user_id uuid)
           WHERE candidate.person_id=share.owner_person_id AND gate_visit_actor_can_manage(${school}::uuid,candidate.user_id)) endpoint ON true
         WHERE question.school_id=${school}::uuid AND question.state='waiting_for_review'
           AND gate_visit_share_current(share.school_id,share.visit_id,share.organiser_person_id,${at}::timestamptz)

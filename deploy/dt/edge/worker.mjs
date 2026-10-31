@@ -21,7 +21,7 @@ export async function proxyDigitalTwin(request, env, send = fetch) {
       method: request.method, headers,
       body: ['GET', 'HEAD'].includes(request.method) ? undefined : request.body,
       redirect: 'manual', ...(request.body ? { duplex: 'half' } : {}),
-    }), { cf: { cacheEverything: false, cacheTtl: 0 } });
+    }), { cf: { cacheEverything: false, cacheTtlByStatus: { '100-599': -1 } } });
     const result = new Response(response.body, response);
     // This gateway also serves authenticated APIs and readiness failures.
     // Never allow a Worker/CDN/browser heuristic cache to retain either.

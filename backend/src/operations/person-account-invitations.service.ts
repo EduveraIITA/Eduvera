@@ -304,7 +304,7 @@ export class PersonAccountInvitationsService {
     if (!user.is_active || user.active_school_id !== schoolId || !personId) throw new ForbiddenException('Select this campus and its current source coordinator before sharing access.');
     if (context.kind === 'visit_arrangement') return authorizeVisitInvitation(tx, { school_id: schoolId, visit_id: context.source_id,
       share_id: context.access_id, person_id: personId, actor_user_id: user.id });
-    return authorizeExternalInvitation(tx, { school_id: schoolId, repair_id: context.source_id,
+    return authorizeExternalInvitation(tx, this.identity, { school_id: schoolId, repair_id: context.source_id,
       assignment_id: context.access_id, person_id: personId, actor_user_id: user.id });
   }
 

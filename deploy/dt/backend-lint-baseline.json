@@ -2,7 +2,7 @@
   "schemaVersion": 1,
   "errorCount": 66,
   "purpose": "Exactly 66 pre-existing backend rule errors reviewed for the isolated app2 deployment; no warning or fatal/parser error is accepted.",
-  "ordinaryLintStatus": "npm --prefix backend run lint reports 66 errors and 0 warnings; this baseline is not a claim that ordinary whole-backend lint passes.",
+  "ordinaryLintStatus": "At initial capture, npm --prefix backend run lint reported 66 errors and 0 warnings. Later fixes may remove captured debt; the CI report identifies the remaining count. This baseline is not a claim that ordinary whole-backend lint passes.",
   "policy": "CI runs the complete unchanged lint scope. An existing error must match path, file bytes SHA256, rule, line, column and message. New errors, every warning and changed files with remaining debt fail. Resolved or removed debt may disappear. Baseline extension requires review; the gate never updates this file.",
   "entries": [
     {

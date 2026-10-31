@@ -23,7 +23,7 @@ function fixture(options: { existing?: boolean; insertConflict?: boolean; accoun
   const queries: CompiledQuery[] = [], order: string[] = [];
   class Driver extends DummyDriver {
     override acquireConnection(): Promise<DatabaseConnection> {
-      return Promise.resolve({ executeQuery: async <R>(query: CompiledQuery): Promise<QueryResult<R>> => {
+      return Promise.resolve({ executeQuery: <R>(query: CompiledQuery): Promise<QueryResult<R>> => {
         queries.push(query); let rows: unknown[] = [];
         if (query.sql.includes('pg_advisory_xact_lock')) { /* transaction-scoped serialization */ }
         else if (query.sql.includes('SELECT id FROM users WHERE lower(email)')) rows = options.existing ? [{ id: userId }] : [];
@@ -34,16 +34,16 @@ function fixture(options: { existing?: boolean; insertConflict?: boolean; accoun
         else if (query.sql.includes('INSERT INTO school_memberships(')) order.push('membership');
         else if (query.sql.includes('UPDATE school_people SET account_user_id=')) { order.push('binding'); rows = options.bound === false ? [] : [{ id: person }]; }
         else throw new Error(`Unexpected identity query: ${query.sql}`);
-        return { rows: rows as R[] };
+        return Promise.resolve({ rows: rows as R[] });
       }, streamQuery: () => { throw new Error('No streaming in an isolated identity fixture'); } });
     }
   }
   const db = new Kysely<Database>({ dialect: { createAdapter: () => new PostgresAdapter(), createDriver: () => new Driver(),
     createIntrospector: value => new PostgresIntrospector(value), createQueryCompiler: () => new PostgresQueryCompiler() } });
-  const resolveAccountEndpoint = vi.fn(async () => options.current ?? { acting: false as const, school_id: school, user_id: userId, person_id: null, agent_id: null, reason: 'account_not_linked' as const });
-  const linkAccountEndpoint = vi.fn(async () => { order.push('endpoint'); return { ...(options.linked ?? actor), replayed: false }; });
+  const resolveAccountEndpoint = vi.fn(() => Promise.resolve(options.current ?? { acting: false as const, school_id: school, user_id: userId, person_id: null, agent_id: null, reason: 'account_not_linked' as const }));
+  const linkAccountEndpoint = vi.fn(() => { order.push('endpoint'); return Promise.resolve({ ...(options.linked ?? actor), replayed: false }); });
   const identities = { resolveAccountEndpoint, linkAccountEndpoint } as unknown as HumanAgentIdentityPort;
-  const service = new VisitOnboardingIdentity(identities), beforeBinding = vi.fn(async (_person: string) => { order.push('source'); });
+  const service = new VisitOnboardingIdentity(identities), beforeBinding = vi.fn(() => { order.push('source'); return Promise.resolve(); });
   const join = (overrides: Partial<Parameters<typeof service.joinIdentity>[1]> = {}) => db.transaction().execute(tx => service.joinIdentity(tx,
     { user: account, schoolId: school, sourceId: source, issuerId: issuer, beforeBinding, ...overrides }));
   const register = (overrides: Partial<typeof registration> = {}) => db.transaction().execute(tx => service.registerVerifiedAccount(tx, { ...registration, ...overrides }));
@@ -106,27 +106,31 @@ describe('Verified Visit onboarding identity without implicit account authentica
       expect(history.parameters).not.toContain(account.email);
     } finally { await f.db.destroy(); }
   });
-  it.each(['endpoint_inactive', 'membership_inactive', 'account_inactive', 'profile_unlinked', 'agent_not_registered'] as const)
-    ('refuses retained %s identity instead of restoring or creating another person', async reason => {
+  it.each(['endpoint_inactive', 'membership_inactive', 'account_inactive', 'profile_unlinked', 'agent_not_registered'] as const)('refuses retained %s identity instead of restoring or creating another person', async reason => {
       const f = fixture({ current: { acting: false, school_id: school, user_id: userId, person_id: person, agent_id: actor.agent_id, reason } });
-      try { await expect(f.join()).rejects.toThrow(/retained campus identity/); expect(writes(f.queries)).toEqual([]); expect(f.beforeBinding).not.toHaveBeenCalled(); }
+      try {
+        await expect(f.join()).rejects.toThrow(/retained campus identity/); expect(writes(f.queries)).toEqual([]); expect(f.beforeBinding).not.toHaveBeenCalled();
+        expect(f.queries.some(query => query.sql.includes(') AS retained'))).toBe(false);
+        expect(f.linkAccountEndpoint).not.toHaveBeenCalled();
+      }
       finally { await f.db.destroy(); }
     });
-  it('refuses any retained membership/profile/endpoint history even if resolution says unlinked', async () => {
+  it('refuses retained native history after Core excludes endpoint history', async () => {
     const f = fixture({ retained: true }); try {
       await expect(f.join()).rejects.toThrow(/retained campus access/); expect(writes(f.queries)).toEqual([]); expect(f.linkAccountEndpoint).not.toHaveBeenCalled();
+      expect(f.resolveAccountEndpoint).toHaveBeenCalledExactlyOnceWith(expect.anything(), expect.objectContaining({ school_id: school, user_id: userId }));
       const history = f.queries.find(query => query.sql.includes(') AS retained'))!;
-      for (const table of ['school_memberships', 'campus_model_agent_endpoints', 'school_people', 'students', 'staff_profiles', 'guardian_school_profiles', 'institution_governance_appointments']) expect(history.sql).toContain(table);
+      for (const table of ['school_memberships', 'school_people', 'students', 'staff_profiles', 'guardian_school_profiles', 'institution_governance_appointments']) expect(history.sql).toContain(table);
+      expect(f.queries.some(query => /\b(?:FROM|JOIN)\s+campus_model_/i.test(query.sql))).toBe(false);
     } finally { await f.db.destroy(); }
   });
-  it.each([{ is_active: false }, { email_verified_at: null }, { onboarding_pending: true }, { email: 'changed@example.test' }])
-    ('rechecks account trust from storage before identity writes: %j', async change => {
+  it.each([{ is_active: false }, { email_verified_at: null }, { onboarding_pending: true }, { email: 'changed@example.test' }])('rechecks account trust from storage before identity writes: %j', async change => {
       const f = fixture({ account: { ...account, ...change } }); try { await expect(f.join()).rejects.toThrow(/account changed/); expect(writes(f.queries)).toEqual([]); expect(f.resolveAccountEndpoint).not.toHaveBeenCalled(); }
       finally { await f.db.destroy(); }
     });
   it('does not bind or call Core if exact source evidence fails', async () => {
     const f = fixture(); try {
-      await expect(f.join({ beforeBinding: async () => { throw new Error('Source unavailable'); } })).rejects.toThrow('Source unavailable');
+      await expect(f.join({ beforeBinding: () => Promise.reject(new Error('Source unavailable')) })).rejects.toThrow('Source unavailable');
       expect(f.queries.some(query => query.sql.includes('UPDATE school_people'))).toBe(false); expect(f.linkAccountEndpoint).not.toHaveBeenCalled();
     } finally { await f.db.destroy(); }
   });

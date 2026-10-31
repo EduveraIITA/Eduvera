@@ -94,7 +94,7 @@ export function assertRuntime(resource, binding, { job = false, image } = {}) {
   for (const key of ['DEMO_MODE', 'PUBLIC_DEMO_ENABLED', 'DEMO_PROFILE_SWITCHER_ENABLED', 'HOSTED_CAMPUS_SIMULATOR_ENABLED']) {
     if (env[key]?.value && env[key].value !== 'false') throw new Error(`The ordinary Digital Twin deployment must not enable ${key}.`);
   }
-  for (const [key, value] of Object.entries({ PUBLIC_URL: TARGET.origin, ALLOWED_ORIGINS: TARGET.origin, SESSION_COOKIE_NAME: TARGET.cookie, COOKIE_SECURE: 'true', UPLOAD_DIR: TARGET.filesMount, DATABASE_POOL_MAX: '2', SIMULATION_MAX_RUNNING_RUNS_PER_INSTITUTION: '1', SIMULATION_MAX_LEASES_PER_INSTITUTION: '1', SIMULATION_WORKER_MAX_RUNS_PER_POLL: '1' })) {
+  for (const [key, value] of Object.entries({ PUBLIC_URL: TARGET.origin, ALLOWED_ORIGINS: TARGET.origin, SESSION_COOKIE_NAME: TARGET.cookie, COOKIE_SECURE: 'true', UPLOAD_DIR: TARGET.filesMount, DATABASE_POOL_MAX: '4', SIMULATION_MAX_RUNNING_RUNS_PER_INSTITUTION: '1', SIMULATION_MAX_LEASES_PER_INSTITUTION: '1', SIMULATION_WORKER_MAX_RUNS_PER_POLL: '1' })) {
     if (env[key]?.value !== value) throw new Error(`Unexpected Digital Twin ${key}.`);
   }
   const mounts = containers[0].volumeMounts ?? [], volumes = spec.volumes ?? [];
@@ -204,7 +204,10 @@ export async function verify(origin, sha, wasm, fetcher = fetch) {
   if (denied.response.headers.get('set-cookie')) throw new Error('An anonymous protected read issued a session cookie.');
   const native = await json('/api/v1/auth/native/login/', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}' }, 400);
   if (native.response.headers.get('set-cookie') || native.value?.access_token || native.value?.user) throw new Error('The native validation probe created an unexpected session.');
-  if (typeof native.value?.message !== 'string' || !native.value.message.trim()) throw new Error('The native validation probe did not return its owning API error.');
+  if (native.value?.error?.status !== 400 || native.value.error.code !== 'validation_error'
+    || typeof native.value.error.detail !== 'string' || !native.value.error.detail.trim()
+    || !Array.isArray(native.value.error.fields?.identifier) || !native.value.error.fields.identifier.length
+    || !Array.isArray(native.value.error.fields?.password) || !native.value.error.fields.password.length) throw new Error('The native validation probe did not return its owning API error.');
   return { release: true, ready: true, expo: true, deepLink: true, scripts: scriptPaths.length, wasm: true, anonymousRefusal: true, nativeValidation: true };
 }
 

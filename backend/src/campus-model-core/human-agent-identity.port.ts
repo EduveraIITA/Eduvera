@@ -73,12 +73,23 @@ export interface HumanAgentEndpointReplaceReceipt {
 }
 
 export interface HumanAgentIdentityPort {
+  /** Current account/person projection in the supplied transaction, world and
+   * effective instant. Retains every eligible endpoint; unlike person choices,
+   * this does not collapse accounts. The caller still owns domain permission,
+   * search, pagination and audience policy. An omitted selector means this one
+   * institution; an explicit person selector is bounded to 1,000 IDs. */
+  listCurrentAccountEndpoints(transaction: Transaction<Database>, input: {
+    school_id: string; at: string; person_ids?: string[];
+  }): Promise<Array<{ person_id: string; user_id: string }>>;
   /** Bounded identity presentation for an already-authorized People/account workflow; never grants access. */
   listPersonAccountStates(transaction: Transaction<Database>, input: {
     school_id: string; person_ids: string[]; at: string; viewer_user_id?: string;
   }): Promise<PersonAccountState[]>;
   /** Minimal current account/person choices for an already-authorized domain workflow. */
   listActingPeople(transaction: Transaction<Database>, input: { school_id: string; at: string }): Promise<Array<{ person_id: string; user_id: string; label: string }>>;
+  /** account_not_linked means no retained account-endpoint history for this
+   * institution/account. Inactive, ended, revoked or conflicting retained
+   * endpoints return a different non-acting reason and must not be recreated. */
   resolveAccountEndpoint(
     transaction: Transaction<Database>,
     input: HumanAgentAccountResolution,

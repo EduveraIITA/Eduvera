@@ -106,7 +106,7 @@ test('the deployment runner invokes whole-backend lint without caches, suppressi
   assert.equal(called, true); assert.equal(report.status, 'clean');
 });
 
-test('the reviewed baseline contains exactly66 actual errors and excludes all deployment-owned backend paths', async () => {
+test('the reviewed baseline captures exactly66 existing errors and excludes all deployment-owned backend paths', async () => {
   const baseline = JSON.parse(await readFile(new URL('./backend-lint-baseline.json', import.meta.url), 'utf8'));
   assert.equal(baseline.errorCount, 66); assert.equal(baseline.entries.length, 66);
   const owned = new Set(['src/main.ts', 'src/spa.controller.ts', 'src/web-assets.ts', 'src/database/simulation-pg-dump.ts', 'src/database/simulation-snapshot-store.ts', 'src/database/simulation-world.service.ts', 'src/database/campus-lab-simulation-environment.service.ts', 'test/web-assets.test.ts', 'test/simulation-pg-dump.test.ts', 'test/simulation-conformance.test.ts', 'src/simulation-conformance/simulation-conformance.registry.ts', 'src/simulation-conformance/simulation-conformance.generated.ts']);

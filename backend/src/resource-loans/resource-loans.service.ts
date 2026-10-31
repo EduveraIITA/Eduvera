@@ -221,7 +221,8 @@ export class ResourceLoansService {
   return this.db.transaction().execute(async tx=>{
    await this.access.campus(tx,user,schoolId);const loan=await this.loan(tx,schoolId,id);
    const authority=await this.custodyAuthority(tx,user,loan),pattern=`%${input.search.replace(/[\\%_]/g,'\\$&')}%`;
-   const candidates=sql`FROM campus_model_current_account_endpoints(${schoolId}::uuid,NULL,${executionNow()}::timestamptz) endpoint
+   const endpoints=await this.access.identities.listCurrentAccountEndpoints(tx,{school_id:schoolId,at:executionNow().toISOString()});
+   const candidates=sql`FROM jsonb_to_recordset(${JSON.stringify(endpoints)}::jsonb) AS endpoint(person_id uuid,user_id uuid)
     JOIN school_people person ON person.id=endpoint.person_id AND person.school_id=${schoolId}::uuid
     WHERE person.retired_at IS NULL AND person.id<>${loan.custodian_person_id}::uuid
       AND institution_resource_actor_can_manage(${schoolId}::uuid,endpoint.user_id)

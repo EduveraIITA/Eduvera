@@ -92,9 +92,10 @@ export class VisitOnboardingIdentity {
     }
     if (current.reason !== 'account_not_linked')
       throw new ConflictException('This account has retained campus identity. Ask the campus to review access instead of joining again.');
+    // Core's account_not_linked result excludes all endpoint history. Native
+    // membership/person/profile history still independently blocks joining again.
     const history = (await sql<{ retained: boolean }>`SELECT EXISTS(
       SELECT 1 FROM school_memberships WHERE school_id=${source.schoolId}::uuid AND user_id=${account.id}::uuid
-      UNION ALL SELECT 1 FROM campus_model_agent_endpoints WHERE school_id=${source.schoolId}::uuid AND user_id=${account.id}::uuid
       UNION ALL SELECT 1 FROM school_people WHERE school_id=${source.schoolId}::uuid AND account_user_id=${account.id}::uuid
       UNION ALL SELECT 1 FROM students WHERE school_id=${source.schoolId}::uuid AND user_id=${account.id}::uuid
       UNION ALL SELECT 1 FROM staff_profiles WHERE school_id=${source.schoolId}::uuid AND user_id=${account.id}::uuid

@@ -24,6 +24,7 @@ export const FAST_TEST_FILES = [
   "canonical-message-links.test.ts",
   "canonical-responsibility-workspace-links.test.ts",
   "campus-model-core-persistence-boundary.test.ts",
+  "current-account-endpoint-projection.test.ts",
   "campus-scenario-rate-limit.test.ts",
   "campus-scenes.contracts.test.ts",
   "campus-scenes.model.test.ts",
@@ -38,6 +39,7 @@ export const FAST_TEST_FILES = [
   "finance-arrangements.test.ts",
   "gate-rules.test.ts",
   "http-api.test-support.test.ts",
+  "identity-consumer-boundary.test.ts",
   "import-csv.test.ts",
   "invitation-code.test.ts",
   "invitation-email.test.ts",
@@ -62,6 +64,7 @@ export const FAST_TEST_FILES = [
   "test-projects.test.ts",
   "typed-notification-producer-links.test.ts",
   "unified-activity-planning.test.ts",
+  "visit-onboarding-identity.test.ts",
   "workspace-manifest.test.ts",
   // These validate migration text/structure; actual upgrades remain in full.
   "assessment-report-realtime.migration.test.ts",
