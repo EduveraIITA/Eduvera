@@ -86,6 +86,58 @@ jobs:
           npm --prefix backend run test:fast
           cd backend
           node --import tsx node_modules/vitest/vitest.mjs run test/native-auth.test.ts test/native-auth-session.integration.test.ts test/web-assets.test.ts test/simulation-conformance.test.ts
+      - name: Install the matching PostgreSQL17 capture client
+        run: |
+          # Ubuntu24.04 supplies PostgreSQL16. Real COW tests require PG17.
+          # https://www.postgresql.org/download/linux/ubuntu/
+          sudo apt-get update -qq
+          if ! apt-cache show postgresql-client-17 > /dev/null 2>&1; then
+            curl --fail --silent --show-error --location https://www.postgresql.org/media/keys/ACCC4CF8.asc --output "$RUNNER_TEMP/dt-pgdg.asc"
+            test "$(gpg --show-keys --with-colons "$RUNNER_TEMP/dt-pgdg.asc" | awk -F: '$1 == "fpr" { print $10; exit }')" = "B97B0AFCAA1A47F044F244A07FCC7D46ACCC4CF8"
+            sudo install -m 644 "$RUNNER_TEMP/dt-pgdg.asc" /usr/share/keyrings/dt-pgdg.asc
+            printf 'deb [signed-by=/usr/share/keyrings/dt-pgdg.asc] https://apt.postgresql.org/pub/repos/apt noble-pgdg main\n' | sudo tee /etc/apt/sources.list.d/dt-pgdg.list > /dev/null
+            sudo apt-get update -qq
+          fi
+          sudo apt-get install -y --no-install-recommends postgresql-client-17
+          /usr/lib/postgresql/17/bin/pg_dump --version
+      - name: Native identity, role revocation and real isolated-world regressions
+        working-directory: backend
+        env:
+          PGHOST: 127.0.0.1
+          PGPORT: "5432"
+          PGUSER: thatcampus_dt_ci
+          PGPASSWORD: disposable-dt-ci-only
+          PGDATABASE: thatcampus_dt_test
+          NODE_ENV: test
+          DEPLOYMENT_ENVIRONMENT: test
+          DATABASE_POOL_MAX: "2"
+          RATE_LIMIT_STORE: memory
+          COOKIE_SECURE: "false"
+          CAMPUS_SIMULATION_DATABASE_URL: postgresql://thatcampus_dt_ci:disposable-dt-ci-only@127.0.0.1:5432/thatcampus_dt_simulation_test
+          VISIT_GUEST_SIMULATION_TEST_TARGET_URL: postgresql://thatcampus_dt_ci:disposable-dt-ci-only@127.0.0.1:5432/thatcampus_dt_simulation_test
+          SIMULATION_ROSTER_TEST_TARGET_URL: postgresql://thatcampus_dt_ci:disposable-dt-ci-only@127.0.0.1:5432/thatcampus_dt_simulation_test
+          SIMULATION_CHAT_CLASS_TEST_TARGET_URL: postgresql://thatcampus_dt_ci:disposable-dt-ci-only@127.0.0.1:5432/thatcampus_dt_simulation_test
+          SIMULATION_PG_DUMP_PATH: /usr/lib/postgresql/17/bin/pg_dump
+        run: |
+          /usr/lib/postgresql/17/bin/createdb thatcampus_dt_simulation_test
+          node --input-type=module <<'NODE'
+          import { mkdtemp, cp, writeFile, symlink, rm } from 'node:fs/promises';
+          import { tmpdir } from 'node:os';
+          import { join, resolve } from 'node:path';
+          import { spawnSync } from 'node:child_process';
+          const directory = await mkdtemp(join(tmpdir(), 'thatcampus-visit-onboarding-build-'));
+          try {
+            await cp(resolve('dist'), join(directory, 'dist'), { recursive: true });
+            await writeFile(join(directory, 'package.json'), JSON.stringify({ type: 'module' }));
+            await symlink(resolve('node_modules'), join(directory, 'node_modules'), 'dir');
+            const files = ['native-auth-session', 'visit-onboarding', 'visit-onboarding-http', 'participation-event-current-scope', 'participation-account-state', 'chat-class-source'].map(name => `test/${name}.integration.test.ts`);
+            const result = spawnSync(process.execPath, ['--import', 'tsx', 'node_modules/vitest/vitest.mjs', 'run', ...files], {
+              stdio: 'inherit', env: { ...process.env, VISIT_ONBOARDING_HTTP_COMPILED_ROOT: join(directory, 'dist') },
+            });
+            if (result.error) throw result.error;
+            process.exitCode = result.status ?? 1;
+          } finally { await rm(directory, { recursive: true, force: true }); }
+          NODE
       - name: Universal application and release guard tests
         run: |
           npm --prefix mobile test
