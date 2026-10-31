@@ -435,8 +435,8 @@ describe.skipIf(!enabled)('unified planning real PostgreSQL and Digital Twin coo
       batchReads = hydrationReads(measuredQueries);
       expect(extension).toHaveBeenCalledOnce();
     } finally { measuredQueries = null; extension.mockRestore(); }
-    expect(repeated).toEqual(individually!);
-    expect(repeated!.every(occurrence => occurrence.participants.map(person => person.label).join('|') === 'Aster Participant|No-account Participant')).toBe(true);
+    expect(repeated).toEqual(individually);
+    expect(repeated.every(occurrence => occurrence.participants.map(person => person.label).join('|') === 'Aster Participant|No-account Participant')).toBe(true);
     expect(await coreState()).toEqual(before);
     expect(batchReads!).toBe(2);
     expect(await service.getOccurrence(schoolId, retained[0]!.id.toUpperCase())).toEqual(retained[0]);
