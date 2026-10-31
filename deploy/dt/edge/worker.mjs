@@ -17,11 +17,18 @@ export async function proxyDigitalTwin(request, env, send = fetch) {
   const client = request.headers.get('cf-connecting-ip');
   if (client) headers.set('x-forwarded-for', client);
   try {
-    return await send(new Request(target, {
+    const response = await send(new Request(target, {
       method: request.method, headers,
       body: ['GET', 'HEAD'].includes(request.method) ? undefined : request.body,
       redirect: 'manual', ...(request.body ? { duplex: 'half' } : {}),
     }), { cf: { cacheEverything: false, cacheTtl: 0 } });
+    const result = new Response(response.body, response);
+    // This gateway also serves authenticated APIs and readiness failures.
+    // Never allow a Worker/CDN/browser heuristic cache to retain either.
+    result.headers.set('Cache-Control', 'private, no-store');
+    result.headers.set('CDN-Cache-Control', 'no-store');
+    result.headers.set('Cloudflare-CDN-Cache-Control', 'no-store');
+    return result;
   } catch { return unavailable(request.method); }
 }
 

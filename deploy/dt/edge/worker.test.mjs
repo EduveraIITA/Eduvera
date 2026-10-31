@@ -65,4 +65,14 @@ test('deployment owns a separate Worker and only the new custom domain', () => {
   assert.equal(config.name, 'thatcampus-dt-edge');
   assert.deepEqual(config.routes, [{ pattern: 'app2.thatcampus.com', custom_domain: true }]);
   assert.equal(config.workers_dev, false);
+  assert.deepEqual(config.cache, { enabled: false });
+});
+
+test('origin responses including readiness failures and HTML never enter gateway caches', async () => {
+  for (const [path, status] of [['/readyz',503],['/api/v1/workspace',200],['/',200]]) {
+    const result = await proxyDigitalTwin(new Request('https://app2.thatcampus.com'+path), env, async () => new Response('body', {status, headers:{'Cache-Control':'public, max-age=14400'}}));
+    assert.equal(result.status,status); assert.equal(await result.text(),'body');
+    assert.equal(result.headers.get('Cache-Control'),'private, no-store');
+    assert.equal(result.headers.get('Cloudflare-CDN-Cache-Control'),'no-store');
+  }
 });

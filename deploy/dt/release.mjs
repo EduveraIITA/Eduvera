@@ -121,7 +121,7 @@ export function buildConfig(sha) {
 export function sourceIgnore() {
   return [
     '.git', '**/.git', '**/node_modules', '**/dist', '**/coverage',
-    '.runtime', 'artifacts', 'research', 'tmp', '.codex',
+    '.runtime', '**/.runtime', '.runtime-*', '**/.runtime-*', 'artifacts', '**/artifacts', 'research', '**/research', 'tmp', '.codex',
     '.env', '.env.*', '**/.env', '**/.env.*', '**/secret.txt', 'secret.txt',
     'gha-creds-*.json', '**/gha-creds-*.json', '**/*.key', '**/*.p12', '**/*.p8',
     '**/*service-account*.json', '**/*credentials*.json',

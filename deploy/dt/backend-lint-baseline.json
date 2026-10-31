@@ -1,0 +1,537 @@
+{
+  "schemaVersion": 1,
+  "errorCount": 66,
+  "purpose": "Exactly 66 pre-existing backend rule errors reviewed for the isolated app2 deployment; no warning or fatal/parser error is accepted.",
+  "ordinaryLintStatus": "npm --prefix backend run lint reports 66 errors and 0 warnings; this baseline is not a claim that ordinary whole-backend lint passes.",
+  "policy": "CI runs the complete unchanged lint scope. An existing error must match path, file bytes SHA256, rule, line, column and message. New errors, every warning and changed files with remaining debt fail. Resolved or removed debt may disappear. Baseline extension requires review; the gate never updates this file.",
+  "entries": [
+    {
+      "path": "scripts/seed-aaranya-calendar-connected.mjs",
+      "fileSha256": "f51a84cbb0c1f92c976b291ca8b785ae418f2fcb54e447687977e2f4e8d697d3",
+      "ruleId": "@typescript-eslint/no-unused-vars",
+      "line": 285,
+      "column": 30,
+      "message": "'_plan' is assigned a value but never used."
+    },
+    {
+      "path": "scripts/seed-aaranya-calendar-connected.mjs",
+      "fileSha256": "f51a84cbb0c1f92c976b291ca8b785ae418f2fcb54e447687977e2f4e8d697d3",
+      "ruleId": "@typescript-eslint/no-unused-vars",
+      "line": 285,
+      "column": 43,
+      "message": "'_date' is assigned a value but never used."
+    },
+    {
+      "path": "src/analytics/analytics.service.ts",
+      "fileSha256": "324be06e1b605eaf47db8fc0369d96eacb1683163160ee856186c0f59bda6c3b",
+      "ruleId": "@typescript-eslint/no-unused-vars",
+      "line": 146,
+      "column": 21,
+      "message": "'user' is assigned a value but never used."
+    },
+    {
+      "path": "src/analytics/analytics.service.ts",
+      "fileSha256": "324be06e1b605eaf47db8fc0369d96eacb1683163160ee856186c0f59bda6c3b",
+      "ruleId": "@typescript-eslint/no-unused-vars",
+      "line": 185,
+      "column": 21,
+      "message": "'user' is assigned a value but never used."
+    },
+    {
+      "path": "src/analytics/analytics.service.ts",
+      "fileSha256": "324be06e1b605eaf47db8fc0369d96eacb1683163160ee856186c0f59bda6c3b",
+      "ruleId": "@typescript-eslint/no-unused-vars",
+      "line": 225,
+      "column": 21,
+      "message": "'user' is assigned a value but never used."
+    },
+    {
+      "path": "src/analytics/analytics.service.ts",
+      "fileSha256": "324be06e1b605eaf47db8fc0369d96eacb1683163160ee856186c0f59bda6c3b",
+      "ruleId": "@typescript-eslint/no-unused-vars",
+      "line": 225,
+      "column": 77,
+      "message": "'today' is assigned a value but never used."
+    },
+    {
+      "path": "src/auth/account-phone-delivery.ts",
+      "fileSha256": "0284b2adb0e858808f0fe072fd8a296dd2d31a68aafd8f9b09c4570cf0064285",
+      "ruleId": "@typescript-eslint/require-await",
+      "line": 8,
+      "column": 3,
+      "message": "Async method 'send' has no 'await' expression."
+    },
+    {
+      "path": "src/auth/account-phone-delivery.ts",
+      "fileSha256": "0284b2adb0e858808f0fe072fd8a296dd2d31a68aafd8f9b09c4570cf0064285",
+      "ruleId": "@typescript-eslint/no-unused-vars",
+      "line": 8,
+      "column": 14,
+      "message": "'_input' is defined but never used."
+    },
+    {
+      "path": "src/auth/native-google-page.ts",
+      "fileSha256": "a7c5d8ca7074e88df59143bcf05a4bb1ef3dbb6ccbdf42c83fb48a243cd66918",
+      "ruleId": "no-control-regex",
+      "line": 20,
+      "column": 8,
+      "message": "Unexpected control character(s) in regular expression: \\x00."
+    },
+    {
+      "path": "src/auth/native-google-page.ts",
+      "fileSha256": "a7c5d8ca7074e88df59143bcf05a4bb1ef3dbb6ccbdf42c83fb48a243cd66918",
+      "ruleId": "no-control-regex",
+      "line": 29,
+      "column": 38,
+      "message": "Unexpected control character(s) in regular expression: \\x00."
+    },
+    {
+      "path": "src/auth/personal-profile.service.ts",
+      "fileSha256": "279cc4eb1389f808ff60515f3d22d4f578565ce953b68200f3e84c76d3efee95",
+      "ruleId": "@typescript-eslint/no-unnecessary-type-assertion",
+      "line": 111,
+      "column": 52,
+      "message": "This assertion is unnecessary since it does not change the type of the expression."
+    },
+    {
+      "path": "test/analytics-assigned-access.test.ts",
+      "fileSha256": "ce8c3c9683c421e980edef465f0394478fe674c3d48e58a76ce8f4c671fce4e2",
+      "ruleId": "@typescript-eslint/require-await",
+      "line": 26,
+      "column": 5,
+      "message": "Async method 'executeQuery' has no 'await' expression."
+    },
+    {
+      "path": "test/campus-model-temporal-batch.integration.test.ts",
+      "fileSha256": "11a06f7fe9074b01f0870fec900bc656e1b7411eb7b1c22d258ac762d7bc7cf5",
+      "ruleId": "@typescript-eslint/no-unused-vars",
+      "line": 36,
+      "column": 19,
+      "message": "'_event' is defined but never used."
+    },
+    {
+      "path": "test/campus-model-temporal-batch.integration.test.ts",
+      "fileSha256": "11a06f7fe9074b01f0870fec900bc656e1b7411eb7b1c22d258ac762d7bc7cf5",
+      "ruleId": "@typescript-eslint/no-unused-vars",
+      "line": 36,
+      "column": 39,
+      "message": "'_connection' is defined but never used."
+    },
+    {
+      "path": "test/campus-model-temporal-batch.integration.test.ts",
+      "fileSha256": "11a06f7fe9074b01f0870fec900bc656e1b7411eb7b1c22d258ac762d7bc7cf5",
+      "ruleId": "no-useless-escape",
+      "line": 110,
+      "column": 62,
+      "message": "Unnecessary escape character: \\\"."
+    },
+    {
+      "path": "test/campus-model-temporal-batch.test.ts",
+      "fileSha256": "44c92c783b330a9665fe6dbc2c2bc822b8b44db4cd9723cddcf3312a65aa7a0a",
+      "ruleId": "@typescript-eslint/require-await",
+      "line": 17,
+      "column": 9,
+      "message": "Async generator method 'streamQuery' has no 'await' expression."
+    },
+    {
+      "path": "test/campus-view.test.ts",
+      "fileSha256": "40a1443ee962944ced67f55c9d178e525f3f9c00eb8ef45e1e58a352bb161614",
+      "ruleId": "@typescript-eslint/require-await",
+      "line": 272,
+      "column": 76,
+      "message": "Async arrow function has no 'await' expression."
+    },
+    {
+      "path": "test/campus-view.test.ts",
+      "fileSha256": "40a1443ee962944ced67f55c9d178e525f3f9c00eb8ef45e1e58a352bb161614",
+      "ruleId": "@typescript-eslint/require-await",
+      "line": 364,
+      "column": 76,
+      "message": "Async arrow function has no 'await' expression."
+    },
+    {
+      "path": "test/native-google-finalize.test.ts",
+      "fileSha256": "359e282f505116abbabd5f5f62e41abbf00ff36816f6f44d283e6442702dd119",
+      "ruleId": "@typescript-eslint/require-await",
+      "line": 69,
+      "column": 3,
+      "message": "Async method 'commitTransaction' has no 'await' expression."
+    },
+    {
+      "path": "test/native-google-finalize.test.ts",
+      "fileSha256": "359e282f505116abbabd5f5f62e41abbf00ff36816f6f44d283e6442702dd119",
+      "ruleId": "@typescript-eslint/require-await",
+      "line": 188,
+      "column": 3,
+      "message": "Async generator method 'streamQuery' has no 'await' expression."
+    },
+    {
+      "path": "test/native-google-finalize.test.ts",
+      "fileSha256": "359e282f505116abbabd5f5f62e41abbf00ff36816f6f44d283e6442702dd119",
+      "ruleId": "require-yield",
+      "line": 188,
+      "column": 21,
+      "message": "This generator function does not have 'yield'."
+    },
+    {
+      "path": "test/native-google-locks.integration.test.ts",
+      "fileSha256": "1c9a195f146a529785ca66ff938f446d4f61e96a0a238ec1aa03c25f4fd4e781",
+      "ruleId": "@typescript-eslint/no-unused-vars",
+      "line": 39,
+      "column": 19,
+      "message": "'_event' is defined but never used."
+    },
+    {
+      "path": "test/native-google-locks.integration.test.ts",
+      "fileSha256": "1c9a195f146a529785ca66ff938f446d4f61e96a0a238ec1aa03c25f4fd4e781",
+      "ruleId": "@typescript-eslint/no-unused-vars",
+      "line": 40,
+      "column": 18,
+      "message": "'_event' is defined but never used."
+    },
+    {
+      "path": "test/native-google-locks.integration.test.ts",
+      "fileSha256": "1c9a195f146a529785ca66ff938f446d4f61e96a0a238ec1aa03c25f4fd4e781",
+      "ruleId": "@typescript-eslint/require-await",
+      "line": 173,
+      "column": 35,
+      "message": "Async arrow function has no 'await' expression."
+    },
+    {
+      "path": "test/native-google-locks.integration.test.ts",
+      "fileSha256": "1c9a195f146a529785ca66ff938f446d4f61e96a0a238ec1aa03c25f4fd4e781",
+      "ruleId": "@typescript-eslint/require-await",
+      "line": 201,
+      "column": 35,
+      "message": "Async arrow function has no 'await' expression."
+    },
+    {
+      "path": "test/native-google-locks.integration.test.ts",
+      "fileSha256": "1c9a195f146a529785ca66ff938f446d4f61e96a0a238ec1aa03c25f4fd4e781",
+      "ruleId": "@typescript-eslint/require-await",
+      "line": 235,
+      "column": 35,
+      "message": "Async arrow function has no 'await' expression."
+    },
+    {
+      "path": "test/native-google-page.test.ts",
+      "fileSha256": "961b51233082bd644a94b78637d85826af94bf467dd1d487512d2c15bf38d3bb",
+      "ruleId": "no-useless-escape",
+      "line": 129,
+      "column": 67,
+      "message": "Unnecessary escape character: \\\"."
+    },
+    {
+      "path": "test/native-google-page.test.ts",
+      "fileSha256": "961b51233082bd644a94b78637d85826af94bf467dd1d487512d2c15bf38d3bb",
+      "ruleId": "no-useless-escape",
+      "line": 129,
+      "column": 77,
+      "message": "Unnecessary escape character: \\\"."
+    },
+    {
+      "path": "test/native-google-policy.test.ts",
+      "fileSha256": "e1c682da8b82d352c9324c159b2233dbcf4d542f8e3c31567b96bc39bc71595d",
+      "ruleId": "@typescript-eslint/no-unused-vars",
+      "line": 52,
+      "column": 37,
+      "message": "'_environment' is assigned a value but never used."
+    },
+    {
+      "path": "test/native-google-policy.test.ts",
+      "fileSha256": "e1c682da8b82d352c9324c159b2233dbcf4d542f8e3c31567b96bc39bc71595d",
+      "ruleId": "@typescript-eslint/no-unused-vars",
+      "line": 58,
+      "column": 25,
+      "message": "'_origin' is assigned a value but never used."
+    },
+    {
+      "path": "test/native-google.test.ts",
+      "fileSha256": "65bf50e27d1d54ee1653b623bba2d96a504d8b57376b1ce6ef3b29518c2058f6",
+      "ruleId": "@typescript-eslint/require-await",
+      "line": 28,
+      "column": 43,
+      "message": "Async arrow function has no 'await' expression."
+    },
+    {
+      "path": "test/native-google.test.ts",
+      "fileSha256": "65bf50e27d1d54ee1653b623bba2d96a504d8b57376b1ce6ef3b29518c2058f6",
+      "ruleId": "@typescript-eslint/require-await",
+      "line": 29,
+      "column": 41,
+      "message": "Async arrow function has no 'await' expression."
+    },
+    {
+      "path": "test/native-google.test.ts",
+      "fileSha256": "65bf50e27d1d54ee1653b623bba2d96a504d8b57376b1ce6ef3b29518c2058f6",
+      "ruleId": "@typescript-eslint/require-await",
+      "line": 30,
+      "column": 45,
+      "message": "Async arrow function has no 'await' expression."
+    },
+    {
+      "path": "test/native-google.test.ts",
+      "fileSha256": "65bf50e27d1d54ee1653b623bba2d96a504d8b57376b1ce6ef3b29518c2058f6",
+      "ruleId": "@typescript-eslint/require-await",
+      "line": 32,
+      "column": 75,
+      "message": "Async arrow function has no 'await' expression."
+    },
+    {
+      "path": "test/native-google.test.ts",
+      "fileSha256": "65bf50e27d1d54ee1653b623bba2d96a504d8b57376b1ce6ef3b29518c2058f6",
+      "ruleId": "@typescript-eslint/require-await",
+      "line": 35,
+      "column": 38,
+      "message": "Async arrow function has no 'await' expression."
+    },
+    {
+      "path": "test/native-google.test.ts",
+      "fileSha256": "65bf50e27d1d54ee1653b623bba2d96a504d8b57376b1ce6ef3b29518c2058f6",
+      "ruleId": "@typescript-eslint/require-await",
+      "line": 37,
+      "column": 106,
+      "message": "Async arrow function has no 'await' expression."
+    },
+    {
+      "path": "test/native-google.test.ts",
+      "fileSha256": "65bf50e27d1d54ee1653b623bba2d96a504d8b57376b1ce6ef3b29518c2058f6",
+      "ruleId": "@typescript-eslint/require-await",
+      "line": 39,
+      "column": 47,
+      "message": "Async arrow function has no 'await' expression."
+    },
+    {
+      "path": "test/native-google.test.ts",
+      "fileSha256": "65bf50e27d1d54ee1653b623bba2d96a504d8b57376b1ce6ef3b29518c2058f6",
+      "ruleId": "@typescript-eslint/unbound-method",
+      "line": 146,
+      "column": 28,
+      "message": "A method that is not declared with `this: void` may cause unintentional scoping of `this` when separated from its object.\nConsider using an arrow function or explicitly `.bind()`ing the method to avoid calling the method with an unintended `this` value. \nIf a function does not access `this`, it can be annotated with `this: void`."
+    },
+    {
+      "path": "test/native-google.test.ts",
+      "fileSha256": "65bf50e27d1d54ee1653b623bba2d96a504d8b57376b1ce6ef3b29518c2058f6",
+      "ruleId": "@typescript-eslint/unbound-method",
+      "line": 146,
+      "column": 67,
+      "message": "A method that is not declared with `this: void` may cause unintentional scoping of `this` when separated from its object.\nConsider using an arrow function or explicitly `.bind()`ing the method to avoid calling the method with an unintended `this` value. \nIf a function does not access `this`, it can be annotated with `this: void`."
+    },
+    {
+      "path": "test/native-google.test.ts",
+      "fileSha256": "65bf50e27d1d54ee1653b623bba2d96a504d8b57376b1ce6ef3b29518c2058f6",
+      "ruleId": "@typescript-eslint/restrict-template-expressions",
+      "line": 158,
+      "column": 101,
+      "message": "Invalid type \"URLSearchParams\" of template literal expression."
+    },
+    {
+      "path": "test/native-invitations.test.ts",
+      "fileSha256": "ba4a7c36a66696c3e1ee845e79b10f855e51c41c4b498570f06b9741c23045df",
+      "ruleId": "@typescript-eslint/require-await",
+      "line": 17,
+      "column": 64,
+      "message": "Async arrow function has no 'await' expression."
+    },
+    {
+      "path": "test/native-invitations.test.ts",
+      "fileSha256": "ba4a7c36a66696c3e1ee845e79b10f855e51c41c4b498570f06b9741c23045df",
+      "ruleId": "@typescript-eslint/require-await",
+      "line": 17,
+      "column": 150,
+      "message": "Async arrow function has no 'await' expression."
+    },
+    {
+      "path": "test/native-invitations.test.ts",
+      "fileSha256": "ba4a7c36a66696c3e1ee845e79b10f855e51c41c4b498570f06b9741c23045df",
+      "ruleId": "@typescript-eslint/require-await",
+      "line": 18,
+      "column": 61,
+      "message": "Async arrow function has no 'await' expression."
+    },
+    {
+      "path": "test/personal-profile.integration.test.ts",
+      "fileSha256": "cce55f313086a0c099255dbdaf8b09b2891afe6da62ae3441debe98bab5dc969",
+      "ruleId": "@typescript-eslint/no-unused-vars",
+      "line": 3,
+      "column": 10,
+      "message": "'AsyncLocalStorage' is defined but never used."
+    },
+    {
+      "path": "test/personal-profile.integration.test.ts",
+      "fileSha256": "cce55f313086a0c099255dbdaf8b09b2891afe6da62ae3441debe98bab5dc969",
+      "ruleId": "@typescript-eslint/require-await",
+      "line": 16,
+      "column": 197,
+      "message": "Async method 'send' has no 'await' expression."
+    },
+    {
+      "path": "test/simulation-branch-concurrency.integration.test.ts",
+      "fileSha256": "cac8cf43ded46dede259de29301ee1116bfc57449ed9048ca82a27ab61d2cbcc",
+      "ruleId": "@typescript-eslint/require-await",
+      "line": 195,
+      "column": 7,
+      "message": "Async method 'hasActiveAdminMembership' has no 'await' expression."
+    },
+    {
+      "path": "test/simulation-branch-concurrency.integration.test.ts",
+      "fileSha256": "cac8cf43ded46dede259de29301ee1116bfc57449ed9048ca82a27ab61d2cbcc",
+      "ruleId": "@typescript-eslint/require-await",
+      "line": 196,
+      "column": 7,
+      "message": "Async method 'school' has no 'await' expression."
+    },
+    {
+      "path": "test/simulation-branch-concurrency.integration.test.ts",
+      "fileSha256": "cac8cf43ded46dede259de29301ee1116bfc57449ed9048ca82a27ab61d2cbcc",
+      "ruleId": "@typescript-eslint/require-await",
+      "line": 197,
+      "column": 7,
+      "message": "Async method 'campuses' has no 'await' expression."
+    },
+    {
+      "path": "test/simulation-branch-concurrency.integration.test.ts",
+      "fileSha256": "cac8cf43ded46dede259de29301ee1116bfc57449ed9048ca82a27ab61d2cbcc",
+      "ruleId": "@typescript-eslint/require-await",
+      "line": 198,
+      "column": 7,
+      "message": "Async method 'spaces' has no 'await' expression."
+    },
+    {
+      "path": "test/simulation-branch-concurrency.integration.test.ts",
+      "fileSha256": "cac8cf43ded46dede259de29301ee1116bfc57449ed9048ca82a27ab61d2cbcc",
+      "ruleId": "@typescript-eslint/require-await",
+      "line": 198,
+      "column": 35,
+      "message": "Async method 'examSpaceExpectations' has no 'await' expression."
+    },
+    {
+      "path": "test/simulation-branch-concurrency.integration.test.ts",
+      "fileSha256": "cac8cf43ded46dede259de29301ee1116bfc57449ed9048ca82a27ab61d2cbcc",
+      "ruleId": "@typescript-eslint/require-await",
+      "line": 198,
+      "column": 74,
+      "message": "Async method 'dayOccurrences' has no 'await' expression."
+    },
+    {
+      "path": "test/simulation-branch-concurrency.integration.test.ts",
+      "fileSha256": "cac8cf43ded46dede259de29301ee1116bfc57449ed9048ca82a27ab61d2cbcc",
+      "ruleId": "@typescript-eslint/require-await",
+      "line": 199,
+      "column": 7,
+      "message": "Async method 'gateActivityToday' has no 'await' expression."
+    },
+    {
+      "path": "test/simulation-branch-concurrency.integration.test.ts",
+      "fileSha256": "cac8cf43ded46dede259de29301ee1116bfc57449ed9048ca82a27ab61d2cbcc",
+      "ruleId": "@typescript-eslint/require-await",
+      "line": 199,
+      "column": 42,
+      "message": "Async method 'activeVisitorCount' has no 'await' expression."
+    },
+    {
+      "path": "test/simulation-branch-concurrency.integration.test.ts",
+      "fileSha256": "cac8cf43ded46dede259de29301ee1116bfc57449ed9048ca82a27ab61d2cbcc",
+      "ruleId": "@typescript-eslint/require-await",
+      "line": 199,
+      "column": 77,
+      "message": "Async method 'motionParticipants' has no 'await' expression."
+    },
+    {
+      "path": "test/simulation-branch-concurrency.integration.test.ts",
+      "fileSha256": "cac8cf43ded46dede259de29301ee1116bfc57449ed9048ca82a27ab61d2cbcc",
+      "ruleId": "@typescript-eslint/require-await",
+      "line": 202,
+      "column": 9,
+      "message": "Async method 'recentActivity' has no 'await' expression."
+    },
+    {
+      "path": "test/simulation-branch-concurrency.integration.test.ts",
+      "fileSha256": "cac8cf43ded46dede259de29301ee1116bfc57449ed9048ca82a27ab61d2cbcc",
+      "ruleId": "@typescript-eslint/require-await",
+      "line": 202,
+      "column": 41,
+      "message": "Async method 'operationalSignals' has no 'await' expression."
+    },
+    {
+      "path": "test/visit-onboarding-http.integration.test.ts",
+      "fileSha256": "e7bdb0ad4348effac2997dddb68a7bfded34b8c1b62a8e41042e2c03441292de",
+      "ruleId": "@typescript-eslint/require-await",
+      "line": 42,
+      "column": 89,
+      "message": "Async arrow function has no 'await' expression."
+    },
+    {
+      "path": "test/visit-onboarding-identity.test.ts",
+      "fileSha256": "63022faf920e61ace09015e28b921509453f26718f07557f4aa56f7d7d04e76e",
+      "ruleId": "@typescript-eslint/require-await",
+      "line": 26,
+      "column": 32,
+      "message": "Async method 'executeQuery' has no 'await' expression."
+    },
+    {
+      "path": "test/visit-onboarding-identity.test.ts",
+      "fileSha256": "63022faf920e61ace09015e28b921509453f26718f07557f4aa56f7d7d04e76e",
+      "ruleId": "@typescript-eslint/require-await",
+      "line": 43,
+      "column": 49,
+      "message": "Async arrow function has no 'await' expression."
+    },
+    {
+      "path": "test/visit-onboarding-identity.test.ts",
+      "fileSha256": "63022faf920e61ace09015e28b921509453f26718f07557f4aa56f7d7d04e76e",
+      "ruleId": "@typescript-eslint/require-await",
+      "line": 44,
+      "column": 46,
+      "message": "Async arrow function has no 'await' expression."
+    },
+    {
+      "path": "test/visit-onboarding-identity.test.ts",
+      "fileSha256": "63022faf920e61ace09015e28b921509453f26718f07557f4aa56f7d7d04e76e",
+      "ruleId": "@typescript-eslint/no-unused-vars",
+      "line": 46,
+      "column": 89,
+      "message": "'_person' is defined but never used."
+    },
+    {
+      "path": "test/visit-onboarding-identity.test.ts",
+      "fileSha256": "63022faf920e61ace09015e28b921509453f26718f07557f4aa56f7d7d04e76e",
+      "ruleId": "@typescript-eslint/require-await",
+      "line": 46,
+      "column": 106,
+      "message": "Async arrow function has no 'await' expression."
+    },
+    {
+      "path": "test/visit-onboarding-identity.test.ts",
+      "fileSha256": "63022faf920e61ace09015e28b921509453f26718f07557f4aa56f7d7d04e76e",
+      "ruleId": "no-unexpected-multiline",
+      "line": 110,
+      "column": 5,
+      "message": "Unexpected newline between function and ( of function call."
+    },
+    {
+      "path": "test/visit-onboarding-identity.test.ts",
+      "fileSha256": "63022faf920e61ace09015e28b921509453f26718f07557f4aa56f7d7d04e76e",
+      "ruleId": "no-unexpected-multiline",
+      "line": 123,
+      "column": 5,
+      "message": "Unexpected newline between function and ( of function call."
+    },
+    {
+      "path": "test/visit-onboarding-identity.test.ts",
+      "fileSha256": "63022faf920e61ace09015e28b921509453f26718f07557f4aa56f7d7d04e76e",
+      "ruleId": "@typescript-eslint/require-await",
+      "line": 129,
+      "column": 29,
+      "message": "Async method 'beforeBinding' has no 'await' expression."
+    },
+    {
+      "path": "test/visit-onboarding.integration.test.ts",
+      "fileSha256": "f4638e9fe0f10427c85b0d44eaab75de6b6a105ec07b76ea9efb6539651535bb",
+      "ruleId": "@typescript-eslint/require-await",
+      "line": 43,
+      "column": 78,
+      "message": "Async arrow function has no 'await' expression."
+    }
+  ]
+}

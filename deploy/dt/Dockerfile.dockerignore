@@ -59,6 +59,8 @@
 **/.git/**
 **/.runtime
 **/.runtime/**
+**/.runtime-*
+**/.runtime-*/**
 **/.expo
 **/.expo/**
 **/node_modules

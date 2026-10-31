@@ -69,7 +69,7 @@ jobs:
         run: |
           npm --prefix backend run simulation:conformance
           npm --prefix backend run typecheck
-          npm --prefix backend run lint
+          node deploy/dt/check-backend-lint.mjs
           npm exec --prefix backend -- tsc -p backend/tsconfig.build.json
           npm --prefix mobile run typecheck
       - name: Disposable database and relevant backend behavior

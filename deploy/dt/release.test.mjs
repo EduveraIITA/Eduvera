@@ -147,7 +147,7 @@ test('unsafe returned candidate scaling, CPU or mount cannot dispatch a migratio
 test('source upload excludes OIDC credentials and private/local state independently of Docker COPY', () => {
   const require = createRequire(new URL('../../backend/package.json', import.meta.url)), ignore = require('ignore');
   const filter = ignore().add(sourceIgnore());
-  for (const file of ['gha-creds-123abc.json', 'nested/gha-creds-123abc.json', '.git', '.git/config', '.runtime/source.json', 'artifacts/private-proof.json', 'backend/.env', 'mobile/.env.local', 'secret.txt', 'keys/service-account.json', 'backend/storage/leave-documents/private.pdf', 'mobile/ios/build/app', 'mobile/android/app/build/app.apk']) assert.equal(filter.ignores(file), true, file);
+  for (const file of ['gha-creds-123abc.json', 'nested/gha-creds-123abc.json', '.git', '.git/config', '.runtime/source.json', 'backend/.runtime-native-check/dist/output.js', 'backend/artifacts/private.json', 'artifacts/private-proof.json', 'backend/.env', 'mobile/.env.local', 'secret.txt', 'keys/service-account.json', 'backend/storage/leave-documents/private.pdf', 'mobile/ios/build/app', 'mobile/android/app/build/app.apk']) assert.equal(filter.ignores(file), true, file);
   for (const file of ['backend/src/main.ts', 'backend/migrations/001_init.sql', 'mobile/app/_layout.tsx', 'mobile/public/skia/canvaskit-0.41.0-example.wasm', 'packages/contracts/src/campus-scenes/types.ts', 'deploy/dt/Dockerfile', 'devtools/campus-simulator/src/index.mjs']) assert.equal(filter.ignores(file), false, file);
   assert.equal(sourceIgnore().includes('#!include:.gitignore'), false, 'Cloud Build does not need to consult protected Git metadata');
 });

@@ -3,7 +3,7 @@ import globals from "globals";
 import tseslint from "typescript-eslint";
 
 export default tseslint.config(
-  { ignores: ["dist/**", ".runtime/**", ".local/**", "generated/**", "node_modules/**", "storage/**", "eslint.config.mjs"] },
+  { ignores: ["dist/**", ".runtime/**", ".runtime-*/**", ".local/**", "generated/**", "node_modules/**", "storage/**", "eslint.config.mjs"] },
   eslint.configs.recommended,
   ...tseslint.configs.recommendedTypeChecked,
   {
@@ -24,4 +24,5 @@ export default tseslint.config(
       "@typescript-eslint/no-unsafe-call": "off",
     },
   },
+  { files: ["**/*.mjs"], extends: [tseslint.configs.disableTypeChecked] },
 );

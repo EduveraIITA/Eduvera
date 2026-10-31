@@ -1,3 +1,0 @@
-export const DOMAIN_COMMAND_GATEWAY_PORT = Symbol("DOMAIN_COMMAND_GATEWAY_PORT");
-export const PREPARED_DOMAIN_COMMAND_VERIFICATION_PORT = Symbol("PREPARED_DOMAIN_COMMAND_VERIFICATION_PORT");
-//# sourceMappingURL=domain-command-gateway.port.js.map
