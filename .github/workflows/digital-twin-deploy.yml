@@ -113,6 +113,7 @@ jobs:
           DATABASE_POOL_MAX: "2"
           RATE_LIMIT_STORE: memory
           COOKIE_SECURE: "false"
+          PUBLIC_URL: https://thatcampus-ci.example.test
           CAMPUS_SIMULATION_DATABASE_URL: postgresql://thatcampus_dt_ci:disposable-dt-ci-only@127.0.0.1:5432/thatcampus_dt_simulation_test
           VISIT_GUEST_SIMULATION_TEST_TARGET_URL: postgresql://thatcampus_dt_ci:disposable-dt-ci-only@127.0.0.1:5432/thatcampus_dt_simulation_test
           SIMULATION_ROSTER_TEST_TARGET_URL: postgresql://thatcampus_dt_ci:disposable-dt-ci-only@127.0.0.1:5432/thatcampus_dt_simulation_test
