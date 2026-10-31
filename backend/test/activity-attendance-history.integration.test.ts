@@ -1,7 +1,7 @@
 import { randomUUID } from 'node:crypto';
 import { Kysely, PostgresDialect, sql } from 'kysely';
 import { Pool, types } from 'pg';
-import { afterAll, describe, expect, it } from 'vitest';
+import { afterAll, describe, expect, it, vi } from 'vitest';
 import { CampusModelCoreService } from '../src/campus-model-core/campus-model-core.service.js';
 import { ResponsibilityProjectionService } from '../src/campus-model-core/responsibility-projection.service.js';
 import { createLiveExecutionEnvironment } from '../src/campus-model-core/execution-environment.runtime.js';
@@ -14,6 +14,8 @@ import { ProgressiveWorkspaceProvisioner } from '../src/institution-onboarding/p
 import { SchoolEventService } from '../src/school/school-event.service.js';
 import { ActivityPlanningService } from '../src/schedule-planning/activity-planning.service.js';
 import { ActivityAttendanceService } from '../src/attendance/activity-attendance.service.js';
+import { ActivityAttendanceLifecycleBridge } from '../src/attendance/activity-attendance-lifecycle.bridge.js';
+import { configureAcademicSubjectSessions } from './academic-participation.test-support.js';
 import { ProgressiveSetupService } from '../src/institution-activation/progressive-setup.service.js';
 import { AcademicParticipationBridge } from '../src/attendance/academic-participation-bridge.service.js';
 import { AcademicParticipationEffects } from '../src/attendance/academic-participation-effects.service.js';
@@ -264,6 +266,74 @@ describe.runIf(enabled)('attendance history distinguishes recorded human, softwa
       expect(await sibling.run(() => sibling.attendance.history(f.user, f.schoolId, f.registerId, {}))).toEqual(original);
       expect(withoutTokens(await f.run(() => f.attendance.history(f.user, f.schoolId, f.registerId, { view: 'activities' })))).toEqual(withoutTokens(activityOriginal));
       expect(withoutTokens(await sibling.run(() => sibling.attendance.history(f.user, f.schoolId, f.registerId, { view: 'activities' })))).toEqual(withoutTokens(activityOriginal));
+    } finally {
+      await Promise.all(opened.map(database => database.destroy()));
+      await store.pool.end();
+    }
+  }, 120000);
+
+  it.runIf(Boolean(targetUrl))('extends only neutral activity horizons during the worker checkpoint while academic adapters remain available and finalization stays isolated', async () => {
+    const f = await fixture(true), store = new SimulationSnapshotStore(sourceUrl, requireIsolatedTestDatabaseUrl(targetUrl), 3);
+    const opened: Kysely<Database>[] = [];
+    try {
+      await f.run(async () => {
+        await sql`UPDATE institution_operating_rules SET attendance_academic_mode='daily_class'
+          WHERE school_id=${f.schoolId}::uuid`.execute(db);
+        const setup = await new ProgressiveSetupService(applicationDb, f.core, f.core, f.core).setupAttendance(f.user, f.schoolId, {
+          group_name: 'Mixed worker', participant_names: ['Scheduled learner'],
+          responsible: { kind: 'current_user', self_teaches: true, display_name: 'Worker instructor' },
+          session: { starts_at: '11:00', ends_at: '12:00', weekdays: [1, 2, 3, 4, 5, 6, 7] },
+        }, request(f.user));
+        await configureAcademicSubjectSessions(applicationDb, f.core, f.user, f.schoolId,
+          setup.resources.class_section_id, setup.resources.term_id, 'UTC');
+        f.setNow(`${f.day}T09:32:00.000Z`);
+      });
+      const captured = await store.capture(f.schoolId, f.now());
+      const open = async () => {
+        const runId = randomUUID(), scenarioId = randomUUID();
+        const branch = await createSimulationBranch(store.pool, captured, { run_id: runId, school_id: f.schoolId, scenario_id: scenarioId,
+          namespace_id: `scenario:${scenarioId}:run:${runId}` });
+        const driver = new SimulationBranchDriver(store.pool, branch, captured), compiler = new PostgresDialect({ pool: store.pool });
+        const database = new Kysely<Database>({ dialect: { createDriver: () => driver, createAdapter: () => compiler.createAdapter(),
+          createQueryCompiler: () => compiler.createQueryCompiler(), createIntrospector: connection => compiler.createIntrospector(connection) } });
+        opened.push(database);
+        const environment = simulationRequestEnvironment({ institution_id: f.schoolId, scenario_id: scenarioId, run_id: runId,
+          virtual_now: f.now(), source_snapshot_ref: `sha256:${captured.content_hash}`, manifest_ref: 'activity-horizon-worker-test', checked_at: f.now() });
+        const scope = new ExecutionDataPlaneScope(), connection = database as DatabaseService, context = services(database);
+        const events = new SchoolEventService(connection, context.core, undefined, scope);
+        const worker = new ActivityAttendanceLifecycleBridge(connection, scope, context.planning, context.attendance, events);
+        worker.onApplicationBootstrap();
+        return { ...context, database, events, worker,
+          run: <T>(action: () => Promise<T>) => executionEnvironmentStorage.run(environment, () => scope.run(environment, action)) };
+      };
+      const branch = await open(), sibling = await open();
+      const state = async (database: Kysely<Database>) => ({
+        occurrences: (await sql<{id: string; source: string; source_revision: number}>`SELECT id,source,source_revision FROM schedule_activity_occurrences
+          WHERE school_id=${f.schoolId}::uuid ORDER BY id`.execute(database)).rows,
+        register: (await sql`SELECT state,revision,locked_at FROM activity_attendance_registers WHERE id=${f.registerId}::uuid`.execute(database)).rows,
+        roster: (await sql`SELECT * FROM activity_attendance_roster WHERE register_id=${f.registerId}::uuid ORDER BY person_id`.execute(database)).rows,
+      });
+      const original = await f.run(() => state(db));
+      expect(original.occurrences.some(row => row.source === 'academic')).toBe(false);
+      await branch.run(async () => {
+        const finalize = vi.spyOn(branch.attendance, 'finalizeDue');
+        await branch.events.advanceSimulationDomainWork();
+        expect(finalize).toHaveBeenCalledWith(f.schoolId);
+        finalize.mockRestore();
+        const after = await state(branch.database);
+        expect(after.occurrences.some(row => row.source === 'academic')).toBe(false);
+        expect(after.roster).toEqual(original.roster);
+        // Academic setup revised the operating rules. The worker still invokes
+        // normal finalization, which must recheck that retained policy rather
+        // than silently approving the register under a different revision.
+        expect(after.register).toEqual(original.register);
+        // Academic expansion is still provided by its unchanged owning flow.
+        const academic = await branch.planning.ensureOccurrences(f.schoolId, f.day, f.day);
+        expect(academic.some(row => row.source === 'academic' && row.participants.some(person => person.participation_role === 'lead'))).toBe(true);
+      });
+      expect(await f.run(() => state(db))).toEqual(original);
+      expect(await sibling.run(() => state(sibling.database))).toEqual(original);
+      branch.worker.beforeApplicationShutdown(); sibling.worker.beforeApplicationShutdown();
     } finally {
       await Promise.all(opened.map(database => database.destroy()));
       await store.pool.end();

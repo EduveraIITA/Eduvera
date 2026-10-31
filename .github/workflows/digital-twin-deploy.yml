@@ -135,7 +135,7 @@ jobs:
             await cp(resolve('dist'), join(directory, 'dist'), { recursive: true });
             await writeFile(join(directory, 'package.json'), JSON.stringify({ type: 'module' }));
             await symlink(resolve('node_modules'), join(directory, 'node_modules'), 'dir');
-            const files = ['native-auth-session', 'visit-onboarding', 'visit-onboarding-http', 'participation-event-current-scope', 'participation-account-state', 'chat-class-source', 'activity-attendance-history', 'activity-attendance', 'activity-plan-started-revision', 'enrollment-roster-world', 'unified-activity-planning', 'requests-attendance-declines'].map(name => `test/${name}.integration.test.ts`);
+            const files = ['native-auth-session', 'visit-onboarding', 'visit-onboarding-http', 'participation-event-current-scope', 'participation-account-state', 'chat-class-source', 'activity-attendance-history', 'activity-attendance', 'activity-plan-started-revision', 'enrollment-roster-world', 'unified-activity-planning', 'requests-attendance-declines', 'notification-bell'].map(name => `test/${name}.integration.test.ts`);
             const report = join(directory, 'postgres-results.json');
             const result = spawnSync(process.execPath, ['--import', 'tsx', 'node_modules/vitest/vitest.mjs', 'run', '--reporter=default', '--reporter=json', `--outputFile.json=${report}`, ...files], {
               stdio: 'inherit', env: { ...process.env, VISIT_ONBOARDING_HTTP_COMPILED_ROOT: join(directory, 'dist') },
@@ -144,8 +144,8 @@ jobs:
             process.exitCode = result.status ?? 1;
             const summary = JSON.parse(await readFile(report, 'utf8'));
             console.log(JSON.stringify({ postgresTests: summary.numTotalTests, passed: summary.numPassedTests, skipped: summary.numPendingTests, todo: summary.numTodoTests }));
-            if (summary.numTotalTests < 99 || summary.numPassedTests !== summary.numTotalTests || summary.numPendingTests !== 0 || summary.numTodoTests !== 0)
-              throw new Error('All99 or more owned PostgreSQL cases must run and pass without skipped/todo tests.');
+            if (summary.numTotalTests < 107 || summary.numPassedTests !== summary.numTotalTests || summary.numPendingTests !== 0 || summary.numTodoTests !== 0)
+              throw new Error('All107 or more owned PostgreSQL cases must run and pass without skipped/todo tests.');
           } finally { await rm(directory, { recursive: true, force: true }); }
           NODE
       - name: Universal application and release guard tests

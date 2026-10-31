@@ -1,7 +1,7 @@
 import type { CampusSceneDirectory, CampusScenePublished, SceneCampus } from '../../../packages/contracts/src/campus-scenes/contracts';
 import type { CampusSceneDocument, CampusSceneElement } from '../../../packages/contracts/src/campus-scenes/types';
 import { sceneBuildingFloorIds, sceneElementBuilding, sceneFloorBuilding, sceneInteriorView } from '../../../packages/contracts/src/campus-scenes/sceneInterior';
-import { campusMapSearchPlaces } from '../../../packages/contracts/src/campus-scenes/sceneMapPresentation';
+import { campusMapPresentationChanges, campusMapSearchPlaces } from '../../../packages/contracts/src/campus-scenes/sceneMapPresentation';
 import { buildingExplorerMatches, sceneBuildingExplorer, type BuildingExplorerModel, type BuildingExplorerNode } from '../../../packages/contracts/src/campus-scenes/sceneBuildingExplorer';
 import type { CampusMapAsset,CampusOperationalProjection } from '../../../packages/contracts/src/campus-operation';
 import type { CampusPersonalResponse } from '../../../packages/contracts/src/campus-personal';
@@ -92,6 +92,19 @@ export function nativeCampusDisplay(scene: CampusSceneDocument, places: readonly
   return { document: interior.document, selected, building: owner, contextBuilding: owner, floorId: selection.floorId, interior, unavailable: false };
 }
 
+/** An explicit floor/Campus action supersedes older location intents. Saved
+ * report origins retain their own asset intent until the person navigates. */
+export function nativeCampusFloorNavigation(scene: CampusSceneDocument, places: readonly Place[], current: NativeCampusSelection, floorId: string | null,
+  options: { panel: CampusMapPresentation['panel']; manualDirections: boolean }): { selection: NativeCampusSelection; changes: Record<string, string | null> } | null {
+  const owner = floorId ? null : nativeCampusDisplay(scene, places, current).contextBuilding;
+  const selection = floorId ? nativeCampusPlaceSelection(scene, places, floorId)
+    : { selectedId: owner?.id ?? null, spaceId: owner?.space_id ?? null, buildingId: null, floorId: null };
+  if (!selection || floorId && selection.floorId !== floorId) return null;
+  return { selection, changes: { ...campusMapPresentationChanges({ ...selection, panel: options.panel }),
+    map_floor: options.manualDirections ? floorId : null, campus_asset: null, campus_asset_context: null,
+    campus_space: null, campus_focus: 'explore', panel: null } };
+}
+
 export interface NativeCampusPage<T> { rows: T[]; page: number; pages: number; total: number; hasMore: boolean }
 export function nativeCampusPage<T>(items: readonly T[], requestedPage = 1): NativeCampusPage<T> {
   const pages = Math.max(1, Math.ceil(items.length / 8));
@@ -164,7 +177,10 @@ export function nativeCampusUrlView(params:URLSearchParams,input:{schoolId:strin
   const context=nativeCampusMapContext(data.campus.id,input.environment),scoped=params.get('map_context')===context,presentation={...readCampusMapPresentation(params,context,data)},hasPanel=scoped&&params.has('map_panel');
   const duplicate=[...nativeCampusPresentationKeys,'campus_id','panel','edit'].some(key=>params.getAll(key).length>1),items=personal?personalJourneyDestinations(personal):[],journey=items.find(item=>item.id===params.get('journey'))??items[0],journeyStale=!!params.get('walk_context')&&(!journey||params.get('walk_context')!==personalJourneySignature(journey)||params.get('journey')!==journey.id);
   let selection:NativeCampusSelection={selectedId:presentation.selectedId,spaceId:presentation.spaceId,buildingId:presentation.buildingId,floorId:presentation.floorId},error=duplicate?'This campus link contains conflicting selections. Open the current campus view again.':'';
-  const alias=params.get('place_id')??params.get('place');if(scene&&alias){const next=nativeCampusPlaceSelection(scene,data.places,alias);if(next){selection=next;if(!hasPanel)presentation.panel='place';}else error='The requested canonical place is unavailable in this published campus.';}
+  // Canonical links supply an initial destination. A later explicit scoped map
+  // selection takes over without deleting the link identity and triggering Back.
+  const explicitExplore=scoped&&params.get('campus_focus')==='explore'&&hasPanel;
+  const alias=params.get('place_id')??params.get('place');if(scene&&alias&&!explicitExplore){const next=nativeCampusPlaceSelection(scene,data.places,alias);if(next){selection=next;if(!hasPanel)presentation.panel='place';}else error='The requested canonical place is unavailable in this published campus.';}
   const rawPanel=params.get('panel'),privatePanel=rawPanel==='spaces'||rawPanel==='timetable'||rawPanel==='activity'||rawPanel==='kpis'?rawPanel:null;
   if(privatePanel)presentation.panel='operations';
   const requested=params.get('campus_space'),intent=params.get('campus_focus');

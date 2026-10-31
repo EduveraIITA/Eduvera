@@ -31,7 +31,10 @@ export class ActivityAttendanceLifecycleBridge implements OnApplicationBootstrap
           ${selected?.kind !== "simulation" && this.lastLiveSchoolId ? sql`AND school.id>${this.lastLiveSchoolId}::uuid` : sql``}
         ORDER BY school.id LIMIT 100
       `.execute(this.db)).rows;
-      for (const school of schools) await this.planning.ensureOccurrences(school.id, school.from_date, school.until_date);
+      // This horizon extends published neutral activities. Academic registers,
+      // events and examinations retain their owning adapters; finalization below
+      // still considers every already-open participation register.
+      for (const school of schools) await this.planning.ensureOccurrences(school.id, school.from_date, school.until_date, undefined, { source: "activity" });
       if (selected?.kind !== "simulation") this.lastLiveSchoolId = schools.at(-1)?.id ?? null;
       await this.attendance.finalizeDue(selected?.kind === "simulation" ? selected.institution_id : undefined);
     });

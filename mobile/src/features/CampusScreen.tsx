@@ -20,16 +20,16 @@ import { CampusAssetDetails,CampusPersonalPlaceActivities,CampusJourneyDetails,C
 import { ArrowLeftIcon } from 'phosphor-react-native/src/icons/ArrowLeft';
 import { CaretDownIcon } from 'phosphor-react-native/src/icons/CaretDown';
 import type { CampusSceneDirectory, CampusScenePublished } from '../../../packages/contracts/src/campus-scenes/contracts';
-import { sceneBuildingFloorIds, sceneElementBuilding, sceneFloorBuilding } from '../../../packages/contracts/src/campus-scenes/sceneInterior';
+import { sceneBuildingFloorIds, sceneElementBuilding } from '../../../packages/contracts/src/campus-scenes/sceneInterior';
 import { nativeCampusPlaceFocus } from '../lib/campus-camera';
 import type { SceneViewMode } from '../../../packages/contracts/src/campus-scenes/sceneGeometry';
 import { findSceneWalkingRoute, sceneWalkingPlaceIds, type SceneWalkingRoute } from '../../../packages/contracts/src/campus-scenes/sceneWalking';
 import type { CampusPersonalResponse } from '../../../packages/contracts/src/campus-personal';
 import type { CampusOperationalProjection } from '../../../packages/contracts/src/campus-operation';
 import { useSession } from '../auth/SessionProvider';
-import { useApi } from '../lib/query';
+import { campusReadPollInterval, useApi } from '../lib/query';
 import { useNativeSceneLighting } from '../lib/native-scene-lighting';
-import { nativeCampusRoutePath,nativeCampusDisplay,nativeCampusPage, nativeCampusPlacePage, nativeCampusPlaceSelection, nativeCampusProjectionMatches, nativeCampusPublicationMatches, nativeCampusUrlView,nativeCampusJourneyChanges,nativeCampusPresentationQuery,nativeCampusFullscreenReturnMatches,nativeCampusLayersMatch,nativeCampusJourneyMatches,nativeCampusMapContext,nativeCampusAssetContext,nativeCampusPresentationKeys, selectNativeCampus, type NativeCampusSelection } from '../lib/native-campus';
+import { nativeCampusRoutePath,nativeCampusDisplay,nativeCampusFloorNavigation,nativeCampusPage, nativeCampusPlacePage, nativeCampusPlaceSelection, nativeCampusProjectionMatches, nativeCampusPublicationMatches, nativeCampusUrlView,nativeCampusJourneyChanges,nativeCampusPresentationQuery,nativeCampusFullscreenReturnMatches,nativeCampusLayersMatch,nativeCampusJourneyMatches,nativeCampusMapContext,nativeCampusAssetContext,nativeCampusPresentationKeys, selectNativeCampus, type NativeCampusSelection } from '../lib/native-campus';
 import { Button, Empty, Field, Loading, Notice, Page, Row, SearchField, Section } from '../ui/components';
 import { useTheme } from '../ui/theme';
 import { DomainPages, DomainText, LabeledSwitch, domainDate, domainHref, domainParams, type DomainScreenProps } from './ResourcesScreen';
@@ -40,7 +40,7 @@ import { CampusBuildingPanel } from './campus/CampusBuildingPanel';
 
 const fullScreenMemory=new Map<string,{query:string;camera:CampusCamera;sourceKey:string|null;sourceQuery:string}>();
 function rememberFull(key:string,params:URLSearchParams,camera:CampusCamera,entryKey?:string){const old=fullScreenMemory.get(key),query=nativeCampusPresentationQuery(params);fullScreenMemory.delete(key);fullScreenMemory.set(key,{query,camera:{...camera},sourceKey:entryKey??old?.sourceKey??null,sourceQuery:entryKey?query:old?.sourceQuery??query});while(fullScreenMemory.size>8)fullScreenMemory.delete(fullScreenMemory.keys().next().value!);}
-function useCampusSnapshot<T>(path:string|null){const session=useSession(),focused=useIsFocused(),clock=session.environment.mode==='simulation'?session.environment.virtual_clock?.now:'current';return useQuery<T,Error>({queryKey:['campus',session.scopeKey,path,clock],queryFn:({signal})=>apiFetch<T>(path!,{signal}),enabled:focused&&!!path&&session.status==='authenticated'&&!session.environment.unavailable,staleTime:15000,retry:false,refetchInterval:session.environment.mode==='live'?30000:false});}
+function useCampusSnapshot<T>(path:string|null){const session=useSession(),focused=useIsFocused(),clock=session.environment.mode==='simulation'?session.environment.virtual_clock?.now:'current';return useQuery<T,Error>({queryKey:['campus',session.scopeKey,path,clock],queryFn:({signal})=>apiFetch<T>(path!,{signal}),enabled:focused&&!!path&&session.status==='authenticated'&&!session.environment.unavailable,staleTime:15000,retry:false,refetchInterval:query=>campusReadPollInterval(query.state.status,session.environment.mode==='live'?30000:false)});}
 const emptySelection: NativeCampusSelection = { selectedId: null, spaceId: null, buildingId: null, floorId: null };
 export function CampusScreen(props: DomainScreenProps) {
   const { schoolId, scopeKey } = useSession();
@@ -111,7 +111,7 @@ function PublishedCampus({ schoolId, campusId, href, onNavigate,canEdit }: Domai
   const assets=useMemo(()=>boundCampusAssets(scene??null,layerData?.assets??[]),[scene,layerData]),unavailable=useMemo(()=>assets.filter(campusAssetUnavailable).map(row=>row.element_id),[assets]),blocked=useMemo(()=>campusBlockedLiftIds(scene??null,assets),[scene,assets]);
   const assetStates=useMemo(()=>nativeCampusAssetRenderStates(scene??null,layerData?.assets??[]),[scene,layerData]);
   const selectElement=(id:string)=>{const element=scene?.elements.find(row=>row.id===id);if(!scene||!element)return;if((element.kind==='building'||element.kind==='room')&&element.space_id&&places.some(row=>row.id===element.space_id)){selectPlace(element.space_id);return;}const owner=sceneElementBuilding(scene,places,element),asset=assets.find(row=>row.element_id===id),next={selectedId:id,spaceId:element.space_id??asset?.space_id??null,buildingId:element.floor_id?owner?.id??null:null,floorId:element.floor_id&&owner?element.floor_id:null};setSelection(next);setPanel('place');update({...campusMapPresentationChanges({...next,panel:'place'}),...resetRoute,campus_space:null,campus_focus:'explore',campus_asset:asset?id:null,campus_asset_context:asset&&data?nativeCampusAssetContext(schoolId,user!.id,campusId,environment,data):null,panel:null});};
-  const selectFloor=(floorId:string|null)=>{if(!scene)return;const owner=floorId?sceneFloorBuilding(scene,places,floorId):null;if(floorId&&!owner)return;const next=floorId?{...selection,buildingId:owner!.id,floorId}:{selectedId:building?.id??selection.selectedId,spaceId:building?.space_id??selection.spaceId,buildingId:null,floorId:null};setSelection(next);update({...campusMapPresentationChanges(next),...(urlView?.manualDirections?{map_floor:floorId}:{})});};
+  const selectFloor=(floorId:string|null)=>{if(!scene)return;const next=nativeCampusFloorNavigation(scene,places,selection,floorId,{panel,manualDirections:!!urlView?.manualDirections});if(!next)return;setSelection(next.selection);update(next.changes);};
   const personalMode=urlView?.personalDirections===true,journey=urlView?.journey,journeyDestination=scene&&personalData?personalWalkingDestination(scene,personalData.places,journey?.space_id??null):null,routeScene=useMemo(()=>personalMode&&journeyDestination?.id!==journey?.space_id?personalOutdoorScene(scene??null):scene??null,[personalMode,journeyDestination?.id,journey?.space_id,scene]);
   const routeOrigin=personalMode?urlView?.personalOrigin??'':origin,routeDestination=personalMode?journeyDestination?.id??'':destination,routeAccessible=personalMode?urlView?.personalAccessible===true:accessible;
   const layoutChanged=nativeCampusProjectionMatches(operations.data,schoolId,campusId,environment)&&!!data&&(operations.data?.publication?.id!==data.scene?.id||operations.data?.publication?.version!==data.scene?.version),routingAvailable=!layoutChanged&&!environment.unavailable;

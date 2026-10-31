@@ -6,7 +6,8 @@ import type { CampusMapAsset, CampusOperationalProjection } from '../../packages
 import type { CampusPersonalDestination, CampusPersonalResponse } from '../../packages/contracts/src/campus-personal';
 import { initialCampusMapPresentation } from '../../packages/contracts/src/campus-scenes/sceneMapPresentation';
 import { personalJourneySignature } from '../../packages/contracts/src/campus-scenes/personalJourney';
-import { nativeCampusAssetContext, nativeCampusFullscreenReturnMatches, nativeCampusJourneyChanges, nativeCampusJourneyMatches, nativeCampusLayersMatch, nativeCampusMapContext, nativeCampusPresentationQuery, nativeCampusUrlView, nativeCampusWorldIdentity } from '../src/lib/native-campus';
+import { nativeCampusAssetContext, nativeCampusDisplay, nativeCampusFloorNavigation, nativeCampusFullscreenReturnMatches, nativeCampusJourneyChanges, nativeCampusJourneyMatches, nativeCampusLayersMatch, nativeCampusMapContext, nativeCampusPresentationQuery, nativeCampusUrlView, nativeCampusWorldIdentity } from '../src/lib/native-campus';
+import { campusTransitionKind, focusedCampusRoute, projectCampusOriginReturn, type CampusNavigationState } from '../src/lib/back-policy';
 
 const at = '2026-10-29T09:00:00Z';
 const environment = { mode: 'live' as const };
@@ -139,6 +140,102 @@ test('asset intent wins over saved private and personal selectors only for exact
   assert.equal(nativeCampusUrlView(params, { ...input(), actorId: 'another-actor' }).assetId, null);
   assert.equal(nativeCampusUrlView(params, { ...input(), data: { ...publication, scene: { ...publication.scene!, version: 3 } } }).assetId, null);
   assert.equal(nativeCampusUrlView(params, { ...input(), data: { ...publication, scene: { ...publication.scene!, id: 'other-publication' } } }).assetId, null);
+});
+
+test('Campus explicitly exits an inspected asset despite older place, private and route-floor intents', () => {
+  for (const selectedEnvironment of [environment, { mode: 'simulation' as const, namespace_id: 'world', run_id: 'run' }]) {
+    const projectionEnvironment = selectedEnvironment.mode === 'live' ? operations.environment : { kind: 'simulation' as const, namespace_id: 'world' };
+    const current = { ...input(), environment: selectedEnvironment, personal: { ...personal, environment: projectionEnvironment }, operations: { ...operations, environment: projectionEnvironment } };
+    const original = new URLSearchParams({ map_context: nativeCampusMapContext('campus', selectedEnvironment), campus_id: 'campus',
+      map_place: fixture.id, map_space: 'room-a', map_inside: building.id, map_view_floor: 'floor-a', map_floor: 'floor-a',
+      map_to: 'room-a', map_from: 'gate', map_step_free: '1', map_panel: 'place', map_mode: '2d', map_full: '1', map_search: 'Learning', map_page: '2',
+      campus_space: 'room-a', place_id: 'room-a', place: 'room-a', panel: 'spaces', journey: activityA.id, campus_focus: 'journey',
+      campus_asset: fixture.id, campus_asset_context: nativeCampusAssetContext('school', 'actor', 'campus', selectedEnvironment, publication) });
+    const before = original.toString(), selected = nativeCampusUrlView(original, current);
+    assert.equal(selected.assetId, fixture.id);
+    const navigation = nativeCampusFloorNavigation(scene, places, selected.selection, null, { panel: 'place', manualDirections: true });
+    assert.ok(navigation);
+    const target = apply(original, navigation.changes);
+    for (const nextOperations of [current.operations, structuredClone(current.operations)]) {
+      const view = nativeCampusUrlView(target, { ...current, operations: nextOperations });
+      assert.deepEqual(view.selection, { selectedId: building.id, spaceId: 'building-place', buildingId: null, floorId: null });
+      assert.equal(view.assetId, null);
+      assert.equal(view.privatePanel, null);
+      assert.equal(view.presentation.panel, 'place');
+      assert.equal(view.manualDirections?.destination, 'room-a');
+      assert.equal(view.manualDirections?.origin, 'gate');
+      assert.equal(view.manualDirections?.accessible, true);
+      assert.equal(view.manualDirections?.floorId, null);
+      const display = nativeCampusDisplay(scene, places, view.selection);
+      assert.equal(display.floorId, null);
+      assert.ok(display.document?.elements.some(element => element.id === building.id));
+    }
+    for (const key of ['campus_asset', 'campus_asset_context', 'campus_space', 'panel', 'map_inside', 'map_view_floor', 'map_floor']) assert.equal(target.has(key), false, key);
+    for (const key of ['map_context', 'campus_id', 'map_to', 'map_from', 'map_step_free', 'map_mode', 'map_full', 'map_search', 'map_page', 'journey', 'place_id', 'place']) assert.equal(target.get(key), original.get(key), key);
+    for (const route of ['/areas/campus-view', '/more/virtual-campus']) assert.equal(campusTransitionKind(`${route}?${original}`, `${route}?${target}`), 'update', route);
+    assert.equal(original.toString(), before, 'the retained report origin must not be rewritten');
+  }
+});
+
+test('explicit floor changes select the validated floor and owner instead of carrying the previous room or asset', () => {
+  const original = scoped({ map_place: fixture.id, map_space: 'room-a', map_inside: building.id, map_view_floor: 'floor-a',
+    campus_space: 'room-a', place_id: 'room-a', panel: 'spaces', map_to: 'room-b', map_from: 'gate', map_floor: 'floor-a', map_panel: 'directions',
+    campus_asset: fixture.id, campus_asset_context: nativeCampusAssetContext('school', 'actor', 'campus', environment, publication) });
+  const selected = nativeCampusUrlView(original, input());
+  const navigation = nativeCampusFloorNavigation(scene, places, selected.selection, 'floor-b', { panel: 'directions', manualDirections: true });
+  assert.ok(navigation);
+  const view = nativeCampusUrlView(apply(original, navigation.changes), input());
+  assert.deepEqual(view.selection, { selectedId: building.id, spaceId: 'floor-b', buildingId: building.id, floorId: 'floor-b' });
+  assert.equal(view.assetId, null);
+  assert.equal(view.presentation.panel, 'directions');
+  assert.equal(view.manualDirections?.floorId, 'floor-b');
+  for (const route of ['/areas/campus-view', '/more/virtual-campus']) assert.equal(campusTransitionKind(`${route}?${original}`, `${route}?${apply(original, navigation.changes)}`), 'update', route);
+  assert.deepEqual(nativeCampusDisplay(scene, places, view.selection).document?.elements.filter(element => element.kind === 'room').map(element => element.id), [roomB.id]);
+  for (const floorId of ['missing', 'room-a', 'unmapped']) assert.equal(nativeCampusFloorNavigation(scene, places, selected.selection, floorId, { panel: 'place', manualDirections: false }), null);
+
+  const otherBuilding = { ...building, id: 'other-building', space_id: 'other-building-place' };
+  const otherRoom = { ...roomB, id: 'other-room', space_id: 'other-room-place', floor_id: 'other-floor', parent_element_id: otherBuilding.id };
+  const otherScene = { ...scene, elements: [...scene.elements, otherBuilding, otherRoom] };
+  const otherPlaces = [...places, place('other-building-place', null, 'building'), place('other-floor', 'other-building-place', 'floor'), place('other-room-place', 'other-floor')];
+  assert.deepEqual(nativeCampusFloorNavigation(otherScene, otherPlaces, selected.selection, 'other-floor', { panel: 'directions', manualDirections: true })?.selection,
+    { selectedId: otherBuilding.id, spaceId: 'other-floor', buildingId: otherBuilding.id, floorId: 'other-floor' });
+  const unpublished = { ...scene, elements: scene.elements.map(element => element.id === roomB.id ? { ...element, review_state: 'needs_review' as const } : element) };
+  assert.equal(nativeCampusFloorNavigation(unpublished, places, selected.selection, 'floor-b', { panel: 'place', manualDirections: false }), null);
+});
+
+test('legacy canonical links yield only to an explicit map selection in the current campus/world', () => {
+  const selected = scoped({ place_id: 'room-a', map_place: building.id, map_space: 'building-place', map_panel: 'place', campus_focus: 'explore' });
+  assert.deepEqual(nativeCampusUrlView(selected, input()).selection, { selectedId: building.id, spaceId: 'building-place', buildingId: null, floorId: null });
+  for (const params of [apply(selected, { map_context: 'other-campus:live:global' }), apply(selected, { map_panel: null }), apply(selected, { campus_focus: null })]) {
+    assert.equal(nativeCampusUrlView(params, input()).selection.spaceId, 'room-a', 'an initial canonical destination remains usable without current explicit exploration');
+  }
+  const conflicting = new URLSearchParams(selected);
+  conflicting.append('place_id', 'room-b');
+  const view = nativeCampusUrlView(conflicting, input());
+  assert.deepEqual(view.selection, empty);
+  assert.match(view.error, /conflicting/);
+});
+
+test('Back from Report retains its exact scoped asset origin while Campus remains an explicit exit', () => {
+  const original = scoped({ map_place: fixture.id, map_space: 'room-a', map_inside: building.id, map_view_floor: 'floor-a', map_panel: 'place',
+    campus_asset: fixture.id, campus_asset_context: nativeCampusAssetContext('school', 'actor', 'campus', environment, publication) });
+  const source = { key: 'campus-origin', name: 'campus', path: `/areas/campus-view?${original}` };
+  const state: CampusNavigationState = { key: 'stack', type: 'stack', stale: false, routeKeySeq: 2, routeNames: ['campus', 'report'], index: 1,
+    routes: [source, { key: 'report', name: 'report', path: '/areas/facilities?action=report&holding_id=holding&space_id=room-a' }] };
+  const origin = { scopeKey: 'actor:campus:live', destinationKey: 'report', originKey: source.key };
+  const restored = projectCampusOriginReturn(state, origin, origin.scopeKey);
+  assert.ok(restored);
+  assert.equal(focusedCampusRoute(restored), source);
+  const restoredParams = new URL(focusedCampusRoute(restored)!.path!, 'https://campus.invalid').searchParams;
+  const selected = nativeCampusUrlView(restoredParams, input());
+  assert.equal(selected.assetId, fixture.id);
+  assert.deepEqual(selected.selection, { selectedId: fixture.id, spaceId: 'room-a', buildingId: building.id, floorId: 'floor-a' });
+  const exit = nativeCampusFloorNavigation(scene, places, selected.selection, null, { panel: 'place', manualDirections: false });
+  assert.ok(exit);
+  assert.equal(nativeCampusUrlView(apply(restoredParams, exit.changes), input()).selection.floorId, null);
+  assert.equal(nativeCampusUrlView(restoredParams, input()).assetId, fixture.id, 'an explicit exit must not mutate the retained report origin');
+  assert.equal(nativeCampusUrlView(restoredParams, { ...input(), actorId: 'different-actor' }).assetId, null);
+  assert.equal(projectCampusOriginReturn(state, origin, 'actor:campus:simulation:other-world'), null);
 });
 
 test('asset inspection rejects a stale holding, foreign projection or mismatched selected world', () => {

@@ -5,7 +5,7 @@ import type { EXECUTION_EFFECT_KINDS } from "../campus-model-core/execution-effe
  * rewrite a stale lock unless this number is increased first, so accepting
  * platform drift always leaves a reviewed Simulation change in the diff.
  */
-export const SIMULATION_CONFORMANCE_REVISION = 213 as const;
+export const SIMULATION_CONFORMANCE_REVISION = 214 as const;
 
 export const SIMULATION_DATA_PLANE_CAPABILITIES = Object.freeze([
   "snapshot",
@@ -610,6 +610,10 @@ export const SIMULATION_SAFETY_EVIDENCE = Object.freeze([
     proves: "The Live onboarding continuation helper returns before any query in Simulation, otherwise conditions its update on the matching campus, owner, selected goal, pending step and current admin membership, with fixed owning-workflow destinations rather than query-controlled redirects." },
   { id: "safety:attendance-history-actor-attribution", kind: "real_postgres", test_file: "backend/test/activity-attendance-history.integration.test.ts",
     proves: "Blank-name human decisions retain human attribution; automatic finalization and a QR software decision require retained software provenance through a bounded Core read port, malformed or foreign references stay unknown, and inherited plus corrected history uses the selected COW executor without changing Live or a sibling or rewriting historical records." },
+  { id: "safety:neutral-activity-worker-horizon", kind: "real_postgres", test_file: "backend/test/activity-attendance-history.integration.test.ts",
+    proves: "A real selected COW worker checkpoint extends only its published neutral activity horizon, retains its captured participant roster and source-neutral current-policy finalization, and leaves academic expansion available through its owning adapter. Live and a sibling retain their occurrence, register and roster state. This is bounded native/COW evidence, not a claim that all academic work is disabled or the entire worker catalogue has parity." },
+  { id: "safety:notification-bell-current-visibility", kind: "real_postgres", test_file: "backend/test/notification-bell.integration.test.ts",
+    proves: "The native bell executes one statement through the existing selected-world database executor and preserves the canonical current-source predicate, exact global unread count, timestamp-tied keyset pagination, read history and empty-page count. Real PostgreSQL parity checks retain old records and enforce current account, campus, guardian, calendar and assigned-work-only scope. This query optimization adds no cross-request cache, data cutoff or new Simulation capture capability." },
   { id: "safety:started-recurring-plan-history", kind: "real_postgres", test_file: "backend/test/activity-plan-started-revision.integration.test.ts",
     proves: "Preparing or publishing a dated replacement cannot cancel a recurring occurrence that has already started or create a retroactive replacement; its retained source, Core temporal projection and accepted register remain unchanged, a tomorrow change and valid later-today changes work, and separate first-use creation may still start now. This is owning-service PostgreSQL evidence, not a new HTTP or COW capability claim." },
   { id: "safety:person-account-state", kind: "real_postgres", test_file: "backend/test/participation-account-state.integration.test.ts",

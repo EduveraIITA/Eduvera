@@ -15,6 +15,7 @@ import { useTheme } from '../../../ui/theme';
 import { compileCampusSceneDrawing, pickCampusDrawing } from './compileCampusSceneDrawing';
 import { createCampusSceneRetainedPictures } from './createCampusScenePicture';
 import { useCampusSkiaCamera } from './useCampusSkiaCamera';
+import { useCampusSkiaSurfaceKey } from './useCampusSkiaSurfaceKey';
 import { CampusSkiaPeople } from './CampusSkiaPeople';
 import { CampusSkiaLabels } from './CampusSkiaLabels';
 
@@ -27,6 +28,7 @@ export default function CampusSkiaMap(props: CampusMapCanvasProps) {
   const { colors, dark } = useTheme();
   const editorInterior = draftPreview ? props.editorInterior : undefined;
   const interior = !!floor || !!editorInterior;
+  const surfaceKey = useCampusSkiaSurfaceKey(JSON.stringify([contextKey, floor, mode, editorInterior?.buildingElementId, editorInterior?.floorId]));
   const lighting = props.lighting ?? (dark ? 'night' : 'day'), night = lighting === 'night';
   const sunlight = props.sunlight ?? DEFAULT_SCENE_SUNLIGHT;
   const effectiveSunlight = useMemo(() => night ? { ...sunlight, strength: 0 } : sunlight, [sunlight, night]);
@@ -85,7 +87,7 @@ export default function CampusSkiaMap(props: CampusMapCanvasProps) {
     <GestureDetector gesture={controller.gesture} touchAction="none" userSelect="none">
       <View collapsable={false} onLayout={event => { const { width, height } = event.nativeEvent.layout; setSize(previous => previous.width === width && previous.height === height ? previous : { width, height }); }}
         style={{ flex: 1, overflow: 'hidden', backgroundColor: drawing.groundColor }} accessible={false}>
-        {size.width > 0 && size.height > 0 ? <Canvas style={{ flex: 1 }} opaque colorSpace="srgb" android={{ surfaceType: draftPreview ? 'TextureView' : 'SurfaceView' }} accessible accessibilityRole="image"
+        {size.width > 0 && size.height > 0 ? <Canvas key={surfaceKey} style={{ flex: 1 }} opaque colorSpace="srgb" android={{ surfaceType: draftPreview ? 'TextureView' : 'SurfaceView' }} accessible accessibilityRole="image"
           accessibilityLabel={`${draftPreview ? 'Editable' : 'Published'} campus ${interior ? 'floor plan' : 'map'}. Use Find a place or the building details to explore places and resources.`}>
           <Fill color={drawing.groundColor} />
           <Group transform={controller.transform}>

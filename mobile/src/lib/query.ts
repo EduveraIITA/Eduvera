@@ -5,6 +5,11 @@ import { apiFetch } from './api';
 import { ApiConnectionError } from './api-client';
 import { isExecutionRequest } from './api-policy';
 
+/** A failed source settles on its recovery UI until an explicit read/focus. */
+export function campusReadPollInterval(status: 'pending' | 'error' | 'success', interval: number | false): number | false {
+  return status === 'error' ? false : interval;
+}
+
 export function useApi<T>(path: string | null, options: { refetchInterval?: number | false; staleTime?: number } = {}) {
   const { scopeKey, status, environment } = useSession();
   const focused = useIsFocused(), client = useQueryClient(), queryKey = ['campus', scopeKey, path] as const;
@@ -21,6 +26,6 @@ export function useApi<T>(path: string | null, options: { refetchInterval?: numb
     // An unavailable initial read must settle on its recovery UI instead of
     // replacing it with a fresh loader every polling interval. An explicit
     // refresh, route re-entry or app foreground can start a new bounded read.
-    refetchInterval: query => query.state.status === 'error' ? false : options.refetchInterval ?? 60_000,
+    refetchInterval: query => campusReadPollInterval(query.state.status, options.refetchInterval ?? 60_000),
   });
 }

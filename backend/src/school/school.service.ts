@@ -14,7 +14,7 @@ import { mkdir, rename, unlink, writeFile, readEnvironmentStoredFile } from "../
 import { extname, join } from "node:path";
 import { createHash, createHmac, randomUUID, timingSafeEqual } from "node:crypto";
 import type { FastifyRequest } from "fastify";
-import { sql, type Kysely, type Transaction } from "kysely";
+import { sql, type Kysely, type Selectable, type Transaction } from "kysely";
 import { z } from "zod";
 import type { AuthenticatedRequest, AuthUser } from "../common/request.js";
 import { OBSERVATION_INGRESS_PORT, type ObservationIngressPort } from "../campus-model-core/observation-ingress.port.js";
@@ -40,6 +40,8 @@ import { completeParticipationCapture, findParticipationAcceptance } from "../at
 import { AcademicParticipationBridge, type AcademicParticipationCapture } from "../attendance/academic-participation-bridge.service.js";
 
 type Db = Kysely<Database> | Transaction<Database>;
+type NotificationBellRow = Pick<Selectable<Database["notifications"]>,
+  "id" | "kind" | "title" | "body" | "link" | "metadata" | "read_at" | "created_at" | "attention_eligible">;
 type LeaveStatus = "draft" | "pending_guardian" | "authorized" | "declined" | "school_approved" | "school_rejected" | "withdrawn";
 
 interface StudentContext {
@@ -1795,29 +1797,37 @@ export class SchoolService {
     if (user.active_school_id && await assignedWorkOnly(this.db, user.active_school_id, user.id))
       return { results: [], unread_count: 0, next_cursor: null };
     const after = notificationCursor(page.cursor);
-    let query = this.db.selectFrom("notifications")
-      .select(["id", "kind", "title", "body", "link", "metadata", "read_at", "created_at", "attention_eligible"])
-      .where("recipient_id", "=", user.id)
-      .where(sql<boolean>`notification_is_currently_visible(id,${user.id}::uuid)`);
-    if (after) {
-      query = query.where((expression) => expression.or([
-        expression("created_at", "<", after.createdAt),
-        expression.and([
-          expression("created_at", "=", after.createdAt),
-          expression("id", "<", after.id),
-        ]),
-      ]));
-    }
-    const [rows, unread] = await Promise.all([
-      query.orderBy("created_at", "desc").orderBy("id", "desc").limit(page.limit + 1).execute(),
-      this.db.selectFrom("notifications").select(sql<string>`count(*)::text`.as("count"))
-        .where("recipient_id", "=", user.id).where("read_at", "is", null)
-        .where(sql<boolean>`notification_is_currently_visible(id,${user.id}::uuid)`).executeTakeFirst(),
-    ]);
+    // Unread authorization is needed for the exact count regardless of page.
+    // Evaluate it once in this statement, then reuse those IDs in the page.
+    // Read history still uses the same current predicate before its page limit.
+    // One client/snapshot avoids parallel page/count fanout and duplicate checks.
+    const selected = (await sql<NotificationBellRow & { unread_count: string }>`
+      WITH visible_unread AS MATERIALIZED (
+        SELECT id FROM notifications
+        WHERE recipient_id=${user.id}::uuid AND read_at IS NULL
+          AND notification_is_currently_visible(id,${user.id}::uuid)
+      ), visible_page AS (
+        SELECT id,kind,title,body,link,metadata,read_at,created_at,attention_eligible
+        FROM notifications
+        WHERE recipient_id=${user.id}::uuid
+          ${after ? sql`AND (created_at,id)<(${after.createdAt}::timestamptz,${after.id}::uuid)` : sql``}
+          AND CASE WHEN read_at IS NULL THEN id IN (SELECT id FROM visible_unread)
+            ELSE notification_is_currently_visible(id,${user.id}::uuid) END
+        ORDER BY created_at DESC,id DESC LIMIT ${page.limit + 1}
+      ), unread_total AS (
+        SELECT count(*)::text AS unread_count FROM visible_unread
+      ) SELECT visible_page.*,unread_total.unread_count
+        FROM unread_total LEFT JOIN visible_page ON true
+        ORDER BY visible_page.created_at DESC,visible_page.id DESC
+    `.execute(this.db)).rows;
+    const rows = selected.filter(row => row.id !== null).map(row => ({
+      id: row.id, kind: row.kind, title: row.title, body: row.body, link: row.link,
+      metadata: row.metadata, read_at: row.read_at, created_at: row.created_at, attention_eligible: row.attention_eligible,
+    }));
     const results = rows.slice(0, page.limit);
     return {
       results,
-      unread_count: Number(unread?.count ?? 0),
+      unread_count: Number(selected[0]?.unread_count ?? 0),
       next_cursor: rows.length > page.limit && results.length
         ? encodeNotificationCursor(results[results.length - 1]!)
         : null,
