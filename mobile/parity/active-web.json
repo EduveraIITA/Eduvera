@@ -963,7 +963,9 @@
         "mobile/src/lib/people-access.ts",
         "mobile/src/lib/campus-invitations.ts",
         "mobile/src/lib/people-academic-catalogue.ts",
-        "mobile/src/lib/native-pending-action.ts"
+        "mobile/src/lib/native-pending-action.ts",
+        "mobile/src/features/more/MoreToolBoundary.tsx",
+        "mobile/src/lib/more-tool-access.ts"
       ],
       "queryModes": [
         "Institution campus/academics/operating-rules/history/promotion; manifest People setup, current membership access and invitation directory; organization; responsibilities/:staffProfileId; capabilities; whole-campus guidance.",
@@ -2374,7 +2376,9 @@
         "mobile/src/features/TeachingFeedbackScreen.tsx",
         "mobile/src/features/OrganizationVerificationScreen.tsx",
         "mobile/src/features/GovernanceScreen.tsx",
-        "mobile/src/features/AccountCalendarConnections.tsx"
+        "mobile/src/features/AccountCalendarConnections.tsx",
+        "mobile/src/features/more/MoreToolBoundary.tsx",
+        "mobile/src/lib/more-tool-access.ts"
       ],
       "queryModes": [
         "connections calendar/channels; policies current published/detail; teaching feedback; governance institutional mandate/procedure; verification evidence/correction."
@@ -3651,7 +3655,7 @@
     "mobile/src/features/gate/visitor-entry-copy.ts": "a4bcb85db2d5c4e1a28eb3a6f69af93f0726404b2142058aa524c5d9e0bb8f1b",
     "mobile/src/features/insights/InsightVisuals.tsx": "e92766fcb7ad96d68bea71efcde58c4ab04eb2caebef04a95459665314c2aabd",
     "mobile/src/features/insights/InstitutionInsights.tsx": "3dbe8f474efc2696e421b73671cfd68582748cb56466e4fb9d71b3757c5a1282",
-    "mobile/src/features/more/MoreToolBoundary.tsx": "3f5603aab0b4592a8f725df60b60bc3dbe1ab1bc293f983b1872f5e8081e7b6e",
+    "mobile/src/features/more/MoreToolBoundary.tsx": "fd0d695afd7c60995e165aba4b9e661bead014d32fa517fcc1152404452b42bc",
     "mobile/src/features/people/NativePeopleBulkAdd.tsx": "7f8c08878bc9266e5e3bbdefe3927c577fc5f417e5751bbc79e484322ec11a4c",
     "mobile/src/features/people/usePeopleEditorGuard.ts": "1467439d06ea6f963d96a32581a7313da86b5c3347b5139e84e8e3b3423e67c8",
     "mobile/src/features/reports/AcademicReportForms.tsx": "26010a507de7738ac814fb14afd74b971157638fe35b326f6c0648e58f06bb60",
@@ -3776,6 +3780,7 @@
     "mobile/src/lib/message-actions.ts": "1ed392a93b247a3b710854a7ca12c8a2088eb823d1c5d4acdda030f4818f69c0",
     "mobile/src/lib/message-composer.ts": "ad80f9482ea3e0e4e92f228ca5e533d9f12b392ecebbbcb32a26f02df68eed23",
     "mobile/src/lib/more-action.ts": "34f8e411feea0b8e96545c443b9e4d8b6267b9f98176593e04a0ae3168d6ca56",
+    "mobile/src/lib/more-tool-access.ts": "2c58d5d8a7c7ce5aca47492594507933dfc94d5a67195c2bbfb4e88f29f5ebd0",
     "mobile/src/lib/native-area-destination.ts": "e9354e4fb6d360b8aebe79854487493971f951056e2ec8c83d0a046b11a5575d",
     "mobile/src/lib/native-authoring-policy.ts": "4f9e0460963fb622311f8507c8a6de8575aab52be04644bfd4c13db0238f61f2",
     "mobile/src/lib/native-calendar.ts": "b5028be607e83da4e90c9c800bc26f29104af410c654de63556421aead855a37",

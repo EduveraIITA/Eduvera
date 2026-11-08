@@ -428,8 +428,10 @@ feature counts. [Core source conformance](../artifacts/core-functionality-audit/
 is revision 215, safety-ready/no blockers, with 80 unverified capability-evidence
 slots across 24 modules; that is a separate ledger, not 80 reproduced defects.
 
-The Mac was locked and CUA exposed no apps or browsers. No fresh rendered
-browser/device acceptance is claimed. Authentication sessions created by the audit
+At that audit checkpoint the Mac was locked and no rendered tour was claimed.
+It is now unlocked; the bounded Safari217 check reproduced the setup-entry defect
+described below, without completing rendered multi-account or device acceptance.
+Authentication sessions created by the audit
 were revoked and refused afterward; no domain command, provider inference, email,
 SMS or restore job was dispatched. Owner direction defers TestFlight to prioritize
 functional closure. Do not waive Simulation, recovery or actual user-outcome tests.
@@ -444,58 +446,39 @@ finding. A successful read is not proof an earlier ambiguous write committed.
 
 `https://app2.thatcampus.com` serves the isolated DT backend and sole Expo web app through dedicated edge/Cloud Run resources, identities, separate Live/Simulation databases on shared PostgreSQL 17 and private persistent files. The owner chose to retain the shared server and existing limits: no new server, resize or pool/concurrency increase. Old ERP and maintained Mac development remain separate targets. Operations and code-versus-data rollback belong to the [DT runbook](../deploy/dt/README.md).
 
-The catalogue refusal follow-up closes a reproduced duplicate-record409 lock in
-the actual native journal. [Red journal evidence](../artifacts/core-functionality-fixes/email/catalogue-terminal-refusal-red.log)
-is retained. The owner now commits exact terminal refusals after rolling back only
-known native effects; unexpected Core/audit/infrastructure failures retain the
-unknown action. Refused creates retain a planned Core target without a native row.
-The client binds full reviewed intent, actor and selected world, resets the old
-confirmation and requires a fresh catalogue review while preserving entered values.
-
-[Thirteen fresh PostgreSQL cases](../artifacts/core-functionality-fixes/postgres/20261108_a4e39c2e/runner.json)
-pass with zero skips, including ordinary compiled HTTP, a refused first COW write,
-rollback/rematerialization, stable refusal after its duplicate condition disappears,
-and unchanged Live/sibling state. The storage adapter preserves captured logical
-primary/unique names and permits only a validated standalone rollback to savepoint
-before normal SQL binding resumes after23505. Seven existing COW concurrency cases
-now include aborted recovery and unsafe/foreign/no-transaction rejection. Earlier
-COW diagnostics remain in their raw failed receipts; both owned databases are
-cleaned without forced disconnect. [Source review](../artifacts/core-functionality-fixes/review/catalogue-refusal-217-source-review.json)
-and the [two-source native review](../artifacts/core-functionality-fixes/parity217/review.json)
-retain their stated limits; all53 unrelated native findings remain unchanged.
-Conformance217 rollout checks are still pending at this source checkpoint.
-
-The first closure wave adds exact academic catalogue recovery, explicit assignment
+The first closure wave now includes exact academic catalogue recovery, assignment
 review handover, future examination amendments and truthful unavailable-email
-handling. The [final isolated PostgreSQL run](../artifacts/core-functionality-fixes/postgres/20261108_8fba98a0/runner.json)
-passes **30/30 actual cases across nine files**, with no failed/skipped/todo cases,
-including ordinary compiled cookie/CSRF HTTP recovery and real COW mutations with
-unchanged Live/sibling state. Both owned databases were dropped with zero clients
-and no forced disconnect. Earlier HTTP startup and adversarial-fixture failures
-remain in their original receipts; the first HTTP startup cause was not established
-by its empty suite-level report. The harness now preserves rejected startup
-exceptions and bounded redacted diagnostics without extending timeouts.
+handling. Catalogue refusals commit through the existing Core outcome after known
+native effects roll back; unknown infrastructure/Core/audit failures remain
+retained. Full intent, actor and selected world bind the proof. Refused creates
+retain a planned target without a native row; the editor preserves entered values,
+clears its old confirmation and requires a fresh review.
 
-The [final mobile suite](../artifacts/core-functionality-fixes/mobile-final.log)
-passes 1867 cases with no failures/skips, including the mounted examination forms. The
-[sequential fast backend rerun](../artifacts/core-functionality-fixes/backend-fast-sequential.log)
-passes 540/540. Its earlier concurrent source-scan timeout is retained in
-`backend-fast.log`, with no timeout extension. The deployment lint gate accepts
-58 exact unchanged prior errors, with no new errors or warnings; this is not clean
-ordinary lint. Types and focused checks pass. The
-[narrow source-ledger review](../artifacts/core-functionality-fixes/parity/review.json)
-registers 17 reviewed mobile/wire sources while retaining the exact same 53 unrelated
-findings, route/capability inventory and implemented-unverified statuses. This is
-source review, not rendered acceptance. The
-[independent platform review](../artifacts/core-functionality-fixes/review/source-conformance-review.json)
-covers the narrow Core subject extension, guarded examination bridges and exact
-namespace provenance. The [manual216 seal](../artifacts/core-functionality-fixes/review/manual-seal-216.json)
-and strict verification retain fingerprint
-`sha256:c86eba855ef9b91c316de02f023c769e976104b90a086889511e684982c5039b`;
-new timers, providers and workers were not introduced. [Web and iOS bundle checks](../artifacts/core-functionality-fixes/release-local-checks.json) pass. Actual email delivery, hosted historical Simulation recovery,
-rendered multi-account journeys and broader lifecycle gaps remain open.
+[Red journal evidence](../artifacts/core-functionality-fixes/email/catalogue-terminal-refusal-red.log)
+and failed COW diagnostics remain inspectable. The
+[full local PostgreSQL run](../artifacts/core-functionality-fixes/postgres/20261108_ccad16bc/runner.json)
+passes 159 actual cases across 27 files with zero skips/todo. It includes ordinary
+compiled HTTP, refused first COW writes, rematerialization and retained refusal
+after its duplicate condition disappears, with unchanged Live/sibling state.
+Both disposable databases were dropped with zero clients and no forced disconnect.
+Captured primary/unique constraint names remain logical; only validated standalone
+rollback-to-savepoint may recover an aborted transaction before normal binding
+resumes. Source/context/read-only/gate checks remain in place.
 
-Conformance **216** is live at `https://app2.thatcampus.com`, release `b0f17d14d2ec1ff5a93d9706357174d1ca6c1191`, revision `thatcampus-dt-r-b0f17d14d2ec-42461681509-1`, image digest `sha256:6f7602f932db3377e9af1a6ab52bfd3631c6f040e450cf525a021efc2a9a14ba`. [Actions run 42461681509](https://github.com/EduveraIITA/Eduvera/actions/runs/42461681509) and the [release receipt](../artifacts/core-functionality-fixes/ci-release-42461681509/release.json) record successful one-attempt migration `thatcampus-dt-migrate-c89tf` and candidate/public smoke. [CI](../artifacts/core-functionality-fixes/ci-216-verify.log) passes 150 actual PostgreSQL cases across 26 files with zero skipped/todo cases, 540 fast backend cases, 40 source/auth cases, 1867 mobile cases and 43 deployment guards, plus strict conformance/types/build/web-export checks. The lint gate accepts 58 exact unchanged prior errors; it is not clean ordinary lint. [Post-deployment reads](../artifacts/core-functionality-fixes/cloud-read-216.json) pass for director, faculty and student, including metadata-only handover permissions; every probe-owned session is revoked and then refused. These are bounded automated/API checks, not rendered, physical-device or sustained-capacity acceptance.
+[Manual conformance217](../artifacts/core-functionality-fixes/review/manual-seal-217.json)
+retains fingerprint `sha256:8e3f3ba618058e5b76452f990d032e169d4d1f56c341c82b2940e7e2bdd2e775`.
+[Shared tests and web/iOS bundles](../artifacts/core-functionality-fixes/release-local-checks-217.json)
+pass; the [source review](../artifacts/core-functionality-fixes/review/catalogue-refusal-217-source-review.json)
+and [native review](../artifacts/core-functionality-fixes/parity217/review.json)
+preserve their stated limits. All 53 unrelated native findings and 80 capability
+evidence slots remain. Old/pinned worlds are not rewritten, standalone indexes are
+outside constraint-name preservation, and no provider or worker was introduced.
+Email delivery, completed rendered multi-account journeys, the renewed iPhone
+install, hosted historical Simulation recovery and broader lifecycle gaps remain open.
+
+Conformance **217** is live at `https://app2.thatcampus.com`, release `1d20692fde6fd981d9dfc2d48eaff3bd5b02e2c1`, revision `thatcampus-dt-r-1d20692fde6f-42467414526-1`, image digest `sha256:1c3763aa9ac8c6b8859f2f664f2b1a04dabb21f93a977cfc0ff602e84670094f`. [Actions run 42467414526](https://github.com/EduveraIITA/Eduvera/actions/runs/42467414526) and the [release receipt](../artifacts/core-functionality-fixes/ci-release-42467414526/release.json) record successful one-attempt migration check `thatcampus-dt-migrate-h7nvw` and candidate/public smoke. [CI](../artifacts/core-functionality-fixes/ci-217-verify.log) passes 159 actual PostgreSQL cases across 27 files with zero skipped/todo cases, 540 fast backend cases, 40 source/auth cases, 1870 mobile cases and 43 deployment guards, plus strict conformance/types/build/web-export checks. The lint gate accepts 47 exact unchanged prior errors; it is not clean ordinary lint. [Live reads](../artifacts/core-functionality-fixes/cloud-read-217.json) pass for director, faculty and student: handover setup is allowed only for the director's current authority, with all probe-owned sessions revoked and then refused. These are bounded automated/API checks, not rendered, physical-device or sustained-capacity acceptance.
+
+Source218's authorized setup-entry repair is pending release. With the Mac now unlocked, a [bounded Safari217 check](../artifacts/core-functionality-fixes/rendered-browser-217.json) signed in the director and read People records, then reproduced a false denial at Campus setup. The [entry repair proof](../artifacts/core-functionality-fixes/email/more-tool-entry-source.json) retains the failing mounted regression, 19 passing focused checks and whole-mobile TypeScript. It resolves an explicit setup child through the current grouped setup launcher, retaining actor/campus/world/error and backend permission guards. Its source fingerprint is `sha256:c86fe454fbdabc457db08a1f158e667979bd9d7624d467e3011fcf29f0fadd39`. This is pending navigation work, not rendered218 or renewed native-install acceptance; the [native review](../artifacts/core-functionality-fixes/parity218/review.json) keeps all 53 source findings and 80 capability-evidence slots unchanged.
 
 Release 215 restricts teaching-context horizon expansion to activity sources, preserves the caller transaction, adds bounded pool acquisition/lease telemetry, and returns a canonical read-versus-unconfirmed-action 503 for exact acquisition failures, including Fastify's pre-controller rate-limit hook. [Real pool tests](../artifacts/app2-cloud-deployment/pool-telemetry-validation.json), [source/safety review](../artifacts/app2-cloud-deployment/215-independent-source-and-seal-review.json), the retained red regression and CI cover these changes. Pool size remains four. The earlier 214 failures below remain evidence; the latest passes do not identify their historical cause.
 

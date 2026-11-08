@@ -3,6 +3,7 @@ import type { WorkspaceManifest, WorkspaceMoreItem } from '../../../../packages/
 import { assertWorkspaceManifestContext, normalizeWorkspaceManifest } from '../../../../packages/contracts/src/workspace-normalizer';
 import { useSession } from '../../auth/SessionProvider';
 import { useApi } from '../../lib/query';
+import { resolveMoreToolItem } from '../../lib/more-tool-access';
 import { Empty, Loading, Page } from '../../ui/components';
 
 export interface MoreToolContext { manifest: WorkspaceManifest; item: WorkspaceMoreItem; refreshAccess: () => void }
@@ -14,8 +15,7 @@ export function MoreToolBoundary({ itemKey, title, children }: { itemKey: string
       if (!query.data || !user || !schoolId) return null;
       const manifest = normalizeWorkspaceManifest(query.data);
       assertWorkspaceManifestContext(manifest, { actorUserId: user.id, institutionId: schoolId, environment });
-      const items = manifest.more.groups?.length ? manifest.more.groups.flatMap(group => group.items) : [...manifest.more.setup, ...manifest.more.other ?? []];
-      const item = items.find(candidate => candidate.key === itemKey);
+      const item = resolveMoreToolItem(manifest, itemKey);
       return item ? { manifest, item } : null;
     } catch { return null; }
   }, [query.data, user?.id, schoolId, environment, itemKey]);

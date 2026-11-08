@@ -5,7 +5,7 @@ import type { EXECUTION_EFFECT_KINDS } from "../campus-model-core/execution-effe
  * rewrite a stale lock unless this number is increased first, so accepting
  * platform drift always leaves a reviewed Simulation change in the diff.
  */
-export const SIMULATION_CONFORMANCE_REVISION = 217 as const;
+export const SIMULATION_CONFORMANCE_REVISION = 218 as const;
 
 export const SIMULATION_DATA_PLANE_CAPABILITIES = Object.freeze([
   "snapshot",
@@ -457,6 +457,8 @@ export const SIMULATION_CONFORMANCE_EVIDENCE = Object.freeze([
  * upgrade a domain module to feature parity by association.
  */
 export const SIMULATION_SAFETY_EVIDENCE = Object.freeze([
+  { id: "safety:native-setup-tool-entry", kind: "unit_boundary", test_file: "mobile/test/more-tool-boundary-mounted.test.ts",
+    proves: "The actual shared native MoreToolBoundary mounts a currently contributed setup child only through its exact authorized setup launcher. Live and Simulation use the same normalized manifest and actor/campus/world context assertion; unavailable/pending/error, stale actor/institution/namespace and missing launcher refuse. Ordinary grouped tools remain unchanged. The resolver and unchanged internal-href policy are protected shared client material. No backend permission, writer, store, event, clock or connector changes; this is mounted component/context evidence, not a rendered cloud/native journey or broad capability acceptance." },
   { id: "safety:account-email-readiness", kind: "unit_boundary", test_file: "backend/test/account-email-readiness.test.ts",
     proves: "Deployment-global unavailable email returns the same reset availability for known and unknown addresses before lookup or token issuance, never exposes production development proofs and preserves an existing verification proof. Configured provider rejection does not disclose an address-specific result. These are mocked account-control boundaries, not uniform timing, mailbox delivery or provider certification." },
   { id: "safety:packaged-universal-web-assets", kind: "unit_boundary", test_file: "backend/test/web-assets.test.ts",
@@ -1270,6 +1272,9 @@ export const SIMULATION_FRONTEND_ENVIRONMENT_FILES = Object.freeze([
 
 /** Shared adapters are outside Nest domain roots but still cross material boundaries. */
 export const SIMULATION_SHARED_MATERIAL_FILES = Object.freeze([
+  "mobile/src/features/more/MoreToolBoundary.tsx",
+  "mobile/src/lib/more-tool-access.ts",
+  "mobile/src/lib/api-policy.ts",
   "backend/src/common/campus-timezone.ts",
   "backend/src/common/attachment-headers.ts",
   "backend/src/common/brand-assets.ts",
