@@ -13,6 +13,8 @@ import {
 import type { StoredSimulationSnapshot } from "../src/database/simulation-snapshot-store.js";
 import { requireIsolatedTestDatabaseUrl } from "./test-database.js";
 import { CampusViewService } from "../src/campus-view/campus-view.service.js";
+import { executionEnvironmentStorage } from '../src/campus-model-core/execution-time.runtime.js';
+import { simulationRequestEnvironment } from '../src/database/simulation-world.service.js';
 
 const enabled = process.env.SIMULATION_COLD_COW_TEST_ISOLATED === "true";
 const targetUrl = enabled
@@ -192,14 +194,14 @@ describe.runIf(enabled)("native cold-COW transaction visibility", () => {
       } finally { await driver.releaseConnection(connection); }
     } };
     const repository = {
-      hasActiveAdminMembership: async () => true,
-      school: async () => ({ id: snapshot.school_id, name: "Mechanical campus", code: "MECH", timezone: "UTC" }),
-      campuses: async () => [{ id: campusId, name: "Mechanical campus", code: "MECH", campus_type: "main", is_primary: true, timezone: "UTC" }],
-      spaces: async () => spaces, examSpaceExpectations: async () => [], dayOccurrences: async () => [],
-      gateActivityToday: async () => [], activeVisitorCount: async () => 0, motionParticipants: async () => [],
+      hasActiveAdminMembership: () => Promise.resolve(true),
+      school: () => Promise.resolve({ id: snapshot.school_id, name: "Mechanical campus", code: "MECH", timezone: "UTC" }),
+      campuses: () => Promise.resolve([{ id: campusId, name: "Mechanical campus", code: "MECH", campus_type: "main", is_primary: true, timezone: "UTC" }]),
+      spaces: () => Promise.resolve(spaces), examSpaceExpectations: () => Promise.resolve([]), dayOccurrences: () => Promise.resolve([]),
+      gateActivityToday: () => Promise.resolve([]), activeVisitorCount: () => Promise.resolve(0), motionParticipants: () => Promise.resolve([]),
     };
     const service = new CampusViewService(repository as never, temporal as never,
-      { recentActivity: async () => [], operationalSignals: async () => [] } as never);
+      { recentActivity: () => Promise.resolve([]), operationalSignals: () => Promise.resolve([]) } as never);
     const user = { id: randomUUID(), role: "admin", active_school_id: snapshot.school_id, is_active: true } as const;
     let locked = false;
     let requests: Array<Promise<unknown>> = [];
@@ -373,6 +375,28 @@ describe.runIf(enabled)("native cold-COW transaction visibility", () => {
       await writer.executeQuery(CompiledQuery.raw("UPDATE cold_capture_rows SET value='savepoint copy' WHERE id=1"));
       await driver.rollbackToSavepoint(writer, "before_cold_copy");
       await driver.releaseSavepoint(writer, "before_cold_copy");
+      await expect(reader.executeQuery(CompiledQuery.raw('ROLLBACK TO SAVEPOINT before_failed_insert')))
+        .rejects.toThrow('requires an open transaction');
+      await driver.savepoint(writer,'before_failed_insert');
+      await expect(writer.executeQuery(CompiledQuery.raw("INSERT INTO cold_capture_rows(id,value) VALUES(1,'duplicate')")))
+        .rejects.toMatchObject({code:'23505',table:'cold_capture_rows',constraint:'cold_capture_rows_pkey'});
+      await expect(writer.executeQuery(CompiledQuery.raw('ROLLBACK TO SAVEPOINT before_failed_insert; SELECT 1')))
+        .rejects.toThrow('standalone parameter-free');
+      await expect(writer.executeQuery(CompiledQuery.raw('ROLLBACK TO SAVEPOINT before_failed_insert',[1])))
+        .rejects.toThrow('standalone parameter-free');
+      await expect(writer.executeQuery(CompiledQuery.raw('ROLLBACK TO SAVEPOINT before_failed_insert;')))
+        .rejects.toThrow('Invalid Simulation SQL identifier');
+      const wrongWorld=simulationRequestEnvironment({institution_id:snapshot.school_id,scenario_id:driver.branch.scenario_id,
+        run_id:randomUUID(),virtual_now:snapshot.captured_at,source_snapshot_ref:`sha256:${snapshot.content_hash}`,
+        manifest_ref:'cold-cow-rollback-fixture',checked_at:snapshot.captured_at});
+      await executionEnvironmentStorage.run(wrongWorld,()=>expect(writer.executeQuery(CompiledQuery.raw('ROLLBACK TO SAVEPOINT before_failed_insert')))
+        .rejects.toThrow('Simulation connection identity mismatch'));
+      await writer.executeQuery(CompiledQuery.raw('ROLLBACK TO SAVEPOINT before_failed_insert'));
+      await driver.releaseSavepoint(writer,'before_failed_insert');
+      // The failed cold materialization rolled back too. A new valid write must
+      // discover and materialize the restored frozen view again in this lease.
+      expect((await writer.executeQuery(CompiledQuery.raw("UPDATE cold_capture_rows SET value='recovered copy' WHERE id=1 RETURNING value"))).rows)
+        .toEqual([{value:'recovered copy'}]);
       pendingBegin = driver.beginTransaction(reader, { isolationLevel: "repeatable read", accessMode: "read only" })
         .then(() => { readerOpen = true; });
       void pendingBegin.catch(() => undefined);
@@ -390,6 +414,7 @@ describe.runIf(enabled)("native cold-COW transaction visibility", () => {
         WHERE namespace.nspname=$1 AND relation.relname='cold_capture_rows'`, [driver.branch.schema_name])).rows[0]?.relkind).toBe("v");
       expect((await pool.query("SELECT table_name FROM dt_simulation.materialized_tables WHERE run_id=$1", [driver.branch.run_id])).rows).toEqual([]);
       observations.push({ lifecycle: "savepoint cold-copy rollback", observed_blocked_gate_after_savepoint_rollback: true,
+        duplicate_constraint:'cold_capture_rows_pkey',raw_sql_rollback_recovered_aborted_transaction:true,rematerialized_valid_write:true,
         first_read: firstRead, native_relation_after_rollback: "view", materialized_tables: [] });
     } finally {
       if (writerOpen) await driver.rollbackTransaction(writer);

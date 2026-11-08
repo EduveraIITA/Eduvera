@@ -108,13 +108,33 @@ describe.skipIf(!enabled)('academic catalogue recovery through the current compi
       sql<{ count: number }>`SELECT count(*)::int AS count FROM campus_model_events WHERE school_id=${school}::uuid AND source_domain='academic_catalogue' AND source_record_id=${id}`,
     ]) expect((await query.execute(db)).rows).toEqual([{ count: 3 }]);
 
+    const duplicate = { ...original, catalog_id: randomUUID(), command_id: randomUUID() };
+    const conflict = await actor.request(`${root}/`, 'POST', duplicate);
+    expect(conflict.status).toBe(409);
+    const refusal = (await conflict.json() as { error: { fields: { catalogue_refusal: unknown } } }).error.fields.catalogue_refusal;
+    expect(refusal).toMatchObject({ receipt_state: 'completed', terminal_state: 'conflicted', handler: 'academic.catalogue',
+      school_id: school, actor_user_id: account.id, environment_namespace_id: `live:${school}`, kind: 'classes',
+      source_id: duplicate.catalog_id, command_id: duplicate.command_id, expected_revision: 0, reason_code: 'academic_catalogue_duplicate' });
+    expect(await db.selectFrom('class_sections').select('id').where('id', '=', duplicate.catalog_id).execute()).toEqual([]);
+    expect(await db.selectFrom('campus_model_commands').select('state').where('correlation_id', '=', duplicate.command_id).execute()).toEqual([{ state: 'conflicted' }]);
+    expect(await db.selectFrom('campus_model_entities').select('lifecycle_state').where('school_id', '=', school)
+      .where('domain', '=', 'academic_catalogue').where('domain_id', '=', duplicate.catalog_id).execute()).toEqual([{ lifecycle_state: 'planned' }]);
+    await actor.json(`${root}/${id}/`, 'PATCH', { ...secondEdit, command_id: randomUUID(), expected_revision: 3, section: 'B' });
+    const replayedRefusal = await actor.request(`${root}/`, 'POST', duplicate);
+    expect(replayedRefusal.status).toBe(409);
+    expect(await replayedRefusal.json()).toMatchObject({ error: { code: 'catalogue_command_refused', fields: { catalogue_refusal: refusal } } });
+    const changedDuplicate = await actor.request(`${root}/`, 'POST', { ...duplicate, room_number: 'Another intent' });
+    expect(changedDuplicate.status).toBe(409);
+    expect(await changedDuplicate.json()).toMatchObject({ error: { detail: 'This command was already used with different catalogue details.' } });
+
     // Fixture authority revocation, not a shadow catalogue writer. The existing
     // cookie remains authenticated but may neither reveal nor replay a receipt.
     await db.updateTable('school_memberships').set({ role: 'member' }).where('school_id', '=', school).where('user_id', '=', account.id).execute();
     expect((await actor.request(confirmation(original.command_id))).status).toBe(403);
     expect((await actor.request(`${root}/`, 'POST', original)).status).toBe(403);
+    expect((await actor.request(`${root}/`, 'POST', duplicate)).status).toBe(403);
     expect((await actor.request('/api/v1/auth/logout/', 'POST', {})).status).toBe(204);
     expect((await actor.request(confirmation(original.command_id))).status).toBe(401);
-    expect(await db.selectFrom('class_sections').select(['revision', 'room_number']).where('id', '=', id).execute()).toEqual([{ revision: 3, room_number: 'CC2-203' }]);
+    expect(await db.selectFrom('class_sections').select(['revision', 'room_number']).where('id', '=', id).execute()).toEqual([{ revision: 4, room_number: 'CC2-203' }]);
   }, 120_000);
 });

@@ -152,3 +152,62 @@ test('real journal retains uncertain edits for unrelated proofs and clears only 
   assert.equal(await second.recover({ ownerHref: record.ownerHref, assertActive() {} }), false);
   assert.equal(clears, 1); assert.equal(raw, null); assert.equal(second.snapshot().action, null);
 });
+
+function terminalRefusal(record = identified(), changes: Record<string, unknown> = {}) {
+  const body = JSON.parse((record.payload as { body: string }).body);
+  return { status: 409, details: { error: { status: 409, code: 'catalogue_command_refused', fields: { catalogue_refusal: {
+    confirmation: 'terminal_refusal', receipt_state: 'completed', handler: 'academic.catalogue', terminal_state: 'conflicted',
+    school_id: school, actor_user_id: actor, environment_namespace_id: `live:${school}`, kind: 'classes', source_id: id,
+    command_id: key, expected_revision: record.source!.revision, payload_hash: 'a'.repeat(64), reason_code: 'academic_catalogue_duplicate',
+    reviewed_request: { kind: 'classes', id, values: { ...values, ...(body.room_number ? { room_number: body.room_number } : {}) },
+      expected_revision: record.source!.revision, confirmed: body.confirmed ?? false, change_reason: body.change_reason ?? '' }, ...changes,
+  } } } } };
+}
+
+test('actual journal releases a duplicate only with its durable exact terminal refusal and requires fresh review', async () => {
+  let raw: string | null = null, sends = 0;
+  const record = identified(), storage = { read: async () => raw, write: async (value: string) => { raw = value; }, clear: async () => { raw = null; } };
+  const options = { endpoint: record.endpoint, method: 'POST' as const, body: { ...values, catalog_id: id }, serverKey: 'command_id' as const, source: record.source };
+  const journal = new NativePendingActionJournal({ scope, domain: 'people', storage, randomId: () => key,
+    send: async () => { sends++; throw terminalRefusal(record); }, read: async () => ({}) });
+  await journal.hydrate(); await journal.run(options, { ownerHref: record.ownerHref, refreshPath: record.refreshPath, assertActive() {} });
+  assert.equal(raw, null); assert.equal(journal.snapshot().action, null); assert.equal(journal.snapshot().obsolete, true);
+  assert.equal(await journal.run(options, { ownerHref: record.ownerHref, refreshPath: record.refreshPath, assertActive() {} }), false);
+  assert.equal(sends, 1); journal.reviewed(); assert.equal(journal.snapshot().obsolete, false);
+});
+
+test('terminal refusal classification rejects other actor/world/source/intent and every accepted or legacy action', async () => {
+  const { academicCatalogueCommandObsolete } = await import('../src/lib/people-academic-catalogue');
+  const record = identified(), proof = terminalRefusal(record).details.error.fields.catalogue_refusal;
+  for (const change of [{ actor_user_id: school }, { school_id: actor }, { environment_namespace_id: `live:${actor}` },
+    { source_id: actor }, { command_id: actor }, { kind: 'terms' }, { expected_revision: 1 }, { terminal_state: 'accepted' },
+    { terminal_state: 'pending' }, { receipt_state: 'absent' }, { payload_hash: 'invalid' }, { reason_code: 'unknown' },
+    { reviewed_request: { ...proof.reviewed_request, values: { ...values, room_number: 'Different intent' } } },
+    { reviewed_request: { ...proof.reviewed_request, confirmed: true } }, { reviewed_request: { ...proof.reviewed_request, change_reason: 'Another review' } }])
+    assert.equal(academicCatalogueCommandObsolete(terminalRefusal(record, change), record), false);
+  assert.equal(academicCatalogueCommandObsolete(terminalRefusal(record), { ...record, phase: 'accepted' }), false);
+  assert.equal(academicCatalogueCommandObsolete(terminalRefusal(record), action()), false);
+  assert.equal(academicCatalogueCommandObsolete({ status: 503, details: terminalRefusal(record).details }, record), false);
+  const world = { ...record, scope: { ...scope, mode: 'simulation' as const, namespaceId: `scenario:${school}:run:${id}` } };
+  assert.equal(academicCatalogueCommandObsolete(terminalRefusal(record), world), false);
+  assert.equal(academicCatalogueCommandObsolete(terminalRefusal(record, { environment_namespace_id: world.scope.namespaceId }), world), true);
+});
+
+test('unknown duplicate outcomes survive remount and generic errors until the exact durable refusal is recovered', async () => {
+  const record = identified(); let raw: string | null = null, exact = false, sends = 0, binding = 0;
+  const storage = { read: async () => raw, write: async (value: string) => { raw = value; }, clear: async () => { raw = null; } };
+  const options = { endpoint: record.endpoint, method: 'POST' as const, body: { ...values, catalog_id: id }, serverKey: 'command_id' as const, source: record.source };
+  const first = new NativePendingActionJournal({ scope, domain: 'people', storage, randomId: () => key,
+    send: async () => { sends++; throw { status: 409, details: { error: { code: 'conflict' } } }; }, read: async () => ({}) });
+  await first.hydrate(); await first.run(options, { ownerHref: record.ownerHref, refreshPath: record.refreshPath, assertActive() {} });
+  assert.equal(JSON.parse(raw!).phase, 'unknown');
+  const second = new NativePendingActionJournal({ scope, domain: 'people', storage, randomId: () => actor,
+    captureContext: () => { const captured = binding; return { assertCurrent() { assert.equal(binding, captured, 'World changed'); } }; },
+    send: async () => { sends++; if (exact) throw terminalRefusal(record); throw { status: 503 }; }, read: async () => ({}) });
+  await second.hydrate(); await second.recover({ ownerHref: record.ownerHref, assertActive() {} });
+  assert.equal(JSON.parse(raw!).phase, 'unknown');
+  exact = true; await second.recover({ ownerHref: record.ownerHref, assertActive() { binding++; } });
+  assert.ok(raw); // A stale mounted/world context cannot consume even a real proof.
+  await second.recover({ ownerHref: record.ownerHref, assertActive() {} });
+  assert.equal(raw, null); assert.equal(second.snapshot().obsolete, true); assert.equal(sends, 3);
+});

@@ -130,8 +130,26 @@ function identifiedCatalogueAllowed(record: NativePendingAction, scope: NativePe
 /** Only the owning, actor/world-bound command proof can retire an uncertain stale edit. */
 export function academicCatalogueCommandObsolete(error: unknown, action: NativePendingAction): boolean {
   try {
-    if (action.replayPolicy !== 'same_request' || !identifiedCatalogueAllowed(action, action.scope)) return false;
-    const response = object(error), fields = object(object(object(response?.details)?.error)?.fields), proof = object(fields?.catalogue_obsolete);
+    if (action.phase === 'accepted' || action.replayPolicy !== 'same_request' || !identifiedCatalogueAllowed(action, action.scope)) return false;
+    const response = object(error), envelope = object(object(response?.details)?.error), fields = object(envelope?.fields);
+    const terminal = object(fields?.catalogue_refusal);
+    if (terminal) {
+      const { kind, body } = mutation(action), request = object(terminal.reviewed_request), reviewed = object(request?.values);
+      const values = academicCatalogueInput(kind, body), namespace = action.scope.mode === 'live' ? `live:${action.scope.schoolId}` : action.scope.namespaceId;
+      return response?.status === 409 && envelope?.status === 409 && envelope.code === 'catalogue_command_refused'
+        && terminal.handler === 'academic.catalogue' && terminal.confirmation === 'terminal_refusal' && terminal.receipt_state === 'completed'
+        && ['rejected', 'conflicted'].includes(String(terminal.terminal_state))
+        && ['academic_catalogue_duplicate', 'academic_catalogue_rule_refused'].includes(String(terminal.reason_code))
+        && terminal.school_id === action.scope.schoolId && terminal.actor_user_id === action.scope.actorId
+        && typeof namespace === 'string' && terminal.environment_namespace_id === namespace
+        && terminal.kind === kind && terminal.source_id === action.source?.sourceId && terminal.command_id === action.clientId
+        && terminal.expected_revision === action.source?.revision && typeof terminal.payload_hash === 'string' && /^[a-f0-9]{64}$/.test(terminal.payload_hash)
+        && !!request && Object.keys(request).length === 6 && request.kind === kind && request.id === body.catalog_id
+        && request.expected_revision === action.source?.revision && request.confirmed === (body.confirmed ?? false)
+        && request.change_reason === (body.change_reason ?? '') && !!reviewed && Object.keys(reviewed).length === Object.keys(values).length
+        && fieldsMatch(reviewed, values, kind);
+    }
+    const proof = object(fields?.catalogue_obsolete);
     return response?.status === 409 && proof?.handler === 'academic.catalogue' && proof.confirmation === 'permanently_inapplicable'
       && proof.receipt_state === 'absent' && proof.source_id === action.source?.sourceId && proof.command_id === action.clientId
       && typeof proof.expected_revision === 'number' && proof.expected_revision === action.source?.revision && revision(proof.current_revision) && proof.current_revision > proof.expected_revision;

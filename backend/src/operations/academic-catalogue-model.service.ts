@@ -1,14 +1,15 @@
-import { ConflictException, ForbiddenException, Inject, Injectable, NotFoundException } from "@nestjs/common";
+import { ConflictException, ForbiddenException, HttpException, Inject, Injectable, NotFoundException } from "@nestjs/common";
 import { createHash } from "node:crypto";
 import type { Transaction } from "kysely";
 import { z } from "zod";
 import type { AuthUser } from "../common/request.js";
 import type { Database } from "../database/types.js";
-import { executionNow } from "../campus-model-core/execution-time.runtime.js";
+import { executionEnvironmentStorage, executionNow } from "../campus-model-core/execution-time.runtime.js";
 import { DOMAIN_COMMAND_GATEWAY_PORT, type DomainCommandGatewayPort } from "../campus-model-core/domain-command-gateway.port.js";
 import { DOMAIN_COMMAND_RECEIPT_READ_PORT, type DomainCommandReceiptReadPort } from "../campus-model-core/domain-command-receipt-read.port.js";
 import { DOMAIN_EVENT_JOURNAL_PORT, type DomainEventJournalPort } from "../campus-model-core/domain-event-journal.port.js";
 import { HUMAN_AGENT_IDENTITY_PORT, type HumanAgentIdentityPort } from "../campus-model-core/human-agent-identity.port.js";
+import { classSchema, subjectSchema, termSchema } from './schemas.js';
 
 export type CatalogueSaved = Record<string, unknown> & { id: string; school_id: string; revision: number };
 export type CatalogueKind = "terms" | "classes" | "subjects";
@@ -19,6 +20,39 @@ const key = (actor: string, command: string) => `academic-catalogue:${actor}:${c
 export const cataloguePayloadHash = (value: unknown) => createHash("sha256").update(JSON.stringify(value)).digest("hex");
 const saved = z.object({ id: z.uuid(), school_id: z.uuid(), revision: z.number().int().positive() }).catchall(z.unknown());
 const json = <T>(value: T): T => JSON.parse(JSON.stringify(value)) as T;
+
+/** Only validations explicitly raised by the owning catalogue writer qualify. */
+export class CatalogueRuleRefusal extends HttpException {
+  constructor(message: string, status = 400) { super(message, status); }
+}
+const duplicateConstraints = {
+  terms: ['academic_terms', 'academic_terms_school_id_academic_year_name_key'],
+  classes: ['class_sections', 'class_sections_school_id_academic_year_grade_section_key'],
+  subjects: ['subjects', 'subjects_school_id_code_key'],
+} as const;
+export function knownCatalogueRefusal(error: unknown, kind: CatalogueKind) {
+  if (error instanceof CatalogueRuleRefusal) return [400, 409].includes(error.getStatus());
+  const failure = error as { code?: string; table?: string; constraint?: string } | null;
+  const [table, constraint] = duplicateConstraints[kind];
+  return failure?.code === '23505' && failure.table === table && failure.constraint === constraint;
+}
+const reviewedRequestSchema = z.object({ kind: z.enum(['terms', 'classes', 'subjects']), id: z.uuid(), values: z.record(z.string(), z.unknown()),
+  expected_revision: z.number().int().nonnegative(), confirmed: z.boolean(), change_reason: z.string().max(240) }).strict();
+const refusalSchema = z.object({ confirmation: z.literal('terminal_refusal'), receipt_state: z.literal('completed'),
+  handler: z.literal('academic.catalogue'), terminal_state: z.enum(['rejected', 'conflicted']), school_id: z.uuid(), actor_user_id: z.uuid(),
+  environment_namespace_id: z.string().min(1), kind: z.enum(['terms', 'classes', 'subjects']), source_id: z.uuid(), command_id: z.uuid(),
+  expected_revision: z.number().int().nonnegative(), payload_hash: z.string().regex(/^[a-f0-9]{64}$/),
+  reason_code: z.enum(['academic_catalogue_duplicate', 'academic_catalogue_rule_refused']), reviewed_request: reviewedRequestSchema,
+  message: z.string().min(1).max(500),
+}).strict();
+const namespace = (schoolId: string) => executionEnvironmentStorage.getStore()?.namespace_id ?? `live:${schoolId}`;
+// JSONB does not preserve key order. Restore the existing owner schema order so
+// original pre-refusal catalogue commitments remain compatible across releases.
+const reviewedHash = (request: z.infer<typeof reviewedRequestSchema>) => cataloguePayloadHash({ ...request,
+  values: request.kind === 'terms' ? termSchema.parse(request.values) : request.kind === 'classes' ? classSchema.parse(request.values) : subjectSchema.parse(request.values) });
+const refusalException = (proof: z.infer<typeof refusalSchema>) => new ConflictException({
+  code: 'catalogue_command_refused', message: proof.message, fields: { catalogue_refusal: proof },
+});
 
 /** Exact action receipts, never a comparison against a similarly named saved row. */
 @Injectable()
@@ -48,7 +82,17 @@ export class AcademicCatalogueModelService {
       if (prior.safe_context.payload_hash !== payloadHash || prior.expected_revision !== command.expected_revision)
         throw new ConflictException("This command was already used with different catalogue details.");
       if (prior.state === "pending") throw new ConflictException("This exact catalogue action is still awaiting confirmation.");
-      if (prior.receipt.terminal_state !== "accepted") throw new ConflictException("This catalogue action was not accepted.");
+      if (prior.receipt.terminal_state !== "accepted") {
+        const proof = refusalSchema.parse(prior.receipt.metadata.catalogue_refusal);
+        if (proof.school_id !== schoolId || proof.actor_user_id !== user.id || proof.environment_namespace_id !== namespace(schoolId)
+          || proof.kind !== kind || proof.source_id !== command.catalog_id || proof.command_id !== command.command_id
+          || proof.expected_revision !== command.expected_revision || proof.payload_hash !== payloadHash
+          || proof.reviewed_request.kind !== kind || proof.reviewed_request.id !== command.catalog_id || proof.reviewed_request.expected_revision !== command.expected_revision
+          || reviewedHash(proof.reviewed_request) !== payloadHash || proof.terminal_state !== prior.receipt.terminal_state
+          || proof.reason_code !== prior.receipt.code)
+          throw new ConflictException('The retained catalogue refusal does not match this exact action.');
+        return { refusal: refusalException(proof) };
+      }
       const result = saved.parse(prior.receipt.metadata.result);
       if (result.id !== command.catalog_id || result.school_id !== schoolId || result.revision !== command.expected_revision + 1)
         throw new ConflictException("The retained catalogue receipt does not match this action.");
@@ -64,7 +108,7 @@ export class AcademicCatalogueModelService {
       source_domain: domain, command_type: `academic.catalogue.${command.expected_revision === 0 ? "created" : "updated"}`,
       handler_key: handler, handler_version: 1,
       target: { kind: "academic_catalogue_record", domain, domain_id: command.catalog_id, label: "Academic catalogue record",
-        source_revision: Math.max(1, currentRevision), lifecycle_state: "active", metadata: { catalog_kind: kind } },
+        source_revision: Math.max(1, currentRevision), lifecycle_state: command.expected_revision === 0 ? "planned" : "active", metadata: { catalog_kind: kind } },
       current_revision: currentRevision, expected_revision: command.expected_revision, capability: "sis.manage",
       purpose: "academic_catalogue_change", requested_at: executionNow().toISOString(), correlation_id: command.command_id,
       causation_id: null, idempotency_key: key(user.id, command.command_id), operating_rule_version_ref: null, configuration_refs: [],
@@ -72,7 +116,25 @@ export class AcademicCatalogueModelService {
         authority_source_refs: [{ school_id: schoolId, user_id: user.id }], operating_rule_refs: [], valid_until: null },
       safe_context: { catalog_kind: kind, payload_hash: payloadHash } });
     if (prepared.status !== "ready") throw new ConflictException("Confirm the retained catalogue action before continuing.");
-    return { command: prepared.command_id };
+    return { command: prepared.command_id, namespace: prepared.environment_namespace_id };
+  }
+
+  async refuse(tx: Transaction<Database>, user: AuthUser, schoolId: string, kind: CatalogueKind, input: CatalogueCommand,
+    commandId: string, environmentNamespace: string, payload: Record<string, unknown>, error: unknown) {
+    if (!knownCatalogueRefusal(error, kind)) throw error;
+    const duplicate = !(error instanceof CatalogueRuleRefusal), terminal = duplicate || error.getStatus() === 409 ? 'conflicted' : 'rejected';
+    const proof = refusalSchema.parse({ confirmation: 'terminal_refusal', receipt_state: 'completed', handler, terminal_state: terminal,
+      school_id: schoolId, actor_user_id: user.id, environment_namespace_id: environmentNamespace, kind,
+      source_id: input.catalog_id, command_id: input.command_id, expected_revision: input.expected_revision,
+      payload_hash: cataloguePayloadHash(payload), reviewed_request: json(payload),
+      reason_code: duplicate ? 'academic_catalogue_duplicate' : 'academic_catalogue_rule_refused',
+      message: duplicate ? 'A matching academic record already exists. Review the current catalogue and change these details before trying again.'
+        : error.message,
+    });
+    await this.commands.completeDomainCommand(tx, { school_id: schoolId, command_id: commandId, terminal_state: terminal,
+      code: proof.reason_code, explanation: 'The owning catalogue rules refused this exact command. No academic record, audit or update event was changed.',
+      resulting_revision: input.expected_revision, domain_event_id: null, metadata: { catalogue_refusal: proof }, completed_at: executionNow().toISOString() });
+    return refusalException(proof);
   }
 
   async complete(tx: Transaction<Database>, user: AuthUser, schoolId: string, kind: CatalogueKind, commandId: string,

@@ -2,7 +2,7 @@ import 'reflect-metadata';
 import { randomUUID } from 'node:crypto';
 import { Kysely, PostgresDialect, sql } from 'kysely';
 import { Pool, types } from 'pg';
-import { afterAll, describe, expect, it } from 'vitest';
+import { afterAll, describe, expect, it, vi } from 'vitest';
 import type { AuthUser } from '../src/common/request.js';
 import type { Database } from '../src/database/types.js';
 import type { DatabaseService } from '../src/database/database.service.js';
@@ -12,6 +12,7 @@ import { executionEnvironmentStorage } from '../src/campus-model-core/execution-
 import { ProgressiveWorkspaceProvisioner } from '../src/institution-onboarding/progressive-workspace.provisioner.js';
 import { OperationsService } from '../src/operations/operations.service.js';
 import { AcademicCatalogueModelService } from '../src/operations/academic-catalogue-model.service.js';
+import * as catalogueModel from '../src/operations/academic-catalogue-model.service.js';
 import { createSimulationBranch, SimulationBranchDriver } from '../src/database/simulation-branch.driver.js';
 import { SimulationSnapshotStore } from '../src/database/simulation-snapshot-store.js';
 import { simulationRequestEnvironment } from '../src/database/simulation-world.service.js';
@@ -40,6 +41,14 @@ async function fixture() {
 }
 const input = (values: Record<string, unknown>) => ({ ...values, command_id: randomUUID(), catalog_id: randomUUID() });
 const classValues = { academic_year: '2026-27', grade: 'MTech', section: 'A', board: '', room_number: 'CC2-201' };
+async function refused(work: Promise<unknown>) {
+  try { await work; throw new Error('Expected exact terminal catalogue refusal'); }
+  catch (error) {
+    if(!error||typeof(error as {getResponse?:unknown}).getResponse!=='function')throw error;
+    const response = (error as { getResponse(): { code: string; fields: { catalogue_refusal: Record<string, unknown> } } }).getResponse();
+    expect(response.code, `Expected durable terminal refusal; received ${JSON.stringify(response)}`).toBe('catalogue_command_refused'); return response.fields.catalogue_refusal;
+  }
+}
 
 describe.skipIf(!enabled)('exact academic catalogue action recovery', () => {
   it('creates and edits each catalogue with exact receipts, concurrent replay and unchanged first acceptance after later edits', async () => {
@@ -77,7 +86,7 @@ describe.skipIf(!enabled)('exact academic catalogue action recovery', () => {
     const duplicate = input(classValues);
     await expect(f.operations.saveCatalog(f.owner, f.schoolId, 'classes', duplicate)).rejects.toThrow();
     expect(await db.selectFrom('class_sections').select('id').where('id', '=', duplicate.catalog_id).execute()).toEqual([]);
-    expect(await db.selectFrom('campus_model_commands').select('id').where('correlation_id', '=', duplicate.command_id).execute()).toEqual([]);
+    expect(await db.selectFrom('campus_model_commands').select('state').where('correlation_id', '=', duplicate.command_id).execute()).toEqual([{ state: 'conflicted' }]);
     const edit = { ...classValues, room_number: 'CC2-210', catalog_id: first.catalog_id, command_id: randomUUID(), expected_revision: 1, confirmed: true, change_reason: '' };
     await f.operations.saveCatalog(f.owner, f.schoolId, 'classes', edit, first.catalog_id);
     try { await f.operations.saveCatalog(f.owner, f.schoolId, 'classes', { ...edit, command_id: randomUUID() }, first.catalog_id); throw Error('Expected stale refusal'); }
@@ -88,6 +97,75 @@ describe.skipIf(!enabled)('exact academic catalogue action recovery', () => {
     await db.updateTable('users').set({ is_active: false }).where('id', '=', f.owner.id).execute();
     await expect(f.operations.confirmCatalog(f.owner, f.schoolId, 'classes', first.catalog_id, first.command_id)).rejects.toThrow();
     await expect(f.operations.saveCatalog(f.owner, f.schoolId, 'classes', first)).rejects.toThrow();
+  }, 60000);
+
+  it('retains exact duplicate refusals across changed source state and only permits a newly reviewed command', async () => {
+    const f = await fixture(), first = input(classValues), duplicate = input(classValues);
+    await f.operations.saveCatalog(f.owner, f.schoolId, 'classes', first);
+    const proof = await refused(f.operations.saveCatalog(f.owner, f.schoolId, 'classes', duplicate));
+    expect(proof).toMatchObject({ receipt_state: 'completed', terminal_state: 'conflicted', reason_code: 'academic_catalogue_duplicate',
+      school_id: f.schoolId, actor_user_id: f.owner.id, environment_namespace_id: `live:${f.schoolId}`, kind: 'classes',
+      source_id: duplicate.catalog_id, command_id: duplicate.command_id, expected_revision: 0,
+      reviewed_request: { kind: 'classes', id: duplicate.catalog_id, values: classValues } });
+    expect(await db.selectFrom('campus_model_entities').select('lifecycle_state').where('school_id', '=', f.schoolId)
+      .where('domain', '=', 'academic_catalogue').where('domain_id', '=', duplicate.catalog_id).execute()).toEqual([{ lifecycle_state: 'planned' }]);
+    expect(await db.selectFrom('class_sections').select('id').where('id', '=', duplicate.catalog_id).execute()).toEqual([]);
+    expect((await sql`SELECT id FROM school_operations_audit WHERE school_id=${f.schoolId}::uuid AND target_id=${duplicate.catalog_id}::uuid`.execute(db)).rows).toEqual([]);
+    expect(await db.selectFrom('event_outbox').select('id').where('aggregate_id', '=', duplicate.catalog_id).execute()).toEqual([]);
+    await expect(f.operations.saveCatalog(f.owner, f.schoolId, 'classes', { ...duplicate, room_number: 'Changed retained intent' })).rejects.toThrow('different catalogue details');
+    await f.operations.saveCatalog(f.owner, f.schoolId, 'classes', { ...first, command_id: randomUUID(), expected_revision: 1, confirmed: true, change_reason: '', section: 'B' }, first.catalog_id);
+    expect(await refused(f.operations.saveCatalog(f.owner, f.schoolId, 'classes', duplicate))).toEqual(proof);
+    await f.operations.saveCatalog(f.owner, f.schoolId, 'classes', { ...duplicate, command_id: randomUUID() });
+    expect(await refused(f.operations.saveCatalog(f.owner, f.schoolId, 'classes', duplicate))).toEqual(proof);
+    expect(await db.selectFrom('campus_model_entities').select('lifecycle_state').where('school_id', '=', f.schoolId)
+      .where('domain', '=', 'academic_catalogue').where('domain_id', '=', duplicate.catalog_id).execute()).toEqual([{ lifecycle_state: 'active' }]);
+    const commands = await db.selectFrom('campus_model_commands').select(['id', 'state']).where('correlation_id', '=', duplicate.command_id).execute();
+    expect(commands).toHaveLength(1); expect(commands[0]!.state).toBe('conflicted');
+    expect(await db.selectFrom('campus_model_command_outcomes').select('status').where('command_id', '=', commands[0]!.id).execute()).toEqual([{ status: 'conflicted' }]);
+    await db.updateTable('school_memberships').set({ role: 'member' }).where('school_id', '=', f.schoolId).where('user_id', '=', f.owner.id).execute();
+    await expect(f.operations.saveCatalog(f.owner, f.schoolId, 'classes', duplicate)).rejects.toThrow();
+  }, 60000);
+
+  it('records all three natural-key duplicate refusals, explicit owning rule refusal and rolls back unexpected outcome failure', async () => {
+    // A future caller cannot turn an infrastructure status into an owning
+    // refusal merely by using the tagged error class.
+    for (const status of [500, 503]) expect(catalogueModel.knownCatalogueRefusal(
+      new catalogueModel.CatalogueRuleRefusal('Infrastructure failure', status), 'classes')).toBe(false);
+    const f = await fixture();
+    const cases = [
+      ['terms', { name: 'Semester I', academic_year: '2026-27', starts_on: '2026-07-01', ends_on: '2026-12-31', attendance_threshold: 80, is_active: true }],
+      ['classes', classValues], ['subjects', { code: 'CS501', name: 'Algorithms', short_name: 'Algo', color: '#237A62', icon: 'laptop' }],
+    ] as const;
+    for (const [kind, values] of cases) {
+      const created = input(values); await f.operations.saveCatalog(f.owner, f.schoolId, kind, created);
+      const duplicate = input(values);
+      expect(await refused(f.operations.saveCatalog(f.owner, f.schoolId, kind, duplicate))).toMatchObject({ reason_code: 'academic_catalogue_duplicate', terminal_state: 'conflicted' });
+      expect(await refused(f.operations.saveCatalog(f.owner, f.schoolId, kind, { ...created, command_id: randomUUID(), expected_revision: 1, confirmed: true, change_reason: '' }, created.catalog_id)))
+        .toMatchObject({ reason_code: 'academic_catalogue_rule_refused', terminal_state: 'rejected' });
+    }
+    const doomed = input(classValues), original = f.core.completeDomainCommand.bind(f.core);
+    const failure = vi.spyOn(f.core, 'completeDomainCommand').mockImplementation((tx, value) => {
+      if (value.code === 'academic_catalogue_duplicate') throw new Error('Injected refusal outcome failure');
+      return original(tx, value);
+    });
+    try { await expect(f.operations.saveCatalog(f.owner, f.schoolId, 'classes', doomed)).rejects.toThrow('Injected refusal outcome failure'); }
+    finally { failure.mockRestore(); }
+    expect(await db.selectFrom('campus_model_commands').select('id').where('correlation_id', '=', doomed.command_id).execute()).toEqual([]);
+    expect(await db.selectFrom('campus_model_entities').select('id').where('school_id', '=', f.schoolId).where('domain', '=', 'academic_catalogue').where('domain_id', '=', doomed.catalog_id).execute()).toEqual([]);
+    expect(await db.selectFrom('class_sections').select('id').where('id', '=', doomed.catalog_id).execute()).toEqual([]);
+    const native = input({ ...classValues, section: 'C' });
+    const lostOutcome = vi.spyOn(f.core, 'completeDomainCommand').mockImplementation((tx, value) => {
+      if (value.code === 'academic_catalogue_saved') throw new Error('Injected accepted outcome failure');
+      return original(tx, value);
+    });
+    try { await expect(f.operations.saveCatalog(f.owner, f.schoolId, 'classes', native)).rejects.toThrow('Injected accepted outcome failure'); }
+    finally { lostOutcome.mockRestore(); }
+    expect(await db.selectFrom('class_sections').select('id').where('id', '=', native.catalog_id).execute()).toEqual([]);
+    expect(await db.selectFrom('event_outbox').select('id').where('aggregate_id', '=', native.catalog_id).execute()).toEqual([]);
+    expect((await sql`SELECT id FROM school_operations_audit WHERE school_id=${f.schoolId}::uuid AND target_id=${native.catalog_id}::uuid`.execute(db)).rows).toEqual([]);
+    expect(await db.selectFrom('campus_model_commands').select('id').where('correlation_id', '=', native.command_id).execute()).toEqual([]);
+    expect(await db.selectFrom('campus_model_entities').select('id').where('school_id', '=', f.schoolId).where('domain', '=', 'academic_catalogue').where('domain_id', '=', native.catalog_id).execute()).toEqual([]);
+    expect(await f.operations.saveCatalog(f.owner, f.schoolId, 'classes', native)).toMatchObject({ revision: 1, id: native.catalog_id });
   }, 60000);
 });
 
@@ -106,17 +184,31 @@ describe.skipIf(!enabled || !target)('academic catalogue real selected-world rec
         const environment = simulationRequestEnvironment({ institution_id: f.schoolId, scenario_id: scenario, run_id: run, virtual_now: now, source_snapshot_ref: `sha256:${snapshot.content_hash}`, manifest_ref: 'catalogue-recovery-test', checked_at: now });
         return { ...services(database), database, namespace, run: <T>(work: () => Promise<T>) => executionEnvironmentStorage.run(environment, work) };
       };
-      const world = await open(), sibling = await open(), change = { ...classValues, room_number: 'CC2-230', catalog_id: original.catalog_id, command_id: randomUUID(), expected_revision: 1, confirmed: true, change_reason: '' };
+      const world = await open(), sibling = await open(), duplicate = input(classValues), change = { ...classValues, room_number: 'CC2-230', catalog_id: original.catalog_id, command_id: randomUUID(), expected_revision: 1, confirmed: true, change_reason: '' };
       await world.run(async () => {
+        // Refuse the first catalogue write in this branch. Its failed INSERT
+        // may also undo first materialization within the native savepoint.
+        const proof = await refused(world.operations.saveCatalog(f.owner, f.schoolId, 'classes', duplicate));
+        expect(proof).toMatchObject({ environment_namespace_id: world.namespace, terminal_state: 'conflicted' });
+        expect(await world.database.selectFrom('class_sections').select('id').where('id', '=', duplicate.catalog_id).execute()).toEqual([]);
+        expect(await world.database.selectFrom('campus_model_entities').select('lifecycle_state').where('school_id', '=', f.schoolId)
+          .where('domain', '=', 'academic_catalogue').where('domain_id', '=', duplicate.catalog_id).execute()).toEqual([{ lifecycle_state: 'planned' }]);
         const first = await world.operations.saveCatalog(f.owner, f.schoolId, 'classes', change, original.catalog_id);
         expect(first).toMatchObject({ revision: 2, room_number: 'CC2-230' });
         expect(await world.operations.saveCatalog(f.owner, f.schoolId, 'classes', change, original.catalog_id)).toMatchObject({ revision: 2, room_number: 'CC2-230' });
         expect(await world.operations.confirmCatalog(f.owner, f.schoolId, 'classes', original.catalog_id, change.command_id)).toMatchObject({ state: 'accepted', result: { revision: 2 } });
         expect(await world.database.selectFrom('campus_model_commands').select(['state', 'environment_namespace_id']).where('correlation_id', '=', change.command_id).execute()).toEqual([{ state: 'accepted', environment_namespace_id: world.namespace }]);
+        await world.operations.saveCatalog(f.owner, f.schoolId, 'classes', { ...change, command_id: randomUUID(), expected_revision: 2, section: 'C' }, original.catalog_id);
+        expect(await refused(world.operations.saveCatalog(f.owner, f.schoolId, 'classes', duplicate))).toEqual(proof);
+        expect(await world.database.selectFrom('class_sections').select('id').where('id', '=', duplicate.catalog_id).execute()).toEqual([]);
+        expect(await world.database.selectFrom('campus_model_commands').select(['state', 'environment_namespace_id']).where('correlation_id', '=', duplicate.command_id).execute()).toEqual([{ state: 'conflicted', environment_namespace_id: world.namespace }]);
       });
       const unchanged = async (database: DatabaseService) => {
         expect(await database.selectFrom('class_sections').select(['revision', 'room_number']).where('id', '=', original.catalog_id).execute()).toEqual([{ revision: 1, room_number: classValues.room_number }]);
         expect(await database.selectFrom('campus_model_commands').select('id').where('correlation_id', '=', change.command_id).execute()).toEqual([]);
+        expect(await database.selectFrom('campus_model_commands').select('id').where('correlation_id', '=', duplicate.command_id).execute()).toEqual([]);
+        expect(await database.selectFrom('class_sections').select('id').where('id', '=', duplicate.catalog_id).execute()).toEqual([]);
+        expect(await database.selectFrom('campus_model_entities').select('id').where('school_id', '=', f.schoolId).where('domain', '=', 'academic_catalogue').where('domain_id', '=', duplicate.catalog_id).execute()).toEqual([]);
       };
       await unchanged(db); await sibling.run(() => unchanged(sibling.database));
       await sibling.run(() => expect(sibling.operations.confirmCatalog(f.owner, f.schoolId, 'classes', original.catalog_id, change.command_id)).rejects.toThrow());

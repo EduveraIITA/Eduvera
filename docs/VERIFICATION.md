@@ -444,6 +444,27 @@ finding. A successful read is not proof an earlier ambiguous write committed.
 
 `https://app2.thatcampus.com` serves the isolated DT backend and sole Expo web app through dedicated edge/Cloud Run resources, identities, separate Live/Simulation databases on shared PostgreSQL 17 and private persistent files. The owner chose to retain the shared server and existing limits: no new server, resize or pool/concurrency increase. Old ERP and maintained Mac development remain separate targets. Operations and code-versus-data rollback belong to the [DT runbook](../deploy/dt/README.md).
 
+The catalogue refusal follow-up closes a reproduced duplicate-record409 lock in
+the actual native journal. [Red journal evidence](../artifacts/core-functionality-fixes/email/catalogue-terminal-refusal-red.log)
+is retained. The owner now commits exact terminal refusals after rolling back only
+known native effects; unexpected Core/audit/infrastructure failures retain the
+unknown action. Refused creates retain a planned Core target without a native row.
+The client binds full reviewed intent, actor and selected world, resets the old
+confirmation and requires a fresh catalogue review while preserving entered values.
+
+[Thirteen fresh PostgreSQL cases](../artifacts/core-functionality-fixes/postgres/20261108_a4e39c2e/runner.json)
+pass with zero skips, including ordinary compiled HTTP, a refused first COW write,
+rollback/rematerialization, stable refusal after its duplicate condition disappears,
+and unchanged Live/sibling state. The storage adapter preserves captured logical
+primary/unique names and permits only a validated standalone rollback to savepoint
+before normal SQL binding resumes after23505. Seven existing COW concurrency cases
+now include aborted recovery and unsafe/foreign/no-transaction rejection. Earlier
+COW diagnostics remain in their raw failed receipts; both owned databases are
+cleaned without forced disconnect. [Source review](../artifacts/core-functionality-fixes/review/catalogue-refusal-217-source-review.json)
+and the [two-source native review](../artifacts/core-functionality-fixes/parity217/review.json)
+retain their stated limits; all53 unrelated native findings remain unchanged.
+Conformance217 rollout checks are still pending at this source checkpoint.
+
 The first closure wave adds exact academic catalogue recovery, explicit assignment
 review handover, future examination amendments and truthful unavailable-email
 handling. The [final isolated PostgreSQL run](../artifacts/core-functionality-fixes/postgres/20261108_8fba98a0/runner.json)

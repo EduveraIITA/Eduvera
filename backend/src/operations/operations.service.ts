@@ -24,7 +24,7 @@ import { feeLedgerProjections, feeLedgerQuerySchema, type FeeLedgerQuery } from 
 import { config } from "../config.js";
 import { sendTransactionalEmail } from "../common/email-transport.js";
 import { invitationRecipientProofHash, invitationRecipientProofMatches } from "./invitation-recipient-proof.js";
-import { AcademicCatalogueModelService, type CatalogueCommand, type CatalogueKind, type CatalogueSaved } from "./academic-catalogue-model.service.js";
+import { AcademicCatalogueModelService, CatalogueRuleRefusal, knownCatalogueRefusal, type CatalogueCommand, type CatalogueKind, type CatalogueSaved } from "./academic-catalogue-model.service.js";
 
 type Db = Kysely<Database> | Transaction<Database>;
 type Permission = "sis.manage" | "fees.manage" | "members.invite";
@@ -169,23 +169,46 @@ export class OperationsService {
     action: string,
     work: (db: Transaction<Database>) => Promise<T>,
     auditDetails?: (result: T) => { targetId?: string; metadata?: Record<string, unknown> },
-    lifecycle?: { before(db: Transaction<Database>): Promise<{ replay: T } | null>; after(db: Transaction<Database>, result: T): Promise<void> },
+    lifecycle?: { before(db: Transaction<Database>): Promise<{ replay: T } | { refusal: HttpException } | null>; after(db: Transaction<Database>, result: T): Promise<void>;
+      refusal?: { known(error: unknown): boolean; complete(db: Transaction<Database>, error: unknown): Promise<HttpException> } },
   ): Promise<T> {
     try {
-      return await this.db.transaction().execute(async (db) => {
+      let refusal: HttpException | undefined;
+      const result = await this.db.transaction().execute(async (db) => {
         // Serialize administrative and financial writes within one school. This
         // also makes preview/confirm imports and last-admin checks race-safe.
         await sql`SELECT pg_advisory_xact_lock(hashtextextended(${schoolId},0))`.execute(db);
         await this.authorize(user, schoolId, permission, db);
         const replay = await lifecycle?.before(db);
-        if (replay) return replay.replay;
-        const result = await work(db);
-        const details = auditDetails?.(result);
-        const inferredTargetId = typeof result === "object" && result !== null && "id" in result && typeof result.id === "string" ? result.id : undefined;
-        await this.audit(db, user, schoolId, action, details?.targetId ?? inferredTargetId, details?.metadata);
-        await lifecycle?.after(db, result);
-        return result;
+        if (replay) {
+          if ('refusal' in replay) { refusal = replay.refusal; return null; }
+          return replay.replay;
+        }
+        // Only the identified catalogue owner opts in. Its Core command remains
+        // outside the savepoint; rejected native effects/audit/outbox do not.
+        if (lifecycle?.refusal) await sql`SAVEPOINT academic_catalogue_native_effects`.execute(db);
+        let nativeWork = true;
+        try {
+          const result = await work(db);
+          nativeWork = false;
+          const details = auditDetails?.(result);
+          const inferredTargetId = typeof result === "object" && result !== null && "id" in result && typeof result.id === "string" ? result.id : undefined;
+          await this.audit(db, user, schoolId, action, details?.targetId ?? inferredTargetId, details?.metadata);
+          await lifecycle?.after(db, result);
+          if (lifecycle?.refusal) await sql`RELEASE SAVEPOINT academic_catalogue_native_effects`.execute(db);
+          return result;
+        } catch (error) {
+          if (!nativeWork || !lifecycle?.refusal?.known(error)) throw error;
+          await sql`ROLLBACK TO SAVEPOINT academic_catalogue_native_effects`.execute(db);
+          await sql`RELEASE SAVEPOINT academic_catalogue_native_effects`.execute(db);
+          refusal = await lifecycle.refusal.complete(db, error);
+          return null;
+        }
       });
+      // Never publish a durable terminal proof before the outcome transaction
+      // commits. A commit failure remains an ambiguous retained client action.
+      if (refusal) throw refusal;
+      return result as T;
     } catch (error) {
       if ((error as { code?: string }).code === "23505") throw new ConflictException("A matching record already exists. Check email, admission number, roll number or reference.");
       throw error;
@@ -306,7 +329,7 @@ export class OperationsService {
     const normalized = catalogKind === "terms" ? termSchema.parse(body) : catalogKind === "classes" ? classSchema.parse(body) : subjectSchema.parse(body);
     const payload = { kind: catalogKind, id: command?.catalog_id ?? id ?? null, values: normalized,
       expected_revision: command?.expected_revision ?? controls.expected_revision ?? 0, confirmed: controls.confirmed, change_reason: controls.change_reason };
-    let preparedCommand: string | null = null;
+    let preparedCommand: string | null = null, preparedNamespace: string | null = null;
     const model = this.catalogueModel;
     if (command && !model) throw new ConflictException("Exact catalogue recovery is unavailable. Nothing was saved.");
     if (id && controls.expected_revision === undefined) throw new BadRequestException("Refresh this record before editing it.");
@@ -314,8 +337,8 @@ export class OperationsService {
     return this.mutate<CatalogueSaved>(user, schoolId, "sis.manage", `${catalogKind}.${id ? "updated" : "created"}`, async (db) => {
       const requireReviewedImpact = (usage: { total: number }) => {
         if (!usage.total) return;
-        if (!controls.confirmed) throw new BadRequestException(`This record is linked to ${usage.total} school records. Review the impact before saving.`);
-        if (controls.change_reason.length < 8) throw new BadRequestException("Explain why this linked school record is changing.");
+        if (!controls.confirmed) throw new CatalogueRuleRefusal(`This record is linked to ${usage.total} school records. Review the impact before saving.`);
+        if (controls.change_reason.length < 8) throw new CatalogueRuleRefusal("Explain why this linked school record is changing.");
       };
       const comparable = (value: unknown) => {
         if (typeof value === "string") return value;
@@ -330,9 +353,9 @@ export class OperationsService {
           const current = await db.selectFrom("academic_terms").selectAll().where("id", "=", id).where("school_id", "=", schoolId).executeTakeFirst();
           if (!current) throw new NotFoundException();
           if (current.revision !== controls.expected_revision) throw new ConflictException("This term changed after you opened it. Refresh and review the latest values.");
-          if (current.academic_year !== data.academic_year) throw new BadRequestException("Create a new term to change the academic year.");
+          if (current.academic_year !== data.academic_year) throw new CatalogueRuleRefusal("Create a new term to change the academic year.");
           const values = { ...data, attendance_threshold: data.attendance_threshold.toFixed(2) };
-          if (!changed(current, values, ["name", "starts_on", "ends_on", "attendance_threshold", "is_active"])) throw new BadRequestException("No term changes were detected.");
+          if (!changed(current, values, ["name", "starts_on", "ends_on", "attendance_threshold", "is_active"])) throw new CatalogueRuleRefusal("No term changes were detected.");
           const usage = await this.catalogUsage(db, catalogKind, id); requireReviewedImpact(usage);
           const row = await db.updateTable("academic_terms").set({ ...values, updated_by: user.id }).where("id", "=", id).where("revision", "=", controls.expected_revision).returningAll().executeTakeFirst();
           if (!row) throw new ConflictException("This term changed while it was being saved. Refresh and try again.");
@@ -351,8 +374,8 @@ export class OperationsService {
           const current = await db.selectFrom("class_sections").selectAll().where("id", "=", id).where("school_id", "=", schoolId).executeTakeFirst();
           if (!current) throw new NotFoundException();
           if (current.revision !== controls.expected_revision) throw new ConflictException("This class changed after you opened it. Refresh and review the latest values.");
-          if (current.academic_year !== data.academic_year) throw new BadRequestException("Create a new class for the next academic year.");
-          if (!changed(current, data, ["grade", "section", "board", "room_number"])) throw new BadRequestException("No class changes were detected.");
+          if (current.academic_year !== data.academic_year) throw new CatalogueRuleRefusal("Create a new class for the next academic year.");
+          if (!changed(current, data, ["grade", "section", "board", "room_number"])) throw new CatalogueRuleRefusal("No class changes were detected.");
           const usage = await this.catalogUsage(db, catalogKind, id); requireReviewedImpact(usage);
           const row = await db.updateTable("class_sections").set({ ...data, updated_by: user.id }).where("id", "=", id).where("revision", "=", controls.expected_revision).returningAll().executeTakeFirst();
           if (!row) throw new ConflictException("This class changed while it was being saved. Refresh and try again.");
@@ -370,7 +393,7 @@ export class OperationsService {
         const current = await db.selectFrom("subjects").selectAll().where("id", "=", id).where("school_id", "=", schoolId).executeTakeFirst();
         if (!current) throw new NotFoundException();
         if (current.revision !== controls.expected_revision) throw new ConflictException("This subject changed after you opened it. Refresh and review the latest values.");
-        if (!changed(current, data, ["code", "name", "short_name", "color", "icon"])) throw new BadRequestException("No subject changes were detected.");
+        if (!changed(current, data, ["code", "name", "short_name", "color", "icon"])) throw new CatalogueRuleRefusal("No subject changes were detected.");
         const usage = await this.catalogUsage(db, catalogKind, id); requireReviewedImpact(usage);
         const row = await db.updateTable("subjects").set({ ...data, updated_by: user.id }).where("id", "=", id).where("revision", "=", controls.expected_revision).returningAll().executeTakeFirst();
         if (!row) throw new ConflictException("This subject changed while it was being saved. Refresh and try again.");
@@ -389,14 +412,21 @@ export class OperationsService {
       before: async db => {
         const table = { terms: "academic_terms", classes: "class_sections", subjects: "subjects" }[catalogKind] as "academic_terms" | "class_sections" | "subjects";
         const current = await db.selectFrom(table).select("revision").where("school_id", "=", schoolId).where("id", "=", command.catalog_id).executeTakeFirst();
-        if (id && !current) throw new NotFoundException("This academic record is no longer available.");
         const prepared = await model.prepare(db, user, schoolId, catalogKind, command, current?.revision ?? 0, payload);
         if ("replay" in prepared) return { replay: prepared.replay };
-        preparedCommand = prepared.command; return null;
+        if ('refusal' in prepared) return { refusal: prepared.refusal };
+        preparedCommand = prepared.command; preparedNamespace = prepared.namespace; return null;
       },
       after: async (db, result) => {
         if (!preparedCommand) throw new ConflictException("The exact catalogue command was not prepared. Nothing was saved.");
         await model.complete(db, user, schoolId, catalogKind, preparedCommand, result, command.command_id);
+      },
+      refusal: {
+        known: error => knownCatalogueRefusal(error, catalogKind),
+        complete: async (db, error) => {
+          if (!preparedCommand || !preparedNamespace) throw new ConflictException('The exact catalogue refusal could not be retained.');
+          return model.refuse(db, user, schoolId, catalogKind, command, preparedCommand, preparedNamespace, payload, error);
+        },
       },
     } : undefined);
   }

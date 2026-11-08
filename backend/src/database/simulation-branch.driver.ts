@@ -241,6 +241,29 @@ export class SimulationBranchMaterializer {
     this.tableNames = new Set(this.tables.keys());
   }
 
+  /** LIKE copies key invariants but chooses new names for their constraints and
+   * backing indexes. Keep the captured logical identity before executing domain
+   * writes, so an owning service sees the same exact constraint in either world.
+   * Definitions use column names rather than attnums, which can differ after a
+   * dropped column. Nothing is inferred from a physical cow_* name. */
+  private async preserveKeyConstraintNames(client:PoolClient,temporary:string,template:string):Promise<void>{
+    const rows=(await client.query<{source:boolean;name:string;kind:string;definition:string}>(`
+      SELECT conrelid=$1::regclass AS source,conname AS name,contype AS kind,pg_get_constraintdef(oid) AS definition
+      FROM pg_constraint WHERE conrelid IN($1::regclass,$2::regclass) AND contype IN('p','u')
+      ORDER BY conrelid,conname`,[template,temporary])).rows;
+    const source=rows.filter(row=>row.source),copied=rows.filter(row=>!row.source);
+    const key=(row:typeof rows[number])=>JSON.stringify([row.kind,row.definition]);
+    const unique=(items:typeof rows)=>new Map(items.map(row=>[key(row),row]));
+    const originals=unique(source),copies=unique(copied);
+    if(originals.size!==source.length||copies.size!==copied.length||source.length!==copied.length
+      ||source.some(row=>!copies.has(key(row))))
+      throw new Error('Simulation cannot identify the exact captured primary/unique constraints.');
+    for(const row of source){
+      const copy=copies.get(key(row))!;
+      if(copy.name!==row.name)await client.query(`ALTER TABLE ${temporary} RENAME CONSTRAINT ${identifier(copy.name)} TO ${identifier(row.name)}`);
+    }
+  }
+
   targets(sql: string): string[] {
     const targets = new Set(writtenSimulationTables(sql, this.tableNames));
     // Native PostgreSQL projections use primary-key functional dependencies in
@@ -332,6 +355,7 @@ export class SimulationBranchMaterializer {
       const qualified = `${schema}.${identifier(name)}`;
       const temporary = `${schema}.${identifier(`cow_${name}`.slice(0, 63))}`;
       await client.query(`CREATE TABLE ${temporary} (LIKE ${identifier(this.snapshot.template_schema)}.${identifier(name)} INCLUDING ALL)`);
+      await this.preserveKeyConstraintNames(client,temporary,`${identifier(this.snapshot.template_schema)}.${identifier(name)}`);
       const insertColumns = table.columns.filter((column) => !table.defaults.some((value) => value.column === column && /GENERATED/iu.test(value.expression)));
       await client.query(`INSERT INTO ${temporary} (${insertColumns.map(identifier).join(",")}) OVERRIDING SYSTEM VALUE SELECT ${insertColumns.map(identifier).join(",")} FROM ${qualified}`);
       await client.query(`DROP VIEW ${qualified}`);
@@ -391,15 +415,34 @@ class BranchConnection implements DatabaseConnection {
   closed = false;
   clientReleased = false;
   constructor(readonly client: PoolClient, private readonly branch: SimulationBranch, private readonly materializer: SimulationBranchMaterializer) {}
-  async bind(): Promise<void> {
-    if (this.closed) throw new Error("This Simulation connection has been released.");
+  private selectedEnvironment(){
     const environment = executionEnvironmentStorage.getStore();
     if (environment?.kind === "simulation" && environment.run_id !== this.branch.run_id) throw new Error("Simulation connection identity mismatch.");
+    return environment;
+  }
+  async bind(): Promise<void> {
+    if (this.closed) throw new Error("This Simulation connection has been released.");
+    const environment = this.selectedEnvironment();
     const instant = environment?.kind === "simulation" ? environment.virtual_clock.nowIso() : new Date(this.branch.virtual_now).toISOString();
     await this.client.query("SELECT set_config('search_path',$1,false),set_config('thatcampus.virtual_now',$2,false),set_config('thatcampus.namespace_id',$3,false),set_config('TimeZone',$4,false)", [this.branch.schema_name + ", public", instant, this.branch.namespace_id, this.branch.time_zone]);
   }
   async executeQuery<R>(query: CompiledQuery): Promise<QueryResult<R>> {
     if (this.closed) throw new Error("This Simulation connection has been released.");
+    const words=query.sql.trim().split(/\s+/u);
+    if(words[0]?.toUpperCase()==='ROLLBACK'&&words[1]?.toUpperCase()==='TO'){
+      const name=words.length===4&&words[2]?.toUpperCase()==='SAVEPOINT'?words[3]:words.length===3?words[2]:undefined;
+      if(!name||query.parameters.length)throw new Error('Simulation recovery requires a standalone parameter-free rollback to one savepoint.');
+      const unquoted=name.startsWith('"')&&name.endsWith('"')?name.slice(1,-1):name;
+      const safeName=identifier(unquoted);
+      if(name!==unquoted&&name!==safeName)throw new Error('Invalid Simulation savepoint identifier.');
+      if(!this.transaction||this.enteringTransaction)throw new Error('A Simulation savepoint rollback requires an open transaction.');
+      this.selectedEnvironment();
+      // An aborted PostgreSQL transaction refuses even set_config/catalogue
+      // reads. Recover only this validated transaction-control statement before
+      // normal binding/materialization resumes; the outer COW gate stays held.
+      const result=await this.client.query(`ROLLBACK TO SAVEPOINT ${safeName}`);
+      return {rows:result.rows as R[]};
+    }
     const targets = this.materializer.targets(query.sql);
     // A reader must join the schema lock before taking any relation locks.
     // Otherwise a COW view swap can deadlock against a later relation read in
