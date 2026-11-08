@@ -480,6 +480,14 @@ nonces ask for the original email. Bounded legacy query links remain readable, b
 client scrubbing cannot erase their initial HTTP query ingress; new links must
 remain fragment-only.
 
+The registration screen directs the person to the **Verify email** button in
+their inbox and offers a new email when needed. A valid link shows the
+signed-in address and a single **Confirm email** action. The page consumes the
+proof only after that action. **Reset password** opens a form for the new
+password and its confirmation. Both forms carry the proof in memory. An
+unusable link directs the person to reopen the original email or request a fresh
+link.
+
 Reset serializes with account, MFA challenge and session issuance. An old verified
 password cannot create a later challenge after reset; MFA proof consumption and
 session insertion commit atomically under the account-first lock order. Reset

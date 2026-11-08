@@ -5,7 +5,7 @@ import type { EXECUTION_EFFECT_KINDS } from "../campus-model-core/execution-effe
  * rewrite a stale lock unless this number is increased first, so accepting
  * platform drift always leaves a reviewed Simulation change in the diff.
  */
-export const SIMULATION_CONFORMANCE_REVISION = 220 as const;
+export const SIMULATION_CONFORMANCE_REVISION = 221 as const;
 
 export const SIMULATION_DATA_PLANE_CAPABILITIES = Object.freeze([
   "snapshot",
@@ -480,6 +480,7 @@ export const SIMULATION_SAFETY_EVIDENCE = Object.freeze([
   {"id": "safety:native-elective-navigation", "kind": "unit_boundary", "test_file": "mobile/test/back-policy.test.ts", "proves": "Existing native navigation policy opens keyed course/elective editor and review identities, preserves the exact course/person/review context and retained origin for Back, and retains ordinary assignment/date update behavior and writer removal guards. This is route-policy evidence, not owning permission, API acceptance or physical-device rendering."},
   {"id": "safety:native-account-mail-entry", "kind": "unit_boundary", "test_file": "mobile/test/account-mail-link.test.ts", "proves": "Actual native intent entry and mounted browser account-link handling consume only a single correct-purpose same-origin proof into volatile memory, scrub query/fragment credentials before routing and retain only a bound expiring continuation nonce. Duplicate/mixed/foreign/cold proofs refuse. Auth collaborators are controlled; no provider delivery, persisted credential, server session issuance or physical-device acceptance is asserted."},
   {"id": "safety:native-canonical-account-security-entry", "kind": "unit_boundary", "test_file": "mobile/test/account-security-mail-entry.test.ts", "proves": "The actual canonical account-security component and both aliases scrub proof-bearing browser URLs before forms/navigation, consume one successful continuation and refuse duplicate, mixed, wrong-origin/purpose or cold proofs without selecting a credential. The proof remains volatile and independent from campus/world authority. This is mounted browser policy evidence, not erasure of initial ingress logs, email delivery or hardware acceptance."},
+  {"id": "safety:account-reset-form-proof", "kind": "unit_boundary", "test_file": "mobile/test/auth-port-completion.test.ts", "proves": "The mounted reset form exposes only password fields. An explicit save uses the original hidden proof and removes its continuation on success. Missing links return to recovery and stale form or account context cannot authorize another submission. The tests use controlled collaborators and establish client behavior."},
   {"id": "safety:native-academic-offering-reports", "kind": "unit_boundary", "test_file": "mobile/test/academic-offering-reports.test.ts", "proves": "Mounted native report forms and the actual report writer bind explicit multiple course offerings, immutable subject/code/credit metadata, configured grading and canonical learner remarks. Current own result/report readers and person-bound print targets do not invent a student ID; missing course mappings, stale sources, lost authority and unknown command outcomes remain blocked or private. API/printing collaborators are controlled; this is not a server publication, actual print renderer or physical device check."},
   {"id": "safety:native-course-calendar-read", "kind": "unit_boundary", "test_file": "mobile/test/calendar-offering-read.test.ts", "proves": "Actual Calendar helpers and mounted real QueryClient composition require exact independently contributed person/mine scope, use the existing offering_v1 safe reader and keep legacy family selectors separate. Current authority loss removes cached assessment dates; actor/person/world changes separate query identity and reject late replies. Availability grants no assessment management. This is mounted/read policy evidence, not real HTTP, backend mutation, rendered native or hosted Simulation."},
   {"id": "safety:native-learning-offering-current-access", "kind": "unit_boundary", "test_file": "mobile/test/learning-offering-access.test.ts", "proves": "The actual mounted group/course parent removes cached protected content after403 or lost current management while preserving its unknown journal. Transient failures retain the unsent reason. Controlled ports do not establish a real domain command or rendered-device journey."},
@@ -910,6 +911,8 @@ export const SIMULATION_FRONTEND_ENVIRONMENT_FILES = Object.freeze([
   "mobile/src/auth/account-recovery.ts",
   "mobile/src/auth/AccountSecurityEntryScreen.tsx",
   "mobile/src/auth/AccountSecurityScreen.tsx",
+  "mobile/src/auth/AuthEntryScreen.tsx",
+  "mobile/src/auth/LoginScreen.tsx",
   "mobile/app/reset-password.tsx",
   "mobile/app/+native-intent.tsx",
   "mobile/src/lib/schedule-access.ts",

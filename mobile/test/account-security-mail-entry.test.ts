@@ -26,7 +26,8 @@ function load(path: string, dependencies: Record<string, unknown>, window: Windo
 type Field = { label: string; value: string };
 type Button = { title: string; disabled?: boolean; busy?: boolean; onPress(): void };
 async function mounted(url: string, work: (h: { document: Document; fields: Map<string, Field>; buttons: Map<string, Button>;
-  navigations: string[]; posts: Array<{ path: string; body: string }>; rerender(): Promise<void>; remount(): Promise<void> }) => Promise<void>, historyState?: unknown) {
+  navigations: string[]; posts: Array<{ path: string; body: string }>; rerender(): Promise<void>; remount(): Promise<void> }) => Promise<void>,
+  historyState?: unknown, verificationError?: ApiError) {
   const { JSDOM } = require('jsdom'), dom = new JSDOM('<div id="root"></div>', { url });
   if (historyState !== undefined) dom.window.history.replaceState(historyState, '', url);
   const previous = { window: globalThis.window, document: globalThis.document,
@@ -43,7 +44,11 @@ async function mounted(url: string, work: (h: { document: Document; fields: Map<
     './use-account-mail-entry': { useAccountMailEntry: hook }, './account-mail-link': { accountMailLinks },
     './account-recovery': { accountSecurityEntryHref, verificationEmailFeedback },
     '../lib/api': { getApiOrigin: () => origin, captureApiContext: () => ({ assertCurrent() {} }), apiFetch: async (path: string, init: RequestInit) => {
-      posts.push({ path, body: String(init.body) }); assert.equal(path, '/api/v1/auth/email-verification/confirm/'); return { verified: true };
+      posts.push({ path, body: String(init.body) });
+      if (path === '/api/v1/auth/email-verification/request/') return { delivery: 'queued' };
+      assert.equal(path, '/api/v1/auth/email-verification/confirm/');
+      if (verificationError) throw verificationError;
+      return { verified: true };
     } }, '../lib/api-client': { ApiError }, '../lib/query': { useApi: () => ({ data: { status: 'inactive', results: [] }, isPending: false, isError: false }) },
     '../ui/Alert': { Alert: { alert() {} } }, '../ui/BackNavigation': { ScreenBack: () => null, useScreenExitGuard() {},
       useCampusNavigation: (href: string) => { navigations.push(href); return { onNavigate() {}, complete() {} }; } },
@@ -71,7 +76,9 @@ test('canonical browser query proof is scrubbed before navigation/forms and one 
     assert.ok(!globalThis.window.location.href.includes(proof));
     assert.ok(!JSON.stringify(globalThis.window.history.state).includes(proof));
     const nonce = new URL(globalThis.window.location.href).searchParams.get('continue'); assert.ok(nonce);
-    assert.equal(h.fields.get('Verification token')?.value, proof);
+    assert.equal(h.fields.has('Verification token'), false);
+    assert.ok(!h.document.body.innerHTML.includes(proof));
+    assert.equal(h.buttons.get('Confirm email')?.disabled, false);
     assert.ok(h.navigations.every(href => !href.includes(proof))); assert.equal(h.posts.length, 0);
     assert.ok(h.navigations.some(href => href.includes('from=%2Fareas')));
     await h.rerender(); assert.equal(new URL(globalThis.window.location.href).searchParams.get('continue'), nonce);
@@ -84,11 +91,49 @@ test('canonical browser query proof is scrubbed before navigation/forms and one 
 
 test('both browser security aliases keep generated fragment proofs out of navigation and retain only a volatile nonce', async () => {
   for (const path of ['/more/account/security', '/account/security']) await mounted(`${origin}${path}#token=${proof}`, async h => {
-    assert.equal(h.fields.get('Verification token')?.value, proof); assert.equal(globalThis.window.location.hash, '');
+    assert.equal(h.fields.has('Verification token'), false);
+    assert.ok(!h.document.body.innerHTML.includes(proof));
+    assert.equal(h.buttons.get('Confirm email')?.disabled, false);
+    assert.equal(globalThis.window.location.hash, '');
     assert.ok(!globalThis.window.location.href.includes(proof)); assert.ok(h.navigations.every(href => !href.includes(proof)));
     const current = globalThis.window.location.href; await h.rerender(); assert.equal(globalThis.window.location.href, current);
     assert.deepEqual(globalThis.window.history.state, { index: 7, key: 'safe-router-entry' });
   }, { index: 7, key: 'safe-router-entry' });
+});
+
+test('an unverified account without a link can request email without entering a credential', async () => {
+  await mounted(`${origin}/more/account/security`, async h => {
+    assert.equal(h.fields.has('Verification token'), false);
+    assert.equal(h.buttons.has('Confirm email'), false);
+    assert.equal(h.posts.length, 0);
+    const send = h.buttons.get('Send verification email');
+    assert.ok(send && !send.disabled);
+    await act(async () => send.onPress());
+    assert.deepEqual(h.posts, [{ path: '/api/v1/auth/email-verification/request/', body: '{}' }]);
+    assert.match(h.document.body.textContent ?? '', /check your inbox/i);
+  });
+});
+
+test('a rejected verification link retires its proof and lets the user request a new email', async () => {
+  const invalid = new ApiError('This verification link is invalid or expired.', 400);
+  await mounted(`${origin}/more/account/security#token=${proof}`, async h => {
+    const nonce = new URL(globalThis.window.location.href).searchParams.get('continue');
+    assert.ok(nonce);
+    assert.deepEqual(h.posts, []);
+    await act(async () => h.buttons.get('Confirm email')!.onPress());
+    const confirmation = { path: '/api/v1/auth/email-verification/confirm/', body: JSON.stringify({ token: proof }) };
+    assert.deepEqual(h.posts, [confirmation]);
+    assert.equal(accountMailLinks.read(nonce, 'email_verification', origin), null);
+    assert.match(h.document.body.textContent ?? '', /request a new link/);
+    assert.ok(!h.document.body.innerHTML.includes(proof));
+    await h.rerender();
+    assert.equal(h.buttons.has('Confirm email'), false);
+    assert.deepEqual(h.posts, [confirmation]);
+    const send = h.buttons.get('Send verification email');
+    assert.ok(send && !send.disabled);
+    await act(async () => send.onPress());
+    assert.deepEqual(h.posts, [confirmation, { path: '/api/v1/auth/email-verification/request/', body: '{}' }]);
+  }, undefined, invalid);
 });
 
 test('canonical duplicate/mixed proof values are scrubbed and never choose a token or dispatch', async () => {

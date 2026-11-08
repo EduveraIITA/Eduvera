@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { Text } from 'react-native';
 import { useRouter } from 'expo-router';
 import { useSession } from './SessionProvider';
@@ -19,6 +19,7 @@ import { useAccountMailEntry } from './use-account-mail-entry';
 
 type Enrollment = { secret: string; otpauth_uri: string };
 export function AccountSecurityScreen({ href }: { href: string }) {
+  const router = useRouter();
   const query = new URL(href, 'https://thatcampus.invalid').searchParams, params: Record<string, unknown> = {};
   for (const key of query.keys()) { const values = query.getAll(key); params[key] = values.length === 1 ? values[0] : values; }
   const entry = useAccountMailEntry('email_verification', params);
@@ -26,9 +27,10 @@ export function AccountSecurityScreen({ href }: { href: string }) {
     ...(entry.continuation ? { continue: entry.continuation } : {}) });
   if (!entry.ready) return <Page title="Account security"><Loading label="Opening your secure link…" /></Page>;
   if (!safeHref) return <Page title="Account security"><Empty title="Open the original verification email"
-    message="This link is incomplete or is no longer held on this device. Open the email again, or request a new verification email from Account security." /></Page>;
+    message="Use the Verify email button in your email. If the link no longer works, request a new one in Account security." />
+    <Button title="Go to Account security" onPress={() => router.replace('/account/security')} /></Page>;
   // Neither the navigation owner nor a mounted form receives an incoming proof
-  // URL. Only the origin/purpose-bound in-memory entry may prefill this form.
+  // URL. The captured proof stays in memory until the user confirms the address.
   return <AccountSecurityContent key={`${getApiOrigin()}:${safeHref}`} href={safeHref} verificationToken={entry.token ?? ''} />;
 }
 
@@ -39,51 +41,74 @@ function AccountSecurityContent({ href, verificationToken }: { href: string; ver
   const onboarding = !visitJoinReturnTarget(origin) && (origin?.split('?')[0] === '/onboarding/start' || ['workspace_required', 'purpose_required'].includes(session.onboarding?.status ?? ''));
   const back = origin && !origin.split('?')[0]?.endsWith('/account/security') ? origin : nativeAuthDestination({ ...session, user: session.user ? { ...session.user, email_verified: true } : null });
   const verified = session.user?.email_verified === true, writable = session.status === 'authenticated' && !session.publicDemo && session.environment.mode === 'live';
-  const mfa = useApi<{ status: string; recovery_codes_remaining: number }>(!onboarding ? '/api/v1/auth/mfa/' : null);
-  const sessions = useApi<{ results: Array<{ current: boolean; user_agent: string; last_seen_at: string; expires_at: string }> }>(!onboarding ? '/api/v1/auth/sessions/' : null);
+  const emailOnly = onboarding || !!verificationToken;
+  const mfa = useApi<{ status: string; recovery_codes_remaining: number }>(!emailOnly ? '/api/v1/auth/mfa/' : null);
+  const sessions = useApi<{ results: Array<{ current: boolean; user_agent: string; last_seen_at: string; expires_at: string }> }>(!emailOnly ? '/api/v1/auth/sessions/' : null);
   const [verification, setVerification] = useState(verificationToken), [code, setCode] = useState('');
   const [setup, setSetup] = useState<Enrollment | null>(null), [codes, setCodes] = useState<string[]>([]);
   const [busy, setBusy] = useState(false), [message, setMessage] = useState(''), [error, setError] = useState(''), [uncertain, setUncertain] = useState(false);
   const [messageTone, setMessageTone] = useState<'success' | 'warning'>('success');
+  const running = useRef(false);
   useEffect(() => { if (mfa.data?.status === 'active') { setSetup(null); setCode(''); } }, [mfa.data?.status]);
   useScreenExitGuard({ blocked: busy, dirty: !!setup || codes.length > 0, title: codes.length ? 'Have you saved your recovery codes?' : 'Leave authenticator setup?',
     message: codes.length ? 'These recovery codes will not be shown again. Save them somewhere private before leaving.' : 'The setup key is kept only on this screen. You can request a new setup later.',
     onLeave: () => { setSetup(null); setCode(''); setCodes([]); } });
   async function perform(work: () => Promise<void>, uncertainWrite = false) {
-    if (!writable || busy || uncertain) return;
-    setBusy(true); setError(''); setMessage(''); setMessageTone('success');
+    if (!writable || running.current || uncertain) return;
+    running.current = true; setBusy(true); setError(''); setMessage(''); setMessageTone('success');
     try { await work(); }
     catch (cause) {
       if (uncertainWrite && (!(cause instanceof ApiError) || cause.status >= 500 || cause.status === 408)) setUncertain(true);
       setError(cause instanceof Error ? cause.message : 'The security action could not be confirmed.');
-    } finally { setBusy(false); }
+    } finally { running.current = false; setBusy(false); }
   }
   function continueTo(target: string) {
     if (target.startsWith('/onboarding/') || visitJoinReturnTarget(target)) router.replace(target as never);
     else navigation.complete(target);
   }
-  return <Page title={onboarding ? verified ? 'Email confirmed' : 'Confirm your email' : 'Account security'} subtitle={onboarding ? verified ? `${session.user?.email ?? 'Your email'} is ready. Choose the first campus task you want to run.` : 'Confirm your email before choosing your first campus task.' : undefined}
-    refreshing={mfa.isRefetching || sessions.isRefetching} onRefresh={busy ? undefined : () => { void session.refresh(); if (!onboarding) { void mfa.refetch(); void sessions.refetch(); } }}>
+  const title = emailOnly ? verified ? 'Email confirmed' : verification ? 'Confirm your email' : 'Check your email' : 'Account security';
+  return <Page title={title} subtitle={onboarding && verified ? 'Choose the first campus task you want to run.' : undefined}
+    refreshing={mfa.isRefetching || sessions.isRefetching} onRefresh={busy ? undefined : () => { void session.refresh(); if (!emailOnly) { void mfa.refetch(); void sessions.refetch(); } }}>
     <ScreenBack fallbackHref={back} title={accountReturnTitle(back)} disabled={busy} />
     {error ? <Notice tone="danger" message={error} /> : null}{message ? <Notice message={message} tone={messageTone} /> : null}
     {session.publicDemo ? <Notice message="This public demo is read-only. Sign in with your own account to manage security." /> : session.environment.mode !== 'live' ? <><Notice message="Account security is managed in Live. Return to Live before changing your account." /><Button title="Open Simulation controls" kind="secondary" onPress={() => navigation.onNavigate('/more/simulation')} /></> : null}
     {uncertain ? <Notice tone="warning" message="The result is unconfirmed. Security actions are paused on this screen. Check your account’s current status before starting another setup; the action has not been repeated." /> : null}
-    <Section title="Email"><Row title={session.user?.email ?? 'Your email'} status={verified ? 'Verified' : 'Not verified'} />{!verified ? <>
+    <Section title="Email"><Row title={session.user?.email ?? 'Your email'} status={verified ? 'Verified' : 'Not verified'} />{!verified && (verification ? <>
+      <Text style={{ color: colors.muted, fontSize: 15, lineHeight: 23 }}>Confirm this address if it matches the email you opened.</Text>
+      <Button title="Confirm email" busy={busy} disabled={!writable || uncertain} onPress={() => { void perform(async () => {
+        const context = captureApiContext();
+        try {
+          const result = await apiFetch<{ verified: boolean }>('/api/v1/auth/email-verification/confirm/', { method: 'POST', body: JSON.stringify({ token: verification }) });
+          context.assertCurrent();
+          if (result.verified !== true) throw new Error('Email confirmation could not be verified. Check your account status.');
+        } catch (cause) {
+          context.assertCurrent();
+          if (cause instanceof ApiError && cause.status === 400) {
+            const continuation = params.get('continue');
+            if (continuation) accountMailLinks.remove(continuation);
+            setVerification('');
+            setError('This link could not confirm the signed-in address. Open the email for this account or request a new link.');
+            return;
+          }
+          throw cause;
+        }
+        const continuation = params.get('continue');
+        if (continuation) accountMailLinks.remove(continuation);
+        await session.refresh(); setVerification('');
+      }, true); }} />
+    </> : <>
+      <Text style={{ color: colors.muted, fontSize: 15, lineHeight: 23 }}>Open the ThatCampus email and choose Verify email. Check your spam folder if it hasn’t arrived.</Text>
       <Button title="Send verification email" busy={busy} disabled={!writable || uncertain} onPress={() => { void perform(async () => {
         const context = captureApiContext();
         const response = await apiFetch<{ delivery: string; development_token?: string }>('/api/v1/auth/email-verification/request/', { method: 'POST', body: '{}' }); context.assertCurrent();
         const feedback = verificationEmailFeedback(response);
         if (feedback.developmentToken) setVerification(feedback.developmentToken);
         setMessage(feedback.message); setMessageTone(feedback.tone);
+        if (response.delivery === 'not_required') await session.refresh();
       }); }} />
-      <Field label="Verification token" value={verification} onChangeText={setVerification} autoCapitalize="none" autoCorrect={false} textContentType="oneTimeCode" />
-      <Button title="Confirm email" busy={busy} disabled={!writable || uncertain || verification.trim().length < 32} onPress={() => { void perform(async () => {
-        const context = captureApiContext(); await apiFetch('/api/v1/auth/email-verification/confirm/', { method: 'POST', body: JSON.stringify({ token: verification.trim() }) }); context.assertCurrent();
-        if (params.get('continue')) accountMailLinks.remove(params.get('continue')!);
-        setVerification(''); setMessage('Email verified.'); await session.refresh();
-      }); }} />
-    </> : null}</Section>
-    {onboarding ? verified ? <><Button title="Continue" disabled={busy} onPress={() => continueTo('/onboarding/start')} /><Text style={{ color: colors.muted, fontSize: 15, lineHeight: 23 }}>You can add an authenticator later from Account security.</Text></> : null : <>
+      <Button title="Check verification status" kind="secondary" disabled={busy} onPress={() => { void session.refresh(); }} />
+    </>)}</Section>
+    {emailOnly ? verified ? <><Button title="Continue" disabled={busy} onPress={() => continueTo(onboarding ? '/onboarding/start' : back)} />{onboarding ? <Text style={{ color: colors.muted, fontSize: 15, lineHeight: 23 }}>You can add an authenticator later from Account security.</Text> : null}</> : null : <>
       <Section title="Two-step verification">{mfa.isPending ? <Loading /> : mfa.isError ? <Empty title="Security status unavailable" message={mfa.error.message} onRetry={() => { void mfa.refetch(); }} /> : <Row title={mfa.data?.status === 'active' ? 'Authenticator active' : 'Add an authenticator'} detail={mfa.data?.status === 'active' ? `${mfa.data.recovery_codes_remaining} recovery codes remain.` : 'Optional extra protection with a code from your authenticator.'} icon="security" />}
         {!verified ? <Notice message="Verify your email before setting up an authenticator." /> : null}
         {mfa.data && mfa.data.status !== 'active' && !setup ? <Button title="Set up authenticator" busy={busy} disabled={!verified || !writable || uncertain || codes.length > 0} onPress={() => { void perform(async () => {

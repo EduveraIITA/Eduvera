@@ -30,7 +30,7 @@ export function accountActionToken(value: string): boolean {
 }
 
 export function passwordResetInput(token: string, password: string, confirmation: string) {
-  if (!accountActionToken(token)) throw new Error('Enter the complete reset token from your email, or request a new reset link.');
+  if (!accountActionToken(token)) throw new Error('Open the Reset password button from your email, or request a new reset link.');
   if (password.length < 12 || password.length > 128) throw new Error('Use a password with 12–128 characters.');
   if (password !== confirmation) throw new Error('The passwords do not match.');
   return { token: token.trim(), password };
@@ -55,14 +55,14 @@ export function confirmedPasswordReset(value: unknown): void {
 export function passwordResetRequestFeedback(value: unknown): { message: string; tone: 'success' | 'warning' } {
   if (!value || typeof value !== 'object' || (value as { accepted?: unknown }).accepted !== true) throw new Error('The reset request could not be confirmed. Please try again.');
   if ((value as { recovery_available?: unknown }).recovery_available === false) return { tone: 'warning', message: 'Email recovery is currently unavailable. No reset email was requested. Try again later or contact ThatCampus support.' };
-  return { tone: 'success', message: 'Reset request received. If this email has an account, check your inbox for instructions. If nothing arrives, try again later.' };
+  return { tone: 'success', message: 'If this email is linked to a ThatCampus account, you’ll receive a reset link. Check your inbox and spam folder.' };
 }
 
 export function verificationEmailFeedback(value: { delivery: string; development_token?: string }): { message: string; tone: 'success' | 'warning'; developmentToken?: string } {
-  if (value.delivery === 'queued' || value.delivery === 'sending') return { tone: 'success', message: 'Verification email is queued. Check your inbox shortly. Another request within a minute keeps the same link.' };
+  if (value.delivery === 'queued' || value.delivery === 'sending') return { tone: 'success', message: 'Your verification email is on its way. Check your inbox shortly.' };
   if (value.delivery === 'not_required') return { tone: 'success', message: 'Your email is already verified. Refresh your account to continue.' };
-  if (value.delivery === 'email_accepted') return { tone: 'success', message: 'Verification email accepted by the mail server. Check your inbox.' };
-  if (value.delivery === 'manual' && typeof value.development_token === 'string' && accountActionToken(value.development_token)) return { tone: 'warning', message: 'Development verification token is ready below.', developmentToken: value.development_token };
-  if (value.delivery === 'unavailable' || value.delivery === 'manual') return { tone: 'warning', message: 'Verification email is currently unavailable. No email was sent. You can enter a verification token you already received, or contact ThatCampus support.' };
+  if (value.delivery === 'email_accepted') return { tone: 'success', message: 'Check your inbox for the verification email.' };
+  if (value.delivery === 'manual' && typeof value.development_token === 'string' && accountActionToken(value.development_token)) return { tone: 'warning', message: 'Email delivery is off in this development environment. You can confirm your email here.', developmentToken: value.development_token };
+  if (value.delivery === 'unavailable' || value.delivery === 'manual') return { tone: 'warning', message: 'Verification email is currently unavailable. Try again later or contact ThatCampus support.' };
   return { tone: 'warning', message: 'Email delivery could not be confirmed. Check your inbox and wait before requesting another verification email.' };
 }

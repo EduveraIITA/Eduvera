@@ -39,17 +39,55 @@ test('actual native entry captures an HTTPS or custom-scheme fragment before rou
   assert.equal(redirect({path:'/areas',initial:false}),'/areas');
 });
 
-async function mounted(url:string,kind:'verify'|'reset',work:(h:{document:Document;rerender():Promise<void>;setOrigin(value:string):void;status(value:string):void})=>Promise<void>){
+type ResetProps = { resetToken?: string; resetContinuation?: string };
+type MountedEntry = {
+  document: Document;
+  resetProps: ResetProps[];
+  navigations: string[];
+  rerender(): Promise<void>;
+  setOrigin(value: string): void;
+  status(value: string): void;
+};
+async function mounted(url:string,kind:'verify'|'reset',work:(h:MountedEntry)=>Promise<void>){
   const {JSDOM}=require('jsdom'),dom=new JSDOM('<div id="root"></div>',{url});
   const previous={window:globalThis.window,document:globalThis.document,IS_REACT_ACT_ENVIRONMENT:(globalThis as {IS_REACT_ACT_ENVIRONMENT?:boolean}).IS_REACT_ACT_ENVIRONMENT};Object.assign(globalThis,{window:dom.window,document:dom.window.document,IS_REACT_ACT_ENVIRONMENT:true});
   let apiOrigin=origin,status='anonymous';
+  const resetProps: ResetProps[] = [], navigations: string[] = [];
   const hook=load('src/auth/use-account-mail-entry.ts',{react:React,'expo-crypto':{randomUUID},'../lib/api':{getApiOrigin:()=>apiOrigin},'./account-mail-link':{accountMailLinkInput,accountMailLinks}},dom.window).useAccountMailEntry;
   const params=()=>{const out:Record<string,unknown>={};for(const key of new URL(dom.window.location.href).searchParams.keys()){const values=new URL(dom.window.location.href).searchParams.getAll(key);out[key]=values.length===1?values[0]:values;}return out;};
-  const Box=({children}:React.PropsWithChildren)=>React.createElement('div',null,children),components={Page:Box,Loading:()=>React.createElement('p',null,'Opening'),Empty:({title}: {title:string})=>React.createElement('p',null,title),Button:Box};
-  const Screen=(kind==='verify'?load('src/auth/AccountSecurityEntryScreen.tsx',{'react/jsx-runtime':require('react/jsx-runtime'),'expo-router':{useLocalSearchParams:params,Redirect:({href}:{href:string})=>React.createElement('a',{href},'continue')},'./SessionProvider':{useSession:()=>({status})},'./account-recovery':{accountSecurityEntryHref},'./use-account-mail-entry':{useAccountMailEntry:hook},'../ui/components':components}).AccountSecurityEntryScreen
-    :load('app/reset-password.tsx',{'react/jsx-runtime':require('react/jsx-runtime'),'expo-router':{useLocalSearchParams:params,useRouter:()=>({replace(){}})},'../src/auth/use-account-mail-entry':{useAccountMailEntry:hook},'../src/ui/components':components,'../src/auth/LoginScreen':{LoginScreen:({resetToken}:{resetToken?:string})=>React.createElement('input',{'data-reset':true,value:resetToken??'',readOnly:true})}}).default) as React.ComponentType;
+  const Box = ({ children }: React.PropsWithChildren) => React.createElement('div', null, children);
+  const components = {
+    Page: Box,
+    Loading: () => React.createElement('p', null, 'Opening'),
+    Empty: ({ title }: { title: string }) => React.createElement('p', null, title),
+    Button: ({ title, onPress }: { title: string; onPress(): void }) => React.createElement('button', { onClick: onPress }, title),
+  };
+  function LoginScreen({ resetToken, resetContinuation }: ResetProps) {
+    resetProps.push({ resetToken, resetContinuation });
+    return React.createElement('p', null, 'Choose a new password');
+  }
+  const router = { replace: (href: string) => navigations.push(href) };
+  const Screen=(kind==='verify'?load('src/auth/AccountSecurityEntryScreen.tsx', {
+      'react/jsx-runtime': require('react/jsx-runtime'),
+      'expo-router': {
+        useLocalSearchParams: params,
+        useRouter: () => router,
+        Redirect: ({ href }: { href: string }) => React.createElement('a', { href }, 'continue'),
+      },
+      './SessionProvider': { useSession: () => ({ status }) },
+      './account-recovery': { accountSecurityEntryHref },
+      './use-account-mail-entry': { useAccountMailEntry: hook },
+      '../ui/components': components,
+    }).AccountSecurityEntryScreen
+    :load('app/reset-password.tsx', {
+      'react/jsx-runtime': require('react/jsx-runtime'),
+      'expo-router': { useLocalSearchParams: params, useRouter: () => router },
+      '../src/auth/use-account-mail-entry': { useAccountMailEntry: hook },
+      '../src/ui/components': components,
+      '../src/auth/LoginScreen': { LoginScreen },
+    }).default) as React.ComponentType;
   const {createRoot}=require('react-dom/client'),root=createRoot(dom.window.document.getElementById('root'));
-  try{await act(async()=>root.render(React.createElement(Screen)));await work({document:dom.window.document,rerender:async()=>{await act(async()=>root.render(React.createElement(Screen)));},setOrigin:value=>{apiOrigin=value;},status:value=>{status=value;}});}
+  try{await act(async()=>root.render(React.createElement(Screen)));await work({document:dom.window.document,resetProps,navigations,rerender:async()=>{await act(async()=>root.render(React.createElement(Screen)));},setOrigin:value=>{apiOrigin=value;},status:value=>{status=value;}});}
   finally{await act(async()=>root.unmount());dom.window.close();Object.assign(globalThis,previous);}
 }
 test('mounted browser verification captures and scrubs a proof before anonymous login then uses the same authenticated owner',async()=>{
@@ -59,10 +97,33 @@ test('mounted browser verification captures and scrubs a proof before anonymous 
     assert.equal(globalThis.window.localStorage.length,0);assert.equal(globalThis.window.sessionStorage.length,0);
     h.status('authenticated');await h.rerender();assert.match(h.document.querySelector('a')!.getAttribute('href')!,/^\/more\/account\/security\?continue=/);
     h.setOrigin('https://other.test');await h.rerender();assert.match(h.document.body.textContent??'',/verification link is incomplete/);
+    const recover = [...h.document.querySelectorAll('button')].find(button => button.textContent === 'Go to Account security');
+    assert.ok(recover);
+    await act(async () => recover.click());
+    assert.deepEqual(h.navigations, ['/more/account/security']);
   });
 });
-test('mounted reset consumes a legacy query proof into memory, while a cold nonce or duplicate input never pre-fills',async()=>{
-  await mounted(`${origin}/reset-password?token=${token}`,'reset',async h=>{assert.equal((h.document.querySelector('input') as HTMLInputElement).value,token);assert.ok(!globalThis.window.location.href.includes(token));assert.match(globalThis.window.location.search,/continue=/);});
-  await mounted(`${origin}/reset-password?continue=${randomUUID()}`,'reset',async h=>{assert.equal(h.document.querySelector('input'),null);assert.match(h.document.body.textContent??'',/original reset email/);});
-  await mounted(`${origin}/reset-password?token=${token}&token=${token}`,'reset',async h=>{assert.equal(h.document.querySelector('input'),null);assert.ok(!globalThis.window.location.href.includes(token));});
+test('mounted reset hands a hidden proof and its volatile continuation to the password form', async () => {
+  for (const suffix of [`#token=${token}`, `?token=${token}`]) await mounted(`${origin}/reset-password${suffix}`, 'reset', async h => {
+    const url = new URL(globalThis.window.location.href);
+    const continuation = url.searchParams.get('continue');
+    assert.ok(continuation);
+    assert.deepEqual(h.resetProps.at(-1), { resetToken: token, resetContinuation: continuation });
+    assert.match(h.document.body.textContent ?? '', /Choose a new password/);
+    assert.ok(!h.document.body.innerHTML.includes(token));
+    assert.ok(!url.href.includes(token));
+    assert.equal(accountMailLinks.read(continuation, 'password_reset', origin), token);
+  });
+});
+
+test('mounted reset sends missing or unusable links to recovery without opening the password form', async () => {
+  for (const suffix of ['', `?continue=${randomUUID()}`, `?token=${token}&token=${token}`]) await mounted(`${origin}/reset-password${suffix}`, 'reset', async h => {
+    assert.deepEqual(h.resetProps, []);
+    assert.match(h.document.body.textContent ?? '', /original reset email/i);
+    assert.ok(!globalThis.window.location.href.includes(token));
+    const request = [...h.document.querySelectorAll('button')].find(button => button.textContent === 'Request a new reset link');
+    assert.ok(request);
+    await act(async () => request.click());
+    assert.deepEqual(h.navigations, ['/forgot-password']);
+  });
 });
