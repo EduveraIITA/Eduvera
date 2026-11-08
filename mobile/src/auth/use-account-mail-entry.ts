@@ -7,7 +7,8 @@ import { accountMailLinkInput, accountMailLinks, type AccountMailPurpose } from 
 /** Capture before redirecting to login; scrub either modern fragments or older
  * query proofs. Reloading a scrubbed nonce fails safely and asks for the email. */
 export function useAccountMailEntry(purpose: AccountMailPurpose, params: Record<string, unknown>) {
-  const origin = getApiOrigin(), navigation = useNavigation(), routeParams = useLocalSearchParams();
+  const origin = getApiOrigin(), routeParams = useLocalSearchParams();
+  const navigation = useNavigation<{ replaceParams(params: typeof routeParams): void }>();
   const browser = typeof window !== 'undefined' && window.location && window.history ? window : null;
   const path = purpose === 'password_reset' ? '/reset-password' : '/account/security';
   const browserPath = browser?.location.pathname;

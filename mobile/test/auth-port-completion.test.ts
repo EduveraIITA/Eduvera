@@ -222,7 +222,7 @@ test('mounted recovery uses the same check-inbox message without revealing accou
 
 test('a signed-in user can request a replacement reset link without leaving the recovery route', () => {
   const Redirect = Symbol('Redirect'), LoginScreen = Symbol('LoginScreen'), Page = Symbol('Page');
-  const Button = Symbol('Button');
+  const Button = () => null;
   const paths: string[] = [];
   let params: Record<string, unknown> = {};
   const { AuthEntryScreen } = load('src/auth/AuthEntryScreen.tsx', {
