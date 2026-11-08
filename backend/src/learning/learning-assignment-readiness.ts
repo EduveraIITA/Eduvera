@@ -78,7 +78,18 @@ export async function readAssignmentsReadiness(db: Db, identities: HumanAgentIde
   const world = executionEnvironmentStorage.getStore(), now = executionNow(), contexts: AssignmentContextReadiness[] = [];
   const base = { actor_user_id: user.id, environment_namespace_id: world?.namespace_id ?? `live:${schoolId}`, evaluated_at: now.toISOString(), requires_recheck: true as const };
   const identity = await identityFor(db, identities, user, schoolId);
-  if (!identity) return { can_setup: false, contexts, operation: { ...base, action: "unavailable", state: "unavailable", scope: null, source_revision: null, destination: assignmentsHubPath } satisfies AssignmentsOperationReadiness };
+  if (!identity) return { can_setup: false, contexts, academic_person_id: null, operation: { ...base, action: "unavailable", state: "unavailable", scope: null, source_revision: null, destination: assignmentsHubPath } satisfies AssignmentsOperationReadiness };
+  const academic = (await sql<{ available: boolean }>`SELECT EXISTS(
+    SELECT 1 FROM learning_offering_enrollments enrollment JOIN learning_offerings offering ON offering.school_id=enrollment.school_id AND offering.id=enrollment.offering_id
+    JOIN learning_offering_academic_contexts binding ON binding.school_id=offering.school_id AND binding.offering_id=offering.id JOIN schools school ON school.id=enrollment.school_id
+    WHERE enrollment.school_id=${schoolId}::uuid AND enrollment.person_id=${identity.person_id}::uuid AND offering.state='active'
+      AND enrollment.starts_on<=(${now}::timestamptz AT TIME ZONE school.timezone)::date
+      AND(enrollment.ends_on IS NULL OR enrollment.ends_on>(${now}::timestamptz AT TIME ZONE school.timezone)::date)
+    UNION ALL SELECT 1 FROM assessment_publication_results result WHERE result.school_id=${schoolId}::uuid AND result.person_id=${identity.person_id}::uuid AND result.student_id IS NULL
+    UNION ALL SELECT 1 FROM grading_report_students report JOIN grading_report_batches batch ON batch.school_id=report.school_id AND batch.id=report.batch_id AND batch.status='published'
+      WHERE report.school_id=${schoolId}::uuid AND report.person_id=${identity.person_id}::uuid AND report.student_id IS NULL
+  ) AS available`.execute(db)).rows[0]!.available;
+  const academicPersonId = academic ? identity.person_id : null;
   const canSetup = Boolean(await db.selectFrom("school_memberships").select("id").where("school_id", "=", schoolId).where("user_id", "=", user.id).where("is_active", "=", true).where("role", "=", "admin").executeTakeFirst());
   const classes = (await sql<{ id: string; label: string }>`SELECT DISTINCT section.id,concat('Class ',section.grade,section.section) AS label
     FROM staff_role_bindings binding JOIN staff_profiles staff ON staff.school_id=binding.school_id AND staff.user_id=binding.user_id
@@ -104,11 +115,11 @@ export async function readAssignmentsReadiness(db: Db, identities: HumanAgentIde
   if (learner || registered) contexts.push({ kind: "person", id: identity.person_id, label: "My assignments", href: `${assignmentsHubPath}?scope=person&person_id=${identity.person_id}`, can_manage: false });
   const retained = await db.selectFrom("progressive_onboarding_workspaces").select("resume_path").where("school_id", "=", schoolId).where("owner_user_id", "=", user.id).where("resume_goal_key", "=", "assignments").executeTakeFirst();
   const preferred = retained ? await resolveAssignmentContinuation(db, identities, user, schoolId, retained.resume_path) : null;
-  if (preferred) return { can_setup: canSetup, contexts, operation: { ...base, action: preferred.source.state === "draft" ? "continue" : "view", state: preferred.source.state,
+  if (preferred) return { can_setup: canSetup, contexts, academic_person_id: academicPersonId, operation: { ...base, action: preferred.source.state === "draft" ? "continue" : "view", state: preferred.source.state,
     scope: { kind: "assignment", id: preferred.source.id }, source_revision: preferred.source.revision, destination: preferred.path,
     ...(preferred.recovery ? { recovery: preferred.recovery } : {}) } satisfies AssignmentsOperationReadiness };
   const primary = contexts.find(item => item.can_manage) ?? contexts[0];
-  return { can_setup: canSetup, contexts, operation: { ...base, action: primary ? primary.can_manage ? "create" : "view" : canSetup ? "create" : "unavailable",
+  return { can_setup: canSetup, contexts, academic_person_id: academicPersonId, operation: { ...base, action: primary ? primary.can_manage ? "create" : "view" : canSetup ? "create" : "unavailable",
     state: primary || canSetup ? "ready_to_create" : "requires_setup", scope: primary ? { kind: primary.kind, id: primary.id } : null,
     source_revision: null, destination: primary?.href ?? assignmentsHubPath } satisfies AssignmentsOperationReadiness };
 }

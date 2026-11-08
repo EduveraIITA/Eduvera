@@ -809,7 +809,7 @@ export class OperationsService {
     });
     if (!prepared.mail) return prepared.response;
     try {
-      await sendTransactionalEmail({ to: data.email, senderName: 'ThatCampus', subject: 'Confirm your campus invitation',
+      await sendTransactionalEmail({ to: data.email, senderName: 'ThatCampus', subject: 'Confirm your campus invitation', idempotencyKey: `invitation-proof/${digest(`${prepared.mail.id}:${prepared.mail.hash}`)}`,
         text: `Your confirmation code is: ${prepared.mail.code}\n\nEnter it in the ThatCampus invitation you are accepting for ${prepared.response.campus.name}. It expires at ${prepared.mail.expiresAt.toISOString()}.\n\nDo not share this code. If you did not request it, ignore this message.` });
       return prepared.response;
     } catch {

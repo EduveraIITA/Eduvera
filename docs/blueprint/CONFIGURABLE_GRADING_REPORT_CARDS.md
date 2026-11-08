@@ -18,7 +18,8 @@ The workflow answers five operational questions:
 4. Did a second authorized person review the report release where policy requires it?
 5. Which immutable release is currently visible to the learner and linked guardians?
 
-It supports configurable term/class schemes, continuous-assessment components,
+It supports configurable term/class and explicit course-offering schemes,
+continuous-assessment components,
 subject thresholds, grade bands, class-teacher and principal remarks, independent
 review, publication and corrected releases. It does not implement online testing,
 public rankings, transcripts, certificates, board-specific rules, promotion decisions
@@ -67,6 +68,36 @@ Report batch: `draft -> reviewed -> published`, with cancellation before publica
   calculation. Overall percentage is the mean of complete subject percentages. Grade
   bands must cover 0 through 100 without gaps or overlaps.
 - No rank, percentile or peer comparison is calculated or exposed.
+
+## Course offerings and per-learner eligibility
+
+A course report selects explicit offerings bound to the same term and compatible
+programme context. Each selected offering needs a mapped published assessment plan
+before activation. Credits and course code come from that offering's retained
+academic binding. Two offerings of one subject remain distinct when their course
+codes differ, including different credit weights. One report scheme currently
+accepts one offering per course code; parallel sections sharing a code use separate
+schemes rather than silently combining duplicate GPA attempts.
+
+First course-report generation combines selected immutable publication audiences
+with enrollment applicable on the current campus date, capped at term end. It
+refuses a future term. Each learner includes their applicable courses: earlier
+published marks remain evidence after an elective ends; an ended course without
+marks is excluded. A currently enrolled late elective with no result in any mapped
+publication remains an explicit incomplete course with null marks, not zero or an
+omitted learner. Missing components block a complete release under the ordinary
+review rules. Course eligibility is retained separately from scoring policy.
+
+Generation freezes the canonical person audience, included/excluded offerings,
+dated enrollment and publication provenance, academic context, configured policy
+and calculated values. Corrections retain the first report's audience and included
+course set while referring to newly reviewed published assessment sources. They do
+not reinterpret an issued report from today's enrollment or credit changes. Legacy
+class reports keep their existing immutable-publication roster behavior. Staff
+remarks retain their class authority; a course report does not manufacture a class
+assignment. Learners open only their own published person record. Workspace absence
+of `academic_context=offering_v1` preserves class-only rows/counts and omits course
+references for older clients.
 
 ## Data, audit and security invariants
 
@@ -136,7 +167,20 @@ For band lookup, a normalized or weighted subject percentage is rounded half-up 
 two decimals, then matched to the contiguous hundredth-based bands. The institution's
 display precision controls the primary percentage or GPA value, not band boundaries.
 Subject percentages round before overall aggregation. Percentage and grade policies
-can use equal subject weighting or explicit course credits. GPA always uses credits:
+can use equal subject weighting or explicit course credits.
+
+Screen and print format policy-controlled percentages, SGPA/CGPA and subject grade
+points using the frozen result policy's decimal precision and the owning versioned
+half-up rule. Formatting must not replace it with binary `toFixed` rounding at a
+tie, consult today's policy or recalculate a saved grade/GPA. Keep real zero distinct
+from a missing value. Credit quantities have their own precision: remove trailing
+SQL storage padding only, preserving every recorded fractional credit rather than
+rounding credits to result precision. Result values without a policy snapshot
+retain their existing raw result presentation. The [display boundary review](../../artifacts/core-completeness-2/parity/report-precision-rounding-decision.json)
+and [screen/print source evidence](../../artifacts/core-completeness-2/parity/report-precision-source.json)
+keep presentation separate from canonical calculation and issued records.
+
+GPA always uses credits:
 
 `term GPA = sum(included course credits × mapped grade points) / sum(included credits)`.
 
@@ -201,8 +245,9 @@ remaining deployment/device limits are recorded in the implementation checkpoint
 
 ### 27 October — roster provenance and review finality
 
-The first report roster is the union of learners in its selected immutable
-assessment publications, not today's active class. Corrected releases retain the
+The first class/term report roster is the union of learners in its selected
+immutable assessment publications, not today's active class. Corrected releases
+retain the
 previous batch's membership and recorded roll provenance. Missing components
 remain incomplete; a later enrollment does not silently add a learner. Published
 class/term context is separate from current placement. Unknown legacy provenance

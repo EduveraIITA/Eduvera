@@ -41,7 +41,7 @@ export class LearningAssignmentModelService {
   }
 
   async prepareOffering(tx: Transaction<Database>, user: AuthUser, source: { id: string; school_id: string; revision: number },
-    action: string, command: AssignmentCommand, payload: unknown) {
+    action: string, command: AssignmentCommand, payload: unknown, coordinationContext?: Record<string, unknown>) {
     const prior = await this.offeringReceipt(tx, user, source.school_id, source.id, command.command_id, action), hash = assignmentHash(payload);
     if (prior) {
       if (prior.safe_context.payload_hash !== hash || prior.expected_revision !== command.expected_revision) throw new ConflictException("This command was already used with different learning group details.");
@@ -60,7 +60,7 @@ export class LearningAssignmentModelService {
       requested_at: executionNow().toISOString(), correlation_id: command.command_id, causation_id: null, idempotency_key: `learning-offering:${user.id}:${command.command_id}`,
       operating_rule_version_ref: null, configuration_refs: [], authority_attestation: { evaluator_domain: "learning", decision: "allowed",
         reason_codes: ["current_protected_campus_setup_authority"], authority_source_refs: [{ school_id: source.school_id, user_id: user.id }], operating_rule_refs: [], valid_until: null },
-      safe_context: { offering_id: source.id, payload_hash: hash } });
+      safe_context: { offering_id: source.id, payload_hash: hash, ...(coordinationContext ?? {}) } });
   }
 
   async finishOffering(tx: Transaction<Database>, source: { id: string; school_id: string; revision: number }, commandId: string, result: Record<string, unknown>, eventId: string) {

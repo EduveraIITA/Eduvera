@@ -23,14 +23,16 @@ export class AcademicReportsController {
   }
 
   @Get("workspace/")
-  workspace(@Req() req: AuthenticatedRequest, @Param("schoolId") schoolId: string) {
-    return this.reports.workspace(req.authUser, schoolId);
+  workspace(@Req() req: AuthenticatedRequest, @Param("schoolId") schoolId: string, @Query("academic_context") academicContext?: string) {
+    return this.reports.workspace(req.authUser, schoolId, academicContext);
   }
 
   @Get("family/")
   family(@Req() req: AuthenticatedRequest, @Param("schoolId") schoolId: string, @Query("student_id") studentId: string) {
     return this.reports.familyReports(req.authUser, schoolId, studentId);
   }
+  @Get("mine/")
+  mine(@Req() req: AuthenticatedRequest, @Param("schoolId") schoolId: string, @Query("person_id") personId?: string) { return this.reports.ownReports(req.authUser, schoolId, personId); }
 
   @Post("schemes/")
   createScheme(@Req() req: AuthenticatedRequest, @Param("schoolId") schoolId: string, @Body() body: unknown) {
@@ -66,6 +68,11 @@ export class AcademicReportsController {
   @RequirePermission("reports.comment")
   comments(@Req() req: AuthenticatedRequest, @Param("schoolId") schoolId: string, @Param("batchId") batchId: string, @Param("studentId") studentId: string, @Body() body: unknown) {
     return this.reports.updateComments(req.authUser, schoolId, batchId, studentId, body);
+  }
+  @Put("batches/:batchId/learners/:learnerId/comments/")
+  @RequirePermission("reports.comment")
+  learnerComments(@Req() req: AuthenticatedRequest, @Param("schoolId") schoolId: string, @Param("batchId") batchId: string, @Param("learnerId") learnerId: string, @Body() body: unknown) {
+    return this.reports.updateComments(req.authUser, schoolId, batchId, learnerId, body, "learner");
   }
 
   @Post("batches/:batchId/actions/:action/")

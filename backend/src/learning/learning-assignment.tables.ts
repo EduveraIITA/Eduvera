@@ -42,6 +42,7 @@ export interface LearningAssignmentReviewTable {
 }
 export interface LearningAssignmentTables {
   learning_offerings: LearningOfferingTable;
+  learning_offering_academic_contexts: LearningOfferingAcademicContextTable;
   learning_offering_enrollments: LearningOfferingEnrollmentTable;
   learning_offering_teaching_assignments: LearningOfferingTeachingAssignmentTable;
   learning_assignment_review_handovers: LearningAssignmentReviewHandoverTable;
@@ -58,6 +59,10 @@ export interface LearningAssignmentTables {
 export interface LearningOfferingTable {
   id: string; school_id: string; name: string; state: "active" | "closed"; revision: number;
   created_by: string; created_at: Instant; updated_at: Instant;
+}
+export interface LearningOfferingAcademicContextTable {
+  school_id: string; offering_id: string; term_id: string; subject_id: string; course_code: string; credits: string; programme_key: string | null;
+  revision: number; created_by: string; updated_by: string; created_at: Instant; updated_at: Instant;
 }
 export interface LearningOfferingEnrollmentTable {
   id: string; school_id: string; offering_id: string; person_id: string; selected_person_revision: number;

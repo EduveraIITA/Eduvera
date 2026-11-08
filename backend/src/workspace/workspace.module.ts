@@ -17,10 +17,11 @@ import { FacilitiesModule } from "../facilities/facilities.module.js";
 import { AccommodationModule } from "../facilities/accommodation/accommodation.module.js";
 import { DiningModule } from "../dining/dining.module.js";
 import { GateModule } from "../gate/gate.module.js";
+import { AssessmentsModule } from "../assessments/assessments.module.js";
 import { RestrictedCareModule } from "../restricted-care/restricted-care.module.js";
 
 @Module({
-  imports: [CampusModelCoreModule, RequestsModule, SchedulePlanningModule, ActivityAttendanceKernelModule, StaffOperationsModule, LearningAssignmentsModule, FinanceArrangementsModule, NativeFeeReviewsModule, GovernanceModule, ResourceLoansModule, FacilitiesModule, AccommodationModule, DiningModule, GateModule, RestrictedCareModule],
+  imports: [CampusModelCoreModule, RequestsModule, SchedulePlanningModule, ActivityAttendanceKernelModule, StaffOperationsModule, LearningAssignmentsModule, FinanceArrangementsModule, NativeFeeReviewsModule, GovernanceModule, ResourceLoansModule, FacilitiesModule, AccommodationModule, DiningModule, GateModule, RestrictedCareModule, AssessmentsModule],
   controllers: [WorkspaceController],
   providers: [WorkspaceRepository, WorkspaceService, ActivityWorkspaceProjection],
   exports: [WorkspaceRepository, WorkspaceService],

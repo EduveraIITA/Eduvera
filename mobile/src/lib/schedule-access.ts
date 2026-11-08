@@ -59,6 +59,22 @@ export function resolveNativeScheduleAccess(manifest: WorkspaceManifest, href: s
 export function nativeCalendarContributedDestination(manifest: WorkspaceManifest, selected: NativeScheduleAccess, areaKey: 'events' | 'assessments' | 'timetable'): string | undefined {
   const area = manifest.areas.find(candidate => candidate.key === areaKey);
   if (!area || selected.kind === 'availability') return undefined;
+  if (areaKey === 'assessments' && selected.kind === 'assigned' && selected.surface.scopes.some(scope => scope.kind === 'person')) {
+    // A canonical course learner has a person-bound result surface, not a
+    // compatibility student relationship or an assessment-management grant.
+    const people = selected.surface.scopes.filter(scope => scope.kind === 'person').map(scope => scope.id);
+    const own = area.surfaces.filter(candidate => people.some(id => candidate.key === `results:mine:${id}`
+      && candidate.scopes.some(scope => scope.kind === 'person' && scope.id === id)));
+    if (own.length !== 1) return undefined;
+    try {
+      const target = new URL(own[0]!.href, 'https://thatcampus.invalid'), person = target.searchParams.get('person_id');
+      if (target.origin !== 'https://thatcampus.invalid' || target.pathname !== '/areas/assessments/results' || target.hash
+        || target.searchParams.getAll('scope').length !== 1 || target.searchParams.get('scope') !== 'mine'
+        || target.searchParams.getAll('person_id').length !== 1 || target.searchParams.has('student_id') || !person
+        || own[0]!.key !== `results:mine:${person}` || !people.includes(person)) return undefined;
+      return `${target.pathname}${target.search}`;
+    } catch { return undefined; }
+  }
   const family = selected.kind === 'self' || selected.kind === 'dependent';
   const stem = areaKey === 'events' ? 'calendar' : areaKey === 'assessments' ? 'results' : 'schedule';
   const surface = family ? area.surfaces.find(candidate => candidate.key === `${stem}:${selected.kind}:${selected.studentId}` && candidate.scopes.some(scope => scope.kind === selected.kind && scope.id === selected.studentId))
@@ -73,8 +89,11 @@ export function nativeCalendarContributedDestination(manifest: WorkspaceManifest
 }
 
 export function nativeCalendarSourceScope(manifest: WorkspaceManifest, selected: NativeScheduleAccess): CampusCalendarScope {
+  const assessmentHref = nativeCalendarContributedDestination(manifest, selected, 'assessments');
+  const assessment = assessmentHref ? new URL(assessmentHref, 'https://thatcampus.invalid') : null;
+  const personId = assessment?.searchParams.get('scope') === 'mine' ? assessment.searchParams.get('person_id') ?? undefined : undefined;
   return { schoolId: manifest.context.institution_id, timeZone: manifest.context.time_zone ?? 'UTC', surfaceKey: selected.surface.key, studentId: selected.studentId,
-    eventHref: nativeCalendarContributedDestination(manifest, selected, 'events'), assessmentHref: nativeCalendarContributedDestination(manifest, selected, 'assessments'),
+    ...(personId ? { personId } : {}), eventHref: nativeCalendarContributedDestination(manifest, selected, 'events'), assessmentHref,
     includeDining: selected.area.surfaces.some(surface => surface.key === 'availability') };
 }
 

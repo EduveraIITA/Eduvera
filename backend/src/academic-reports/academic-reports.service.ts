@@ -12,7 +12,9 @@ import { assessmentResultsHref } from "../workspace/canonical-application-links.
 import { DOMAIN_COMMAND_GATEWAY_PORT, type DomainCommandGatewayPort } from "../campus-model-core/domain-command-gateway.port.js";
 import { DOMAIN_COMMAND_RECEIPT_READ_PORT, type DomainCommandReceiptReadPort } from "../campus-model-core/domain-command-receipt-read.port.js";
 import { activityOccurrenceId } from "../schedule-planning/activity-occurrence.engine.js";
-import { captureAcademicContext, publishedAcademicRoster } from "./academic-record-context.js";
+import { captureAcademicContext, publishedAcademicRoster, captureOfferingAcademicContext, publishedOfferingRoster, currentFamilyCourseAccess } from "./academic-record-context.js";
+import { offeringAcademicContext, offeringAcademicReferences } from "../learning/learning-offering-academic.js";
+import { HUMAN_AGENT_IDENTITY_PORT, type HumanAgentIdentityPort } from "../campus-model-core/human-agent-identity.port.js";
 import { calculateCreditGpa, evaluatePolicyPercentage, gradingPolicyConfigurationSchema, gradingPolicySnapshotSchema, latestCourseAttempts, policySemanticFingerprint, roundGradeValue,
   type GradingCreditCourse, type GradingPolicySnapshot } from "./grading-policy.js";
 
@@ -27,7 +29,9 @@ const bandInput = z.object({
 });
 const schemeInput = z.object({
   term_id: uuid,
-  class_section_id: uuid,
+  class_section_id: uuid.nullable().optional(),
+  context_kind: z.enum(["class_term", "learning_offering"]).optional(),
+  offering_ids: z.array(uuid).min(1).max(100).optional(),
   name: z.string().trim().min(2).max(120),
   code: z.string().trim().min(2).max(32).transform((value) => value.toUpperCase()),
   absence_treatment: z.enum(["incomplete", "zero"]).default("incomplete"),
@@ -40,6 +44,10 @@ const schemeInput = z.object({
 }).superRefine((value, context) => {
   if (!value.grading_policy_id && !value.bands) context.addIssue({ code: "custom", path: ["bands"], message: "Choose a grading policy or configure legacy bands." });
   if ((value.programme_key === null) !== (value.term_index === null)) context.addIssue({ code: "custom", path: ["programme_key"], message: "Programme and term number must be provided together." });
+  if (value.context_kind === "learning_offering") {
+    if (value.class_section_id || !value.offering_ids?.length || !value.idempotency_key) context.addIssue({ code: "custom", path: ["offering_ids"], message: "Choose explicit course offerings and retain a request key for this report scheme." });
+    if (value.offering_ids && new Set(value.offering_ids).size !== value.offering_ids.length) context.addIssue({ code: "custom", path: ["offering_ids"], message: "Choose each course offering once." });
+  } else if (!value.class_section_id || value.offering_ids) context.addIssue({ code: "custom", path: ["class_section_id"], message: "Choose one class for a class report, or choose the course report context." });
 });
 const policyInput = z.object({ name: z.string().trim().min(2).max(120), code: z.string().trim().min(2).max(32).transform(value => value.toUpperCase()),
   configuration: gradingPolicyConfigurationSchema, idempotency_key: uuid.optional() }).strict();
@@ -51,6 +59,7 @@ const componentInput = z.object({
 });
 const subjectPlanInput = z.object({
   subject_id: uuid,
+  offering_id: uuid.nullable().optional(),
   pass_percentage: percentage.nullable().default(null),
   expected_revision: z.coerce.number().int().positive(),
   idempotency_key: uuid.optional(),
@@ -68,7 +77,7 @@ const commentInput = z.object({
   class_teacher_comment: z.string().trim().max(1000).default(""),
   principal_comment: z.string().trim().max(1000).default(""),
 });
-const commentReceipt = z.object({ id: uuid, student_id: uuid, class_teacher_comment: z.string(), principal_comment: z.string(),
+const commentReceipt = z.object({ id: uuid, student_id: uuid.nullable(), learner_id: uuid.optional(), class_teacher_comment: z.string(), principal_comment: z.string(),
   comment_revision: z.number().int().positive(), batch_revision: z.number().int().positive() });
 
 interface PublishedSource {
@@ -77,14 +86,14 @@ interface PublishedSource {
   title: string;
   maximum_marks: number;
   scheduled_on: string | null;
-  results: Map<string, { outcome: "scored" | "absent" | "exempt" | "withheld" | "not_evaluated"; marks: number | null; academic_roster_source: unknown }>;
+  results: Map<string, { outcome: "scored" | "absent" | "exempt" | "withheld" | "not_evaluated"; marks: number | null; academic_roster_source: unknown; person_id: string; student_id: string | null }>;
 }
 
 interface AcademicReportEventContractInput {
   schoolId: string;
   batchId: string;
   schemeId: string;
-  classSectionId: string;
+  classSectionId: string | null;
   action: string;
   status: string;
   revision: number;
@@ -122,7 +131,8 @@ export function academicReportUpdatedEvent(input: AcademicReportEventContractInp
 export class AcademicReportsService {
   constructor(private readonly db: DatabaseService, private readonly events: SchoolEventService,
     @Optional() @Inject(DOMAIN_COMMAND_GATEWAY_PORT) private readonly commands?: DomainCommandGatewayPort,
-    @Optional() @Inject(DOMAIN_COMMAND_RECEIPT_READ_PORT) private readonly receipts?: DomainCommandReceiptReadPort) {}
+    @Optional() @Inject(DOMAIN_COMMAND_RECEIPT_READ_PORT) private readonly receipts?: DomainCommandReceiptReadPort,
+    @Optional() @Inject(HUMAN_AGENT_IDENTITY_PORT) private readonly identities?: HumanAgentIdentityPort) {}
 
   private async principal(user: AuthUser, schoolId: string, db: Db = this.db) {
     uuid.parse(schoolId);
@@ -136,12 +146,25 @@ export class AcademicReportsService {
     return value;
   }
 
+  async ownReports(user: AuthUser, schoolId: string, personId?: string) {
+    uuid.parse(schoolId); if (personId) uuid.parse(personId);
+    return this.db.transaction().execute(async db => {
+      if (!this.identities || user.active_school_id !== schoolId) throw new ForbiddenException("Choose your current campus account before opening its reports.");
+      const actor = await this.identities.resolveAccountEndpoint(db, { school_id: schoolId, user_id: user.id, at: executionNow().toISOString() });
+      if (!actor.acting || personId && personId !== actor.person_id) throw new ForbiddenException("These reports do not belong to your current campus person.");
+      const person = await db.selectFrom("school_people").select(["id", "first_name", "last_name"]).where("school_id", "=", schoolId).where("id", "=", actor.person_id).executeTakeFirstOrThrow();
+      const student = await db.selectFrom("students").select(["id", "admission_number"]).where("school_id", "=", schoolId).where("person_id", "=", person.id).executeTakeFirst();
+      return { learner: { learner_id: person.id, person_id: person.id, student_id: student?.id ?? null, first_name: person.first_name, last_name: person.last_name,
+        admission_number: student?.admission_number ?? null }, reports: await this.publishedReportsForPerson(db, schoolId, person.id) };
+    });
+  }
+
   /** Every grading operation retains pre-write authority and command
    * evidence. Failure rolls back only native effects, retaining the refusal. */
   private async reportCommand<T extends object>(db: Transaction<Database>, user: AuthUser, schoolId: string,
-    target: { id: string; kind: string; name: string; revision: number; currentRevision: number }, action: string,
+    target: { id: string; kind: string; name: string; revision: number; currentRevision: number; planned?: boolean }, action: string,
     payload: Record<string, unknown>, effects: () => Promise<T>, configuration: GradingPolicySnapshot | null = null,
-    commentClassId?: string): Promise<T | CommandRefusal> {
+    commentClassId?: string | null): Promise<T | CommandRefusal> {
     if (!this.commands || !this.receipts) throw new ConflictException("Grading coordination is unavailable. Try again after recovery.");
     const commentActor = commentClassId ? await this.classCommenter(user, schoolId, commentClassId, db) : null;
     if (!commentClassId) await this.principal(user, schoolId, db);
@@ -160,7 +183,7 @@ export class AcademicReportsService {
     const prepared = await this.commands.prepareDomainCommand(db, {
       school_id: schoolId, actor_user_id: user.id, command_type: `academic_reports.${action}`,
       handler_key: `academic_reports.${action}`, handler_version: 1, source_domain: "academic_reports",
-      target: { kind: target.kind, domain: "academic_reports", domain_id: target.id, label: target.name, lifecycle_state: "active", source_revision: Math.max(1, target.currentRevision), metadata: {} },
+      target: { kind: target.kind, domain: "academic_reports", domain_id: target.id, label: target.name, lifecycle_state: target.planned ? "planned" : "active", source_revision: Math.max(1, target.currentRevision), metadata: {} },
       current_revision: target.currentRevision, expected_revision: target.revision, capability: commentClassId ? "reports.comment" : "academic_reports.manage", purpose: `academic_reports_${action.replaceAll(".", "_")}`,
       requested_at: executionNow().toISOString(), correlation_id: key, causation_id: null,
       idempotency_key: `grading:${user.id}:${key}`, operating_rule_version_ref: null,
@@ -250,13 +273,14 @@ export class AcademicReportsService {
     return this.unwrap(result);
   }
 
-  private async classCommenter(user: AuthUser, schoolId: string, classSectionId: string, db: Db = this.db) {
+  private async classCommenter(user: AuthUser, schoolId: string, classSectionId: string | null, db: Db = this.db) {
     uuid.parse(schoolId);
     if (user.active_school_id && user.active_school_id !== schoolId) throw new ForbiddenException("Choose this institution before editing its reports.");
     const memberships = await db.selectFrom("school_memberships").innerJoin("users", "users.id", "school_memberships.user_id")
       .select("school_memberships.role").where("school_memberships.school_id", "=", schoolId).where("school_memberships.user_id", "=", user.id)
       .where("school_memberships.is_active", "=", true).where("users.is_active", "=", true).forShare().execute();
     if (memberships.some(member => member.role === "admin")) return "admin" as const;
+    if (!classSectionId) throw new ForbiddenException("An institution report operator is required for this course-cohort report. A course appointment does not grant other courses' private marks.");
     if (!memberships.some(member => member.role === "staff")) throw new ForbiddenException("Current staff access is required to edit report remarks.");
     await schoolPermission(db, user, schoolId, "reports.comment");
     const assignment = await hasScopedSchoolPermission(db,user.id,schoolId,"reports.comment","class",classSectionId);
@@ -268,7 +292,7 @@ export class AcademicReportsService {
     return db.insertInto("grading_report_audits").values({ school_id: schoolId, scheme_id: schemeId, batch_id: batchId, actor_id: user.id, action, from_status: fromStatus, to_status: toStatus, metadata }).returning("id").executeTakeFirstOrThrow();
   }
 
-  private async eventAudience(db: Db, schoolId: string, classSectionId: string, batchId: string, includeFamily: boolean) {
+  private async eventAudience(db: Db, schoolId: string, classSectionId: string | null, batchId: string, includeFamily: boolean) {
     const staff = (await sql<{ user_id: string }>`
       SELECT membership.user_id FROM school_memberships membership
       JOIN users account ON account.id=membership.user_id AND account.is_active
@@ -284,6 +308,13 @@ export class AcademicReportsService {
         AND (binding.ends_on IS NULL OR binding.ends_on>=CURRENT_DATE)
     `.execute(db)).rows.map((row) => row.user_id);
     if (!includeFamily) return staff;
+    if (classSectionId === null) {
+      if (!this.identities) throw new ConflictException("Current course report recipient identity is unavailable.");
+      const people = await db.selectFrom("grading_report_students").select("person_id").where("school_id", "=", schoolId).where("batch_id", "=", batchId).execute();
+      const expected = new Set(people.map(row => row.person_id));
+      const endpoints = await this.identities.listActingPeople(db as Transaction<Database>, { school_id: schoolId, at: executionNow().toISOString() });
+      return [...new Set([...staff, ...endpoints.filter(endpoint => expected.has(endpoint.person_id)).map(endpoint => endpoint.user_id)])];
+    }
     const family = (await sql<{ user_id: string }>`
       SELECT student.user_id FROM grading_report_students report
       JOIN students student ON student.id=report.student_id AND student.user_id IS NOT NULL
@@ -306,7 +337,7 @@ export class AcademicReportsService {
   private async emitUpdated(
     db: Db,
     batch: { id: string; school_id: string; scheme_id: string; status: string; revision: number },
-    classSectionId: string,
+    classSectionId: string | null,
     action: string,
     includeFamily = false,
   ) {
@@ -342,42 +373,44 @@ export class AcademicReportsService {
     return bands.find((band) => value >= Number(band.minimum_percentage) - 0.0001 && value <= Number(band.maximum_percentage) + 0.0001)?.code ?? "";
   }
 
-  async workspace(user: AuthUser, schoolId: string) {
+  async workspace(user: AuthUser, schoolId: string, academicContext?: string) {
+    const includeOfferings = z.literal("offering_v1").optional().parse(academicContext) === "offering_v1";
     uuid.parse(schoolId);
     const membership = await this.db.selectFrom("school_memberships").select("role").where("school_id", "=", schoolId).where("user_id", "=", user.id).where("is_active", "=", true).orderBy(sql<number>`CASE WHEN role='admin' THEN 0 ELSE 1 END`).executeTakeFirst();
     if (!membership || !["admin", "staff"].includes(membership.role)) throw new ForbiddenException("Staff access is required.");
     const admin = membership.role === "admin";
     if (!admin) await schoolPermission(this.db, user, schoolId, "reports.comment");
     const classScope = admin ? sql`` : sql`AND EXISTS(SELECT 1 FROM staff_role_bindings mine WHERE mine.school_id=scheme.school_id AND mine.scope_id=scheme.class_section_id AND mine.context_kind='class' AND mine.user_id=${user.id}::uuid AND mine.role_active AND mine.status='active' AND 'reports.comment'=ANY(mine.permissions) AND mine.starts_on<=CURRENT_DATE AND (mine.ends_on IS NULL OR mine.ends_on>=CURRENT_DATE))`;
-    const schemes = await sql`SELECT scheme.*,term.name AS term_name,term.academic_year,'Class '||section.grade||section.section AS class_name,
+    const schemes = await sql`SELECT scheme.*,ARRAY(SELECT selected.offering_id FROM grading_scheme_offerings selected WHERE selected.school_id=scheme.school_id AND selected.scheme_id=scheme.id ORDER BY selected.offering_id) AS offering_ids,term.name AS term_name,term.academic_year,CASE WHEN scheme.context_kind='learning_offering' THEN scheme.name ELSE 'Class '||section.grade||section.section END AS class_name,
       (SELECT count(*)::int FROM grading_scheme_subjects subject_plan WHERE subject_plan.scheme_id=scheme.id) AS subject_count,
       (SELECT count(*)::int FROM grading_report_batches batch WHERE batch.scheme_id=scheme.id) AS report_count
-      FROM grading_schemes scheme JOIN academic_terms term ON term.id=scheme.term_id JOIN class_sections section ON section.id=scheme.class_section_id
-      WHERE scheme.school_id=${schoolId}::uuid ${classScope} ORDER BY term.starts_on DESC,section.grade,section.section,scheme.created_at DESC`.execute(this.db);
-    const batches = await sql`SELECT batch.*,scheme.name AS scheme_name,scheme.review_mode,'Class '||section.grade||section.section AS class_name,term.name AS term_name,
+      FROM grading_schemes scheme JOIN academic_terms term ON term.id=scheme.term_id LEFT JOIN class_sections section ON section.id=scheme.class_section_id AND section.school_id=scheme.school_id
+      WHERE scheme.school_id=${schoolId}::uuid AND (${includeOfferings} OR scheme.context_kind='class_term') ${classScope} ORDER BY term.starts_on DESC,section.grade,section.section,scheme.created_at DESC`.execute(this.db);
+    const batches = await sql`SELECT batch.*,scheme.name AS scheme_name,scheme.review_mode,scheme.context_kind,CASE WHEN scheme.context_kind='learning_offering' THEN scheme.name ELSE 'Class '||section.grade||section.section END AS class_name,term.name AS term_name,
       count(student.id)::int AS learner_count,count(student.id) FILTER(WHERE student.outcome='incomplete')::int AS incomplete_count
-      FROM grading_report_batches batch JOIN grading_schemes scheme ON scheme.id=batch.scheme_id JOIN academic_terms term ON term.id=scheme.term_id JOIN class_sections section ON section.id=scheme.class_section_id
-      LEFT JOIN grading_report_students student ON student.batch_id=batch.id WHERE batch.school_id=${schoolId}::uuid ${classScope}
-      GROUP BY batch.id,scheme.name,scheme.review_mode,section.grade,section.section,term.name ORDER BY batch.generated_at DESC`.execute(this.db);
+      FROM grading_report_batches batch JOIN grading_schemes scheme ON scheme.id=batch.scheme_id JOIN academic_terms term ON term.id=scheme.term_id LEFT JOIN class_sections section ON section.id=scheme.class_section_id AND section.school_id=scheme.school_id
+      LEFT JOIN grading_report_students student ON student.batch_id=batch.id WHERE batch.school_id=${schoolId}::uuid AND (${includeOfferings} OR scheme.context_kind='class_term') ${classScope}
+      GROUP BY batch.id,scheme.name,scheme.review_mode,scheme.context_kind,section.grade,section.section,term.name ORDER BY batch.generated_at DESC`.execute(this.db);
     const { policies } = await this.listPolicies(user, schoolId);
     if (!admin) return { mode: "staff", schemes: schemes.rows, batches: batches.rows, policies };
     const [terms, classes, subjects, assessments] = await Promise.all([
       sql`SELECT id,name,academic_year,starts_on,ends_on FROM academic_terms WHERE school_id=${schoolId}::uuid AND is_active ORDER BY starts_on DESC`.execute(this.db),
       sql`SELECT id,'Class '||grade||section AS name,academic_year FROM class_sections WHERE school_id=${schoolId}::uuid ORDER BY academic_year DESC,grade,section`.execute(this.db),
       sql`SELECT id,name,color,icon FROM subjects WHERE school_id=${schoolId}::uuid ORDER BY name`.execute(this.db),
-      sql`SELECT assessment.id,assessment.title,assessment.subject_id,assessment.class_section_id,cycle.term_id,assessment.maximum_marks,
+      sql`SELECT assessment.id,assessment.title,assessment.subject_id,assessment.class_section_id,assessment.context_kind,assessment.offering_id,cycle.term_id,assessment.maximum_marks,
         COALESCE((SELECT max(sequence) FROM assessment_publications publication WHERE publication.assessment_id=assessment.id),0)::int AS publication_sequence
         FROM assessments assessment JOIN assessment_cycles cycle ON cycle.id=assessment.cycle_id
-        WHERE assessment.school_id=${schoolId}::uuid AND assessment.status='published' ORDER BY assessment.scheduled_at,assessment.title`.execute(this.db),
+        WHERE assessment.school_id=${schoolId}::uuid AND (${includeOfferings} OR assessment.context_kind='class_term') AND assessment.status='published' ORDER BY assessment.scheduled_at,assessment.title`.execute(this.db),
     ]);
-    return { mode: "admin", schemes: schemes.rows, batches: batches.rows, policies, references: { terms: terms.rows, classes: classes.rows, subjects: subjects.rows, assessments: assessments.rows } };
+    const offerings = includeOfferings ? await offeringAcademicReferences(this.db, schoolId, true) : [];
+    return { mode: "admin", schemes: schemes.rows, batches: batches.rows, policies, references: { ...(includeOfferings ? { offerings } : {}), terms: terms.rows, classes: classes.rows, subjects: subjects.rows, assessments: assessments.rows } };
   }
 
   async schemeDetail(user: AuthUser, schoolId: string, schemeId: string) {
     await this.principal(user, schoolId);
     uuid.parse(schemeId);
-    const scheme = (await sql`SELECT scheme.*,term.name AS term_name,term.academic_year,'Class '||section.grade||section.section AS class_name
-      FROM grading_schemes scheme JOIN academic_terms term ON term.id=scheme.term_id JOIN class_sections section ON section.id=scheme.class_section_id
+    const scheme = (await sql`SELECT scheme.*,ARRAY(SELECT selected.offering_id FROM grading_scheme_offerings selected WHERE selected.school_id=scheme.school_id AND selected.scheme_id=scheme.id ORDER BY selected.offering_id) AS offering_ids,term.name AS term_name,term.academic_year,CASE WHEN scheme.context_kind='learning_offering' THEN scheme.name ELSE 'Class '||section.grade||section.section END AS class_name
+      FROM grading_schemes scheme JOIN academic_terms term ON term.id=scheme.term_id LEFT JOIN class_sections section ON section.id=scheme.class_section_id AND section.school_id=scheme.school_id
       WHERE scheme.school_id=${schoolId}::uuid AND scheme.id=${schemeId}::uuid`.execute(this.db)).rows[0];
     if (!scheme) throw new NotFoundException("Grading scheme not found.");
     this.policySnapshot((scheme as Record<string, unknown>).result_policy);
@@ -397,8 +430,16 @@ export class AcademicReportsService {
     const result = await this.db.transaction().execute(async db => {
       await this.principal(user, schoolId, db);
       const term = await db.selectFrom("academic_terms").selectAll().where("id", "=", data.term_id).where("school_id", "=", schoolId).executeTakeFirst();
-      const section = await db.selectFrom("class_sections").selectAll().where("id", "=", data.class_section_id).where("school_id", "=", schoolId).executeTakeFirst();
-      if (!term || !section || term.academic_year !== section.academic_year) throw new BadRequestException("Choose a class and term from the same academic year.");
+      const courseContext = data.context_kind === "learning_offering";
+      const section = data.class_section_id ? await db.selectFrom("class_sections").selectAll().where("id", "=", data.class_section_id).where("school_id", "=", schoolId).executeTakeFirst() : null;
+      if (!term || !courseContext && (!section || term.academic_year !== section.academic_year)) throw new BadRequestException("Choose a class and term from the same academic year, or select configured course offerings.");
+      if (courseContext) {
+        const selected = await db.selectFrom("learning_offering_academic_contexts").select(["offering_id", "term_id", "subject_id", "programme_key"])
+          .where("school_id", "=", schoolId).where("offering_id", "in", data.offering_ids!).orderBy("offering_id").forShare().execute();
+        if (selected.length !== data.offering_ids!.length || selected.some(row => row.term_id !== term.id || row.programme_key && data.programme_key && row.programme_key !== data.programme_key))
+          throw new BadRequestException("Every selected course must belong to this term and compatible programme cohort.");
+        
+      }
       let snapshot: GradingPolicySnapshot | null = null;
       if (data.grading_policy_id) {
         const policy = await db.selectFrom("academic_grading_policies").selectAll().where("school_id", "=", schoolId).where("id", "=", data.grading_policy_id).where("status", "=", "active").executeTakeFirst();
@@ -409,10 +450,12 @@ export class AcademicReportsService {
       } else if (data.programme_key) throw new BadRequestException("Cumulative programme reporting requires a GPA grading policy.");
       if (snapshot?.configuration.result_format !== "gpa" && data.programme_key) throw new BadRequestException("Only GPA schemes use a programme and term number.");
       const bands = snapshot?.configuration.bands ?? this.validateBands(data.bands!);
+      const courseSchemeId = courseContext ? activityOccurrenceId(schoolId, "course_report_scheme", user.id, data.idempotency_key!) : null;
       const effects = async () => {
         let scheme;
         try {
-          scheme = await db.insertInto("grading_schemes").values({ school_id: schoolId, term_id: data.term_id, class_section_id: data.class_section_id, name: data.name, code: data.code,
+          scheme = await db.insertInto("grading_schemes").values({ ...(courseSchemeId ? { id: courseSchemeId } : {}), school_id: schoolId, term_id: data.term_id, class_section_id: data.class_section_id ?? null,
+            context_kind: courseContext ? "learning_offering" : "class_term", name: data.name, code: data.code,
             absence_treatment: snapshot?.configuration.absence_treatment ?? data.absence_treatment, review_mode: data.review_mode,
             grading_policy_id: data.grading_policy_id, result_policy: snapshot, programme_key: data.programme_key, term_index: data.term_index,
             created_by: user.id, updated_by: user.id }).returningAll().executeTakeFirstOrThrow();
@@ -420,11 +463,13 @@ export class AcademicReportsService {
           if ((error as { code?: string }).code === "23505") throw new ConflictException("This grading scheme code is already used for the class and term.");
           throw error;
         }
+        if (courseContext) await db.insertInto("grading_scheme_offerings").values(data.offering_ids!.map(offeringId => ({ school_id: schoolId, scheme_id: scheme.id, offering_id: offeringId }))).execute();
         await db.insertInto("grading_scheme_bands").values(bands.map((band, index) => ({ school_id: schoolId, scheme_id: scheme.id, code: band.code, label: band.label, minimum_percentage: String(band.minimum_percentage), maximum_percentage: String(band.maximum_percentage), display_order: index + 1 }))).execute();
         await this.audit(db, user, schoolId, scheme.id, null, "grading.scheme.created", null, "draft", { bands: bands.length, policy_id: data.grading_policy_id });
-        return scheme;
+        return courseContext ? { ...scheme, offering_ids: data.offering_ids! } : scheme;
       };
-      return this.reportCommand(db, user, schoolId, { id: `${data.term_id}:${data.class_section_id}:${data.code}`, kind: "grading_scheme", name: data.name, revision: 0, currentRevision: 0 }, "scheme.create", data, effects, snapshot);
+      return this.reportCommand(db, user, schoolId, { id: courseSchemeId ?? `${data.term_id}:${data.class_section_id}:${data.code}`, kind: "grading_scheme", name: data.name, revision: 0, currentRevision: 0,
+        ...(courseSchemeId ? { planned: true } : {}) }, "scheme.create", data, effects, snapshot);
     });
     return this.unwrap(result);
   }
@@ -442,30 +487,46 @@ export class AcademicReportsService {
       const scheme = await db.selectFrom("grading_schemes").selectAll().where("id", "=", schemeId).where("school_id", "=", schoolId).forUpdate().executeTakeFirst();
       if (!scheme) throw new NotFoundException("Grading scheme not found.");
       const snapshot = this.policySnapshot(scheme.result_policy);
+      const binding = scheme.context_kind === "learning_offering" && data.offering_id ? await offeringAcademicContext(db, schoolId, data.offering_id) : null;
+      if (scheme.context_kind === "learning_offering" && (!data.offering_id || !binding || binding.term_id !== scheme.term_id || binding.subject_id !== data.subject_id
+        || !await db.selectFrom("grading_scheme_offerings").select("offering_id").where("school_id", "=", schoolId).where("scheme_id", "=", schemeId).where("offering_id", "=", data.offering_id).executeTakeFirst()))
+        throw new BadRequestException("Choose the exact subject of one of this report's selected course offerings.");
+      if (scheme.context_kind === "class_term" && data.offering_id) throw new BadRequestException("A class report subject does not use a separate course offering.");
+      if (binding && (data.credits !== null && data.credits !== binding.credits || data.course_code !== null && data.course_code !== binding.course_code))
+        throw new BadRequestException("Course credits and code must match the reviewed offering context.");
+      const credits = binding ? String(binding.credits) : data.credits === null ? null : String(data.credits), courseCode = binding?.course_code ?? data.course_code;
       const needsCredits = snapshot?.configuration.result_format === "gpa" || snapshot?.configuration.aggregation === "credit_weighted";
-      if (needsCredits && (!data.credits || !data.course_code)) throw new BadRequestException("Provide positive credits and a stable course code for this subject.");
-      if (data.course_code && await db.selectFrom("grading_scheme_subjects").select("id").where("scheme_id", "=", schemeId).where("course_code", "=", data.course_code).where("subject_id", "!=", data.subject_id).executeTakeFirst()) throw new BadRequestException("A course code can appear only once in a term report.");
+      if (needsCredits && (!credits || !courseCode)) throw new BadRequestException("Provide positive credits and a stable course code for this subject.");
+      if (courseCode && await db.selectFrom("grading_scheme_subjects").select("id").where("scheme_id", "=", schemeId).where("course_code", "=", courseCode)
+        .$if(scheme.context_kind === "learning_offering",query=>query.where("offering_id","!=",data.offering_id!))
+        .$if(scheme.context_kind !== "learning_offering",query=>query.where("subject_id","!=",data.subject_id)).executeTakeFirst())
+        throw new BadRequestException("Choose one offering of each course code in a report. Parallel sections may share a code and use separate report schemes; duplicate GPA course attempts are not combined automatically.");
       const effects = async () => {
       if (scheme.status !== "draft") throw new ConflictException("Active grading schemes cannot be edited. Create a new scheme version instead.");
       if (scheme.revision !== data.expected_revision) throw new ConflictException("This grading scheme changed. Refresh before saving.");
       const subject = await db.selectFrom("subjects").select("id").where("id", "=", data.subject_id).where("school_id", "=", schoolId).executeTakeFirst();
       if (!subject) throw new BadRequestException("Choose a subject in this institution.");
       const eligible = await sql<{ id: string }>`SELECT assessment.id FROM assessments assessment JOIN assessment_cycles cycle ON cycle.id=assessment.cycle_id
-        WHERE assessment.school_id=${schoolId}::uuid AND assessment.id=ANY(${assessmentIds}::uuid[]) AND assessment.class_section_id=${scheme.class_section_id}::uuid
+        WHERE assessment.school_id=${schoolId}::uuid AND assessment.id=ANY(${assessmentIds}::uuid[])
+          AND((${scheme.context_kind}='class_term' AND assessment.context_kind='class_term' AND assessment.class_section_id=${scheme.class_section_id}::uuid)
+            OR(${scheme.context_kind}='learning_offering' AND assessment.context_kind='learning_offering' AND assessment.offering_id=${data.offering_id ?? null}::uuid))
           AND cycle.term_id=${scheme.term_id}::uuid AND assessment.subject_id=${data.subject_id}::uuid AND assessment.status='published'
           AND EXISTS(SELECT 1 FROM assessment_publications publication WHERE publication.assessment_id=assessment.id)`.execute(db);
       if (eligible.rows.length !== assessmentIds.length) throw new BadRequestException("Every mapped assessment must be published for this class, term and subject.");
-      const existing = await db.selectFrom("grading_scheme_subjects").select("id").where("scheme_id", "=", schemeId).where("subject_id", "=", data.subject_id).executeTakeFirst();
+      const existing = await db.selectFrom("grading_scheme_subjects").select("id").where("scheme_id", "=", schemeId)
+        .$if(scheme.context_kind === "learning_offering", query => query.where("offering_id", "=", data.offering_id!))
+        .$if(scheme.context_kind !== "learning_offering", query => query.where("subject_id", "=", data.subject_id)).executeTakeFirst();
       if (existing) await db.deleteFrom("grading_scheme_subjects").where("id", "=", existing.id).execute();
       const displayOrder = (await sql<{ next: number }>`SELECT COALESCE(max(display_order),0)+1 AS next FROM grading_scheme_subjects WHERE scheme_id=${schemeId}::uuid`.execute(db)).rows[0]!.next;
-      const plan = await db.insertInto("grading_scheme_subjects").values({ school_id: schoolId, scheme_id: schemeId, subject_id: data.subject_id, pass_percentage: snapshot ? null : data.pass_percentage === null ? null : String(data.pass_percentage), credits: data.credits === null ? null : String(data.credits), course_code: data.course_code, display_order: displayOrder }).returningAll().executeTakeFirstOrThrow();
+      const plan = await db.insertInto("grading_scheme_subjects").values({ school_id: schoolId, scheme_id: schemeId, subject_id: data.subject_id, offering_id: data.offering_id ?? null,
+        pass_percentage: snapshot ? null : data.pass_percentage === null ? null : String(data.pass_percentage), credits, course_code: courseCode, display_order: displayOrder }).returningAll().executeTakeFirstOrThrow();
       for (const [index, component] of data.components.entries()) {
         const row = await db.insertInto("grading_components").values({ school_id: schoolId, scheme_subject_id: plan.id, code: component.code, name: component.name, weight_percentage: String(component.weight_percentage), display_order: index + 1 }).returningAll().executeTakeFirstOrThrow();
         await db.insertInto("grading_component_assessments").values(component.assessment_ids.map((assessmentId) => ({ school_id: schoolId, component_id: row.id, assessment_id: assessmentId }))).execute();
       }
       const updated = await db.updateTable("grading_schemes").set({ revision: scheme.revision + 1, updated_by: user.id, updated_at: executionNow() }).where("id", "=", schemeId).returningAll().executeTakeFirstOrThrow();
       await this.audit(db, user, schoolId, schemeId, null, "grading.subject.saved", "draft", "draft", { subject_id: data.subject_id, components: data.components.length });
-      return updated;
+      return binding ? { ...updated, offering_id: data.offering_id, subject_id: data.subject_id, credits, course_code: courseCode } : updated;
       };
       return this.reportCommand(db, user, schoolId, { id: scheme.id, kind: "grading_scheme", name: scheme.name, revision: data.expected_revision, currentRevision: scheme.revision }, "subject.save", data, effects, snapshot);
     });
@@ -490,6 +551,12 @@ export class AcademicReportsService {
           (SELECT count(*)::int FROM grading_components component WHERE component.scheme_subject_id=plan.id AND NOT EXISTS(SELECT 1 FROM grading_component_assessments mapping WHERE mapping.component_id=component.id)) AS unmapped
           FROM grading_scheme_subjects plan WHERE plan.scheme_id=${schemeId}::uuid`.execute(db);
         if (!plans.rows.length) throw new BadRequestException("Add at least one subject grading plan.");
+        if (scheme.context_kind === "learning_offering") {
+          const missing = await sql`SELECT selected.offering_id FROM grading_scheme_offerings selected
+            WHERE selected.school_id=${schoolId}::uuid AND selected.scheme_id=${schemeId}::uuid
+              AND NOT EXISTS(SELECT 1 FROM grading_scheme_subjects plan WHERE plan.school_id=selected.school_id AND plan.scheme_id=selected.scheme_id AND plan.offering_id=selected.offering_id)`.execute(db);
+          if (missing.rows.length) throw new BadRequestException("Map every selected course before activating this report. Unmapped courses cannot silently disappear.");
+        }
         if (plans.rows.some(plan => Math.abs(Number(plan.weight) - 100) > 0.001 || plan.mappings < 1 || plan.unmapped)) throw new BadRequestException("Every subject needs mapped components totalling 100%.");
         if (snapshot && (snapshot.configuration.result_format === "gpa" || snapshot.configuration.aggregation === "credit_weighted") && plans.rows.some(plan => !plan.credits || !plan.course_code)) throw new BadRequestException("Every subject needs credits and a stable course code.");
         const updated = await db.updateTable("grading_schemes").set({ status: "active", revision: scheme.revision + 1, activated_by: user.id, activated_at: executionNow(), updated_by: user.id, updated_at: executionNow() }).where("id", "=", schemeId).returningAll().executeTakeFirstOrThrow();
@@ -510,18 +577,18 @@ export class AcademicReportsService {
         WHERE publication.school_id=${schoolId}::uuid AND publication.assessment_id=${assessmentId}::uuid
         ORDER BY publication.sequence DESC LIMIT 1`.execute(db)).rows[0];
       if (!publication) throw new BadRequestException("Every mapped assessment needs a published result.");
-      const rows = await db.selectFrom("assessment_publication_results").select(["student_id", "outcome", "marks", "academic_roster_source"]).where("school_id", "=", schoolId).where("publication_id", "=", publication.id).execute();
+      const rows = await db.selectFrom("assessment_publication_results").select(["student_id", "learner_id", "person_id", "outcome", "marks", "academic_roster_source"]).where("school_id", "=", schoolId).where("publication_id", "=", publication.id).execute();
       sources.set(assessmentId, { assessment_id: assessmentId, publication_id: publication.id, title: publication.title, maximum_marks: Number(publication.maximum_marks),scheduled_on:publication.scheduled_on,
-        results: new Map(rows.map((row) => [row.student_id, { outcome: row.outcome, marks: row.marks === null ? null : Number(row.marks),academic_roster_source:row.academic_roster_source }])) });
+        results: new Map(rows.map((row) => [row.learner_id, { outcome: row.outcome, marks: row.marks === null ? null : Number(row.marks),academic_roster_source:row.academic_roster_source,person_id:row.person_id,student_id:row.student_id }])) });
     }
     return sources;
   }
 
-  private async cumulativeHistory(db: Db, schoolId: string, studentId: string, programmeKey: string, termIndex: number, policy: GradingPolicySnapshot) {
+  private async cumulativeHistory(db: Db, schoolId: string, studentId: string, programmeKey: string, termIndex: number, policy: GradingPolicySnapshot, identityKind: "learner" | "person" = "learner") {
     const prior = (await sql<{ term_index: number; scheme_id: string; batch_id: string; report_student_id: string; result_policy: unknown }>`SELECT scheme.term_index,scheme.id AS scheme_id,batch.id AS batch_id,report.id AS report_student_id,batch.result_policy
       FROM grading_report_students report JOIN grading_report_batches batch ON batch.id=report.batch_id AND batch.status='published'
       JOIN grading_schemes scheme ON scheme.id=batch.scheme_id
-      WHERE report.school_id=${schoolId}::uuid AND report.student_id=${studentId}::uuid
+      WHERE report.school_id=${schoolId}::uuid AND((${identityKind}='learner' AND report.learner_id=${studentId}::uuid) OR(${identityKind}='person' AND report.person_id=${studentId}::uuid))
         AND scheme.programme_key=${programmeKey} AND scheme.term_index<${termIndex}
       ORDER BY scheme.term_index,batch.published_at DESC,batch.sequence DESC,batch.id`.execute(db)).rows;
     const latest = new Map<number, typeof prior[number]>();
@@ -572,19 +639,35 @@ export class AcademicReportsService {
         const components = await db.selectFrom("grading_components").selectAll().where("scheme_subject_id", "in", plans.map(plan => plan.id)).orderBy("display_order").execute();
         const mappings = await db.selectFrom("grading_component_assessments").selectAll().where("component_id", "in", components.map(component => component.id)).execute();
         const sources = await this.publishedSources(db, schoolId, [...new Set(mappings.map(mapping => mapping.assessment_id))]);
-        const roster = await publishedAcademicRoster(db,schoolId,schemeId,[...sources.values()]);
+        const courseContext = scheme.context_kind === "learning_offering";
+        const roster = courseContext ? await publishedOfferingRoster(db,schoolId,schemeId,[...sources.values()]) : await publishedAcademicRoster(db,schoolId,schemeId,[...sources.values()]);
         if (!roster.length) throw new BadRequestException("The selected published assessments have no learner results.");
         const previousBatch=await db.selectFrom("grading_report_batches").select("academic_context").where("school_id","=",schoolId).where("scheme_id","=",schemeId).orderBy("sequence","desc").executeTakeFirst();
-        const academicContext=previousBatch?.academic_context ?? await captureAcademicContext(db,schoolId,scheme.class_section_id,scheme.term_id);
+        const selectedOfferings = courseContext ? await db.selectFrom("grading_scheme_offerings").select("offering_id").where("school_id", "=", schoolId).where("scheme_id", "=", schemeId).orderBy("offering_id").execute() : [];
+        const termContext = courseContext ? await db.selectFrom("academic_terms").select(["name", "academic_year"]).where("school_id", "=", schoolId).where("id", "=", scheme.term_id).executeTakeFirstOrThrow() : null;
+        const academicContext=previousBatch?.academic_context ?? (courseContext
+          ? { schema_version: 2, context_kind: "learning_offering", class_section_id: null, class_name: scheme.name, term_id: scheme.term_id, term_name: termContext!.name, academic_year: termContext!.academic_year,
+            offerings: await Promise.all(selectedOfferings.map(row => captureOfferingAcademicContext(db,schoolId,row.offering_id))) }
+          : await captureAcademicContext(db,schoolId,scheme.class_section_id!,scheme.term_id));
         const fingerprint = createHash("sha256").update(JSON.stringify({ scheme_revision: scheme.revision, policy,
           publications: [...sources.values()].map(source => [source.assessment_id, source.publication_id]).sort(),academic_context:academicContext,roster })).digest("hex");
         const batch = await db.insertInto("grading_report_batches").values({ school_id: schoolId, scheme_id: schemeId, sequence, source_scheme_revision: scheme.revision, source_fingerprint: fingerprint, correction_reason: data.correction_reason, generated_by: user.id, result_policy: policy,
           academic_context:sql`${JSON.stringify(academicContext)}::jsonb` }).returningAll().executeTakeFirstOrThrow();
         const cumulativeEvidence: unknown[] = [];
         for (const learner of roster) {
-          const subjects = plans.map(plan => {
+          const learnerId = learner.learner_id ?? learner.student_id;
+          if (!learnerId) throw new ConflictException("The published report audience has no exact learner identity.");
+          const retainedRoster = learner.academic_roster_source;
+          const frozenOfferings = Array.isArray(retainedRoster.included_offering_ids) ? retainedRoster.included_offering_ids as string[] : null;
+          const datedSources = Array.isArray(retainedRoster.dated_enrollments) ? retainedRoster.dated_enrollments as Array<{offering_id:string}> : [];
+          const eligiblePlans = courseContext ? plans.filter(plan => plan.offering_id && (frozenOfferings ? frozenOfferings.includes(plan.offering_id)
+            : datedSources.some(source=>source.offering_id===plan.offering_id) || mappings.some(mapping => components.some(component => component.id === mapping.component_id && component.scheme_subject_id === plan.id) && sources.get(mapping.assessment_id)?.results.has(learnerId)))) : plans;
+          if (!eligiblePlans.length) throw new ConflictException("This learner has no applicable published course roster in the report.");
+          const rosterSource = courseContext ? { ...retainedRoster, included_offering_ids: eligiblePlans.map(plan => plan.offering_id).sort(),
+            excluded_offering_ids: plans.filter(plan => !eligiblePlans.some(selected => selected.id === plan.id)).map(plan => plan.offering_id).sort() } : learner.academic_roster_source;
+          const subjects = eligiblePlans.map(plan => {
             const componentSnapshots = components.filter(component => component.scheme_subject_id === plan.id).map(component => {
-              const sourceRows = mappings.filter(mapping => mapping.component_id === component.id).map(mapping => ({ source: sources.get(mapping.assessment_id)!, result: sources.get(mapping.assessment_id)!.results.get(learner.student_id) }));
+              const sourceRows = mappings.filter(mapping => mapping.component_id === component.id).map(mapping => ({ source: sources.get(mapping.assessment_id)!, result: sources.get(mapping.assessment_id)!.results.get(learnerId) }));
               let incomplete = false; let exemptCount = 0; let withheld = false;
               const values: number[] = [];
               for (const row of sourceRows) {
@@ -632,7 +715,7 @@ export class AcademicReportsService {
           if (policy?.configuration.result_format === "gpa") {
             const semester = calculateCreditGpa(policy.configuration, courses);
             gpa = semester.gpa; creditTotal = semester.credits; creditPoints = semester.credit_points; gpaReason = semester.unavailable_reason;
-            const history = await this.cumulativeHistory(db, schoolId, learner.student_id, scheme.programme_key!, scheme.term_index!, policy);
+            const history = await this.cumulativeHistory(db, schoolId, courseContext ? learner.person_id! : learnerId, scheme.programme_key!, scheme.term_index!, policy, courseContext ? "person" : "learner");
             const attempts = [...history.courses, ...courses];
             let selected: GradingCreditCourse[] = [];
             try { selected = latestCourseAttempts(attempts); } catch { history.reason = "ambiguous_course_attempts"; }
@@ -642,11 +725,11 @@ export class AcademicReportsService {
             cgpaReason = history.reason ?? cumulative.unavailable_reason;
             if (!history.reason) { cgpa = cumulative.gpa; cumulativeCredits = cumulative.credits; cumulativePoints = cumulative.credit_points; }
           }
-          cumulativeEvidence.push({ student_id: learner.student_id, gpa, cgpa, credit_total: creditTotal, credit_points: creditPoints,
+          cumulativeEvidence.push({ student_id: learner.student_id, ...(courseContext ? { learner_id: learnerId, person_id: learner.person_id } : {}), gpa, cgpa, credit_total: creditTotal, credit_points: creditPoints,
             cumulative_credits: cumulativeCredits, cumulative_credit_points: cumulativePoints, gpa_unavailable_reason: gpaReason, cgpa_unavailable_reason: cgpaReason,
             cumulative_sources: cumulativeSources });
-          const reportStudent = await db.insertInto("grading_report_students").values({ id: reportStudentId, school_id: schoolId, batch_id: batch.id, student_id: learner.student_id,
-            academic_roster_source:sql`${JSON.stringify(learner.academic_roster_source)}::jsonb`,
+          const reportStudent = await db.insertInto("grading_report_students").values({ id: reportStudentId, school_id: schoolId, batch_id: batch.id, student_id: learner.student_id, ...(courseContext ? { learner_id: learnerId, person_id: learner.person_id! } : {}),
+            academic_roster_source:sql`${JSON.stringify(rosterSource)}::jsonb`,
             outcome: learnerOutcome, overall_percentage: overall === null ? null : overall.toFixed(2),
             overall_grade: overall === null || policy?.configuration.result_format === "gpa" ? "" : policy ? evaluatePolicyPercentage(policy.configuration, overall).grade : this.gradeFor(bands, overall),
             gpa: gpa === null ? null : String(gpa), cgpa: cgpa === null ? null : String(cgpa), credit_total: creditTotal === null ? null : String(creditTotal), credit_points: creditPoints === null ? null : String(creditPoints),
@@ -661,7 +744,7 @@ export class AcademicReportsService {
                 component_id: component.component.id, component_name: component.component.name, weight_percentage: component.component.weight_percentage, outcome: component.outcome,
                 percentage: component.percentage === null ? null : component.percentage.toFixed(2), weighted_points: component.weightedPoints === null ? null : component.weightedPoints.toFixed(4), source_assessment_count: component.sourceRows.length }).returningAll().executeTakeFirstOrThrow();
               if (component.sourceRows.length) await db.insertInto("grading_report_assessment_sources").values(component.sourceRows.map(row => ({ school_id: schoolId, batch_id: batch.id, report_component_id: resultComponent.id,
-                assessment_id: row.source.assessment_id, publication_id: row.source.publication_id, student_id: learner.student_id, outcome: row.result?.outcome ?? "not_evaluated",
+                assessment_id: row.source.assessment_id, publication_id: row.source.publication_id, student_id: learner.student_id, ...(courseContext ? { learner_id: learnerId, person_id: learner.person_id! } : {}), outcome: row.result?.outcome ?? "not_evaluated",
                 marks: row.result?.outcome === "scored" && row.result.marks !== null ? String(row.result.marks) : null, maximum_marks: String(row.source.maximum_marks),
                 normalized_percentage: row.result?.outcome === "scored" && row.result.marks !== null ? (row.result.marks / row.source.maximum_marks * 100).toFixed(2) : null }))).execute();
             }
@@ -680,25 +763,26 @@ export class AcademicReportsService {
 
   async reportDetail(user: AuthUser, schoolId: string, batchId: string) {
     uuid.parse(batchId);
-    const batch = (await sql`SELECT batch.*,scheme.name AS scheme_name,scheme.review_mode,scheme.class_section_id,scheme.term_id,scheme.programme_key,scheme.term_index,
+    const batch = (await sql`SELECT batch.*,scheme.name AS scheme_name,scheme.review_mode,scheme.context_kind,scheme.class_section_id,scheme.term_id,scheme.programme_key,scheme.term_index,
+      ARRAY(SELECT selected.offering_id FROM grading_scheme_offerings selected WHERE selected.school_id=scheme.school_id AND selected.scheme_id=scheme.id ORDER BY selected.offering_id) AS offering_ids,
       COALESCE(batch.academic_context->>'term_name',term.name) AS term_name,COALESCE(batch.academic_context->>'academic_year',term.academic_year) AS academic_year,
       COALESCE(batch.academic_context->>'class_name','Class '||section.grade||section.section) AS class_name,
-      CASE WHEN batch.academic_context->>'schema_version'='1' THEN 'report_snapshot' ELSE 'legacy_scheme_context' END AS academic_context_source
-      FROM grading_report_batches batch JOIN grading_schemes scheme ON scheme.id=batch.scheme_id JOIN academic_terms term ON term.id=scheme.term_id JOIN class_sections section ON section.id=scheme.class_section_id
+      CASE WHEN batch.academic_context->>'schema_version' IN('1','2') THEN 'report_snapshot' ELSE 'legacy_scheme_context' END AS academic_context_source
+      FROM grading_report_batches batch JOIN grading_schemes scheme ON scheme.id=batch.scheme_id JOIN academic_terms term ON term.id=scheme.term_id LEFT JOIN class_sections section ON section.id=scheme.class_section_id AND section.school_id=scheme.school_id
       WHERE batch.school_id=${schoolId}::uuid AND batch.id=${batchId}::uuid`.execute(this.db)).rows[0] as Record<string, unknown> | undefined;
     if (!batch) throw new NotFoundException("Report batch not found.");
-    await this.classCommenter(user, schoolId, String(batch.class_section_id));
+    await this.classCommenter(user, schoolId, typeof batch.class_section_id === "string" ? batch.class_section_id : null);
     this.policySnapshot(batch.result_policy);
     const students = await sql`SELECT report.*,person.first_name,person.last_name,student.admission_number,
       (report.academic_roster_source->>'roll_number')::int AS roll_number
-      FROM grading_report_students report JOIN students student ON student.id=report.student_id JOIN school_people person ON person.id=student.person_id
+      FROM grading_report_students report LEFT JOIN students student ON student.id=report.student_id JOIN school_people person ON person.id=report.person_id AND person.school_id=report.school_id
       WHERE report.batch_id=${batchId}::uuid ORDER BY roll_number NULLS LAST,person.first_name,person.last_name`.execute(this.db);
     const subjects = await sql`SELECT report.*,subject.name AS subject_name,subject.color,subject.icon FROM grading_report_subjects report JOIN subjects subject ON subject.id=report.subject_id WHERE report.batch_id=${batchId}::uuid ORDER BY report.report_student_id,subject.name`.execute(this.db);
     const components = await sql`SELECT * FROM grading_report_components WHERE batch_id=${batchId}::uuid ORDER BY report_subject_id,component_name`.execute(this.db);
     return { batch, students: students.rows, subjects: subjects.rows, components: components.rows };
   }
 
-  async updateComments(user: AuthUser, schoolId: string, batchId: string, studentId: string, body: unknown) {
+  async updateComments(user: AuthUser, schoolId: string, batchId: string, studentId: string, body: unknown, identityKind: "student" | "learner" = "student") {
     uuid.parse(batchId); uuid.parse(studentId);
     const data = commentInput.parse(body);
     const result = await this.db.transaction().execute(async (db) => {
@@ -708,7 +792,7 @@ export class AcademicReportsService {
       if (!batch) throw new NotFoundException("Report batch not found.");
       const scheme = await db.selectFrom("grading_schemes").selectAll().where("school_id", "=", schoolId).where("id", "=", batch.scheme_id).executeTakeFirstOrThrow();
       const actor = await this.classCommenter(user, schoolId, scheme.class_section_id, db);
-      const row = await db.selectFrom("grading_report_students").selectAll().where("school_id", "=", schoolId).where("batch_id", "=", batchId).where("student_id", "=", studentId).forUpdate().executeTakeFirst();
+      const row = await db.selectFrom("grading_report_students").selectAll().where("school_id", "=", schoolId).where("batch_id", "=", batchId).where(identityKind === "learner" ? "learner_id" : "student_id", "=", studentId).forUpdate().executeTakeFirst();
       if (!row) throw new NotFoundException("Learner report not found.");
       return this.reportCommand(db, user, schoolId, { id: row.id, kind: "grading_report_student", name: scheme.name, revision: data.expected_revision, currentRevision: row.comment_revision }, "report.remarks", data, async () => {
         if (batch.status !== "draft") throw new ConflictException("Remarks can only be edited before review.");
@@ -716,14 +800,14 @@ export class AcademicReportsService {
         if (row.comment_revision !== data.expected_revision) throw new ConflictException("These remarks changed. Refresh before saving.");
         const updated = await db.updateTable("grading_report_students").set({ class_teacher_comment: data.class_teacher_comment, principal_comment: actor === "admin" ? data.principal_comment : row.principal_comment, comment_revision: row.comment_revision + 1, comment_updated_by: user.id, comment_updated_at: executionNow() }).where("id", "=", row.id).returningAll().executeTakeFirstOrThrow();
         const updatedBatch = await db.updateTable("grading_report_batches").set({ revision: batch.revision + 1 }).where("id", "=", batchId).returningAll().executeTakeFirstOrThrow();
-        const response = commentReceipt.parse({ id: updated.id, student_id: updated.student_id, class_teacher_comment: updated.class_teacher_comment,
+        const response = commentReceipt.parse({ id: updated.id, student_id: updated.student_id, ...(identityKind === "learner" ? { learner_id: updated.learner_id } : {}), class_teacher_comment: updated.class_teacher_comment,
           principal_comment: updated.principal_comment, comment_revision: updated.comment_revision, batch_revision: updatedBatch.revision });
         // Private remarks remain in the report owner. Core retains an opaque
         // native receipt reference, never learner marks or free-text comments.
         const receiptAudit = await this.audit(db, user, schoolId, batch.scheme_id, batchId, "report.remarks.updated", "draft", "draft",
           { student_id: studentId, actor, batch_revision: updatedBatch.revision, result: response });
         await this.emitUpdated(db, updatedBatch, scheme.class_section_id, "remarks", false);
-        return { id: updated.id, batch_id: batchId, student_id: updated.student_id, comment_revision: updated.comment_revision,
+        return { id: updated.id, batch_id: batchId, student_id: updated.student_id, ...(identityKind === "learner" ? { learner_id: updated.learner_id } : {}), comment_revision: updated.comment_revision,
           batch_revision: updatedBatch.revision, receipt_audit_id: receiptAudit.id };
       }, this.policySnapshot(batch.result_policy), scheme.class_section_id);
     });
@@ -761,9 +845,9 @@ export class AcademicReportsService {
       }
       if (action === "publish") {
         if (policy?.configuration.result_format === "gpa" && scheme.programme_key && scheme.term_index) {
-          const students = await db.selectFrom("grading_report_students").select(["student_id", "cumulative_sources", "cgpa_unavailable_reason"]).where("batch_id", "=", batchId).execute();
+          const students = await db.selectFrom("grading_report_students").select(["student_id", "learner_id", "person_id", "cumulative_sources", "cgpa_unavailable_reason"]).where("batch_id", "=", batchId).execute();
           for (const student of students) {
-            const history = await this.cumulativeHistory(db, schoolId, student.student_id, scheme.programme_key, scheme.term_index, policy);
+            const history = await this.cumulativeHistory(db, schoolId, scheme.context_kind === "learning_offering" ? student.person_id : student.learner_id, scheme.programme_key, scheme.term_index, policy, scheme.context_kind === "learning_offering" ? "person" : "learner");
             if (history.reason && history.reason !== student.cgpa_unavailable_reason) throw new ConflictException("Prior term coverage or grading compatibility changed. Generate a new release before publication.");
             const frozen = Array.isArray(student.cumulative_sources) ? student.cumulative_sources as Array<Record<string, unknown>> : [];
             const frozenPrior = [...new Set(frozen.filter(source => Number(source.term_index) < scheme.term_index!).map(source => String(source.batch_id)))].sort();
@@ -815,6 +899,23 @@ export class AcademicReportsService {
             attention_topic_key: `report:${scheme.id}:student:${recipient.student_id}`,
           } : {}),
         }).onConflict((conflict) => conflict.doNothing()).execute();
+        if (scheme.context_kind === "learning_offering") {
+          if (!this.identities) throw new ConflictException("Current course report recipient identity is unavailable.");
+          const audience = await db.selectFrom("grading_report_students").select("person_id").where("school_id", "=", schoolId).where("batch_id", "=", batchId).execute();
+          const expected = new Set(audience.map(row => row.person_id));
+          const endpoints = await this.identities.listActingPeople(db, { school_id: schoolId, at: executionNow().toISOString() });
+          const legacy = (await sql<{person_id:string;student_id:string;user_id:string}>`SELECT student.person_id,student.id AS student_id,student.user_id
+            FROM students student JOIN school_memberships membership ON membership.school_id=student.school_id AND membership.user_id=student.user_id AND membership.role='student' AND membership.is_active
+            WHERE student.school_id=${schoolId}::uuid AND student.person_id=ANY(${[...expected]}::uuid[])`.execute(db)).rows;
+          for (const recipient of endpoints.filter(endpoint => expected.has(endpoint.person_id))) {
+            const student = legacy.find(row => row.person_id===recipient.person_id && row.user_id===recipient.user_id);
+            const selector = student ? {scope:"self",student_id:student.student_id} : {scope:"mine",person_id:recipient.person_id};
+            await db.insertInto("notifications").values({recipient_id:recipient.user_id,kind:"general",title:"A report card has been published",body:scheme.name,
+              link:`/areas/reports/progress?${new URLSearchParams({...selector,report_batch_id:batchId}).toString()}`,
+              metadata:{report_batch_id:batchId,scheme_id:scheme.id,person_id:recipient.person_id},dedupe_key:`report:${batchId}:${recipient.user_id}:person:${recipient.person_id}`})
+              .onConflict(conflict=>conflict.doNothing()).execute();
+          }
+        }
       }
       if (action === "cancel") {
         if (!['draft', 'reviewed'].includes(batch.status)) throw new ConflictException("A published report batch cannot be cancelled.");
@@ -837,16 +938,21 @@ export class AcademicReportsService {
     if (!allowed) throw new ForbiddenException("You cannot view this learner's report cards.");
     const student = (await sql`SELECT student.id,student.admission_number,person.first_name,person.last_name,'Class '||section.grade||section.section AS class_name FROM students student JOIN school_people person ON person.id=student.person_id LEFT JOIN enrollments enrollment ON enrollment.student_id=student.id AND enrollment.is_active LEFT JOIN class_sections section ON section.id=enrollment.class_section_id WHERE student.id=${studentId}::uuid AND student.school_id=${schoolId}::uuid ORDER BY enrollment.enrolled_on DESC LIMIT 1`.execute(this.db)).rows[0];
     if (!student) throw new NotFoundException();
+    const identity = await this.db.selectFrom("students").select("person_id").where("school_id", "=", schoolId).where("id", "=", studentId).executeTakeFirstOrThrow();
+    return { student, reports: await this.publishedReportsForPerson(this.db, schoolId, identity.person_id, await currentFamilyCourseAccess(this.db,schoolId,user.id,studentId)) };
+  }
+
+  private async publishedReportsForPerson(db: Db, schoolId: string, personId: string, includeCourse = true) {
     const reports = await sql<FamilyReportProjection>`SELECT * FROM (SELECT DISTINCT ON(scheme.id) report.id AS report_student_id,batch.id AS batch_id,batch.sequence,batch.published_at,batch.correction_reason,
       scheme.id AS scheme_id,scheme.name AS scheme_name,COALESCE(batch.academic_context->>'term_name',term.name) AS term_name,
       COALESCE(batch.academic_context->>'academic_year',term.academic_year) AS academic_year,
       COALESCE(batch.academic_context->>'class_name','Class '||section.grade||section.section) AS class_name,scheme.class_section_id,scheme.term_id,batch.academic_context,
-      CASE WHEN batch.academic_context->>'schema_version'='1' THEN 'report_snapshot' ELSE 'legacy_scheme_context' END AS academic_context_source,
+      CASE WHEN batch.academic_context->>'schema_version' IN('1','2') THEN 'report_snapshot' ELSE 'legacy_scheme_context' END AS academic_context_source,
       report.academic_roster_source,report.outcome,report.overall_percentage,report.overall_grade,report.class_teacher_comment,report.principal_comment,batch.result_policy,scheme.programme_key,scheme.term_index,report.gpa,report.cgpa,report.credit_total,report.credit_points,report.cumulative_credits,report.cumulative_credit_points,report.cumulative_sources,report.gpa_unavailable_reason,report.cgpa_unavailable_reason
       FROM grading_report_students report JOIN grading_report_batches batch ON batch.id=report.batch_id AND batch.status='published'
       JOIN grading_schemes scheme ON scheme.id=batch.scheme_id JOIN academic_terms term ON term.id=scheme.term_id
-      JOIN class_sections section ON section.id=scheme.class_section_id AND section.school_id=scheme.school_id
-      WHERE report.school_id=${schoolId}::uuid AND report.student_id=${studentId}::uuid ORDER BY scheme.id,batch.sequence DESC) latest ORDER BY latest.published_at DESC`.execute(this.db);
+      LEFT JOIN class_sections section ON section.id=scheme.class_section_id AND section.school_id=scheme.school_id
+      WHERE report.school_id=${schoolId}::uuid AND report.person_id=${personId}::uuid AND(${includeCourse} OR scheme.context_kind='class_term') ORDER BY scheme.id,batch.sequence DESC) latest ORDER BY latest.published_at DESC`.execute(db);
     for (const report of reports.rows) this.policySnapshot(report.result_policy);
     const reportIds = reports.rows.map((report) => String((report as { report_student_id: string }).report_student_id));
     const subjects = reportIds.length ? await sql`SELECT result.*,subject.name AS subject_name,subject.color,subject.icon,
@@ -854,7 +960,8 @@ export class AcademicReportsService {
         JOIN grading_report_assessment_sources source ON source.report_component_id=component.id
         WHERE component.report_subject_id=result.id),'{}'::uuid[]) AS assessment_ids
       FROM grading_report_subjects result JOIN subjects subject ON subject.id=result.subject_id
-      WHERE result.report_student_id=ANY(${reportIds}::uuid[]) ORDER BY result.report_student_id,subject.name`.execute(this.db) : { rows: [] };
-    return { student, reports: reports.rows.map((report) => ({ ...report, subjects: subjects.rows.filter((subject) => String((subject as { report_student_id: string }).report_student_id) === String((report as { report_student_id: string }).report_student_id)) })) };
+      WHERE result.report_student_id=ANY(${reportIds}::uuid[]) ORDER BY result.report_student_id,subject.name`.execute(db) : { rows: [] };
+    return reports.rows.map((report) => ({ ...report, subjects: subjects.rows.filter((subject) => String((subject as { report_student_id: string }).report_student_id) === String((report as { report_student_id: string }).report_student_id)) }));
   }
+
 }

@@ -18,10 +18,9 @@ COPY frontend/src /build/frontend/src
 COPY packages/contracts/src /build/packages/contracts/src
 # Exact React Native sources and executable proof protected by the existing seal.
 # They are build-time evidence only; runtime still copies compiled outputs alone.
-COPY mobile/src/features/more/MoreToolBoundary.tsx /build/mobile/src/features/more/MoreToolBoundary.tsx
-COPY mobile/src/features/SetupCommand.tsx /build/mobile/src/features/SetupCommand.tsx
-COPY mobile/src/lib/more-tool-access.ts mobile/src/lib/api-policy.ts mobile/src/lib/device-storage-browser.ts /build/mobile/src/lib/
-COPY mobile/test/more-tool-boundary-mounted.test.ts mobile/test/setup-command-browser-storage.test.ts /build/mobile/test/
+COPY mobile/app /build/mobile/app
+COPY mobile/src /build/mobile/src
+COPY mobile/test /build/mobile/test
 # Keep the existing strict source/seal gate. Never regenerate a stale receipt here.
 RUN npm run build
 

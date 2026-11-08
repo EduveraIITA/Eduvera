@@ -5,7 +5,7 @@ const entriesStore = 'journal_entries', keysStore = 'encryption_keys', encryptio
 const unavailable = 'Private browser storage is unavailable. New actions are blocked until storage is available.';
 const unreadable = 'The retained browser record could not be verified. Its bytes were kept; new actions are blocked.';
 const hash = '[a-f0-9]{64}', uuid = '[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}';
-const namespace = '(?:pending\\.v1\\.(?:departure|events|learning|assessments|people|messages|simulation|resources|facilities|calendar|schedule|attendance|gate|campus)|pending\\.(?:resources|facilities|dining|accommodation)|people-review|leave-intent|academic-session|attendance-evidence|fee-action|staff-command|institution-commands|notice-response|notice-manage|gate-action|assistant-command|attendance-draft|attendance-offline|pending-file|more-action|academic-reports|care-receipts|simulation-baseline|simulation-removal)';
+const namespace = '(?:pending\\.v1\\.(?:departure|events|learning|assessments|people|messages|simulation|resources|facilities|calendar|schedule|attendance|gate|campus)|pending\\.(?:resources|facilities|dining|accommodation)|people-review|leave-intent|academic-session|academic-register-action|attendance-evidence|fee-action|fees-operations|event-admin|learning-packing|staff-command|institution-commands|notice-response|notice-manage|gate-action|assistant-command|attendance-draft|attendance-offline|pending-file|more-action|academic-reports|care-receipts|simulation-baseline|simulation-removal)';
 const journalKey = new RegExp(`^thatcampus\\.${namespace}\\.${hash}(?:\\.manifest|\\.${uuid}\\.(?:0|[1-9][0-9]{0,3}))?$`);
 type EncryptedRecord = { version: 1; iv: Uint8Array; ciphertext: ArrayBuffer };
 

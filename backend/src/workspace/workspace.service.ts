@@ -49,6 +49,9 @@ import { FeeAuthorityService } from "../governance/fee-authority.service.js";
 import { WorkspaceProjectionReads } from "./workspace-projection-reads.js";
 import { VisitSharingService } from "../gate/visit-sharing.service.js";
 import { RestrictedCareService, type RestrictedCareDiscovery } from "../restricted-care/restricted-care.service.js";
+import { LearningElectiveChangeService, type ElectiveFinanceWorkCandidate, type ElectiveFinanceWorkSource } from "../learning/learning-elective-change.service.js";
+import { AssessmentsService } from "../assessments/assessments.service.js";
+import { electiveFinanceHref } from "../learning/learning-elective-model.service.js";
 
 interface AreaAccumulator {
   definition: ReturnType<typeof allWorkspaceAreaDefinitions>[number];
@@ -69,6 +72,7 @@ interface SurfaceAccumulator {
 
 interface AssignmentDiscovery {
   can_setup: boolean;
+  academic_person_id?: string | null;
   contexts: Array<{ kind: "class" | "offering" | "person"; id: string; label: string; href: string;
     can_manage: boolean; can_publish?: boolean; can_review?: boolean }>;
 }
@@ -103,9 +107,14 @@ function query(path: string, values: Readonly<Record<string, string | number | n
   return suffix ? `${path}?${suffix}` : path;
 }
 
-export function workHref(message: Pick<OwnedMessageProjection, "reaction_kind" | "payload" | "id">): string {
+export function workHref(message: Pick<OwnedMessageProjection, "reaction_kind" | "payload" | "id"> & Partial<Pick<OwnedMessageProjection, "source_domain">>, electiveSource?: ElectiveFinanceWorkSource): string {
   const payload = object(message.payload);
   const kind = message.reaction_kind;
+  if (kind === "elective_finance_review") {
+    return message.source_domain === "learning_elective" && electiveSource?.message_id === message.id
+      && electiveSource.change_id === text(payload.elective_change_id) && electiveSource.source_revision === integer(payload.revision)
+      ? electiveFinanceHref(electiveSource.change_id) : query("/work", { item: message.id, unavailable: "source" });
+  }
   if (kind === "staff_leave_decision_review") {
     const request = text(payload.request_id);
     return request ? query("/work/staff-leave", { request }) : query("/work", { item: message.id, unavailable: "source" });
@@ -151,13 +160,13 @@ function relativeDue(target: string, at: Date): string {
   return `Due in ${hours} hr`;
 }
 
-function work(message: OwnedMessageProjection, at: Date, timeZone: string): WorkspaceWorkRecord {
+function work(message: OwnedMessageProjection, at: Date, timeZone: string, electiveSource?: ElectiveFinanceWorkSource): WorkspaceWorkRecord {
   const deadline = message.response_due_at ?? message.expires_at;
   const remaining = deadline ? new Date(deadline).getTime() - at.getTime() : Number.POSITIVE_INFINITY;
   const urgency = deadline && remaining <= 0
     ? (message.expires_at && new Date(message.expires_at).getTime() <= at.getTime() ? "critical" : "overdue")
     : remaining <= 2 * 60 * 60 * 1000 ? "due_soon" : "normal";
-  const href = workHref(message);
+  const href = workHref(message, electiveSource);
   const routeUnavailable = href.includes("unavailable=");
   return {
     id: message.id,
@@ -170,12 +179,16 @@ function work(message: OwnedMessageProjection, at: Date, timeZone: string): Work
     status_label: routeUnavailable ? "Source unavailable" : message.state === "acknowledged" ? "Seen · response needed" : "Response needed",
     ...(deadline ? { due_label: relativeDue(deadline, at), time_label: relativeDue(deadline, at) } : {}),
     href,
-    action_label: routeUnavailable ? "Review in Work" : message.message_kind === "offer" ? "Review offer" : message.message_kind === "request" ? "Review request" : "Open task",
-    source_label: message.source_domain.replaceAll("_", " "),
+    action_label: routeUnavailable ? "Review in Work" : electiveSource ? "Review financial impact" : message.message_kind === "offer" ? "Review offer" : message.message_kind === "request" ? "Review request" : "Open task",
+    source_label: electiveSource ? "Course change" : message.source_domain.replaceAll("_", " "),
     due_at: deadline,
     created_at: message.queued_at,
     ...(message.reaction_kind === "staff_leave_decision_review" && text(object(message.payload).request_id) ? {
       source: { domain: "staff_operations", kind: "staff_leave_request", id: text(object(message.payload).request_id)!, action: "decide", revision: integer(object(message.payload).source_revision) },
+      core_trace: { message_ids: [message.id] },
+    } : {}),
+    ...(!routeUnavailable && electiveSource ? {
+      source: { domain: "learning_elective", kind: "elective_change", id: electiveSource.change_id, action: "finance.classify", revision: electiveSource.revision },
       core_trace: { message_ids: [message.id] },
     } : {}),
     source_at: new Intl.DateTimeFormat("en", { timeZone, hour: "numeric", minute: "2-digit" }).format(new Date(message.queued_at)),
@@ -485,7 +498,8 @@ function areas(snapshot: WorkspaceRepositorySnapshot, workItems: readonly Worksp
   diningDiscovery: DiningDiscovery = { can_manage: false, has_services: false, has_published_sessions: false },
   staffDiscovery: StaffLeaveDiscovery = { has_personal_staff_work: false, can_review_staff_leave: false, coverage_available: false, source_revisions: [] },
   visitsDiscovery: VisitsDiscovery = { can_manage: false, has_shared: false, has_questions: false },
-  careDiscovery: RestrictedCareDiscovery = { can_report: false, can_manage_team: false, has_assignments: false }): WorkspaceArea[] {
+  careDiscovery: RestrictedCareDiscovery = { can_report: false, can_manage_team: false, has_assignments: false },
+  assessmentDiscovery: { has_assigned: boolean; can_plan_course: boolean } = { has_assigned: false, can_plan_course: false }): WorkspaceArea[] {
   const definitions = allWorkspaceAreaDefinitions();
   const accumulators = new Map<string, AreaAccumulator>();
   const surfaceContributions = (
@@ -837,11 +851,27 @@ function areas(snapshot: WorkspaceRepositorySnapshot, workItems: readonly Worksp
       href: context.href,
     }]);
   }
+  // Native course membership/history contributes a person-bound read surface,
+  // never a school student or a grant to someone else's academic record.
+  const academicPerson = assignmentDiscovery.academic_person_id;
+  if (academicPerson && !snapshot.relationships.some(relationship => relationship.relationship === "self")) {
+    const own: WorkspaceScope[] = [{ kind: "person", id: academicPerson, label: "My academic record" }];
+    add("calendar", "campus_dates.published", own, null, [{ key: "assigned", label: "My calendar",
+      description: "Campus dates and your current course assessment dates", href: "/areas/calendar?surface=assigned" }]);
+    add("assessments", "assessments.view", own, null, [{ key: `results:mine:${academicPerson}`, label: "My results",
+      description: "Your published course assessment results", href: query("/areas/assessments/results", { scope: "mine", person_id: academicPerson }) }]);
+    add("reports", "reports.view", own, null, [{ key: `progress:mine:${academicPerson}`, label: "My progress",
+      description: "Your published course reports and grade points", href: query("/areas/reports/progress", { scope: "mine", person_id: academicPerson }) }]);
+  }
   if (assignmentDiscovery.can_setup) add("messages", "learning.assignments.setup",
     [{ kind: "institution", id: snapshot.institution.id, label: snapshot.institution.name }], null, [{
       key: "assignments:setup", label: "Assignments", description: "Start a learning group and appoint its teaching responsibility",
       href: "/areas/messages/assignments",
     }]);
+  if ((assessmentDiscovery.has_assigned || assessmentDiscovery.can_plan_course) && !snapshot.membership_roles.includes("admin")) add("assessments",
+    assessmentDiscovery.can_plan_course ? "assessments.mark" : "assessments.view",
+    [{ kind: "self", label: "My assessment assignments" }], null, [{ key: "assigned", label: "Assessments & marking",
+      description: "Plan authorized course tests and follow your assigned assessment work", href: "/areas/assessments/assigned" }]);
   if (snapshot.membership_roles.includes("admin")) {
     const institutionScope: WorkspaceScope = {
       kind: "institution",
@@ -856,6 +886,10 @@ function areas(snapshot: WorkspaceRepositorySnapshot, workItems: readonly Worksp
     // their setup/read surfaces without inventing recording appointments.
     add("people", "sis.manage", [institutionScope]);
     add("attendance", "attendance.view", [institutionScope]);
+    // The assessment/report owners already authorize this active administrator
+    // relationship; these surfaces reflect it without appointing an examiner.
+    add("assessments", "assessments.moderate", [institutionScope]);
+    add("reports", "reports.comment", [institutionScope]);
     add("insights", "insights.manage", [institutionScope]);
   }
   // Public dates must also be reachable without another subsystem. Existing
@@ -1065,6 +1099,8 @@ export class WorkspaceService {
     @Optional() private readonly dining?: DiningService,
     @Optional() private readonly visits?: VisitSharingService,
     @Optional() private readonly care?: RestrictedCareService,
+    @Optional() private readonly electives?: LearningElectiveChangeService,
+    @Optional() private readonly assessments?: AssessmentsService,
   ) {}
 
   async manifest(
@@ -1107,8 +1143,17 @@ export class WorkspaceService {
         if (!(error instanceof ForbiddenException)) throw error;
       }
     }
-    const messageWork = snapshot.messages.filter(message => !hasNativeWorkflowProjection(message)).map((message) => work(message, at, snapshot.institution.timezone));
-    const [assignments, arrangements, assignmentReadiness, nativeReviews, financeDiscovery, resourcesWork, resourcesDiscovery, repairWork, facilitiesDiscovery, staysWork, accommodationDiscovery, diningItems, diningDiscovery, visitQuestions, visitsDiscovery, careDiscovery] = await Promise.all([
+    const electiveCandidates: ElectiveFinanceWorkCandidate[] = snapshot.messages.flatMap(message => {
+      if (message.source_domain !== "learning_elective" || message.reaction_kind !== "elective_finance_review") return [];
+      const payload = object(message.payload), id = text(payload.elective_change_id), revision = integer(payload.revision);
+      return id && revision !== null ? [{ message_id: message.id, change_id: id, source_revision: revision }] : [];
+    });
+    const electiveSources = !limited && this.electives && electiveCandidates.length
+      ? await this.projectionReads.run(() => this.electives!.financeWorkSources(user, schoolId, electiveCandidates)) : [];
+    const electiveByMessage = new Map(electiveSources.map(source => [source.message_id, source]));
+    const messageWork = snapshot.messages.filter(message => !hasNativeWorkflowProjection(message))
+      .map(message => work(message, at, snapshot.institution.timezone, electiveByMessage.get(message.id)));
+    const [assignments, arrangements, assignmentReadiness, nativeReviews, financeDiscovery, resourcesWork, resourcesDiscovery, repairWork, facilitiesDiscovery, staysWork, accommodationDiscovery, diningItems, diningDiscovery, visitQuestions, visitsDiscovery, careDiscovery, assessmentDiscovery] = await Promise.all([
       this.projectionReads.run(() => !limited && this.learning ? this.learning.projectWork(user) : []),
       this.projectionReads.run(() => !limited && this.financeArrangements ? this.financeArrangements.work(user, schoolId) : { needs_me: [], waiting: [] }),
       this.projectionReads.run(() => !limited && this.learning ? this.learning.readiness(user) : null),
@@ -1125,6 +1170,7 @@ export class WorkspaceService {
       this.projectionReads.run(() => this.visits ? this.visits.work(user, schoolId) : { needs_me: [], waiting: [] }),
       this.projectionReads.run(() => this.visits ? this.visits.discovery(user, schoolId) : { can_manage: false, has_shared: false, has_questions: false }),
       this.projectionReads.run(() => !limited && this.care ? this.care.discovery(user, schoolId) : { can_report: false, can_manage_team: false, has_assignments: false }),
+      this.projectionReads.run(() => !limited && snapshot.membership_roles.includes("staff") && !snapshot.membership_roles.includes("admin") && this.assessments ? this.assessments.discovery(user, schoolId) : { has_assigned: false, can_plan_course: false }),
     ]);
     nativeSources.push(`finance-discovery:${JSON.stringify(financeDiscovery)}`);
     nativeSources.push(`resources-discovery:${JSON.stringify(resourcesDiscovery)}`);
@@ -1133,6 +1179,7 @@ export class WorkspaceService {
     nativeSources.push(`dining-discovery:${JSON.stringify(diningDiscovery)}`);
     nativeSources.push(`visits-discovery:${JSON.stringify(visitsDiscovery)}`);
     nativeSources.push(`care-discovery:${JSON.stringify(careDiscovery)}`);
+    nativeSources.push(`assessment-discovery:${JSON.stringify(assessmentDiscovery)}`);
     const diningAvailability = !limited && this.dining
       ? await this.dining.ownedAvailability(user, schoolId, { from: reading.local_date, until: reading.local_date })
       : { items: [], warnings: [] };
@@ -1142,7 +1189,7 @@ export class WorkspaceService {
     })), warnings: diningAvailability.warnings ?? [] })}`);
     const diningSchedule = diningTodayRecords(diningAvailability, at);
     const assignmentDiscovery: AssignmentDiscovery = assignmentReadiness
-      ? { can_setup: assignmentReadiness.can_setup, contexts: assignmentReadiness.contexts }
+      ? { can_setup: assignmentReadiness.can_setup, contexts: assignmentReadiness.contexts, academic_person_id: assignmentReadiness.academic_person_id }
       : { can_setup: false, contexts: [] };
     if (assignmentReadiness) nativeSources.push(`assignments:${JSON.stringify({ ...assignmentDiscovery,
       operation: { state: assignmentReadiness.operation.state, action: assignmentReadiness.operation.action,
@@ -1257,7 +1304,7 @@ export class WorkspaceService {
         completed_automatically: [],
       },
       work: { total: workItems.length, counts: { needs_me: needsMe.length, waiting: workItems.length - needsMe.length }, coverage: "complete" as const, items: workItems },
-      areas: areas(snapshot, workItems, hasExistingFinanceAuthority, assignmentDiscovery, financeDiscovery, resourcesDiscovery, facilitiesDiscovery, accommodationDiscovery, diningDiscovery, staffDiscovery, visitsDiscovery, careDiscovery).filter(area => !limited || area.key === 'facilities' || area.key === 'in-out'),
+      areas: areas(snapshot, workItems, hasExistingFinanceAuthority, assignmentDiscovery, financeDiscovery, resourcesDiscovery, facilitiesDiscovery, accommodationDiscovery, diningDiscovery, staffDiscovery, visitsDiscovery, careDiscovery, assessmentDiscovery).filter(area => !limited || area.key === 'facilities' || area.key === 'in-out'),
       more: {
         groups: more,
         // Compatibility fields remain until every deployed client reads grouped

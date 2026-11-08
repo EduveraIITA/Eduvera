@@ -28,6 +28,7 @@ export interface CampusCalendarScope {
   timeZone: string;
   surfaceKey: string;
   studentId?: string;
+  personId?: string;
   eventHref?: string;
   assessmentHref?: string;
   includeDining: boolean;
@@ -39,6 +40,9 @@ export interface CalendarSourceResult {
 }
 
 export interface CalendarAssessmentDate {
+  context_kind?: "class_term" | "learning_offering";
+  offering_id?: string | null;
+  subject_id?: string;
   id: string;
   title: string;
   date: string;

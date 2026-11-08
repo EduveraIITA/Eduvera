@@ -104,12 +104,20 @@ const identityByArea: Record<string, readonly string[]> = {
   calendar: ['entry'], 'campus-view': ['place_id','place','edit:1','map_full:1'], assistant: ['thread'], feedback: ['campaign'],
 };
 function parsed(href: string) { return new URL(canonicalNativeHref(href), 'https://thatcampus.invalid'); }
+function assignmentsRoute(url:URL) { return url.pathname.replace(/\/$/,'')==='/areas/messages/assignments'; }
 function semanticKeys(url: URL): readonly string[] {
   const parts = url.pathname.split('/').filter(Boolean);
   if (parts[0] === 'onboarding') return ['step'];
   if (parts[0] === 'work') return ['item','request','request_id','invoice','invoice_id','visit','leave_id'];
   if (parts[0] === 'more') return parts[1] === 'virtual-campus' ? ['edit:1','map_full:1'] : parts[1] === 'simulation' ? ['run','view','step','compare'] : parts[1] === 'policies' ? ['policy'] : ['edit','create','item','policy','rule','academic_edit'];
-  return identityByArea[parts[1] ?? ''] ?? ['id','item','edit','create','action'];
+  const rules=identityByArea[parts[1] ?? ''] ?? ['id','item','edit','create','action'];
+  if(assignmentsRoute(url)) {
+    // These are separate keyed writers, not list filters. Ordinary assignment
+    // scope/date changes keep their existing presentation update behavior.
+    if(url.searchParams.get('scope')==='elective_change')return [...rules,'scope:elective_change','offering_id','person_id','change_id'];
+    if(url.searchParams.get('course_setup')==='1')return [...rules,'offering_id','course_setup:1'];
+  }
+  return rules;
 }
 function identities(url: URL) { return semanticKeys(url).flatMap(rule => { const [key, expected] = rule.split(':'); return url.searchParams.has(key!) && (!expected || url.searchParams.get(key!) === expected) ? [[key!, url.searchParams.getAll(key!).join('\u0000')]] : []; }); }
 export function sameCampusHref(a: string, b: string) { try { const normal = (href: string) => { const url = parsed(href); url.searchParams.sort(); return url.pathname.replace(/\/$/, '') + url.search + url.hash; }; return normal(a) === normal(b); } catch { return false; } }
@@ -131,6 +139,20 @@ export function campusBackFallback(href: string): { href: string; title: string 
   if (!['today','work','areas','more'].includes(root ?? '')) return { href: '/today', title: 'Today' };
   const insightsParent = nativeInsightsBackParent(url.pathname + url.search);
   if (insightsParent) return insightsParent;
+  if(assignmentsRoute(url) && url.searchParams.get('scope')==='elective_change') {
+    const offering=url.searchParams.get('offering_id');
+    if(offering && url.searchParams.getAll('offering_id').length===1){
+      const parent=new URLSearchParams({scope:'offering',offering_id:offering,group_manage:'1'});
+      for(const key of ['date','search','q','page','groups_page'])for(const value of url.searchParams.getAll(key))parent.append(key,value);
+      return {href:url.pathname+'?'+parent.toString(),title:'Learning group'};
+    }
+    return {href:'/areas/messages/assignments',title:'Learning groups'};
+  }
+  if(assignmentsRoute(url) && url.searchParams.get('course_setup')==='1') {
+    url.searchParams.delete('course_setup');
+    for(const key of [...url.searchParams.keys()])if(key==='attention_notification_id'||key.endsWith('_revision'))url.searchParams.delete(key);
+    return {href:url.pathname+url.search,title:'Learning group'};
+  }
   const selected = identities(url);
   if (selected.length) {
     const [key] = selected.at(-1)!; url.searchParams.delete(key!);

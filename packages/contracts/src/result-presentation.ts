@@ -1,17 +1,32 @@
 import type { GradingPolicyConfiguration, ReportCalculation, ResultPolicySnapshot } from "./academic-reports";
 
+/** Existing versioned half-up rule used for preview and policy-bound display.
+ * Boundary tests execute the grading owner; no saved grade is recalculated. */
+function roundGradeValue(value: number, decimalPlaces = 2): number {
+  if (!Number.isFinite(value) || !Number.isInteger(decimalPlaces) || decimalPlaces < 0 || decimalPlaces > 8) throw new Error("Invalid grading value or precision.");
+  const factor = 10 ** decimalPlaces;
+  return Math.round((value + Number.EPSILON * Math.max(1, Math.abs(value))) * factor) / factor;
+}
+
 /** Entry assistance only. Published values always come from the owning API. */
 export function previewConfiguredGrade(marks: string, maximumMarks: string, configuration: GradingPolicyConfiguration) {
   if (!marks.trim() || !Number.isFinite(Number(marks)) || Number(marks) < 0 || !Number.isFinite(Number(maximumMarks)) || Number(maximumMarks) <= 0 || Number(marks) > Number(maximumMarks)) return null;
   const rawPercentage = Number(marks) / Number(maximumMarks) * 100;
-  const percentage = Math.round((rawPercentage + Number.EPSILON * Math.max(1, Math.abs(rawPercentage))) * 100) / 100;
+  const percentage = roundGradeValue(rawPercentage, 2);
   const band = configuration.bands.find((item) => percentage >= item.minimum_percentage && percentage <= item.maximum_percentage);
   return band ? { percentage, grade: band.code, grade_points: band.grade_points, passed: band.passed } : null;
 }
 
 export function resultNumber(value: string | number | null | undefined, policy?: ResultPolicySnapshot | null) {
   if (value === null || value === undefined || value === "" || !Number.isFinite(Number(value))) return "—";
-  return policy ? Number(value).toFixed(policy.configuration.decimal_places) : String(value);
+  return policy ? roundGradeValue(Number(value), policy.configuration.decimal_places).toFixed(policy.configuration.decimal_places) : String(value);
+}
+
+/** Credit quantities retain their exact recorded precision, without SQL padding. */
+export function creditNumber(value: string | number | null | undefined) {
+  if (typeof value === "string" && !value.trim()) return "—";
+  const number = resultNumber(typeof value === "string" ? value.trim() : value);
+  return number.replace(/(\.\d*?)0+$/, "$1").replace(/\.$/, "");
 }
 
 export function policyDescription(policy?: ResultPolicySnapshot | null) {

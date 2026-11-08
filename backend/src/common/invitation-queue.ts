@@ -7,6 +7,7 @@ import { config } from '../config.js';
 import { invitationCodeHash } from './invitation-code.js';
 import { deliverInvitation } from './invitation-email.js';
 import { captureSimulationProviderEffect, selectedSimulationResources } from './simulation-resources.js';
+import { assertLiveAccountMailControl, deliverPendingAccountMail } from './account-email-queue.js';
 
 type Invitation = {id: string; email: string; token: string; expires_at: Date | string};
 const key = () => createHmac('sha256', config().COOKIE_SECRET).update('eduera:invitation-email-queue:v1').digest();
@@ -72,6 +73,7 @@ export class InvitationEmailWorker implements OnModuleInit, OnModuleDestroy {
     if (this.busy) return;
     this.busy = true;
     try {
+      assertLiveAccountMailControl();
       // Acceptance may have happened before a crash. Never duplicate an uncertain send.
       await sql`UPDATE invitation_email_jobs SET delivery_state='unknown',encrypted_token=NULL,updated_at=now()
         WHERE delivery_state='sending' AND updated_at<now()-interval '2 minutes'`.execute(this.db);
@@ -80,7 +82,8 @@ export class InvitationEmailWorker implements OnModuleInit, OnModuleDestroy {
         AND (i.token_hash<>j.token_hash OR i.revoked_at IS NOT NULL OR i.accepted_at IS NOT NULL OR i.expires_at<=now()
           OR NOT ${currentInvitationSource})`.execute(this.db);
       if (!config().INVITATION_EMAIL_ENABLED) return;
-      for (let n = 0; n < 10; n++) {
+      const accountMails = await deliverPendingAccountMail(this.db, 2);
+      for (let n = accountMails; n < 10; n++) {
         const job = (await sql<{id:string;invitation_id:string;encrypted_token:string;email:string;expires_at:Date}>`
           WITH candidate AS (
             SELECT j.id,i.email,i.expires_at FROM invitation_email_jobs j JOIN school_invitations i ON i.id=j.invitation_id
@@ -92,7 +95,7 @@ export class InvitationEmailWorker implements OnModuleInit, OnModuleDestroy {
         if (!job) break;
         let outcome = 'failed';
         try {
-          const result = await deliverInvitation({email: job.email, expires_at: job.expires_at, token: openInvitationCode(job.encrypted_token, job.invitation_id)});
+          const result = await deliverInvitation({email: job.email, expires_at: job.expires_at, token: openInvitationCode(job.encrypted_token, job.invitation_id), idempotency_key: `invitation/${job.id}`});
           outcome = result.delivery === 'email_accepted' ? 'email_accepted' : result.delivery === 'failed' && ['authentication','recipient'].includes(result.delivery_error) ? 'failed' : 'unknown';
         } catch { this.logger.warn('Invitation delivery could not be confirmed. Resend is available in the invitation list.'); }
         await sql`UPDATE invitation_email_jobs SET delivery_state=${outcome},encrypted_token=NULL,updated_at=now()

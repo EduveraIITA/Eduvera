@@ -50,8 +50,9 @@ export class NativeAuthController {
   @Post("mfa/login/")
   @HttpCode(200)
   async mfaLogin(@Req() request: FastifyRequest) {
-    const user = await this.auth.completeMfaLogin(request.body, request);
-    return this.issueSession(user, request);
+    const { user, session } = await this.auth.completeMfaLogin(request.body, request, { transport: 'native' });
+    return { ...this.auth.response(user, session.csrfToken), access_token: session.rawToken,
+      token_type: 'Bearer' as const, expires_at: session.expiresAt };
   }
 
   @Public()

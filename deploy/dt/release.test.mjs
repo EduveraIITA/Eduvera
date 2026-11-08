@@ -96,6 +96,16 @@ test('only the exact newly built immutable image can become the candidate or mig
   for (const invalid of [{ status: 'FAILURE' }, { status: 'SUCCESS', results: { images: [{ name: `${TARGET.image}:latest`, digest }] } }, { status: 'SUCCESS', results: { images: [{ name: `${TARGET.image}:${sha}`, digest: 'latest' }] } }]) assert.throws(() => immutableImage(invalid, sha));
 });
 
+test('optional transactional mail requires the approved isolated versioned sender and is never enabled by release defaults', () => {
+  const configured=()=>{const value=runtime();value.spec.template.spec.containers[0].env.push(...Object.entries({INVITATION_EMAIL_ENABLED:'true',INVITATION_EMAIL_PROVIDER:'resend',INVITATION_EMAIL_FROM:'noreply@thatcampus.com'}).map(([name,value])=>({name,value})),secret('RESEND_API_KEY','thatcampus-dt-resend-api-key'));return value;};
+  assert.doesNotThrow(()=>assertRuntime(configured(),binding));
+  for(const [name,value] of [['INVITATION_EMAIL_ENABLED','yes'],['INVITATION_EMAIL_PROVIDER','smtp'],['INVITATION_EMAIL_FROM','someone@another.example']]){const actual=configured();actual.spec.template.spec.containers[0].env.find(row=>row.name===name).value=value;assert.throws(()=>assertRuntime(actual,binding));}
+  for(const patch of [{name:'erp-resend-api-key',key:'1'},{name:'thatcampus-dt-resend-api-key',key:'latest'}]){const actual=configured();actual.spec.template.spec.containers[0].env.find(row=>row.name==='RESEND_API_KEY').valueFrom.secretKeyRef=patch;assert.throws(()=>assertRuntime(actual,binding));}
+  const plain=configured();plain.spec.template.spec.containers[0].env.find(row=>row.name==='RESEND_API_KEY').value='must-never-be-a-literal';assert.throws(()=>assertRuntime(plain,binding));
+  const absent=configured();absent.spec.template.spec.containers[0].env=absent.spec.template.spec.containers[0].env.filter(row=>row.name!=='RESEND_API_KEY');assert.throws(()=>assertRuntime(absent,binding));
+  const hidden=configured();hidden.spec.template.spec.containers[0].env=hidden.spec.template.spec.containers[0].env.map(row=>row.name==='INVITATION_EMAIL_ENABLED'?secret(row.name,'unreviewed-flag'):row);assert.throws(()=>assertRuntime(hidden,binding));
+});
+
 test('job Cloud SQL is required on the V1 ExecutionTemplate and cannot be replaced by a TaskTemplate annotation', () => {
   const job = runtime(true);
   assert.equal(job.spec.template.spec.template.metadata, undefined, 'the task fixture does not invent an inner Cloud SQL annotation');
@@ -232,31 +242,41 @@ test('one maintained workflow verifies only active applications, uses pinned OID
     for (const step of job.steps) { if (step.uses) assert.match(step.uses, /^[a-zA-Z0-9/_-]+@[a-f0-9]{40}$/u); assert.equal(step.with?.credentials_json, undefined); }
   }
   const source = workflow.jobs.verify.steps.filter(row => row.run).map(row => row.run).join('\n');
-  for (const expected of ['simulation:conformance', 'typecheck', 'test:fast', 'native-auth-session.integration.test.ts', 'web-assets.test.ts', 'simulation-conformance.test.ts', 'npm --prefix mobile test', 'export:web', 'deploy/dt/*.test.mjs deploy/dt/edge/*.test.mjs', '--prefix packages/contracts', 'verify-web-export.mjs']) assert.ok(source.includes(expected), expected);
+  for (const expected of ['simulation:conformance', 'typecheck', 'test:fast', 'web-assets.test.ts', 'simulation-conformance.test.ts', 'npm --prefix mobile test', 'export:web', 'deploy/dt/*.test.mjs deploy/dt/edge/*.test.mjs', '--prefix packages/contracts', 'verify-web-export.mjs']) assert.ok(source.includes(expected), expected);
+  const sourceAuth = workflow.jobs.verify.steps.find(row => row.name === 'Disposable database and relevant backend behavior').run;
+  const sourceAuthCommand = sourceAuth.split('\n').find(line => line.startsWith('node --import tsx node_modules/vitest/vitest.mjs run '));
+  assert.ok(sourceAuthCommand, 'The explicit source/auth command must remain inspectable');
+  assert.deepEqual(sourceAuthCommand.match(/test\/[a-z0-9.-]+\.test\.ts/gu), [
+    'test/native-auth.test.ts', 'test/web-assets.test.ts', 'test/simulation-conformance.test.ts', 'test/account-mail-smtp.test.ts',
+  ]);
+  assert.doesNotMatch(sourceAuth, /test\/native-auth-session\.integration\.test\.ts/u, 'DB session cases belong to the complete PostgreSQL matrix, not the source/auth count');
   assert.equal(source.includes('--prefix frontend'), false); assert.equal(source.includes('conformance:update'), false);
   const releaseStep = workflow.jobs.deploy.steps.find(row => row.run === 'node deploy/dt/release.mjs');
   assert.equal(releaseStep.env.CLOUDSDK_AUTH_ACCESS_TOKEN, '${{ steps.google-auth.outputs.access_token }}');
   await assert.rejects(access(new URL('../../.github/workflows/digital-twin.yml', import.meta.url)), /ENOENT/u);
 });
 
-test('the owned PostgreSQL gate retains all27 files, explicit temporary HTTP build and bounded existing database targets', async () => {
+test('the owned PostgreSQL gate retains all43 files, explicit temporary HTTP build and bounded existing database targets', async () => {
   const require = createRequire(new URL('../../mobile/package.json', import.meta.url)), yaml = require('js-yaml');
   const workflow = yaml.load(await readFile(new URL('../../.github/workflows/digital-twin-deploy.yml', import.meta.url), 'utf8'));
   const step = workflow.jobs.verify.steps.find(row => row.name === 'Native identity, role revocation and real isolated-world regressions');
   const declaration = step.run.match(/const files = (\[[\s\S]*?\])\.map\(name => `test\/\$\{name\}\.integration\.test\.ts`\);/u);
   assert.ok(declaration, 'Regression inventory must remain explicit');
   const names = Array.from(runInNewContext(declaration[1]));
-  assert.equal(names.length, 27); assert.equal(new Set(names).size, 27);
-  for (const name of ['academic-catalogue-recovery', 'academic-catalogue-recovery-http', 'learning-assignment-handover', 'learning-assignment-handover-worlds', 'domain-message-supersession', 'learning-assignments', 'learning-assignment-files-worlds', 'exam-schedule-amendments', 'exam-operations', 'simulation-branch-concurrency'])
+  assert.equal(names.length, 43); assert.equal(new Set(names).size, 43);
+  for (const name of ['native-auth-session', 'academic-catalogue-recovery', 'academic-catalogue-recovery-http', 'learning-assignment-handover', 'learning-assignment-handover-worlds', 'domain-message-supersession', 'learning-assignments', 'learning-assignment-files-worlds', 'exam-schedule-amendments', 'exam-operations', 'simulation-branch-concurrency', 'account-mail-delivery', 'account-mail-http', 'invitation-queue', 'native-google-locks', 'learning-elective-change', 'learning-elective-change-worlds', 'academic-offering-cycle', 'academic-offering-worlds', 'academic-offering-http', 'assessments', 'academic-reports', 'academic-history-integrity', 'grading-policy-worlds', 'assessment-evidence-integrity', 'assessment-result-worlds', 'assessment-correction-worlds'])
     assert.ok(names.includes(name), name);
   for (const name of names) await access(new URL(`../../backend/test/${name}.integration.test.ts`, import.meta.url));
-  for (const name of ['LEARNING_ASSIGNMENTS_SIMULATION_TEST_TARGET_URL', 'ASSESSMENTS_SIMULATION_TEST_TARGET_URL', 'ACADEMIC_CATALOGUE_SIMULATION_TEST_TARGET_URL'])
+  for (const name of ['LEARNING_ASSIGNMENTS_SIMULATION_TEST_TARGET_URL', 'ASSESSMENTS_SIMULATION_TEST_TARGET_URL', 'ACADEMIC_CATALOGUE_SIMULATION_TEST_TARGET_URL', 'ACADEMIC_OFFERING_SIMULATION_TEST_TARGET_URL', 'ACADEMIC_HISTORY_SIMULATION_TEST_TARGET_URL', 'GRADING_POLICY_SIMULATION_TEST_TARGET_URL', 'ASSESSMENT_EVIDENCE_SIMULATION_TEST_TARGET_URL', 'SIMULATION_MARKS_TEST_TARGET_URL', 'SIMULATION_CORRECTION_TEST_TARGET_URL'])
     assert.equal(step.env[name], step.env.CAMPUS_SIMULATION_DATABASE_URL, name);
   assert.equal(new URL(step.env.CAMPUS_SIMULATION_DATABASE_URL).pathname, '/thatcampus_dt_simulation_test');
   assert.equal(new URL(step.env.CAMPUS_SIMULATION_DATABASE_URL).hostname, '127.0.0.1');
   assert.equal(step.env.SIMULATION_COLD_COW_TEST_ISOLATED,'true');
   assert.equal(step.env.SIMULATION_COLD_COW_DATABASE_URL,workflow.jobs.verify.env.DATABASE_URL);
   assert.equal(step.env.SIMULATION_COLD_COW_EXPECT_DATABASE,'thatcampus_dt_test');
+  assert.equal(step.env.NATIVE_GOOGLE_LOCKS_TEST_ISOLATED,'true');
+  assert.equal(step.env.NATIVE_GOOGLE_LOCKS_EXPECT_DATABASE,'thatcampus_dt_test');
+  for (const name of ['ACADEMIC_CATALOGUE_HTTP_COMPILED_ROOT','ACCOUNT_MAIL_HTTP_COMPILED_ROOT','ACADEMIC_OFFERING_HTTP_COMPILED_ROOT']) assert.ok(step.run.includes(name+": join(directory, 'dist')"),name);
   assert.match(step.run, /VISIT_ONBOARDING_HTTP_COMPILED_ROOT: join\(directory, 'dist'\)/u);
   assert.match(step.run, /await cp\(resolve\('dist'\), join\(directory, 'dist'\), \{ recursive: true \}\)/u);
   assert.equal(workflow.jobs.verify['timeout-minutes'], 45); assert.equal(workflow.jobs.deploy['timeout-minutes'], 60);
@@ -264,16 +284,16 @@ test('the owned PostgreSQL gate retains all27 files, explicit temporary HTTP bui
   assert.doesNotMatch(step.run, /printenv|console\.log\(process\.env|JSON\.stringify\(process\.env|set -x/u);
 });
 
-test('the actual workflow summary gate rejects missing, skipped, todo, failed or fewer than159 PostgreSQL cases', async () => {
+test('the actual workflow summary gate rejects missing, skipped, todo, failed or fewer than217 PostgreSQL cases', async () => {
   const require = createRequire(new URL('../../mobile/package.json', import.meta.url)), yaml = require('js-yaml');
   const workflow = yaml.load(await readFile(new URL('../../.github/workflows/digital-twin-deploy.yml', import.meta.url), 'utf8'));
   const source = workflow.jobs.verify.steps.find(row => row.name === 'Native identity, role revocation and real isolated-world regressions').run;
   const guard = source.match(/if \(summary\.numTotalTests[\s\S]*?throw new Error\('[^']+'\);/u)?.[0];
-  assert.ok(guard); assert.match(guard, /summary\.numTotalTests < 159/u);
-  const accepted = { numTotalTests: 159, numPassedTests: 159, numPendingTests: 0, numTodoTests: 0 };
+  assert.ok(guard); assert.match(guard, /summary\.numTotalTests < 217/u);
+  const accepted = { numTotalTests: 217, numPassedTests: 217, numPendingTests: 0, numTodoTests: 0 };
   const check = summary => runInNewContext(guard, { summary });
   assert.doesNotThrow(() => check(accepted));
-  assert.doesNotThrow(() => check({ ...accepted, numTotalTests: 160, numPassedTests: 160 }));
-  for (const summary of [{}, { ...accepted, numTotalTests: 158, numPassedTests: 158 }, { ...accepted, numPassedTests: 158 },
-    { ...accepted, numPendingTests: 1 }, { ...accepted, numTodoTests: 1 }]) assert.throws(() => check(summary), /159/u);
+  assert.doesNotThrow(() => check({ ...accepted, numTotalTests: 218, numPassedTests: 218 }));
+  for (const summary of [{}, { ...accepted, numTotalTests: 216, numPassedTests: 216 }, { ...accepted, numPassedTests: 216 },
+    { ...accepted, numPendingTests: 1 }, { ...accepted, numTodoTests: 1 }]) assert.throws(() => check(summary), /217/u);
 });

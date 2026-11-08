@@ -98,6 +98,72 @@ contain IDs and neutral status, not private explanations, transaction references
 financial evidence. No default notifications, payer invitations, provider capture,
 reminders or late penalties are activated.
 
+## Course-change financial review
+
+A reviewed elective change is a bounded Finance impact classification, separate
+from an instalment agreement or a new fee engine. The academic coordinator reviews
+the person, source/destination course, future effective date, dated timetable impact
+and catch-up disposition. They explicitly select an eligible named Finance recorder
+and confirm delivery. A missing route remains visibly unassigned with a supported
+assignment action; it never receives a hidden seed reviewer or an inferred approval.
+
+Only the retained currently eligible recorder with current institution-scoped
+`fees.manage` access can open the private review and classify its exact invoice and
+ledger basis, with a reason. No linked legacy student/invoice is not evidence of no
+financial impact; a person UUID must never fill a missing legacy student key.
+`Requires financial review` records progress and keeps the handoff open. Only an
+explicit `No financial change` decision on the current basis can permit academic
+apply. Any needed charge, credit, refund, waiver or concession still belongs to its
+ordinary authorized Finance workflow; this classification neither performs it nor
+grants financial governance authority or a `fee_instalment_decision` mandate.
+
+The named recorder opens the existing Finance review from its exact Today or Work
+task. Link resolution reads only current source/delivery metadata in a batch,
+checks the current campus, recorder and message/source revision, and constructs the
+canonical Finance destination. It never follows an arbitrary message payload URL
+or loads private ledgers merely to compose Work. A source or responsibility that
+cannot be confirmed stays explicitly unavailable; opening and classifying still
+repeat the owning Finance authority, route and ledger checks.
+
+An accepted no-change classification closes its original Finance task through the
+owning protocol. After exact command confirmation and a matching fresh authorized
+detail read, refresh the current same-origin actor/campus/world's active Today,
+Work, badge and related course/Finance/schedule/calendar projections. Do not use an unknown outcome
+or a mismatched receipt as completion evidence. A failed refresh retains the accepted
+command for read-only recovery, without recording the financial decision again. The
+[scoped cache recovery](../../artifacts/core-completeness-2/parity/elective-cache-source.json)
+keeps the receipt and display refresh boundaries separate.
+
+From the current enrollment's Change elective action, the academic coordinator can
+continue one of its twenty most recent open reviews, showing its destination,
+effective date and neutral progress before creating another proposal. This is
+bounded discovery, not complete historical search or an automatic coordinator
+approval. Applied or withdrawn reviews leave that list; the immutable review and
+its current detail remain authoritative. After apply, show the recorded
+**No financial change** classification and its retained decision identity as history.
+Closing its task must
+not relabel that accepted decision as an unavailable route, reopen Finance work or
+claim that today's ledger/recorder is still the accepted basis. Terminal academic
+writer actions remain unavailable; the
+[terminal projection](../../artifacts/core-completeness-2/academic/elective-terminal-source.json)
+preserves that distinction.
+
+Apply rechecks the named recorder, current authority, exact immutable decision and
+person ledger/invoice commitment before Learning and Activity atomically accept the
+reviewed dated enrollments and future plan successors. A changed financial basis
+requires fresh Finance review; an absent link or stale no-change label cannot pass.
+Earlier money, attendance, submissions and issued results remain unchanged. Private
+ledger detail and decision reasons stay in Finance; academic detail and generic
+Work receive only purpose-scoped identity, references and neutral progress.
+
+The source-owned proposal, actions, Finance decisions and known refusal evidence
+retain exact command/revision/world scope. Accepted recovery confirms the retained
+receipt without resending. Only the owning typed terminal refusal or exact obsolete
+proof permits a new review; a generic conflict or unknown server result does not
+clear a pending action. A catch-up summary is a coordinator-reviewed plan, not proof
+that a teacher or learner accepted or completed remediation. Live and Simulation
+share these owners, with meaningful branch changes isolated from Live and siblings.
+
 ## Live and Simulation acceptance
 
 Use the same owning services and native tables with selected-world authority,

@@ -1,7 +1,7 @@
 import { createHash } from "node:crypto";
 import { fileURLToPath } from "node:url";
 import { dirname, join, relative, resolve } from "node:path";
-import { readdir, readFile, stat, writeFile } from "node:fs/promises";
+import { readdir, readFile, realpath, stat, writeFile } from "node:fs/promises";
 import ts from "typescript";
 import { EXECUTION_EFFECT_KINDS } from "../src/campus-model-core/execution-effects.contracts.js";
 import { SIMULATION_CONFORMANCE_BUILD } from "../src/simulation-conformance/simulation-conformance.generated.js";
@@ -92,19 +92,62 @@ function sourceFile(path: string, text: string): ts.SourceFile {
   return ts.createSourceFile(path, text, ts.ScriptTarget.Latest, true, kind);
 }
 
-function semanticTypeScript(path: string, text: string): string {
-  const parsed = sourceFile(path, text);
+function semanticTypeScript(parsed: ts.SourceFile): string {
   return ts.createPrinter({ removeComments: true, newLine: ts.NewLineKind.LineFeed })
     .printFile(parsed)
     .replaceAll("\r\n", "\n");
 }
 
-async function digestFiles(paths: readonly string[], typeScript = true): Promise<string> {
+/** One audit sees one read/parse per path. This cache never survives an audit or
+ * standalone digest call, so edits between verifications cannot reuse old facts.
+ * Visitors only read the parsed tree; the existing parser/printer options stay
+ * identical. Failed reads are not cached; ordinary ordered consumers retain
+ * their existing read failure handling. */
+class AuditInputs {
+  private readonly files = new Map<string, Promise<{ text: string; parsed?: ts.SourceFile; semantic?: string }>>();
+
+  private file(path: string) {
+    let value = this.files.get(path);
+    if (!value) {
+      value = readFile(path, "utf8").then(text => ({ text })).catch((cause: unknown) => { this.files.delete(path); throw cause; });
+      this.files.set(path, value);
+    }
+    return value;
+  }
+
+  async text(path: string): Promise<string> { return (await this.file(path)).text; }
+  async parsed(path: string): Promise<ts.SourceFile> {
+    const file = await this.file(path);
+    return file.parsed ??= sourceFile(path, file.text);
+  }
+  async semantic(path: string): Promise<string> {
+    const file = await this.file(path);
+    if (file.semantic === undefined) {
+      file.semantic = semanticTypeScript(await this.parsed(path));
+      // Every AST inspection precedes component hashing. Keep its canonical
+      // output, not thousands of frontend/test trees until the audit returns.
+      delete file.parsed;
+    }
+    return file.semantic;
+  }
+  async prefetch(paths: readonly string[]): Promise<void> {
+    const unique = [...new Set(paths)]; let next = 0;
+    await Promise.all(Array.from({ length: Math.min(8, unique.length) }, async () => {
+      while (next < unique.length) {
+        const path = unique[next++]!;
+        try { await this.file(path); } catch { /* Ordered validation/digest still throws or reports this exact failure. */ }
+      }
+    }));
+  }
+}
+
+async function digestFiles(paths: readonly string[], typeScript: boolean, inputs: AuditInputs): Promise<string> {
   const unique = [...new Set(paths)].sort();
+  await inputs.prefetch(unique);
   const values: string[] = [];
   for (const path of unique) {
-    const text = await readFile(path, "utf8");
-    values.push(`${repoPath(path)}\0${typeScript && /\.tsx?$/u.test(path) ? semanticTypeScript(path, text) : text.replaceAll("\r\n", "\n")}`);
+    const text = await inputs.text(path);
+    values.push(`${repoPath(path)}\0${typeScript && /\.tsx?$/u.test(path) ? await inputs.semantic(path) : text.replaceAll("\r\n", "\n")}`);
   }
   return sha(values.join("\0"));
 }
@@ -112,10 +155,14 @@ async function digestFiles(paths: readonly string[], typeScript = true): Promise
 /** Shared client owners now live outside frontend/src. Changes to their actual
  * implementations must invalidate the receipt just like their former sources. */
 export async function digestSharedClientContracts(directory = absolute("packages/contracts/src")): Promise<string> {
+  return digestClientContracts(directory, new AuditInputs());
+}
+
+async function digestClientContracts(directory: string, inputs: AuditInputs): Promise<string> {
   const files = (await filesBelow(directory))
     .filter((path) => /\.(?:ts|tsx)$/u.test(path))
     .filter((path) => !/(?:^|\/)(?:__tests__|test)(?:\/|$)|\.(?:test|spec)\.[^.]+$/u.test(posixPath(path)));
-  return digestFiles(files);
+  return digestFiles(files, true, inputs);
 }
 
 function decorators(node: ts.Node): readonly ts.Decorator[] {
@@ -149,9 +196,9 @@ function arrayProperty(metadata: ts.ObjectLiteralExpression, name: string): read
     : [];
 }
 
-async function appModuleImports(errors: string[]): Promise<string[]> {
+async function appModuleImports(errors: string[], inputs: AuditInputs): Promise<string[]> {
   const path = absolute("backend/src/app.module.ts");
-  const parsed = sourceFile(path, await readFile(path, "utf8"));
+  const parsed = await inputs.parsed(path);
   const app = parsed.statements.find((node): node is ts.ClassDeclaration => (
     ts.isClassDeclaration(node) && node.name?.text === "AppModule"
   ));
@@ -171,8 +218,8 @@ async function appModuleImports(errors: string[]): Promise<string[]> {
   return names;
 }
 
-async function validateModuleRegistry(errors: string[]): Promise<string[]> {
-  const appModules = await appModuleImports(errors);
+async function validateModuleRegistry(errors: string[], inputs: AuditInputs): Promise<string[]> {
+  const appModules = await appModuleImports(errors, inputs);
   const registered = SIMULATION_MODULE_REGISTRY.map((module) => module.module_class);
   const registeredSet = new Set<string>(registered);
   const duplicates = registered.filter((name, index) => registered.indexOf(name) !== index);
@@ -186,7 +233,7 @@ async function validateModuleRegistry(errors: string[]): Promise<string[]> {
     const path = absolute(registration.module_file);
     let parsed: ts.SourceFile;
     try {
-      parsed = sourceFile(path, await readFile(path, "utf8"));
+      parsed = await inputs.parsed(path);
     } catch {
       errors.push(`${registration.module_class} module file does not exist: ${registration.module_file}`);
       continue;
@@ -218,14 +265,15 @@ function containsTestCase(parsed: ts.SourceFile): boolean {
   return found;
 }
 
-async function validateEvidence(errors: string[]): Promise<void> {
+async function validateEvidence(errors: string[], inputs: AuditInputs): Promise<void> {
+  await inputs.prefetch([...SIMULATION_CONFORMANCE_EVIDENCE, ...SIMULATION_SAFETY_EVIDENCE].map(evidence => absolute(evidence.test_file)));
   const ids = SIMULATION_CONFORMANCE_EVIDENCE.map((item) => item.id);
   const duplicates = ids.filter((id, index) => ids.indexOf(id) !== index);
   if (duplicates.length) errors.push(`Duplicate Simulation evidence ids: ${[...new Set(duplicates)].join(", ")}`);
   for (const evidence of SIMULATION_CONFORMANCE_EVIDENCE) {
     const path = absolute(evidence.test_file);
     try {
-      const parsed = sourceFile(path, await readFile(path, "utf8"));
+      const parsed = await inputs.parsed(path);
       if (!containsTestCase(parsed)) errors.push(`${evidence.id} points to a file with no executable test case.`);
     } catch {
       errors.push(`${evidence.id} test file does not exist: ${evidence.test_file}`);
@@ -241,7 +289,7 @@ async function validateEvidence(errors: string[]): Promise<void> {
   for (const evidence of SIMULATION_SAFETY_EVIDENCE) {
     const path = absolute(evidence.test_file);
     try {
-      const parsed = sourceFile(path, await readFile(path, "utf8"));
+      const parsed = await inputs.parsed(path);
       if (!containsTestCase(parsed)) errors.push(`${evidence.id} points to a file with no executable test case.`);
     } catch {
       errors.push(`${evidence.id} test file does not exist: ${evidence.test_file}`);
@@ -282,10 +330,11 @@ function timerCounts(path: string, parsed: ts.SourceFile): TimerInventory | null
     : null;
 }
 
-async function timerInventory(allBackendFiles: readonly string[], errors: string[]): Promise<TimerInventory[]> {
+async function timerInventory(allBackendFiles: readonly string[], errors: string[], inputs: AuditInputs): Promise<TimerInventory[]> {
+  await inputs.prefetch(allBackendFiles);
   const actual: TimerInventory[] = [];
   for (const path of allBackendFiles) {
-    const item = timerCounts(path, sourceFile(path, await readFile(path, "utf8")));
+    const item = timerCounts(path, await inputs.parsed(path));
     if (item) actual.push(item);
   }
   const expected = SIMULATION_WORKER_REGISTRY.map(({ file, interval_calls, timeout_calls }) => ({
@@ -304,10 +353,11 @@ async function timerInventory(allBackendFiles: readonly string[], errors: string
 async function standaloneWorkerInventory(
   allBackendFiles: readonly string[],
   errors: string[],
+  inputs: AuditInputs,
 ): Promise<StandaloneWorkerInventory[]> {
   const actual: StandaloneWorkerInventory[] = [];
   for (const path of allBackendFiles) {
-    const parsed = sourceFile(path, await readFile(path, "utf8"));
+    const parsed = await inputs.parsed(path);
     const importsPromiseTimer = parsed.statements.some((node) => (
       ts.isImportDeclaration(node)
       && ts.isStringLiteral(node.moduleSpecifier)
@@ -349,14 +399,14 @@ function nodeLocation(parsed: ts.SourceFile, node: ts.Node): string {
   return `${repoPath(parsed.fileName)}:${point.line + 1}`;
 }
 
-async function scanOperationalBoundaries(operationalFiles: readonly string[]): Promise<{
+async function scanOperationalBoundaries(operationalFiles: readonly string[], inputs: AuditInputs): Promise<{
   wallClockCalls: string[];
   externalEffectCalls: string[];
 }> {
   const wallClockCalls: string[] = [];
   const externalEffectCalls: string[] = [];
   for (const path of operationalFiles) {
-    const parsed = sourceFile(path, await readFile(path, "utf8"));
+    const parsed = await inputs.parsed(path);
     const visit = (node: ts.Node): void => {
       if (ts.isCallExpression(node)) {
         if (ts.isPropertyAccessExpression(node.expression)
@@ -396,24 +446,25 @@ function generatedSource(audit: SimulationConformanceAudit): string {
 }
 
 export async function auditSimulationConformance(): Promise<SimulationConformanceAudit> {
+  const inputs = new AuditInputs();
   const errors: string[] = [];
-  const appModules = await validateModuleRegistry(errors);
-  await validateEvidence(errors);
+  const appModules = await validateModuleRegistry(errors, inputs);
+  await validateEvidence(errors, inputs);
   if (SIMULATION_EFFECT_FAMILY_REGISTRY.join("\0") !== EXECUTION_EFFECT_KINDS.join("\0")) {
     errors.push("Execution effect families differ from the reviewed Simulation sink registry.");
   }
 
   const allBackendFiles = await filesBelow(absolute("backend/src"), ".ts");
   const platformRuntimeFiles = allBackendFiles.filter((path) => path !== generatedPath);
-  const timers = await timerInventory(allBackendFiles, errors);
-  const standaloneWorkers = await standaloneWorkerInventory(allBackendFiles, errors);
+  const timers = await timerInventory(allBackendFiles, errors, inputs);
+  const standaloneWorkers = await standaloneWorkerInventory(allBackendFiles, errors, inputs);
   const operationalRoots = SIMULATION_MODULE_REGISTRY
     .filter((module) => module.disposition === "campus_operational")
     .flatMap((module) => module.source_roots.map(absolute));
   const operationalFiles = [...new Set((await Promise.all(operationalRoots.map((root) => filesBelow(root, ".ts")))).flat())].sort();
   const sharedMaterialFiles = SIMULATION_SHARED_MATERIAL_FILES.map(absolute);
   const boundaryScanFiles = [...operationalFiles, ...sharedMaterialFiles];
-  const boundaries = await scanOperationalBoundaries([...new Set(boundaryScanFiles)].sort());
+  const boundaries = await scanOperationalBoundaries([...new Set(boundaryScanFiles)].sort(), inputs);
   const actualBoundaries = new Map<string, number>();
   for (const item of boundaries.wallClockCalls) {
     const match = /^(.+\.tsx?):\d+:(.+)$/u.exec(item);
@@ -445,8 +496,23 @@ export async function auditSimulationConformance(): Promise<SimulationConformanc
   const frontendOperationalFiles = (await filesBelow(absolute("frontend/src")))
     .filter((path) => /\.(?:css|ts|tsx)$/u.test(path))
     .filter((path) => !/(?:^|\/)(?:__tests__|test)(?:\/|$)|\.(?:test|spec)\.[^.]+$/u.test(posixPath(path)));
-  for (const path of SIMULATION_FRONTEND_ENVIRONMENT_FILES.map(absolute)) {
-    if (!frontendOperationalFiles.includes(path)) errors.push(`Frontend execution-environment file is not operational source: ${repoPath(path)}`);
+  // The active universal app lives in mobile/. Admit only the explicitly
+  // reviewed runtime inputs, alongside the retained frontend source floor.
+  // A test, traversal, missing file or symlink cannot stand in for runtime code.
+  for (const input of SIMULATION_FRONTEND_ENVIRONMENT_FILES) {
+    const path = absolute(input);
+    if (/^mobile\/(?:app|src)\//u.test(input)) {
+      const normalized = repoPath(path), metadata = await stat(path).catch(() => null);
+      if (normalized !== input || !/\.tsx?$/u.test(input)
+        || /(?:^|\/)(?:__tests__|test)(?:\/|$)|\.(?:test|spec)\.[^.]+$/u.test(input)
+        || !metadata?.isFile() || await realpath(path) !== path) {
+        errors.push(`Frontend execution-environment file is not operational source: ${input}`);
+        continue;
+      }
+      if (!frontendOperationalFiles.includes(path)) frontendOperationalFiles.push(path);
+    } else if (!frontendOperationalFiles.includes(path)) {
+      errors.push(`Frontend execution-environment file is not operational source: ${repoPath(path)}`);
+    }
   }
   const workerFiles = [...timers, ...standaloneWorkers].map((item) => absolute(item.file));
   const effectFiles = [
@@ -461,18 +527,18 @@ export async function auditSimulationConformance(): Promise<SimulationConformanc
   ];
   const registryFile = absolute("backend/src/simulation-conformance/simulation-conformance.registry.ts");
   const components = Object.freeze({
-    conformance_verifier: await digestFiles([fileURLToPath(import.meta.url)]),
-    effects: await digestFiles([...new Set(effectFiles)]),
-    evidence_tests: await digestFiles(evidenceTestFiles),
-    frontend_environment: await digestFiles(frontendOperationalFiles),
-    shared_contracts: await digestSharedClientContracts(),
-    module_graph: await digestFiles([absolute("backend/src/app.module.ts"), registryFile, ...moduleFiles]),
-    operational_sources: await digestFiles(operationalFiles),
-    platform_runtime_sources: await digestFiles(platformRuntimeFiles),
-    shared_material: await digestFiles(sharedMaterialFiles),
-    schema: await digestFiles(schemaFiles, false),
-    time: await digestFiles([...new Set(timeFiles)]),
-    workers: sha(`${await digestFiles(workerFiles)}\0${JSON.stringify(SIMULATION_WORKER_REGISTRY)}\0${JSON.stringify(SIMULATION_STANDALONE_WORKER_REGISTRY)}`),
+    conformance_verifier: await digestFiles([fileURLToPath(import.meta.url)], true, inputs),
+    effects: await digestFiles([...new Set(effectFiles)], true, inputs),
+    evidence_tests: await digestFiles(evidenceTestFiles, true, inputs),
+    frontend_environment: await digestFiles(frontendOperationalFiles, true, inputs),
+    shared_contracts: await digestClientContracts(absolute("packages/contracts/src"), inputs),
+    module_graph: await digestFiles([absolute("backend/src/app.module.ts"), registryFile, ...moduleFiles], true, inputs),
+    operational_sources: await digestFiles(operationalFiles, true, inputs),
+    platform_runtime_sources: await digestFiles(platformRuntimeFiles, true, inputs),
+    shared_material: await digestFiles(sharedMaterialFiles, true, inputs),
+    schema: await digestFiles(schemaFiles, false, inputs),
+    time: await digestFiles([...new Set(timeFiles)], true, inputs),
+    workers: sha(`${await digestFiles(workerFiles, true, inputs)}\0${JSON.stringify(SIMULATION_WORKER_REGISTRY)}\0${JSON.stringify(SIMULATION_STANDALONE_WORKER_REGISTRY)}`),
   });
   const fingerprint = sha(JSON.stringify({ revision: SIMULATION_CONFORMANCE_REVISION, components }));
   return Object.freeze({

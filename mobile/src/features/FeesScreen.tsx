@@ -24,6 +24,7 @@ import { FeeOnlineCheckout } from './FeeOnlineCheckout';
 import { feeCheckoutEligible } from '../lib/fee-checkout-policy';
 import { FeesArrangements } from './FeesArrangements';
 import { feesDay } from './FeesCommandPolicy';
+import { FeesElectiveReview } from './FeesElectiveReview';
 import type { FeeBatchResult } from '../../../packages/contracts/src/wire/features/office/feeBatchApi';
 
 type Props = { href: string; onNavigate: (href: string) => void };
@@ -63,6 +64,11 @@ export function FeesScreen(props: Props) {
   const selectedKey = path.endsWith('/ledger') ? 'ledger' : scope === 'person' && personId ? `account:person:${personId}` : (scope === 'self' || scope === 'dependent') && studentId ? `account:${scope}:${studentId}` : null;
   if (!selectedKey && path === '/areas/fees') return <Page title="Fees & receipts" subtitle="Choose the account or responsibility"><Section title="Available to you">{surfaces.length ? surfaces.map(surface => <Row key={surface.key} title={surface.label} detail={surface.description} icon="fees" onPress={() => props.onNavigate(surface.href)} />) : <Empty title="No fee accounts are currently available" />}</Section></Page>;
   if (!selectedKey || !surfaces.some(surface => surface.key === selectedKey)) return <Page title="Fees & receipts"><Empty title="This fee account is unavailable" message="The exact selected account is no longer in your current campus access." /><ScreenBack title="Back to fees" fallbackHref={'/areas/fees'} /></Page>;
+  if (q.has('elective_review')) {
+    const id = q.get('elective_review');
+    if (selectedKey !== 'ledger' || q.getAll('elective_review').length !== 1 || !id || !/^[a-f0-9]{8}(?:-[a-f0-9]{4}){3}-[a-f0-9]{12}$/i.test(id)) return <Page title="Elective Finance review"><Empty title="Open one assigned Finance review" /><ScreenBack fallbackHref="/areas/fees/ledger" /></Page>;
+    return <FeesElectiveReview key={`${scopeKey}:elective:${id}`} {...props} schoolId={schoolId} id={id} />;
+  }
   return <FeeAccount key={`${scopeKey}:${selectedKey}`} {...props} schoolId={schoolId} personId={personId} studentId={studentId} manager={selectedKey === 'ledger'} />;
 }
 

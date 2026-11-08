@@ -12,6 +12,7 @@ import { getReactNavigationConfig } from 'expo-router/build/getReactNavigationCo
 import { getStateFromPath } from 'expo-router/build/fork/getStateFromPath';
 import type { RequireContext } from 'expo-router/build/types';
 import { accountSecurityEntryHref, confirmedPasswordReset, guardedAccountRecoveryApi, passwordResetInput, passwordResetRequestFeedback, verificationEmailFeedback, type AccountRecoveryOperation } from '../src/auth/account-recovery';
+import { accountMailLinks } from '../src/auth/account-mail-link';
 import { nativeAuthDestination } from '../src/auth/auth-entry';
 import { safeAccountReturnTarget } from '../src/auth/account-return';
 import { createPublicFormLease } from '../src/auth/public-form-operation';
@@ -65,7 +66,7 @@ test('manual reset validation preserves the exact password, trims only its proof
 
 test('the actual reset route always selects reset mode and never chooses among duplicate URL proofs', () => {
   let params: Record<string, unknown> = {};
-  const LoginScreen = Symbol('LoginScreen'), exports = load('app/reset-password.tsx', { 'react/jsx-runtime': require('react/jsx-runtime'), 'expo-router': { useLocalSearchParams: () => params }, '../src/auth/LoginScreen': { LoginScreen } });
+  const LoginScreen = Symbol('LoginScreen'), exports = load('app/reset-password.tsx', { 'react/jsx-runtime': require('react/jsx-runtime'), 'expo-router': { useLocalSearchParams: () => params, useRouter: () => ({ replace() {} }) }, '../src/auth/LoginScreen': { LoginScreen }, '../src/auth/use-account-mail-entry': { useAccountMailEntry: (_purpose: string, value: Record<string,unknown>) => ({ ready: true, token: typeof value.token === 'string' ? value.token : undefined }) }, '../src/ui/components': { Empty: Symbol('Empty'), Loading: Symbol('Loading'), Page: Symbol('Page') } });
   const route = exports.default as () => React.ReactElement<{ initialMode: string; resetToken?: string }>;
   assert.equal(route().props.initialMode, 'reset'); assert.equal(route().props.resetToken, undefined);
   params = { token: proof }; assert.equal(route().props.resetToken, proof);
@@ -169,9 +170,9 @@ test('mounted reset refuses a late success from a changed account and retains an
 test('actual verification adapter redirects anonymously through sign-in and directly to the same security owner after authentication', () => {
   let status = 'anonymous', params: Record<string, unknown> = { token: proof, from: '/onboarding/start' };
   const Redirect = Symbol('Redirect'), Empty = Symbol('Empty'), Page = Symbol('Page');
-  const exports = load('src/auth/AccountSecurityEntryScreen.tsx', { 'react/jsx-runtime': require('react/jsx-runtime'), 'expo-router': { Redirect, useLocalSearchParams: () => params }, './SessionProvider': { useSession: () => ({ status }) }, './account-recovery': { accountSecurityEntryHref }, '../ui/components': { Button: Symbol('Button'), Empty, Loading: Symbol('Loading'), Page } });
+  const exports = load('src/auth/AccountSecurityEntryScreen.tsx', { 'react/jsx-runtime': require('react/jsx-runtime'), 'expo-router': { Redirect, useLocalSearchParams: () => params }, './SessionProvider': { useSession: () => ({ status }) }, './account-recovery': { accountSecurityEntryHref }, './use-account-mail-entry': { useAccountMailEntry: (_purpose: string, value: Record<string,unknown>) => ({ ready: true, invalid: Array.isArray(value.token), continuation: typeof value.token === 'string' ? '00000000-0000-4000-8000-000000000001' : undefined }) }, '../ui/components': { Button: Symbol('Button'), Empty, Loading: Symbol('Loading'), Page } });
   const Screen = exports.AccountSecurityEntryScreen as () => React.ReactElement<{ href?: string }>;
-  const target = accountSecurityEntryHref(params)!; let node = Screen(); assert.equal(node.type, Redirect); assert.equal(node.props.href, `/login?next=${encodeURIComponent(target)}`);
+  const target = accountSecurityEntryHref({ ...params, token: undefined, continue: '00000000-0000-4000-8000-000000000001' })!; let node = Screen(); assert.equal(node.type, Redirect); assert.equal(node.props.href, `/login?next=${encodeURIComponent(target)}`);
   status = 'authenticated'; node = Screen(); assert.equal(node.type, Redirect); assert.equal(node.props.href, target);
   status = 'loading'; assert.equal(Screen().type, Page);
   params = { token: [proof, proof] }; assert.equal(Screen().type, Page);
@@ -214,12 +215,13 @@ test('mounted verification screen shows unavailable warning for a production res
     const dependencies = {
       react: React, 'react/jsx-runtime': require('react/jsx-runtime'), 'react-native': { Text: Box },
       'expo-router': { useRouter: () => ({ replace() {} }) }, './SessionProvider': { useSession: () => ({ ...session, refresh: async () => {} }) },
-      '../lib/api': { captureApiContext: () => ({ assertCurrent() {} }), apiFetch: async () => { sends++; return response; } }, '../lib/api-client': { ApiError },
+      '../lib/api': { getApiOrigin: () => 'https://app2.thatcampus.com', captureApiContext: () => ({ assertCurrent() {} }), apiFetch: async () => { sends++; return response; } }, '../lib/api-client': { ApiError },
       '../lib/query': { useApi: () => ({ data: null }) }, '../ui/Alert': { Alert: { alert() {} } },
       '../ui/BackNavigation': { ScreenBack: () => null, useScreenExitGuard() {}, useCampusNavigation: () => ({ onNavigate() {}, complete() {} }) },
       '../ui/components': { Page: Box, Section: Box, Row: Box, Empty: Box, Loading: Box, Field: (props: FieldProps) => { fields.set(props.label, props); return React.createElement('label', null, props.label); }, Button: (props: ButtonProps) => { buttons.set(props.title, props); return React.createElement('button', { disabled: props.disabled || props.busy, onClick: props.onPress }, props.title); }, Notice: ({ message, tone }: { message: string; tone: string }) => React.createElement('p', { 'data-tone': tone }, message) },
       '../ui/theme': { useTheme: () => ({ colors: {} }) }, './account-return': { accountReturnTitle: () => 'Back', safeAccountReturnTarget }, './auth-entry': { nativeAuthDestination },
-      './visit-join-policy': { visitJoinReturnTarget: () => null }, './AuthenticatorQr': { AuthenticatorQr: () => null }, './account-recovery': { verificationEmailFeedback },
+      './visit-join-policy': { visitJoinReturnTarget: () => null }, './AuthenticatorQr': { AuthenticatorQr: () => null }, './account-recovery': { accountSecurityEntryHref, verificationEmailFeedback }, './account-mail-link': { accountMailLinks },
+      './use-account-mail-entry': { useAccountMailEntry: () => ({ ready: true }) },
     };
     const Screen = load('src/auth/AccountSecurityScreen.tsx', dependencies).AccountSecurityScreen as React.ComponentType<{ href: string }>, root = createRoot(dom.window.document.getElementById('root'));
     try {

@@ -4,7 +4,7 @@ import { config } from '../config.js';
 import { invitationTemplate } from './invitation-template.js';
 
 const logger = new Logger('InvitationEmail');
-type Invitation = { email: string; token: string; expires_at: Date | string };
+type Invitation = { email: string; token: string; expires_at: Date | string; idempotency_key?: string };
 
 // Return only allowlisted categories. SMTP messages can contain credentials,
 // recipient addresses and message contents and must never reach logs or clients.
@@ -27,7 +27,7 @@ export async function deliverInvitation<T extends Invitation>(invitation: T) {
   }
   const message = invitationTemplate({...invitation, publicUrl: settings.PUBLIC_URL!});
   try {
-    await sendTransactionalEmail({to: invitation.email, ...message, senderName: 'ThatCampus · Pathyakram'});
+    await sendTransactionalEmail({to: invitation.email, ...message, senderName: 'ThatCampus', ...(invitation.idempotency_key ? {idempotencyKey: invitation.idempotency_key} : {})});
     return { ...invitation, delivery: 'email_accepted' as const };
   } catch (error) {
     const failure = invitationEmailFailure(error);

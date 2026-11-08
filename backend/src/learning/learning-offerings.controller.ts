@@ -10,6 +10,7 @@ export class LearningOfferingsController {
   @Get(":id/") detail(@Req() req: AuthenticatedRequest, @Param("id") id: string) { return this.offerings.detail(req.authUser, id); }
   @Get(":id/confirmation/") confirmation(@Req() req: AuthenticatedRequest, @Param("id") id: string, @Query("command_id") commandId: string, @Query("action") action: string) { return this.offerings.confirmation(req.authUser, id, commandId, action); }
   @Post(":id/enrollments/") @HttpCode(200) enroll(@Req() req: AuthenticatedRequest, @Param("id") id: string, @Body() body: unknown) { return this.offerings.enroll(req.authUser, id, body); }
+  @Post(":id/academic-context/") @HttpCode(200) academic(@Req() req: AuthenticatedRequest, @Param("id") id: string, @Body() body: unknown) { return this.offerings.configureAcademicContext(req.authUser, id, body); }
   @Post(":id/enrollments/:recordId/end/") @HttpCode(200) endEnrollment(@Req() req: AuthenticatedRequest, @Param("id") id: string, @Param("recordId") recordId: string, @Body() body: unknown) { return this.offerings.endEnrollment(req.authUser, id, recordId, body); }
   @Post(":id/instructors/") @HttpCode(200) appoint(@Req() req: AuthenticatedRequest, @Param("id") id: string, @Body() body: unknown) { return this.offerings.appointInstructor(req.authUser, id, body); }
   @Post(":id/instructors/:recordId/end/") @HttpCode(200) endInstructor(@Req() req: AuthenticatedRequest, @Param("id") id: string, @Param("recordId") recordId: string, @Body() body: unknown) { return this.offerings.endInstructor(req.authUser, id, recordId, body); }

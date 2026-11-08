@@ -25,7 +25,7 @@ type PhysicalKind = "exam" | "practical" | "viva";
 type AssessmentKind = PhysicalKind|"class_test"|"quiz"|"assignment"|"project"|"other";
 type AssessmentStatus = "draft"|"scheduled"|"marking"|"submitted"|"moderated"|"published"|"cancelled";
 type AssessmentRecord = {
-  id:string; school_id:string; cycle_id:string; class_section_id:string; subject_id:string;
+  id:string; school_id:string; cycle_id:string; class_section_id:string|null; subject_id:string;
   assessment_kind:AssessmentKind; scheduled_at:Date|string|null;
   duration_minutes:number|null; status:AssessmentStatus; revision:number;
 };
@@ -288,6 +288,7 @@ export class ExamOperationsService {
 
   async createForAssessment(db:Db,user:AuthUser,assessment:AssessmentRecord,input:{space_id:string;invigilator_user_ids:string[]}){
     if(!isPhysicalAssessment(assessment.assessment_kind)) throw new BadRequestException("A physical sitting is available only for an exam, practical or viva.");
+    if(!assessment.class_section_id) throw new BadRequestException("Physical course sittings require their offering candidate integration.");
     if(!assessment.scheduled_at||!assessment.duration_minutes) throw new BadRequestException("Choose the examination date, start time and duration before placing it in a campus space.");
     const invigilators=[...new Set(input.invigilator_user_ids)];
     if(!invigilators.length) throw new BadRequestException("Assign at least one invigilator.");
@@ -599,7 +600,7 @@ export class ExamOperationsService {
     `.execute(db)).rows[0];
     const candidateCount=current.status==='scheduled'&&sitting.roster_frozen_at
       ?Number((await db.selectFrom('assessment_sitting_candidates').select(({fn})=>fn.countAll<number>().as('count')).where('school_id','=',current.school_id).where('sitting_id','=',sitting.id).executeTakeFirstOrThrow()).count)
-      :context?(await datedAcademicRoster(db,current.school_id,current.class_section_id,context.term_id,context.exam_date)).length:0;
+      :context&&current.class_section_id?(await datedAcademicRoster(db,current.school_id,current.class_section_id,context.term_id,context.exam_date)).length:0;
     const space=await db.selectFrom("campus_spaces").select(["name","capacity","status","is_bookable"]).where("school_id","=",current.school_id).where("id","=",sitting.space_id).executeTakeFirst();
     const acceptedInvigilators=(await sql<{user_id:string;name:string;status:string}>`
       SELECT assignment.user_id,assignment.status,concat_ws(' ',account.first_name,account.last_name) AS name
@@ -820,6 +821,7 @@ export class ExamOperationsService {
         ? first!.message
         : `Resolve ${readiness.blockers.length} readiness issues before scheduling. ${first!.message}`);
     }
+    if (!current.class_section_id) throw new BadRequestException("Physical offering sittings require their reviewed candidate integration.");
     const roster=await datedAcademicRoster(db,current.school_id,current.class_section_id,context.term_id,context.exam_date);
     const frozenAt=executionNow();
     await db.insertInto("assessment_sitting_candidates").values(roster.map(row=>({school_id:current.school_id,sitting_id:sitting.id,assessment_id:current.id,student_id:row.student_id,enrollment_id:row.enrollment_id,roll_number_snapshot:row.roll_number,frozen_at:frozenAt}))).execute();

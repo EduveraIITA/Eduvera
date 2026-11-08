@@ -1,5 +1,6 @@
 import type { OfferingPerson } from '../../../packages/contracts/src/wire/features/learning/offeringApi';
 import type { NativePendingAction } from './native-pending-action';
+import { courseContextMatches } from './learning-academic-context';
 
 const uuid = (value: unknown): value is string => typeof value === 'string' && /^[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}$/i.test(value);
 const object = (value: unknown): Record<string, unknown> | null => value && typeof value === 'object' && !Array.isArray(value) ? value as Record<string, unknown> : null;
@@ -13,7 +14,10 @@ export function learningOfferingRefreshPath(value: unknown, action: NativePendin
     const selected = Array.isArray(body.participants) ? body.participants : [], enrollments = Array.isArray(receipt.enrollments) ? receipt.enrollments : [];
     if (!selected.length || selected.length !== enrollments.length || selected.some(selectedPerson => !enrollments.some(saved => { const person = object(selectedPerson), row = object(saved); return person && row && row.person_id === person.id && uuid(row.id) && Number.isSafeInteger(row.revision) && Number(row.revision) > 0; }))) throw new Error('The receipt did not confirm the exact reviewed learners.');
     if (action.endpoint === root && (!uuid(receipt.teaching_assignment_id) || Number(revision) !== 1 || body.offering_id !== source.sourceId || source.revision !== 0)) throw new Error('The new group receipt did not match its original creation.');
+    if (action.endpoint === root && body.academic_context && !courseContextMatches(receipt.academic_context, body.academic_context)) throw new Error('The receipt did not confirm the reviewed course details.');
     if (action.endpoint !== root && Number(revision) !== source.revision + 1) throw new Error('The saved group revision did not match this enrollment action.');
+  } else if (action.endpoint === groupPath + 'academic-context/') {
+    if (body.command_id !== action.clientId || body.expected_revision !== source.revision || Number(revision) !== source.revision + 1 || receipt.action !== 'academic.configure' || !courseContextMatches(receipt.academic_context, body.academic_context)) throw new Error('The course configuration receipt did not match the retained review.');
   } else if (action.endpoint === groupPath + 'instructors/') {
     if (!uuid(receipt.teaching_assignment_id) || Number(revision) !== source.revision + 1) throw new Error('The instructor appointment receipt did not match this action.');
   } else {

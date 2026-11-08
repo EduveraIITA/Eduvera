@@ -7,6 +7,7 @@ import { liveSessionExecutionEnvironment, unavailableSimulationSessionExecutionE
 import { LIVE_ACCOUNT_CONTROL, LiveAccountControl, Public } from "../src/common/decorators.js";
 import type { RequestWithContext } from "../src/common/request.js";
 import { OperationsController } from "../src/operations/operations.controller.js";
+import { AuthController } from '../src/auth/auth.controller.js';
 
 vi.mock("../src/config.js", () => ({ config: () => ({ SESSION_COOKIE_NAME: "test_session" }) }));
 
@@ -53,6 +54,8 @@ describe("public Live account-control session boundary", () => {
     expect(metadata("nativeAccept")).toBe(true);
     expect(metadata("nativeRecipientProof")).toBe(true);
     expect(metadata("overview")).toBeUndefined();
+    for (const name of ['register','passwordResetRequest','passwordResetConfirm'])
+      expect(reflector.get(LIVE_ACCOUNT_CONTROL, Reflect.get(AuthController.prototype, name) as () => unknown)).toBe(true);
   });
 
   it("leaves unmarked public endpoints unchanged without reading a session", async () => {

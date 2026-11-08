@@ -13,6 +13,7 @@ export interface TeachingSource {
   id: string; school_id: string; logical_key: string; source_kind: "academic" | "activity"; date: string; title: string;
   group_label: string; starts_at: string; ends_at: string; timezone: string; place_label: string;
   class_section_id: string | null; term_id: string | null; subject_id: string | null; period_number: number | null;
+  offering_id?: string | null;
   occurrence_id: string | null; scheduled_teacher_id: string | null; original_teacher_id: string | null;
   teacher_name: string | null; original_teacher_name: string | null; lead_person_id: string | null;
   is_cover: boolean; state: "expected" | "cancelled"; source_evidence: Record<string, unknown>; source_fingerprint: string;
@@ -91,12 +92,14 @@ export class TeachingSessionContextService {
     for (const occurrence of native.filter(item => item.source === "activity" && item.purpose === "teaching" && item.local_date === date)) {
       const lead = occurrence.participants.find(item => item.participation_role === "lead");
       const evidence = { occurrence_id: occurrence.id, plan_version_id: occurrence.plan_version_id, source_ref: occurrence.source_ref,
+        ...(occurrence.offering_id ? { offering_id: occurrence.offering_id } : {}),
         class_section_id: occurrence.context_ref,term_id:occurrence.term_id,subject_id:occurrence.subject_id,
         source_revision: occurrence.source_revision, revision: occurrence.revision, starts_at: occurrence.starts_at, ends_at: occurrence.ends_at,
         state: occurrence.state, space_id: occurrence.space_id, lead_person_id: lead?.person_id ?? null,
         roster: occurrence.participants.map(person => ({ person_id: person.person_id, source_ref: person.source_ref, source_revision: person.source_revision })) };
+      const offering = occurrence.offering_id ? await db.selectFrom("learning_offerings").select("name").where("school_id", "=", school.id).where("id", "=", occurrence.offering_id).executeTakeFirst() : null;
       sources.push({ id: teachingSessionId(school.id,"activity",occurrence.id,date), school_id: school.id, logical_key: occurrence.id,
-        source_kind: "activity", date, title: occurrence.title, group_label: "Teaching activity", starts_at: occurrence.starts_at, ends_at: occurrence.ends_at,
+        offering_id: occurrence.offering_id ?? null, source_kind: "activity", date, title: occurrence.title, group_label: offering?.name ?? "Teaching activity", starts_at: occurrence.starts_at, ends_at: occurrence.ends_at,
         timezone: occurrence.timezone, place_label: occurrence.space_label || occurrence.location_label || "", class_section_id: occurrence.context_ref,
         term_id: occurrence.term_id, subject_id: occurrence.subject_id, period_number: occurrence.period_number, occurrence_id: occurrence.id,
         scheduled_teacher_id: occurrence.scheduled_teacher_id, original_teacher_id: occurrence.scheduled_teacher_id,
@@ -119,6 +122,23 @@ export class TeachingSessionContextService {
           OR (binding.context_kind='class' AND binding.scope_id=${source.class_section_id}::uuid
             AND(binding.subject_id IS NULL OR binding.subject_id=${source.subject_id}::uuid)))
       ORDER BY binding.source_id`.execute(db)).rows;
+    if(source.source_kind==="activity"&&source.offering_id&&source.occurrence_id){
+      // The offering's dated teaching appointment is the native authority source.
+      // It is limited to this exact scheduled lead and retained occurrence; no
+      // employment profile or institution-wide lesson permission is invented.
+      const courseGrants=(await sql<{source_id:string;revision:number;context_kind:string;subject_id:string|null}>`SELECT appointment.id AS source_id,appointment.revision,'learning_offering'::text AS context_kind,binding.subject_id
+        FROM learning_offering_teaching_assignments appointment
+        JOIN schedule_activity_occurrences occurrence ON occurrence.school_id=appointment.school_id AND occurrence.offering_id=appointment.offering_id AND occurrence.source='activity'
+        JOIN schedule_versions version ON version.school_id=occurrence.school_id AND version.id=occurrence.plan_version_id AND version.offering_id=appointment.offering_id AND version.lead_person_id=appointment.person_id
+        JOIN schedule_activity_occurrence_people lead ON lead.school_id=occurrence.school_id AND lead.occurrence_id=occurrence.id AND lead.person_id=appointment.person_id AND lead.participation_role='lead'
+        LEFT JOIN learning_offering_academic_contexts binding ON binding.school_id=appointment.school_id AND binding.offering_id=appointment.offering_id
+        WHERE appointment.school_id=${school.id}::uuid AND appointment.offering_id=${source.offering_id}::uuid AND occurrence.id=${source.occurrence_id}::uuid
+          AND appointment.person_id=${school.actor.person_id}::uuid AND appointment.can_publish
+          AND appointment.starts_on<=${school.today}::date AND(appointment.ends_on IS NULL OR appointment.ends_on>${school.today}::date)
+          AND appointment.starts_on<=${source.date}::date AND(appointment.ends_on IS NULL OR appointment.ends_on>${source.date}::date)
+        ORDER BY appointment.id`.execute(db)).rows;
+      grants.push(...courseGrants);
+    }
     const scheduled = source.source_kind === "activity" ? source.lead_person_id === school.actor.person_id
       : source.scheduled_teacher_id === user.id && ["accepted","not_required"].includes(String(source.source_evidence.coverage_status));
     const original = source.source_kind === "academic" && source.original_teacher_id === user.id

@@ -5,6 +5,7 @@ import { AcademicReportJournal, reportCommandKind, reportCommandScopeKey, type R
 import { createChunkedNativePendingStorage } from '../../lib/native-pending-action';
 import { useOperationContext } from '../../lib/use-operation-context';
 import { reportBatchMatches, reportSchemeMatches, reportWorkspaceMatches } from '../../lib/academic-report-policy';
+import { academicReportWorkspacePath } from '../../lib/academic-report-context';
 import type { AcademicReportWorkspace, GradingSchemeDetail, ReportBatchDetail } from '../../../../packages/contracts/src/academic-reports';
 
 type Record = { journal: AcademicReportJournal };
@@ -31,7 +32,7 @@ export function useAcademicReportCommand(href: string, onAccepted: (command: Rep
       send: command => apiFetch(command.endpoint, { method: command.method, body: command.body }),
       refresh: async (command, assertCurrent) => {
         assertCurrent();
-        const workspace = await apiFetch<AcademicReportWorkspace>(`${root}/workspace/`); assertCurrent();
+        const workspace = await apiFetch<AcademicReportWorkspace>(academicReportWorkspacePath(root)); assertCurrent();
         if (!reportWorkspaceMatches(workspace, scope.schoolId)) throw new Error('The saved report workspace could not be verified.');
         const kind = reportCommandKind(command)!; const result = command.result as { id: string };
         if (kind.kind === 'batch' || kind.kind === 'comments') { const id = kind.kind === 'comments' ? kind.target! : result.id; assertCurrent(); const detail = await apiFetch<ReportBatchDetail>(`${root}/batches/${encodeURIComponent(id)}/`); assertCurrent(); if (!reportBatchMatches(detail, id, workspace, scope.schoolId)) throw new Error('The accepted release does not match the current workspace.'); }

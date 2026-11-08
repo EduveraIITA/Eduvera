@@ -105,13 +105,13 @@ export class AuthController {
   @Post("mfa/login/")
   @HttpCode(200)
   async mfaLogin(@Req() request: FastifyRequest, @Res({ passthrough: true }) reply: FastifyReply) {
-    const user = await this.auth.completeMfaLogin(request.body, request);
-    const session = await this.auth.createSession(user, request);
+    const { user, session } = await this.auth.completeMfaLogin(request.body, request);
     this.setSession(reply, session.rawToken, session.csrfToken);
     return this.auth.response(user, session.csrfToken);
   }
 
   @Public()
+  @LiveAccountControl()
   @Post("register/")
   async register(@Req() request: FastifyRequest, @Res({ passthrough: true }) reply: FastifyReply) {
     const result = await this.auth.register(request.body, request);
@@ -141,6 +141,7 @@ export class AuthController {
   }
 
   @Public()
+  @LiveAccountControl()
   @Post("password-reset/request/")
   @HttpCode(202)
   passwordResetRequest(@Req() request: FastifyRequest) {
@@ -148,6 +149,7 @@ export class AuthController {
   }
 
   @Public()
+  @LiveAccountControl()
   @Post("password-reset/confirm/")
   @HttpCode(200)
   passwordResetConfirm(@Req() request: FastifyRequest) {

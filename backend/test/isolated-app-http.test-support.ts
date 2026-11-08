@@ -60,7 +60,7 @@ export class IsolatedAppHttp {
     if (options.compiledRoot) {
       const compiled = await realpath(options.compiledRoot), temporaryRoot = await realpath(tmpdir());
       if (!compiled.startsWith(temporaryRoot + '/') || basename(compiled) !== 'dist'
-        || !/^thatcampus-visit-onboarding-build-[A-Za-z0-9]+$/.test(basename(dirname(compiled))))
+        || !/^thatcampus-(?:visit-onboarding-build|core-closure2-http)-[A-Za-z0-9]+$/.test(basename(dirname(compiled))))
         throw new Error('Only the explicitly owned temporary visitor HTTP build may replace the default test build.');
       selectedBootstrap = bootstrap.replace('"./dist/app.module.js"', JSON.stringify(pathToFileURL(join(compiled, 'app.module.js')).href))
         .replace('"./dist/common/errors.js"', JSON.stringify(pathToFileURL(join(compiled, 'common/errors.js')).href));

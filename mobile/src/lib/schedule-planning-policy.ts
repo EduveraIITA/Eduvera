@@ -6,8 +6,13 @@ import { academicCoverageActionAllowed } from './academic-schedule-policy';
 const uuid = (value: unknown): value is string => typeof value === 'string' && /^[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}$/i.test(value);
 const object = (value: unknown): Record<string, unknown> | null => value && typeof value === 'object' && !Array.isArray(value) ? value as Record<string, unknown> : null;
 export const scheduleActivityRoot = (school: string) => `/api/v1/schools/${encodeURIComponent(school)}/activities`;
-const fields = ['title', 'purpose', 'description', 'timezone', 'starts_on', 'ends_on', 'recurrence', 'weekdays', 'starts_at', 'ends_at', 'end_day_offset', 'space_id', 'person_ids', 'group_ids', 'lead_person_id', 'recorder_person_id', 'reviewer_person_id', 'attendance_mode', 'class_section_id', 'term_id', 'subject_id', 'location_kind', 'location_label', 'location_url'] as const;
+const fields = ['title', 'purpose', 'description', 'timezone', 'starts_on', 'ends_on', 'recurrence', 'weekdays', 'starts_at', 'ends_at', 'end_day_offset', 'space_id', 'person_ids', 'group_ids', 'lead_person_id', 'recorder_person_id', 'reviewer_person_id', 'attendance_mode', 'class_section_id', 'term_id', 'subject_id', 'offering_id', 'location_kind', 'location_label', 'location_url'] as const;
 export function scheduleActivityFields(plan: ActivityPlanInput): ActivityPlanInput { return Object.fromEntries(fields.map(key => [key, plan[key]])) as unknown as ActivityPlanInput; }
+/** A scoped course instructor stays selectable even beyond the bounded People catalogue. */
+export function scheduleActivityLeadChoices(catalogue: ActivityCatalogue, offeringId?: string | null) {
+  const instructor = catalogue.offerings?.find(item => item.id === offeringId)?.current_instructor;
+  return [...new Map([...catalogue.people.map(person => ({id:person.id,label:person.label})), ...(instructor ? [{id:instructor.person_id,label:instructor.name}] : [])].map(person => [person.id,person])).values()];
+}
 export function scheduleActivityInput(plan: ActivityPlanInput, catalogue: ActivityCatalogue): ActivityPlanInput {
   if (!catalogue.can_manage || !plan.title.trim() || plan.title.trim().length > 160 || plan.description.length > 1000 || !catalogue.purposes.includes(plan.purpose)) throw new Error('Choose a supported purpose and a title from 1 to 160 characters.');
   try { new Intl.DateTimeFormat('en', { timeZone: plan.timezone }); } catch { throw new Error('Choose a valid IANA time zone.'); }
@@ -16,8 +21,16 @@ export function scheduleActivityInput(plan: ActivityPlanInput, catalogue: Activi
   if (!['once', 'weekly'].includes(plan.recurrence) || plan.recurrence === 'weekly' && !plan.weekdays.length || plan.weekdays.some(day => !Number.isSafeInteger(day) || day < 1 || day > 7) || new Set(plan.weekdays).size !== plan.weekdays.length) throw new Error('Choose the repeating weekdays.');
   if (plan.recurrence === 'once' && plan.ends_on && plan.ends_on !== plan.starts_on) throw new Error('One-time activity uses one starting date; overnight timing is separate.');
   if (plan.person_ids.length > 500 || plan.group_ids.length > 50 || new Set(plan.person_ids).size !== plan.person_ids.length || new Set(plan.group_ids).size !== plan.group_ids.length || plan.person_ids.some(id => !catalogue.people.some(person => person.id === id)) || plan.group_ids.some(id => !catalogue.groups.some(group => group.id === id))) throw new Error('Review the current participant and group choices.');
-  if (!plan.person_ids.length && !plan.group_ids.length && !plan.class_section_id && !(plan.attendance_mode === 'none' && plan.space_id)) throw new Error('Choose people, a group or a place reservation without attendance.');
-  for (const [id, choices] of [[plan.space_id, catalogue.spaces], [plan.lead_person_id, catalogue.people], [plan.recorder_person_id, catalogue.recorders], [plan.reviewer_person_id, catalogue.reviewers], [plan.class_section_id, catalogue.classes], [plan.term_id, catalogue.terms], [plan.subject_id, catalogue.subjects]] as const) if (id && !choices.some(choice => choice.id === id)) throw new Error('A selected person, place or academic context is no longer available.');
+  if (plan.offering_id) {
+    const offering = catalogue.offerings?.find(item => item.id === plan.offering_id);
+    if (!offering || plan.purpose !== 'teaching' || plan.class_section_id || plan.term_id || plan.subject_id || plan.person_ids.length || plan.group_ids.length) throw new Error('Choose one current learning group or course for teaching. Its dated enrollment supplies the roster; additional people, groups or class context cannot be mixed in.');
+    if (offering.academic_context) {
+      if (plan.timezone !== catalogue.timezone) throw new Error('Academic course sessions use the campus time zone.');
+      if (plan.starts_on < offering.academic_context.starts_on || !plan.ends_on || plan.ends_on > offering.academic_context.ends_on) throw new Error('Keep course sessions inside the course term and choose the last date.');
+    }
+  }
+  if (!plan.person_ids.length && !plan.group_ids.length && !plan.class_section_id && !plan.offering_id && !(plan.attendance_mode === 'none' && plan.space_id)) throw new Error('Choose a course, people, a group or a place reservation without attendance.');
+  for (const [id, choices] of [[plan.space_id, catalogue.spaces], [plan.lead_person_id, scheduleActivityLeadChoices(catalogue,plan.offering_id)], [plan.recorder_person_id, catalogue.recorders], [plan.reviewer_person_id, catalogue.reviewers], [plan.class_section_id, catalogue.classes], [plan.term_id, catalogue.terms], [plan.subject_id, catalogue.subjects]] as const) if (id && !choices.some(choice => choice.id === id)) throw new Error('A selected person, place or academic context is no longer available.');
   if (Boolean(plan.class_section_id) !== Boolean(plan.term_id) || plan.subject_id && !plan.class_section_id || plan.class_section_id && plan.purpose !== 'teaching') throw new Error('Academic teaching needs the exact class and term. Other purposes may select a class as a participant group.');
   if (!['none', 'roll_call'].includes(plan.attendance_mode) || plan.attendance_mode === 'roll_call' && (!plan.recorder_person_id || !plan.reviewer_person_id)) throw new Error('Choose the authorized attendance recorder and reviewer.');
   if (plan.location_kind === 'on_campus' && !plan.space_id || plan.location_kind === 'off_site' && !plan.location_label?.trim() || plan.location_kind === 'online' && !plan.location_label?.trim() && !plan.location_url?.trim()) throw new Error('Choose a place or describe the online or off-site location.');

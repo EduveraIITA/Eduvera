@@ -13,6 +13,7 @@ import { assessmentOperationsActionAllowed } from './assessment-operations';
 import { assessmentAuthoringActionAllowed } from './assessment-authoring';
 import { attendanceReconciliationActionAllowed } from './attendance-continuity';
 import { attendancePhotoActionAllowed } from './attendance-photo';
+import { nativeLearningElectiveAllowed } from './learning-elective-policy';
 
 const uuid = (value: unknown): value is string => typeof value === 'string' && /^[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}$/i.test(value);
 const fingerprint = (value: unknown) => typeof value === 'string' && /^[a-f0-9]{64}$/.test(value);
@@ -97,6 +98,7 @@ function events(record: NativePendingAction, scope: NativePendingScope) {
 
 /** Extra path/source checks for native authoring and protected evidence journals. */
 export function nativeAuthoringActionAllowed(record: NativePendingAction, scope: NativePendingScope) {
+  if (record.domain === 'learning' && (record.source?.kind === 'elective_change' || record.endpoint.startsWith('/api/v1/learning/elective-changes') || record.endpoint.includes('/fees/elective-reviews/'))) return nativeLearningElectiveAllowed(record, scope);
   if(record.domain==='people' && record.source?.kind==='campus_membership') return campusMembershipActionAllowed(record,scope);
   if(record.domain==='people' && ['campus_invitation_creation','campus_invitation'].includes(record.source?.kind??'')) return campusInvitationActionAllowed(record,scope);
   if (record.domain === 'campus') return campusSceneActionAllowed(record, scope);

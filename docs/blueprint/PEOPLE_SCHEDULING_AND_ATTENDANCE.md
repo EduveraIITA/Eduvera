@@ -162,6 +162,46 @@ An existing event, assessment or journey remains edited through its authoritativ
 domain action. Timetable shows its scheduling footprint and opens that action; it
 does not create a second event, exam or transport editor.
 
+### Course rosters and reviewed elective changes
+
+A teaching activity can select one existing learning offering as its roster source.
+The planner reviews its dated eligible people and current teaching lead through the
+same Activity owner. Configured course plans use the campus timezone and stay within
+their term; basic learning groups retain their supported open recurring plans.
+Publication captures exact enrollment references; the teaching
+session and attendance register reuse that occurrence and person identity. Neither
+a later group edit nor opening a register silently changes a published audience.
+Recording expected teaching, participation and actual learning work remains distinct.
+
+For an operating academic offering, Change elective reviews the exact source and
+destination, their current revisions and a future effective date. Review identifies
+affected published plans and preserves past expectations, actuals, submissions and
+results. The coordinator explicitly records either no catch-up needed with a reason
+or a concrete plan summary; scheduled earlier sessions are not evidence of missed
+teaching, learner absence or completed remedial work.
+
+The reviewed impact uses the accepted plan and dated enrollment sources, not how
+far a read projection has already expanded them. Count earlier destination sessions
+from the same Schedule occurrence source with the reviewed date bounds and current
+cancellation/supersession rules; retaining another expected date must not change that
+count or imply teaching took place. Likewise, preparing an untouched revision-zero
+attendance register is not participation evidence. Accepted marks that advance it
+beyond zero within the reviewed source/date bounds enter the prior-evidence count
+and require fresh review when that reviewed basis changes. Preserve actual marks
+and correction history; do not erase evidence or weaken the preview fingerprint
+to suppress a real change. The
+[source/evidence review](../../artifacts/core-completeness-2/review/elective-empty-register-independent.json)
+records this distinction and the bounded count-based evidence selector.
+
+After a current named Finance recorder explicitly records no financial change,
+apply rechecks that decision and its current ledger basis. Learning changes the dated
+enrollments and Activity publishes the reviewed future successor versions in one
+transaction through their existing typed owners. A conflict rolls both back. This
+does not erase old snapshots, auto-charge a learner or imply that a successor has
+personally accepted work. Already-overlapping future plan amendments require their
+existing Activity resolution; an empty roll-call source requires an explicit plan
+correction or cancellation rather than an invented teaching session.
+
 ### Attendance: open the activity and record its participants
 
 One dated queue shows only registers available through the user's current

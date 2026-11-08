@@ -11,6 +11,7 @@ import { attendanceReconciliationActionAllowed } from './attendance-continuity';
 import { campusMembershipActionAllowed } from './people-access';
 import { campusSceneActionAllowed, definitiveCampusImportFailure } from './campus-scene-policy';
 import { attendancePhotoActionAllowed } from './attendance-photo';
+import { learningElectiveObsolete } from './learning-elective-policy';
 
 export type NativePendingDomain = 'campus' | 'gate' | 'departure' | 'events' | 'learning' | 'assessments' | 'people' | 'messages' | 'simulation' | 'resources' | 'facilities' | 'calendar' | 'schedule' | 'attendance';
 export interface NativePendingScope { actorId: string; schoolId: string; mode: 'live' | 'simulation'; namespaceId: string | null; origin: string }
@@ -65,6 +66,7 @@ export function nativePendingScopeKey(scope: NativePendingScope) {
 }
 function domainEndpoint(domain: NativePendingDomain, path: string) {
   if (!isInternalHref(path) || path.includes('#')) return false;
+  if (domain === 'learning' && (/^\/api\/v1\/learning\/elective-changes(?:\/|\?|$)/.test(path) || /^\/api\/v1\/schools\/[^/]+\/fees\/elective-reviews\/[0-9a-f-]{36}(?:\/(?:decision|confirmation))?(?:\?|$)/i.test(path))) return true;
   if (domain === 'campus') return /^\/api\/v1\/schools\/[^/]+\/campus-scenes\//.test(path);
   if (domain === 'gate') return /^\/api\/v1\/gate\/schools\/[^/]+\/(?:visitors|workspace)\//.test(path) || /^\/api\/v1\/gate\/schools\/[^/]+\/visit-arrangements\/[0-9a-f-]{36}\/onboarding-link\/$/i.test(path);
   if (domain === 'calendar') return /^\/api\/v1\/schools\/[^/]+\/campus-dates(?:\/|\?|$)/.test(path);
@@ -127,7 +129,7 @@ function nativePendingObsoleteProof(error: unknown, action: NativePendingAction)
   try {
     if (action.domain === 'people') return academicCatalogueCommandObsolete(error, action);
     if (action.domain === 'assessments') return definitiveExamScheduleRefusal(error, action);
-    if (action.domain === 'learning') return assignmentHandoverObsolete(error, action);
+    if (action.domain === 'learning') return learningElectiveObsolete(error, action) || assignmentHandoverObsolete(error, action);
     return false;
   } catch { return false; }
 }

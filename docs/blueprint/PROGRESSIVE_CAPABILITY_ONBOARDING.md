@@ -48,6 +48,21 @@ Capability activation is additive and reversible. Selecting several outcomes pro
 route: for example, Attendance and Entry & exit collect people once, then reuse those identities
 in both operations.
 
+Discoverability must reflect the current owning service's authority. The shared
+workspace exposes active institution administrators' existing Assessment coordination
+and Reports & remarks actions without requiring a fabricated class or learner record.
+An authorized course instructor can originate the first course assessment before
+there is an assessment assignment: the assigned-assessment entry requires actual
+assessment-recording permission, a current canonical person and an effective-dated
+`can_publish` teaching appointment on an active academically configured offering.
+A staff title, course appointment alone or saved link grants none of these rights.
+Detail and action requests still recheck current identity, campus, world and owning
+permissions. This metadata contribution does not alter the retained class-based
+client response contract or expose private marks through navigation; the existing
+course readers use their explicit supported course context. The
+[discovery boundary](../../artifacts/core-completeness-2/review/workspace-discovery-source.json)
+records the current owner, assignment, revocation and selected-world checks.
+
 ## 3. The first question
 
 Use domain outcomes, not internal modules or organisation categories.
@@ -400,8 +415,9 @@ college does not implement course/credit administration beyond existing owners.
 Company first/replacement-admin and supported campus invitations enqueue mail in
 the invitation transaction; the configured server worker sends after commit.
 Trusted canonical HTTPS `PUBLIC_URL` builds
-the join link; no private code is placed in that URL. Branded HTML and plain text
-include recipient, code and expiry. The join button neither redeems a code nor
+the join link; code prefill uses its fragment, never a query string. Branded HTML
+and plain text include recipient, code and expiry. The join button neither redeems
+a code nor
 proves acceptance. Provider acceptance, unconfirmed send and recipient joining are
 separate states; manual sharing is only the explicitly permitted original invite,
 never the independent mailbox-proof code.
@@ -433,3 +449,43 @@ replacement/revocation, current-inviter authority and recipient acceptance requi
 separate evidence from a passing provider-fake test. Simulation records its
 isolated provider-effect receipt without deliverable codes, encrypted external
 jobs or Live mail; it cannot borrow the real account-control flow.
+
+### Account verification and recovery mail
+
+Registration and later account-security requests use the same managed provider
+boundary. A Live account transaction commits an expiring, single-use,
+purpose-specific hashed token bound to the issuing mailbox and its encrypted typed
+delivery job together. Verification additionally requires the matching signed-in
+account; reset requires the current active account and unchanged issuing mailbox.
+Recent repeated requests reuse the retained proof rather than invalidating its
+link. An unavailable deployment does not create an inaccessible token or claim that
+email was sent. Production reset-request responses are the same for known, unknown
+and inactive addresses; development manual tokens are never a production fallback.
+
+The existing bounded worker claims a queued job before provider work. Provider
+acceptance is distinct from inbox delivery. Interrupted or ambiguous sends remain
+durably unknown without automatic resend, even after the provider's idempotency
+window expires. Terminal jobs clear encrypted send material. A later explicit
+request may replace an old proof under the owning cooldown and revocation rules.
+Enabling the shared mail flag can drain other eligible queued jobs: inspect the
+global backlog and approved real-message budget before enabling; a successful
+configuration or health check is not sender/domain ownership or inbox evidence.
+
+New account links carry proof in an HTTPS fragment. Both browser security aliases
+and reset entry capture it into an origin/purpose-bound volatile nonce before the
+owning form or navigation consumes it. Scrub proof-bearing URL and router-history
+state; retain no proof in persistent device storage, query-cache keys or journals.
+Native intent rewriting uses the same validated continuation. Cold/mismatched
+nonces ask for the original email. Bounded legacy query links remain readable, but
+client scrubbing cannot erase their initial HTTP query ingress; new links must
+remain fragment-only.
+
+Reset serializes with account, MFA challenge and session issuance. An old verified
+password cannot create a later challenge after reset; MFA proof consumption and
+session insertion commit atomically under the account-first lock order. Reset
+revokes prior sessions/challenges without automatic sign-in or disabling MFA.
+Account mail remains Live control-plane work: selected Simulation refuses account
+issuance/consumption before credential access, captures only isolated provider
+evidence where appropriate and excludes Live auth tokens/jobs from snapshots.
+Real provider/inbox, universal-link entitlement and physical-device acceptance
+remain separate deployment gates; local transport/SQL checks do not establish them.

@@ -31,19 +31,21 @@ export class AssessmentsController {
   saveExamPolicy(@Req() req:AuthenticatedRequest,@Param("schoolId") schoolId:string,@Body() body:unknown){ return this.examOperations.savePolicy(req.authUser,schoolId,body); }
 
   @Get('calendar/')
-  calendar(@Req() req:AuthenticatedRequest,@Param('schoolId') schoolId:string,@Query('from') from:string,@Query('to') to:string,@Query('student_id') student?:string) {
-    return this.assessments.calendar(req.authUser,schoolId,from,to,student);
+  calendar(@Req() req:AuthenticatedRequest,@Param('schoolId') schoolId:string,@Query('from') from:string,@Query('to') to:string,@Query('student_id') student?:string,@Query('academic_context') academicContext?:string,@Query('person_id') personId?:string) {
+    return this.assessments.calendar(req.authUser,schoolId,from,to,student,academicContext,personId);
   }
 
   @Get("workspace/")
-  workspace(@Req() req: AuthenticatedRequest, @Param("schoolId") schoolId: string) {
-    return this.assessments.workspace(req.authUser, schoolId);
+  workspace(@Req() req: AuthenticatedRequest, @Param("schoolId") schoolId: string, @Query("academic_context") academicContext?: string) {
+    return this.assessments.workspace(req.authUser, schoolId, academicContext);
   }
 
   @Get("family/")
   family(@Req() req: AuthenticatedRequest, @Param("schoolId") schoolId: string, @Query("student_id") studentId: string) {
     return this.assessments.familyResults(req.authUser, schoolId, studentId);
   }
+  @Get("mine/")
+  ownResults(@Req() req: AuthenticatedRequest, @Param("schoolId") schoolId: string, @Query("person_id") personId?: string) { return this.assessments.ownResults(req.authUser, schoolId, personId); }
 
   @Get(":assessmentId/")
   detail(@Req() req: AuthenticatedRequest, @Param("schoolId") schoolId: string, @Param("assessmentId") assessmentId: string) {

@@ -115,69 +115,56 @@ The [8 November functional audit](../../artifacts/core-functionality-audit/revie
 
 ## Core functionality closure
 
-Owner direction, 8 November: defer TestFlight and focus on functional completeness.
-The [current audit](../../artifacts/core-functionality-audit/review.json) compares
-3756 published source files with zero local drift before documentation edits,
-three independent source reviews, fresh cloud reads and 102 focused local tests
-(48 recovery, 36 grading/offering contracts, 18 mocked coordination boundaries;
-zero failures/skips, no PostgreSQL suites rerun). No production domain data changed.
-At that pre-closure audit the Mac was locked and no new rendered tour was claimed.
-It is now unlocked; the bounded Safari217 check found the setup-entry defect
-recorded below. Existing component, database and historical UI evidence retains its scope.
+Owner direction, 8 November: defer TestFlight and finish bounded operating journeys.
+The [initial audit](../../artifacts/core-functionality-audit/review.json) remains the
+starting evidence. Serving conformance219 and its first-wave release are recorded
+above. Candidate220 has a strict-verified manual seal and ten passing isolated
+IAB checks; publication, whole-current CI and deployment remain pending. Serving219
+is unchanged; local checks do not establish all-platform acceptance.
 
-Do not equate implementation, integration, setup and acceptance gaps. The current
-mobile inventory has **129 routes, 29 implemented-unverified groups and 80
-capabilities**. Its **53 source-review findings** are fingerprint/dependency
-mismatches, not compiler errors or 53 missing features; the earlier 49 count is a
-historical checkpoint. At the audit checkpoint, Core safety conformance215 was ready with no blockers, while
-**80 capability-evidence slots across 24 modules** remain unverified. These are a
-different inventory and are not 80 reproduced defects. Do not refresh hashes or
-promote statuses without exact review and journey evidence.
+The mobile inventory retains **129 routes, 29 implemented-unverified groups and80
+capabilities**. Its source review now retains **52 prior findings**, down from53
+only because this change independently reviewed the owned native account-entry
+path. These are source/dependency mismatches, not52 reproduced functional defects.
+[Exact reconciliation](../../artifacts/core-completeness-2/parity/review.json) changes
+only45 current-wave fingerprints/dependencies, preserving every route, gap and acceptance
+status. Model Core's **80 unverified capability-evidence slots across24 modules**
+are a separate inventory; the current conformance audit still retains all80.
 
-| Order | Person and outcome | Bounded delivery and remaining work |
-| --- | --- | --- |
-| 1 | Administrator safely finishes setup after a lost response | Terms, classes and subjects now use atomic command identity, exact retained receipts and same-request recovery after later edits. Typed obsolete-command proof requires a fresh review. Real PostgreSQL/COW, ordinary compiled HTTP and journal tests pass. Known duplicate/owning-rule refusals now retain exact terminal receipts, clear only matching intents and require fresh review; unexpected failures remain retained. The follow-up passes13 actual PG cases, including ordinary HTTP and first-write COW rollback/rematerialization. Conformance219 is deployed; the full 159-case gate and bounded three-persona reads pass. The setup entry and parent journal warning are resolved in the read-only director Safari check; exact scoped journal admission preserves the existing encryption, context and unknown-intent protections. Broader multi-account mutation acceptance remains open. Other legacy membership/invitation `inspect_only` writes remain guarded and open; matching rows never proves acceptance. |
-| 2 | New user verifies email, accepts an invitation or recovers access | Production verification/reset now report unavailable delivery truthfully, without issuing an inaccessible token or revealing whether a reset address exists. Provider-disabled and auth tests pass. Cloud transactional email remains disabled: approved sender configuration and owned-mailbox single-use/expiry/wrong-account/web/native roundtrips remain open. Optional SMS remains disconnected. |
-| 3 | Learner gets a pending assignment reviewed after staff changes | A setup-authorized coordinator can review metadata, explicitly choose a currently eligible reviewer and reissue exact pending attempt Tasks. Immutable instructions, submissions, feedback and original signatures remain. The existing Task policy does not add a successor Offer or imply personal acceptance. Repeated multi-learner handover, revocation, exact recovery and real COW isolation pass. The [bounded Safari217 read](../../artifacts/core-functionality-fixes/rendered-handover-217.json) opened metadata, pending review and three eligible choices without selection or submission; completed handover mutation and rendered multi-account acceptance remain open. |
-| 4 | Exam officer changes a scheduled room/time | A reviewed amendment now revises future never-started scheduled sittings, retains frozen candidates and prior schedule history, updates canonical schedule/participation context atomically and reissues material invigilator Offers. Explicit readiness confirmation rechecks current accepts/conflicts. Exact accepted/refused recovery and real COW tests pass; started/recorded actuals cannot be reset. Rendered acceptance remains open. |
-| 5 | College learner follows parallel courses through the whole teaching cycle | Person-based offerings/enrollment exist; assessment/report/schedule/attendance owners are not integrated with that roster. The [Safari217 assessment read](../../artifacts/core-functionality-fixes/rendered-assessment-217.json) showed a future online assessment with zero learners and internal fixture instruction/provenance copy. Product-data cleanup must preserve immutable published evidence; no marking or physical amendment was performed. Complete one offering → teaching/schedule → attendance → assessment → configured report loop, then elective-change impact/acceptance with an explicit Finance outcome. |
-| 6 | Transport coordinator enables colleague cover at a newly onboarded campus | Exact colleague/decision routes are installed only by the guarded development seed; ordinary setup lacks the configuration writer. Add reviewed institution-owned routing and an independently durable refused-attempt recovery handoff. Existing administrator collector assignment remains the bounded fallback. |
-| Alongside each | Every actor can finish, correct and recover the same workflow in the selected world | Close the existing source ledger and ordinary multi-account acceptance per journey; hosted historical Simulation restoration, authenticated attachment roundtrips and sustained shared-capacity testing remain open. Do not call a GET tour a completed mutation workflow. |
+| Person and outcome | Bounded delivery and remaining work |
+| --- | --- |
+| Administrator safely finishes setup after a lost response | Serving219 retains exact accepted/refused catalogue commands and requires fresh review after typed refusal. The candidate also admits the existing scoped Fees, Event, academic-register and Learning packing browser journals through the same finite encrypted grammar. Actual hooks/storage and all1980 mobile tests pass. Unknown intent remains retained; no credential/native-option fallback is admitted. Broader legacy membership/invitation inspect-only recovery remains open. |
+| New user verifies email, accepts an invitation or recovers access | Candidate account issuance commits purpose/address-bound single-use proof and encrypted delivery intent atomically. Reset/session/MFA races, ordinary compiled HTTP, queue uncertainty and canonical browser/native-link privacy pass bounded tests. Resend and its three approved DNS records are verified. The user-created managed secret version1 is enabled with a DT-runtime-only accessor grant but is not bound to the runtime. The shared delivery flag stays off;0 of3 approved provider attempts have occurred. Deployment, all shared-mail backlog review and real inbox/link acceptance remain pending. Provider acceptance is not inbox delivery. Optional SMS remains disconnected. |
+| Learner gets a submitted assignment reviewed after staff changes | Serving219 reissues exact pending Tasks to a currently eligible explicit reviewer, retaining original instructions, attempts, signatures and history. Native/COW tests pass. Earlier Safari review opened handover metadata without submitting; completed rendered multi-account handover remains open. No successor Offer or personal acceptance is invented. |
+| Exam officer changes a scheduled room/time | Serving219 retains frozen candidates and old schedules, revises future never-started sittings and atomically updates canonical expected participation. Material invigilation changes require renewed current acceptance/readiness. Native/COW tests pass; completed rendered examination amendment remains open. |
+| College learner follows parallel courses through teaching and reports | Candidate optional Course details connect canonical People enrollment to Activity plans, teaching preparation/reporting, attendance, nonphysical assessment marking/moderation, configured percentage/grade/GPA reports and safe scheduled Calendar dates. Basic learning groups need no term/subject; configured courses use campus time and term bounds. Current own-person launchers/readers preserve null legacy identities. Existing client projections stay class-only unless they explicitly opt into offering_v1. Native, compiled HTTP and actual COW assertions pass separately. Final isolated IAB review exercises two-learner letter-grade publication, all three learner report formats and configured GPA/CGPA precision; physical offering exams and actual printing remain open. |
+| Coordinator changes an operating elective safely | Candidate exact reviewed impact/catch-up disposition routes a named private Finance classification over the real person ledger basis. Only a current explicit no-financial-change decision permits the atomic dated enrollment and reviewed future-plan successors. Earlier marks, actuals, publications, parallel enrollment and money remain. Native/COW and mounted recovery cases pass. Final isolated IAB review exercises Finance decision/task removal, exact continuation/Back, transfer and pre/post-effective timetable. Catch-up is a plan, not accepted or completed remediation; charges/refunds require ordinary Finance owners. |
+| Transport coordinator enables colleague cover in ordinary setup | Explicit colleague/decision routing still depends on the guarded development seed. Reviewed institution-owned routing and independently durable refused-attempt handoff remain open; existing administrator assignment is only a bounded fallback. |
 
-The [full local database run](../../artifacts/core-functionality-fixes/postgres/20261108_ccad16bc/runner.json)
-passes 159 cases across 27 files with no skips/todo, including Live, ordinary HTTP
-and isolated COW changes. [Conformance219](../../artifacts/core-functionality-fixes/review/manual-seal-219.json)
-is manually reviewed and strict-verified; CI and the exact release are recorded
-above. Mobile 1882, fast backend 540, web/iOS bundle and bounded
-director/faculty/student checks pass. The adapter preserves captured primary/unique
-identity and recovers an aborted savepoint without releasing outer exclusion or
-allowing foreign/malformed transaction-control statements. Native source review
-retains all 53 unrelated findings and existing acceptance states. The Mac is now
-unlocked; the Safari217 check identified an authorized setup-entry denial rather
-than establishing complete rendered multi-account acceptance. The renewed native
-install remains separate. This does not close rows5–6 or the provider, legacy
-membership, attachment and hosted Simulation work.
+[Candidate220 local gates](../../artifacts/core-completeness-2/release-gates-220.json) pass571 fast backend tests across90 files,37 source/auth tests,1980 mobile tests, whole types, production web/iOS exports, the export validator and45 release/context guards. [Manual220 review](../../artifacts/core-completeness-2/review/manual-seal-220.json) binds `sha256:6273f9bdc7c943497c299d45844694fde9d35f2da4e3adc1ef04423a5d0e9d73`. The [PG summary](../../artifacts/core-completeness-2/postgres/reviewed-source-final.json) retains the217/43 pre-final-repair baseline plus final overlapping36-,7- and6-case affected slices, all passing with exact zero-client cleanup and no forced disconnect. They are not added into a full-current count; complete current217/43 CI remains pending. The lint checkpoint retains42 exact prior errors with subsequent changed-file lint passing; full current-source lint remains a CI gate. [Final rendered evidence](../../artifacts/core-completeness-2/rendered/final-acceptance.json) records10 checks in393×852 IAB, owned-account sign-out, stopped Metro and dropped fixture DB. It includes no production mutation or provider message. Serving219 and all broader acceptance limits remain unchanged.
 
-The [Safari218 diagnostic](../../artifacts/core-functionality-fixes/rendered-browser-218.json) retains the reproduced parent setup-journal warning. Conformance219 admits only its existing SHA256-scoped institution-commands namespace within the finite manifest/chunk grammar; AES-GCM key-bound encryption, nonextractable IndexedDB keys, actor/campus/world/origin validation and credential/native-option denials remain. No journal was renamed and no unknown intent was cleared or replayed. The [actual-hook/storage proof](../../artifacts/core-functionality-fixes/email/setup-browser-storage-source.json) records 26 focused passes and mobile types. The [bounded Safari219 check](../../artifacts/core-functionality-fixes/rendered-browser-219.json) opens parent setup and the academic form without the storage warning; no values or business changes were submitted, and the owned session was signed out and window closed. [Manual conformance219](../../artifacts/core-functionality-fixes/review/manual-seal-219.json) binds `sha256:2dab217f10e110cba760059499157741e95070981dff81cac11d67b1d0c1c278`; [native review](../../artifacts/core-functionality-fixes/parity219/review.json) retains all53 findings and80 capability-evidence slots. The three other source-observed prefixes, fees-operations, event-admin and academic-register-action, remain unadmitted follow-up findings requiring their own scope/recovery proof. The predecessor [manual218 seal](../../artifacts/core-functionality-fixes/review/manual-seal-218.json), [first218 failed packaging log](../../artifacts/core-functionality-fixes/cloud-build-218-first.log) and [reviewed218 build repair](../../artifacts/core-functionality-fixes/local-build-repair-218.json) remain distinct evidence. This is read-only director UI acceptance, not successful setup mutations, all-role workflows, native installation or rendered Simulation acceptance.
+Current course limits remain explicit: physical offering exams/practicals/vivas
+need their existing examination candidate integration; pure operating-course
+withdrawal without a replacement has no reviewed owner yet; one report scheme
+accepts one offering per course code; complex overlapping future replacements use
+the existing Activity resolution. Historical published fixture evidence is not
+rewritten to improve presentation. Updated course UI requires a new native binary;
+legacy installed clients keep their compatible default projections.
 
-For each slice, define the person's starting point and natural finished outcome,
-then verify normal operation, current authority/revocation, correction, lost response
-before/after commit, relaunch, exact history/next-owner handoff and meaningful real
-COW mutation with unchanged Live/sibling. Keep optional modelling out of required
-onboarding. Use the existing parity/conformance owners; this audit is raw evidence,
-not a competing completeness ledger or a percentage-complete claim.
+Each slice must preserve current authority/revocation, exact before/after-commit
+recovery, immutable history, next-owner handoff and a meaningful isolated-world
+change with unchanged Live/sibling state. Hosted historical Simulation restoration,
+authenticated attachment roundtrips, complete rendered multi-account journeys,
+renewed native distribution and sustained shared-capacity testing remain open.
+A read-only production tour never proves a completed mutation workflow.
 
-The next backlog includes legacy QR result recovery, general gate observation
-supersession, older resource receipt paging/exact reads, and HTTPS native associated
-links. Admissions, group graded submissions, graduation clearance/document issue,
-scoped payer sharing, mentoring, aid, placement and general staff takeover are
-separate unbuilt lifecycle owners/integrations, not prerequisites for starting a
-bounded capability. Configurable percentage/grade/GPA, report/result correction,
-parallel offering enrollment, individual assignments/session materials and resource
-loans already exist and must not be reimplemented from stale checkpoint-57 lists.
-Mapped resource faults/repairs genuinely drive DT visuals; moving figures currently
-use expected schedules, with observed evidence rendered as separate anonymous
-pulses rather than confirmed-person trajectories.
+Other lifecycle backlog remains: legacy QR result recovery, general gate observation
+supersession, exact older resource paging, native associated HTTPS links, admissions,
+group graded submissions, graduation clearance, scoped payer sharing, mentoring,
+aid, placement and general staff takeover. These are not prerequisites for starting
+a bounded capability. Mapped resource faults/repairs drive DT visuals; moving people
+use expected schedules, while observations remain separate anonymous evidence,
+not confirmed personal trajectories.
 
 ## Product and architecture invariants
 

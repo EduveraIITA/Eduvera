@@ -91,6 +91,14 @@ export function assertRuntime(resource, binding, { job = false, image } = {}) {
   secretReference(env, 'COOKIE_SECRET', 'thatcampus-dt-cookie-secret');
   secretReference(env, 'METRICS_TOKEN', 'thatcampus-dt-metrics-token');
   secretReference(env, 'RESTRICTED_CASE_ENCRYPTION_KEY', 'thatcampus-dt-restricted-case-key');
+  // Routine releases preserve the explicitly configured sender. They never
+  // enable delivery or borrow an ERP/provider credential as a build default.
+  if (env.INVITATION_EMAIL_ENABLED && !['false', 'true'].includes(env.INVITATION_EMAIL_ENABLED.value)) throw new Error('Unexpected Digital Twin email delivery flag.');
+  if (env.RESEND_API_KEY) secretReference(env, 'RESEND_API_KEY', 'thatcampus-dt-resend-api-key');
+  if (env.INVITATION_EMAIL_ENABLED?.value === 'true') {
+    if (env.INVITATION_EMAIL_PROVIDER?.value !== 'resend' || env.INVITATION_EMAIL_FROM?.value !== 'noreply@thatcampus.com') throw new Error('The approved Digital Twin Resend sender is required.');
+    secretReference(env, 'RESEND_API_KEY', 'thatcampus-dt-resend-api-key');
+  }
   for (const key of ['DEMO_MODE', 'PUBLIC_DEMO_ENABLED', 'DEMO_PROFILE_SWITCHER_ENABLED', 'HOSTED_CAMPUS_SIMULATOR_ENABLED']) {
     if (env[key]?.value && env[key].value !== 'false') throw new Error(`The ordinary Digital Twin deployment must not enable ${key}.`);
   }

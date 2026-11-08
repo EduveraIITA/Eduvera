@@ -85,7 +85,7 @@ jobs:
           npm --prefix backend run db:migrate
           npm --prefix backend run test:fast
           cd backend
-          node --import tsx node_modules/vitest/vitest.mjs run test/native-auth.test.ts test/native-auth-session.integration.test.ts test/web-assets.test.ts test/simulation-conformance.test.ts
+          node --import tsx node_modules/vitest/vitest.mjs run test/native-auth.test.ts test/web-assets.test.ts test/simulation-conformance.test.ts test/account-mail-smtp.test.ts
       - name: Install the matching PostgreSQL17 capture client
         run: |
           # Ubuntu24.04 supplies PostgreSQL16. Real COW tests require PG17.
@@ -126,6 +126,14 @@ jobs:
           LEARNING_ASSIGNMENTS_SIMULATION_TEST_TARGET_URL: postgresql://thatcampus_dt_ci:disposable-dt-ci-only@127.0.0.1:5432/thatcampus_dt_simulation_test
           ASSESSMENTS_SIMULATION_TEST_TARGET_URL: postgresql://thatcampus_dt_ci:disposable-dt-ci-only@127.0.0.1:5432/thatcampus_dt_simulation_test
           ACADEMIC_CATALOGUE_SIMULATION_TEST_TARGET_URL: postgresql://thatcampus_dt_ci:disposable-dt-ci-only@127.0.0.1:5432/thatcampus_dt_simulation_test
+          ACADEMIC_OFFERING_SIMULATION_TEST_TARGET_URL: postgresql://thatcampus_dt_ci:disposable-dt-ci-only@127.0.0.1:5432/thatcampus_dt_simulation_test
+          ACADEMIC_HISTORY_SIMULATION_TEST_TARGET_URL: postgresql://thatcampus_dt_ci:disposable-dt-ci-only@127.0.0.1:5432/thatcampus_dt_simulation_test
+          GRADING_POLICY_SIMULATION_TEST_TARGET_URL: postgresql://thatcampus_dt_ci:disposable-dt-ci-only@127.0.0.1:5432/thatcampus_dt_simulation_test
+          ASSESSMENT_EVIDENCE_SIMULATION_TEST_TARGET_URL: postgresql://thatcampus_dt_ci:disposable-dt-ci-only@127.0.0.1:5432/thatcampus_dt_simulation_test
+          SIMULATION_MARKS_TEST_TARGET_URL: postgresql://thatcampus_dt_ci:disposable-dt-ci-only@127.0.0.1:5432/thatcampus_dt_simulation_test
+          SIMULATION_CORRECTION_TEST_TARGET_URL: postgresql://thatcampus_dt_ci:disposable-dt-ci-only@127.0.0.1:5432/thatcampus_dt_simulation_test
+          NATIVE_GOOGLE_LOCKS_TEST_ISOLATED: "true"
+          NATIVE_GOOGLE_LOCKS_EXPECT_DATABASE: thatcampus_dt_test
           SIMULATION_COLD_COW_TEST_ISOLATED: "true"
           SIMULATION_COLD_COW_DATABASE_URL: postgresql://thatcampus_dt_ci:disposable-dt-ci-only@127.0.0.1:5432/thatcampus_dt_test
           SIMULATION_COLD_COW_EXPECT_DATABASE: thatcampus_dt_test
@@ -150,17 +158,22 @@ jobs:
               'academic-catalogue-recovery', 'academic-catalogue-recovery-http', 'learning-assignment-handover', 'learning-assignment-handover-worlds',
               'domain-message-supersession', 'learning-assignments', 'learning-assignment-files-worlds', 'exam-schedule-amendments', 'exam-operations',
               'simulation-branch-concurrency',
+              'account-mail-delivery', 'account-mail-http', 'invitation-queue', 'native-google-locks',
+              'learning-elective-change', 'learning-elective-change-worlds',
+              'academic-offering-cycle', 'academic-offering-worlds', 'academic-offering-http',
+              'assessments', 'academic-reports', 'academic-history-integrity', 'grading-policy-worlds',
+              'assessment-evidence-integrity', 'assessment-result-worlds', 'assessment-correction-worlds',
             ].map(name => `test/${name}.integration.test.ts`);
             const report = join(directory, 'postgres-results.json');
             const result = spawnSync(process.execPath, ['--import', 'tsx', 'node_modules/vitest/vitest.mjs', 'run', '--reporter=default', '--reporter=json', `--outputFile.json=${report}`, ...files], {
-              stdio: 'inherit', env: { ...process.env, VISIT_ONBOARDING_HTTP_COMPILED_ROOT: join(directory, 'dist') },
+              stdio: 'inherit', env: { ...process.env, VISIT_ONBOARDING_HTTP_COMPILED_ROOT: join(directory, 'dist'), ACADEMIC_CATALOGUE_HTTP_COMPILED_ROOT: join(directory, 'dist'), ACCOUNT_MAIL_HTTP_COMPILED_ROOT: join(directory, 'dist'), ACADEMIC_OFFERING_HTTP_COMPILED_ROOT: join(directory, 'dist') },
             });
             if (result.error) throw result.error;
             process.exitCode = result.status ?? 1;
             const summary = JSON.parse(await readFile(report, 'utf8'));
             console.log(JSON.stringify({ postgresTests: summary.numTotalTests, passed: summary.numPassedTests, skipped: summary.numPendingTests, todo: summary.numTodoTests }));
-            if (summary.numTotalTests < 159 || summary.numPassedTests !== summary.numTotalTests || summary.numPendingTests !== 0 || summary.numTodoTests !== 0)
-              throw new Error('All 159 or more owned PostgreSQL cases must run and pass without skipped/todo tests.');
+            if (summary.numTotalTests < 217 || summary.numPassedTests !== summary.numTotalTests || summary.numPendingTests !== 0 || summary.numTodoTests !== 0)
+              throw new Error('All 217 or more owned PostgreSQL cases must run and pass without skipped/todo tests.');
           } finally { await rm(directory, { recursive: true, force: true }); }
           NODE
       - name: Universal application and release guard tests

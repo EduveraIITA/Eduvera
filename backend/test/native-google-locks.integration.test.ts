@@ -36,8 +36,8 @@ type QueryTrace = { label: string; pid: number; sql: string };
  * foreign-key and transaction locks; no test lock manager substitutes for it. */
 class ObservedPostgresDriver implements Driver {
   readonly trace: QueryTrace[] = [];
-  before = async (_event: QueryTrace) => {};
-  after = async (_event: QueryTrace) => {};
+  before: (event: QueryTrace) => Promise<void> = () => Promise.resolve();
+  after: (event: QueryTrace) => Promise<void> = () => Promise.resolve();
   private readonly owners = new WeakMap<DatabaseConnection, DatabaseConnection>();
   constructor(private readonly native: Driver) {}
   init() { return this.native.init(); }
@@ -117,8 +117,11 @@ async function blockedBy(waiter: number, owner: number) {
 describe.runIf(enabled)("native Google MFA locks against PostgreSQL17", () => {
   beforeAll(async () => {
     if (process.env.DATABASE_URL !== process.env.MIGRATION_DATABASE_URL || process.env.DATABASE_URL !== process.env.EVENT_DATABASE_URL) throw new Error("All test owners must use the exact disposable target.");
+    if (process.env.TEST_DATABASE_ISOLATED !== "true") throw new Error("The explicit isolated-test database guard is required.");
     const expected = process.env.NATIVE_GOOGLE_LOCKS_EXPECT_DATABASE;
-    if (!expected || !/^native_google_locks_test_\d{8}_[a-f0-9]{8}$/u.test(expected)) throw new Error("An exact owned native Google test database is required.");
+    const ownedLocal = expected && /^(?:native_google_locks|core_closure2_source)_test_\d{8}_[a-f0-9]{8}$/u.test(expected);
+    const ownedCi = process.env.GITHUB_ACTIONS === "true" && expected === "thatcampus_dt_test";
+    if (!expected || !ownedLocal && !ownedCi) throw new Error("An exact owned native Google test database is required.");
     observer = new Pool({ connectionString: target, max: 2, application_name: "native-google-lock-observer" });
     const current = (await observer.query<{ name: string; version: number }>("SELECT current_database() AS name,current_setting('server_version_num')::int AS version")).rows[0]!;
     expect(current.name).toBe(expected); expect(current.version).toBeGreaterThanOrEqual(170000); expect(current.version).toBeLessThan(180000);
@@ -131,13 +134,16 @@ describe.runIf(enabled)("native Google MFA locks against PostgreSQL17", () => {
 
   it("completes finalizer and primary challenge replacement without an implicit users-FK lock inversion", async () => {
     const f = await fixture("active");
-    const nativeHeld = notice<QueryTrace>(), primaryDeleted = notice<QueryTrace>();
-    const continueNative = barrier(), continuePrimary = barrier();
+    const nativeHeld = notice<QueryTrace>(), primaryWaiting = notice<QueryTrace>();
+    const continueNative = barrier();
     const previous = AuthService.tokenHash(randomBytes(32).toString("base64url"));
     await observer.query("INSERT INTO auth_mfa_login_challenges(token_hash,user_id,expires_at) VALUES($1,$2,now()+interval '5 minutes')", [previous, f.accountId]);
     f.driver.after = async event => {
       if (event.label === "native" && event.sql.includes("from users") && /for (?:no key )?update$/u.test(event.sql)) { nativeHeld.resolve(event); await continueNative.ready; }
-      if (event.label === "primary" && event.sql.startsWith("delete from auth_mfa_login_challenges")) { primaryDeleted.resolve(event); await continuePrimary.ready; }
+    };
+    f.driver.before = event => {
+      if (event.label === "primary" && event.sql.includes("from users") && event.sql.endsWith("for no key update")) primaryWaiting.resolve(event);
+      return Promise.resolve();
     };
     let calls: Promise<unknown>[] = [];
     try {
@@ -145,22 +151,24 @@ describe.runIf(enabled)("native Google MFA locks against PostgreSQL17", () => {
       const nativeLock = await nativeHeld.ready;
       const primary = labels.run("primary", () => f.auth.finishPrimaryLogin(f.user, f.request)); void primary.catch(() => undefined);
       calls = [native, primary];
-      const challengeLock = await primaryDeleted.ready;
-      expect(nativeLock.pid).not.toBe(challengeLock.pid);
-      // Both real locks already exist. Releasing these continuations lets the
-      // implicit FK and DELETE compete; the old FOR UPDATE source deadlocks.
-      continueNative.release(); continuePrimary.release();
+      const primaryLock = await primaryWaiting.ready;
+      expect(nativeLock.pid).not.toBe(primaryLock.pid);
+      await blockedBy(primaryLock.pid, nativeLock.pid);
+      // Primary now serializes before challenge DELETE rather than holding a
+      // challenge while waiting for its account's implicit foreign-key lock.
+      expect(f.driver.trace.some(event => event.label === "primary" && event.sql.startsWith("delete from auth_mfa_login_challenges"))).toBe(false);
+      continueNative.release();
       const outcomes = await Promise.allSettled(calls);
       const summary = outcomes.map(value => value.status === "fulfilled"
         ? { status: value.status } : { status: value.status, code: (value.reason as { code?: string }).code });
-      observations.push({ schedule: "account held / existing challenge deleted", results: summary });
+      observations.push({ schedule: "account held / primary waits before challenge replacement", results: summary });
       expect(summary).toEqual([{ status: "fulfilled" }, { status: "fulfilled" }]);
       for (const value of outcomes) if (value.status === "fulfilled") expect(value.value).toHaveProperty("mfaChallenge");
       expect((await observer.query("SELECT 1 FROM auth_sessions WHERE user_id=$1", [f.accountId])).rowCount).toBe(0);
       expect((await observer.query("SELECT 1 FROM auth_mfa_login_challenges WHERE user_id=$1 AND token_hash=$2", [f.accountId, previous])).rowCount).toBe(0);
       expect(f.driver.trace.find(event => event.label === "native" && event.sql.includes("from users"))?.sql).toContain("for no key update");
     } finally {
-      continueNative.release(); continuePrimary.release(); await Promise.allSettled(calls); await f.db.destroy();
+      continueNative.release(); await Promise.allSettled(calls); await f.db.destroy();
     }
   });
 
@@ -170,8 +178,9 @@ describe.runIf(enabled)("native Google MFA locks against PostgreSQL17", () => {
     f.driver.after = async event => {
       if (event.label === "activation" && event.sql.startsWith("update auth_mfa_factors")) { activating.resolve(event); await proceed.ready; }
     };
-    f.driver.before = async event => {
+    f.driver.before = event => {
       if (event.label === "native" && event.sql.includes("from users")) waiting.resolve(event);
+      return Promise.resolve();
     };
     let calls: Promise<unknown>[] = [];
     try {
@@ -198,8 +207,9 @@ describe.runIf(enabled)("native Google MFA locks against PostgreSQL17", () => {
     f.driver.after = async event => {
       if (event.label === "native" && event.sql.startsWith("insert into auth_sessions")) { issuing.resolve(event); await proceed.ready; }
     };
-    f.driver.before = async event => {
+    f.driver.before = event => {
       if (event.label === "writer" && event.sql.includes("from users") && event.sql.endsWith("for update")) waiting.resolve(event);
+      return Promise.resolve();
     };
     let calls: Promise<unknown>[] = [];
     try {
@@ -232,8 +242,9 @@ describe.runIf(enabled)("native Google MFA locks against PostgreSQL17", () => {
     f.driver.after = async event => {
       if (event.label === "activation" && event.sql.startsWith("update auth_mfa_factors")) { activating.resolve(event); await proceed.ready; }
     };
-    f.driver.before = async event => {
+    f.driver.before = event => {
       if (event.label === "enrollment" && event.sql.includes("from users") && event.sql.endsWith("for update")) waiting.resolve(event);
+      return Promise.resolve();
     };
     let calls: Promise<unknown>[] = [];
     try {

@@ -140,6 +140,34 @@ the first refinement must not create a second person-reporting tree or fabricate
 employment to place someone in a generic group. Existing source-specific
 bookmarks remain authorized and lead to the exact person/context where supported.
 
+### Learning groups and course offerings
+
+An existing learning group uses canonical people, dated learner enrollments and an
+explicit teaching appointment. A passive learner needs no app account. Instructor
+delivery or private academic actions still require the current account endpoint and
+the owning scoped responsibility; group membership alone grants neither.
+
+Optional Course details bind that same offering to an existing campus term and
+subject, a stable course code, positive credits and an optional programme key.
+Basic coaching or learning groups remain usable without those fields. Do not create
+a compatibility class, student, staff profile or duplicate person to operate a
+college course. A person may hold several parallel or elective enrollments with
+independent dates and source revisions. Course context already used by an
+assessment, report scheme or published timetable version is retained, including
+after that timetable is cancelled; a different course needs a separate offering.
+
+Initial roster setup is distinct from changing an operating course. Once published
+teaching or assignments, or marking/results work exists, Add learner / End
+registration cannot bypass the reviewed elective-change owner. That flow reviews
+the exact person, source and
+destination enrollment, effective date, future timetable impact, catch-up
+disposition and named Finance handoff. It preserves earlier submissions, marks,
+published audiences and other parallel enrollments. Pure operating-course withdrawal
+without a destination currently needs a separate supported withdrawal workflow;
+the generic group end action must explain that limit instead of inventing one.
+See [Scheduling](PEOPLE_SCHEDULING_AND_ATTENDANCE.md) and
+[Finance](FEE_INSTALMENT_AGREEMENTS.md#course-change-financial-review).
+
 ## Digital twin integration
 
 People owns the authoritative person. Creation uses the prepared Core command,

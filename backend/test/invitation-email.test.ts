@@ -52,6 +52,16 @@ describe('invitation SMTP delivery', () => {
     expect(result).toMatchObject({delivery:'failed',delivery_error:'authentication'});
     expect(JSON.stringify(result)).not.toContain('secret-password');
   });
+  it('passes an opaque stable delivery identity to Resend and keeps it out of message contents', async () => {
+    mocks.settings.INVITATION_EMAIL_PROVIDER = 'resend';
+    const fetchMock = vi.fn().mockResolvedValue({ok:true,json:()=>Promise.resolve({id:'accepted-id'})}); vi.stubGlobal('fetch',fetchMock);
+    const input = {to:invitation.email,subject:'Account action',text:'test body',senderName:'ThatCampus',idempotencyKey:'account-action/00000000-0000-4000-8000-000000000001'};
+    expect(await sendTransactionalEmail(input)).toEqual({provider_message_id:'accepted-id'});
+    expect(fetchMock.mock.calls[0]![1].headers['Idempotency-Key']).toBe(input.idempotencyKey);
+    expect(fetchMock.mock.calls[0]![1].body).not.toContain(input.idempotencyKey);
+    await expect(sendTransactionalEmail({...input,idempotencyKey:'bad\r\nInjected:yes'})).rejects.toThrow('Invalid email delivery identity');
+    expect(fetchMock).toHaveBeenCalledOnce();
+  });
   it('does not claim API acceptance without a message ID', async () => {
     mocks.settings.INVITATION_EMAIL_PROVIDER = 'resend';
     vi.stubGlobal('fetch',vi.fn().mockResolvedValue({ok:true,json:()=>Promise.resolve({})}));
@@ -128,7 +138,7 @@ it('uses the invitation layout for password reset without exposing an invitation
   await deliverAccountAction({email: invitation.email, token: 'reset-private-token', purpose: 'password_reset', expiresAt: new Date('2099-10-04T00:00:00Z')});
   const message = mocks.sendMail.mock.calls[0]![0];
   expect(message.html).toContain('Reset password');
-  expect(message.html).toContain('/reset-password?token=reset-private-token');
+  expect(message.html).toContain('/reset-password#token=reset-private-token');
   expect(message.html).toContain('email-section');
   expect(message.html).toContain('linear-gradient(#ffffff,#ffffff)');
   expect(message.html).not.toContain('INVITATION CODE');

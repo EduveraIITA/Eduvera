@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { offeringAcademicInput } from "./learning-offering-academic.js";
 
 export const assignmentId = z.string().uuid();
 const text = (max: number) => z.string().trim().max(max).refine(value => !value.includes("\0"));
@@ -23,14 +24,19 @@ export const learningAssignmentDraft = z.union([assignmentDraft, offeringAssignm
 export const learningPersonReference = z.object({ id: assignmentId, expected_revision: z.number().int().positive() }).strict();
 export const learningOfferingCreate = z.object({ command_id: assignmentId, offering_id: assignmentId, name: text(150).min(1),
   participants: z.array(learningPersonReference).min(1).max(100), instructor: learningPersonReference, starts_on: z.iso.date(),
+  academic_context: offeringAcademicInput.optional(),
 }).strict().refine(value => new Set(value.participants.map(item => item.id)).size === value.participants.length, "Choose each participant once.");
 export const learningOfferingEnroll = assignmentCommand.extend({ participants: z.array(learningPersonReference).min(1).max(100), starts_on: z.iso.date() }).strict()
   .refine(value => new Set(value.participants.map(item => item.id)).size === value.participants.length, "Choose each participant once.");
 export const learningOfferingEnd = assignmentCommand.extend({ reason: text(500).min(3) }).strict();
 export const learningOfferingInstructor = assignmentCommand.extend({ instructor: learningPersonReference, starts_on: z.iso.date() }).strict();
+export const learningOfferingAcademicCommand = assignmentCommand.extend({ academic_context: offeringAcademicInput }).strict();
 const offeringEnrollmentReceipt = z.object({ id: assignmentId, person_id: assignmentId, revision: z.number().int().positive() }).strict();
+const offeringAcademicReceiptContext = offeringAcademicInput.extend({ term_name: z.string(), academic_year: z.string(), starts_on: z.iso.date(), ends_on: z.iso.date(),
+  subject_name: z.string(), color: z.string(), icon: z.string() }).strict();
 export const learningOfferingReceipts = {
-  create: z.object({ id: assignmentId, revision: z.number().int().positive(), teaching_assignment_id: assignmentId, enrollments: z.array(offeringEnrollmentReceipt) }).strict(),
+  create: z.object({ id: assignmentId, revision: z.number().int().positive(), teaching_assignment_id: assignmentId, enrollments: z.array(offeringEnrollmentReceipt), academic_context: offeringAcademicReceiptContext.optional() }).strict(),
+  academic: z.object({ id: assignmentId, revision: z.number().int().positive(), action: z.literal("academic.configure"), academic_context: offeringAcademicReceiptContext }).strict(),
   enroll: z.object({ id: assignmentId, revision: z.number().int().positive(), enrollments: z.array(offeringEnrollmentReceipt) }).strict(),
   instructor: z.object({ id: assignmentId, revision: z.number().int().positive(), teaching_assignment_id: assignmentId }).strict(),
   end: z.object({ id: assignmentId, revision: z.number().int().positive(), record_id: assignmentId, record_revision: z.number().int().positive(), ends_on: z.iso.date() }).strict(),

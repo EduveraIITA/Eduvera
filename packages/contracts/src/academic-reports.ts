@@ -1,3 +1,6 @@
+import type { AcademicLearnerIdentity } from "./assessments";
+import type { LearningOfferingReference } from "./wire/features/learning/offeringApi";
+
 export interface GradingPolicyConfiguration {
   schema_version: 1;
   result_format: "percentage" | "grade" | "gpa";
@@ -45,7 +48,9 @@ export interface ReportCalculation {
 export interface GradingSchemeSummary {
   id: string;
   term_id: string;
-  class_section_id: string;
+  class_section_id: string | null;
+  context_kind?: "class_term" | "learning_offering";
+  offering_ids?: string[];
   name: string;
   code: string;
   status: "draft" | "active" | "archived";
@@ -84,10 +89,11 @@ export interface ReportBatchSummary {
 }
 
 export interface AcademicReportReferences {
+  offerings?: LearningOfferingReference[];
   terms: Array<{ id: string; name: string; academic_year: string; starts_on: string; ends_on: string }>;
   classes: Array<{ id: string; name: string; academic_year: string }>;
   subjects: Array<{ id: string; name: string; color: string; icon: string }>;
-  assessments: Array<{ id: string; title: string; subject_id: string; class_section_id: string; term_id: string; maximum_marks: string; publication_sequence: number }>;
+  assessments: Array<{ id: string; title: string; subject_id: string; class_section_id: string | null; context_kind?: "class_term" | "learning_offering"; offering_id?: string | null; term_id: string; maximum_marks: string; publication_sequence: number }>;
 }
 
 export type AcademicReportWorkspace =
@@ -97,13 +103,13 @@ export type AcademicReportWorkspace =
 export interface GradingSchemeDetail {
   scheme: GradingSchemeSummary;
   bands: Array<{ id: string; code: string; label: string; minimum_percentage: string; maximum_percentage: string; display_order: number }>;
-  subjects: Array<{ id: string; subject_id: string; subject_name: string; color: string; icon: string; pass_percentage: string | null; display_order: number; credits?: string | null; course_code?: string | null }>;
+  subjects: Array<{ id: string; subject_id: string; offering_id?: string | null; subject_name: string; color: string; icon: string; pass_percentage: string | null; display_order: number; credits?: string | null; course_code?: string | null }>;
   components: Array<{ id: string; scheme_subject_id: string; code: string; name: string; weight_percentage: string; display_order: number; assessment_ids: string[]; assessment_titles: string[] }>;
 }
 
 export interface ReportBatchDetail {
-  batch: ReportBatchSummary & { class_section_id: string; academic_year: string; review_note: string; publication_note: string };
-  students: Array<ReportCalculation & { id: string; student_id: string; first_name: string; last_name: string; admission_number: string; roll_number: number | null; outcome: "complete" | "incomplete" | "withheld"; overall_percentage: string | null; overall_grade: string; class_teacher_comment: string; principal_comment: string; comment_revision: number }>;
+  batch: ReportBatchSummary & { class_section_id: string | null; context_kind?: "class_term" | "learning_offering"; offering_ids?: string[]; academic_year: string; review_note: string; publication_note: string };
+  students: Array<ReportCalculation & { id: string; student_id: string | null; learner_id?: string; person_id?: string; first_name: string; last_name: string; admission_number: string | null; roll_number: number | null; outcome: "complete" | "incomplete" | "withheld"; overall_percentage: string | null; overall_grade: string; class_teacher_comment: string; principal_comment: string; comment_revision: number }>;
   subjects: Array<{ id: string; report_student_id: string; subject_name: string; color: string; icon: string; outcome: "complete" | "incomplete" | "exempt" | "withheld"; percentage: string | null; grade: string; passed: boolean | null; grade_points?: string | null; credits?: string | null; course_code?: string | null }>;
   components: Array<{ id: string; report_subject_id: string; component_name: string; weight_percentage: string; outcome: "complete" | "incomplete" | "exempt"; percentage: string | null }>;
 }
@@ -115,9 +121,12 @@ export interface FamilyReportCards {
 
 export interface ReportCommentUpdate {
   id: string;
-  student_id: string;
+  student_id: string | null;
+  learner_id?: string;
   class_teacher_comment: string;
   principal_comment: string;
   comment_revision: number;
   batch_revision: number;
 }
+
+export interface OwnReportCards { learner: AcademicLearnerIdentity; reports: FamilyReportCards["reports"] }

@@ -22,6 +22,7 @@ import { captureApiContext, downloadCampusFile, getApiOrigin } from '../lib/api'
 import { useNativePendingAction, type NativePendingInput } from '../lib/native-pending-action';
 import { useApi } from '../lib/query';
 import { useOperationContext } from '../lib/use-operation-context';
+import { LearningElectiveChange } from './LearningElectiveChange';
 import { Button, Empty, Field, ListGroup, Loading, Notice, Page, Row, Section } from '../ui/components';
 import { ControlButton, Disclosure, Facts, InfoDisclosure, SegmentedControl } from '../ui/DomainControls';
 import { DomainText } from './ResourcesScreen';
@@ -94,6 +95,7 @@ export function LearningScreen(props: Props) {
   const assignments = path.includes('/assignments'), prefix = assignments ? 'assignments' : 'diary', surfaces = manifest.areas.flatMap(area => area.surfaces).filter(surface => surface.key.startsWith(`${prefix}:`));
   const scope = q.get('scope'), id = scope === 'class' ? q.get('class_section_id') : scope === 'offering' ? q.get('offering_id') : scope === 'person' ? q.get('person_id') : q.get('student_id');
   if (assignments && scope === 'review_handover') return <LearningAssignmentHandovers key={`${scopeKey}:review-handovers:${props.href}`} {...props} />;
+  if (assignments && scope === 'elective_change') return <LearningElectiveChange key={`${scopeKey}:elective:${props.href}`} {...props} />;
   const expected = `${prefix}:${scope}:${id}`;
   if (assignments && !scope && !id) return <LearningOfferingsHub {...props} surfaces={surfaces} />;
   if (assignments && scope === 'offering' && id) return <LearningOfferingPanel key={`${scopeKey}:offering:${id}`} id={id} {...props} renderContent={header => <Assignments {...props} scope={scope} identityId={id} header={header} />} />;

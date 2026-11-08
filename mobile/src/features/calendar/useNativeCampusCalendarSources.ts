@@ -13,10 +13,11 @@ export function useNativeCampusCalendarSources(scope: CampusCalendarScope, from:
   const { scopeKey, user, status, environment } = useSession();
   const focused = useIsFocused();
   const unavailable = Boolean(environment.unavailable);
+  const authenticated = status === 'authenticated' && Boolean(user);
   const categories: CalendarCategory[] = ['milestones', 'dates', ...(scope.eventHref ? ['events' as const] : []), ...(scope.assessmentHref ? ['assessments' as const] : []), ...(scope.includeDining ? ['services' as const] : [])];
   const queries = useQueries({ queries: categories.map(category => ({
-    queryKey: ['campus', scopeKey, 'important-calendar', user?.id, scope.schoolId, scope.surfaceKey, scope.studentId ?? '', scope.timeZone, from, until, category, category === 'events' ? scope.eventHref : category === 'assessments' ? scope.assessmentHref : ''],
-    enabled: focused && status === 'authenticated' && Boolean(user) && !unavailable,
+    queryKey: ['campus', scopeKey, 'important-calendar', user?.id, scope.schoolId, scope.surfaceKey, scope.studentId ?? '', scope.personId ?? '', scope.timeZone, from, until, category, category === 'events' ? scope.eventHref : category === 'assessments' ? scope.assessmentHref : ''],
+    enabled: focused && authenticated && !unavailable,
     staleTime: 15_000, retry: false, refetchInterval: 60_000,
     queryFn: async ({ signal }: { signal: AbortSignal }): Promise<SourceResult> => {
       const context = captureApiContext();
@@ -25,10 +26,10 @@ export function useNativeCampusCalendarSources(scope: CampusCalendarScope, from:
     },
   })) });
   const days = queries[categories.indexOf('dates')]!;
-  const denied = !user || days.error instanceof ApiError && [401, 403, 404, 410].includes(days.error.status);
+  const denied = !authenticated || days.error instanceof ApiError && [401, 403, 404, 410].includes(days.error.status);
   const sources = categories.map((category, index) => {
     const query = queries[index]!;
-    const state = unavailable || !user || query.isError ? 'error' : query.isPending ? 'loading' : query.data?.partial ? 'partial' : 'ready';
+    const state = unavailable || !authenticated || query.isError ? 'error' : query.isPending ? 'loading' : query.data?.partial ? 'partial' : 'ready';
     return { key: category, label: nativeCalendarSourceLabels[category], state,
       retry: () => { void query.refetch(); },
       message: unavailable ? 'This Simulation is unavailable. Return to an available environment to load dates.'

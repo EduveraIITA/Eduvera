@@ -76,18 +76,14 @@ type RawOccurrence = Omit<ActivityOccurrence, 'participants' | 'id' | 'starts_at
   starts_at: Date | string; ends_at: Date | string; gap: boolean;
 };
 
-/**
- * The single domain expansion/roster boundary. Old academic schedules are an
- * adapter over effective_school_schedule_v4 (including its closures, overrides
- * and accepted coverage), never copied into a second authored schedule.
- */
-export class ActivityOccurrenceEngine {
-  constructor(private readonly identities: HumanAgentIdentityPort, private readonly responsibilities: ResponsibilityProjectionPort) {}
-  async expand(db: PlanningDb, schoolId: string, from: string, until: string, includeDraftId?: string, query: ActivityOccurrenceQuery = {}): Promise<ActivityOccurrence[]> {
-    const activityOnly = query.source === 'activity';
-    const raw = (await sql<RawOccurrence>`
+/** Shared raw source relation: callers may count expectations without loading
+ * people or retaining any occurrence. Normal expansion keeps its prior defaults. */
+function scheduledOccurrenceSource(schoolId:string,from:string,until:string,includeDraftId:string|undefined,
+  query:ActivityOccurrenceQuery & {offering_id?:string},ordered=true){
+  const activityOnly=query.source==='activity';
+  return sql<RawOccurrence>`
       WITH activity AS (
-        SELECT version.id AS activity_id,version.id AS plan_version_id,period.id AS period_id,
+        SELECT version.id AS activity_id,version.id AS plan_version_id,version.offering_id,period.id AS period_id,
           'activity'::text AS source,concat(version.id::text,':',period.id::text) AS source_ref,
           version.revision AS source_revision,version.activity_title AS title,
           version.activity_purpose AS purpose,day::date::text AS local_date,
@@ -112,10 +108,11 @@ export class ActivityOccurrenceEngine {
         CROSS JOIN LATERAL ${recurrenceDays({startsOn:sql`version.starts_on`,endsOn:sql`version.ends_on`,from:sql`${from}`,until:sql`${until}`,weekday:sql`period.weekday`,kind:sql`version.recurrence_kind`})} day
         WHERE version.school_id=${schoolId}::uuid AND version.planning_origin='activity'
           AND (version.state IN ('published','cancelled') OR version.id=${includeDraftId ?? null}::uuid)
+          ${query.offering_id ? sql`AND version.offering_id=${query.offering_id}::uuid` : sql``}
       ), academic AS (
         SELECT COALESCE(schedule.source_record_id,schedule.id) AS activity_id,
           CASE WHEN schedule.source_kind='published_timetable' THEN schedule.source_record_id ELSE NULL::uuid END AS plan_version_id,
-          schedule.id AS period_id,'academic'::text AS source,
+          NULL::uuid AS offering_id,schedule.id AS period_id,'academic'::text AS source,
           concat(schedule.class_section_id::text,':',schedule.id::text,':',schedule.source_kind,':',schedule.source_record_id::text,':',schedule.source_revision::text) AS source_ref,
           GREATEST(COALESCE(schedule.source_revision,1),1) AS source_revision,schedule.title,
           'teaching'::text AS purpose,day::date::text AS local_date,
@@ -141,11 +138,11 @@ export class ActivityOccurrenceEngine {
           AND schedule.slot_type<>'break'
       )
       SELECT ${schoolId}::uuid AS school_id,combined.* FROM (
-        SELECT activity_id,plan_version_id,period_id,source,source_ref,source_revision,title,purpose,local_date,starts_at,ends_at,timezone,
+        SELECT activity_id,plan_version_id,offering_id,period_id,source,source_ref,source_revision,title,purpose,local_date,starts_at,ends_at,timezone,
           space_id,space_label,attendance_mode,context_kind,context_ref,term_id,subject_id,scheduled_teacher_id,period_number,state,revision,
           recorder_person_id,reviewer_person_id,location_kind,location_label,location_url,gap FROM activity
         ${activityOnly ? sql`` : sql`UNION ALL
-        SELECT activity_id,plan_version_id,period_id,source,source_ref,source_revision,title,purpose,local_date,starts_at,ends_at,timezone,
+        SELECT activity_id,plan_version_id,offering_id,period_id,source,source_ref,source_revision,title,purpose,local_date,starts_at,ends_at,timezone,
           space_id,space_label,attendance_mode,context_kind,context_ref,term_id,subject_id,scheduled_teacher_id,period_number,state,revision,
           recorder_person_id,reviewer_person_id,location_kind,location_label,location_url,gap FROM academic`}
       ) combined
@@ -154,8 +151,32 @@ export class ActivityOccurrenceEngine {
         AND (source<>'activity' OR state<>'cancelled' OR EXISTS(
           SELECT 1 FROM schedule_activity_occurrences retained WHERE retained.school_id=${schoolId}::uuid
             AND retained.source=combined.source AND retained.source_ref=combined.source_ref AND retained.local_date=combined.local_date::date))
-      ORDER BY starts_at,title,source_ref
-    `.execute(db)).rows;
+      ${ordered ? sql`ORDER BY starts_at,title,source_ref` : sql``}
+  `;
+}
+
+/** Schedule owns this source-derived count. Retained projection horizons and
+ * empty Attendance shells cannot create or remove a planned teaching session. */
+export async function countExpectedOfferingSessionsBefore(db:PlanningDb,schoolId:string,offeringId:string,before:string):Promise<number>{
+  const range=(await sql<{starts_on:string|null;until:string}>`SELECT min(starts_on)::text AS starts_on,(${before}::date-1)::text AS until FROM schedule_versions
+    WHERE school_id=${schoolId}::uuid AND offering_id=${offeringId}::uuid AND planning_origin='activity'
+      AND state IN ('published','cancelled') AND starts_on<${before}::date`.execute(db)).rows[0]!;
+  if(!range.starts_on)return 0;
+  const source=scheduledOccurrenceSource(schoolId,range.starts_on,range.until,undefined,{source:'activity',offering_id:offeringId},false);
+  return (await sql<{count:number}>`SELECT count(*)::int AS count FROM(${source}) expected
+    WHERE expected.state='expected' AND expected.local_date::date<${before}::date`.execute(db)).rows[0]!.count;
+}
+
+/**
+ * The single domain expansion/roster boundary. Old academic schedules are an
+ * adapter over effective_school_schedule_v4 (including its closures, overrides
+ * and accepted coverage), never copied into a second authored schedule.
+ */
+export class ActivityOccurrenceEngine {
+  constructor(private readonly identities: HumanAgentIdentityPort, private readonly responsibilities: ResponsibilityProjectionPort) {}
+  async expand(db: PlanningDb, schoolId: string, from: string, until: string, includeDraftId?: string, query: ActivityOccurrenceQuery = {}): Promise<ActivityOccurrence[]> {
+    const activityOnly = query.source === 'activity';
+    const raw=(await scheduledOccurrenceSource(schoolId,from,until,includeDraftId,query).execute(db)).rows;
     const result: ActivityOccurrence[] = [];
     for (const row of raw) {
       if (row.plan_version_id === includeDraftId && (row.gap || isAmbiguousLocalInstant(new Date(row.starts_at).toISOString(), row.timezone)
@@ -218,6 +239,14 @@ export class ActivityOccurrenceEngine {
         JOIN participation_groups participant_group ON participant_group.id=membership.group_id AND participant_group.is_active
         WHERE selected.version_id=${versionId}::uuid AND selected.school_id=${schoolId}::uuid AND selected.group_kind='group'
           AND membership.starts_on<=${date}::date AND (membership.ends_on IS NULL OR membership.ends_on>=${date}::date)
+        UNION ALL
+        SELECT enrollment.person_id,'learning_offering',enrollment.id::text,enrollment.revision,true
+        FROM schedule_versions version JOIN learning_offering_enrollments enrollment ON enrollment.school_id=version.school_id AND enrollment.offering_id=version.offering_id
+        LEFT JOIN learning_offering_academic_contexts binding ON binding.school_id=version.school_id AND binding.offering_id=version.offering_id
+        LEFT JOIN academic_terms term ON term.id=binding.term_id AND term.school_id=binding.school_id
+        WHERE version.id=${versionId}::uuid AND version.school_id=${schoolId}::uuid AND enrollment.starts_on<=${date}::date
+          AND(enrollment.ends_on IS NULL OR enrollment.ends_on>${date}::date)
+          AND(term.id IS NULL OR ${date}::date BETWEEN term.starts_on AND term.ends_on)
         UNION ALL
         SELECT lead_person_id,'person',lead_person_id::text,person.revision,false FROM schedule_versions version
         JOIN school_people person ON person.id=version.lead_person_id AND person.school_id=version.school_id
@@ -286,9 +315,9 @@ export class ActivityOccurrenceEngine {
     for (const occurrence of occurrences) {
       const { participants, recorder_person_id, reviewer_person_id, ...row } = occurrence;
       const inserted = (await sql<{ id: string }>`INSERT INTO schedule_activity_occurrences(
-        id,school_id,activity_id,plan_version_id,period_id,source,source_ref,source_revision,title,purpose,local_date,
+        id,school_id,activity_id,plan_version_id,offering_id,period_id,source,source_ref,source_revision,title,purpose,local_date,
         starts_at,ends_at,timezone,space_id,attendance_mode,context_kind,context_ref,term_id,subject_id,scheduled_teacher_id,period_number,state,revision,location_kind,location_label,location_url)
-        VALUES(${row.id}::uuid,${row.school_id}::uuid,${row.activity_id}::uuid,${row.plan_version_id}::uuid,${row.period_id}::uuid,
+        VALUES(${row.id}::uuid,${row.school_id}::uuid,${row.activity_id}::uuid,${row.plan_version_id}::uuid,${row.offering_id ?? null}::uuid,${row.period_id}::uuid,
           ${row.source},${row.source_ref},${row.source_revision},${row.title},${row.purpose},${row.local_date}::date,
           ${row.starts_at}::timestamptz,${row.ends_at}::timestamptz,${row.timezone},${row.space_id}::uuid,${row.attendance_mode},
           ${row.context_kind},${row.context_ref}::uuid,${row.term_id}::uuid,${row.subject_id}::uuid,${row.scheduled_teacher_id}::uuid,

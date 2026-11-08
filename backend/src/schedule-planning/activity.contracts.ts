@@ -30,6 +30,7 @@ export const activityPlanInput = z.object({
   class_section_id: uuid.nullable().default(null),
   term_id: uuid.nullable().default(null),
   subject_id: uuid.nullable().default(null),
+  offering_id: uuid.nullable().optional(),
   location_kind: z.enum(['on_campus', 'online', 'off_site', 'unspecified']).default('unspecified'),
   location_label: z.string().trim().max(200).default(''),
   location_url: z.string().trim().max(1000).default('').refine(value => {
@@ -43,7 +44,7 @@ export const activityPlanInput = z.object({
   if (new Set(value.weekdays).size !== value.weekdays.length) issue('weekdays', 'Select each weekday only once.');
   if (value.end_day_offset === 0 && value.ends_at <= value.starts_at) issue('ends_at', 'End must follow start; choose Ends next day for an overnight activity.');
   if (value.end_day_offset === 1 && value.ends_at > value.starts_at) issue('ends_at', 'An activity can last up to 24 hours.');
-  if (value.person_ids.length === 0 && value.group_ids.length === 0 && !value.class_section_id
+  if (value.person_ids.length === 0 && value.group_ids.length === 0 && !value.class_section_id && !value.offering_id
     && !(value.attendance_mode === 'none' && value.space_id)) issue('person_ids', 'Choose people, an existing group, or reserve a place without attendance.');
   if (value.location_kind === 'on_campus' && !value.space_id) issue('space_id', 'Choose the campus place for this activity.');
   if (value.location_kind === 'off_site' && !value.location_label) issue('location_label', 'Name the off-site location.');
@@ -51,6 +52,8 @@ export const activityPlanInput = z.object({
   if (Boolean(value.class_section_id) !== Boolean(value.term_id)) issue('class_section_id', 'A class teaching context requires both its class and term.');
   if (value.subject_id && !value.class_section_id) issue('subject_id', 'Choose a class and term before adding an academic subject.');
   if (value.class_section_id && value.purpose !== 'teaching') issue('class_section_id', 'An academic class context is only used for teaching. Choose the class as a participant group for other activities.');
+  if (value.offering_id && (value.purpose !== 'teaching' || value.class_section_id || value.term_id || value.subject_id || value.person_ids.length || value.group_ids.length))
+    issue('offering_id', 'Choose one course or learning group as the teaching roster. Its academic context comes from that offering.');
   if (value.recurrence === 'once' && value.ends_on && value.ends_on !== value.starts_on) issue('ends_on', 'A one-time activity uses one starting date; its end time can be the following day.');
 });
 export const activityActionInput = z.object({
@@ -70,7 +73,7 @@ export const activityOccurrenceRangeInput=activityRangeInput.safeExtend({state:z
 export type ActivityPlanInput = z.infer<typeof activityPlanInput>;
 export interface ActivityParticipant {
   person_id: string; label: string; participation_role: 'participant' | 'lead';
-  source_kind: 'person' | 'class' | 'team' | 'group' | 'teaching' | 'event' | 'examination'; source_ref: string;
+  source_kind: 'person' | 'class' | 'team' | 'group' | 'teaching' | 'event' | 'examination' | 'learning_offering'; source_ref: string;
   source_revision: number; requirement: 'required' | 'optional';
   person_revision?: number;
   /** Scheduled operators remain conflict-bearing without becoming attendees. */
@@ -78,6 +81,7 @@ export interface ActivityParticipant {
 }
 export interface ActivityOccurrence {
   id: string; school_id: string; activity_id: string; plan_version_id: string | null;
+  offering_id?: string | null;
   period_id: string; source: 'activity' | 'academic' | 'event' | 'examination'; source_ref: string; source_revision: number;
   title: string; purpose: string; local_date: string; starts_at: string; ends_at: string;
   timezone: string; space_id: string | null; space_label?: string | null;

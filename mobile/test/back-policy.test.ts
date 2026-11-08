@@ -546,3 +546,50 @@ test('tab reset aggregates retained underlying editors only in the exact removed
   assert.deepEqual(campusRemovedGuards(guards, ['retained-editor'], liveScope), { blocked: false, dirty: [guards[0]] });
   assert.deepEqual(campusRemovedGuards(guards, ['retained-editor','current-detail'], liveScope), { blocked: true, dirty: [guards[0]] });
 });
+
+const courseA='a0000000-0000-4000-8000-000000000001',courseB='a0000000-0000-4000-8000-000000000002';
+const learnerA='b0000000-0000-4000-8000-000000000001',learnerB='b0000000-0000-4000-8000-000000000002';
+const reviewA='c0000000-0000-4000-8000-000000000001',reviewB='c0000000-0000-4000-8000-000000000002';
+const courseOverview=`/areas/messages/assignments?scope=offering&offering_id=${courseA}&search=Data&groups_page=2`;
+const courseManage=courseOverview+'&group_manage=1';
+const electiveRequest=`/areas/messages/assignments?scope=elective_change&offering_id=${courseA}&person_id=${learnerA}`;
+const electiveReview=`/areas/messages/assignments?scope=elective_change&change_id=${reviewA}`;
+
+test('course management opens exact elective request/review identities without treating another learner or course as Back',()=>{
+  assert.equal(campusTransitionKind(courseManage,electiveRequest),'open');
+  assert.equal(campusTransitionKind(electiveRequest,electiveReview),'open');
+  assert.equal(campusTransitionKind(electiveRequest,electiveRequest.replace(learnerA,learnerB)),'open');
+  assert.equal(campusTransitionKind(electiveRequest,electiveRequest.replace(courseA,courseB)),'open');
+  assert.equal(campusTransitionKind(electiveReview,electiveReview.replace(reviewA,reviewB)),'open');
+  assert.equal(campusTransitionKind(electiveRequest,electiveRequest+'&date=2026-11-08&page=2'),'update');
+  assert.equal(campusTransitionKind(courseOverview,courseOverview.replace(courseA,courseB)+'&date=2026-11-09'),'update','ordinary course assignment filters retain their existing behavior');
+});
+
+test('course detail configuration is an editor level and cold elective links have a usable owning parent',()=>{
+  assert.equal(campusTransitionKind(courseOverview,courseOverview+'&course_setup=1'),'open');
+  assert.equal(campusTransitionKind(courseManage,courseManage+'&course_setup=1'),'open');
+  assert.equal(campusTransitionKind(courseManage+'&course_setup=1',courseManage),'return');
+  assert.deepEqual(campusBackFallback(electiveRequest),{href:`/areas/messages/assignments?scope=offering&offering_id=${courseA}&group_manage=1`,title:'Learning group'});
+  assert.deepEqual(campusBackFallback(electiveReview),{href:'/areas/messages/assignments',title:'Learning groups'});
+});
+
+test('elective Back returns the exact retained request then group instance with source/filter context and writer guards intact',()=>{
+  for(const scope of [liveScope,simulationScope]){
+    const overview:FixtureRoute={key:'course-overview',name:'[...path]',params:{path:['messages','assignments'],scope:'offering',offering_id:courseA,search:'Data',groups_page:'2'}};
+    const manage:FixtureRoute={...overview,key:'course-manage',params:{...overview.params,group_manage:'1'}};
+    const request:FixtureRoute={key:'elective-request',name:'[...path]',params:{path:['messages','assignments'],scope:'elective_change',offering_id:courseA,person_id:learnerA}};
+    const review:FixtureRoute={key:'elective-review',name:'[...path]',params:{path:['messages','assignments'],scope:'elective_change',change_id:reviewA}};
+    const preload:FixtureRoute={key:'preloaded-calendar',name:'[...path]',params:{path:['calendar']},isPreloaded:true};
+    const areas=navigator('areas-stack','stack',[overview,manage,request,review,preload],3);
+    const tree=freeze(navigator('root','stack',[{key:'campus',name:'(campus)',state:navigator('tabs','tab',[{key:'areas-tab',name:'areas',state:areas}])}]));
+    const toRequest=projectCampusOriginReturn(tree,{scopeKey:scope,originKey:request.key,destinationKey:review.key},scope);
+    assert.ok(toRequest);assert.equal(focusedCampusRoute(toRequest),request);assert.equal(campusHrefForRoute(toRequest,request.key),electiveRequest);
+    assert.equal(findRoute(toRequest,manage.key),manage);assert.equal(findRoute(toRequest,preload.key),preload);
+    const toManage=projectCampusOriginReturn(toRequest,{scopeKey:scope,originKey:manage.key,destinationKey:request.key},scope);
+    assert.ok(toManage);assert.equal(focusedCampusRoute(toManage),manage);assert.ok(sameCampusHref(campusHrefForRoute(toManage,manage.key)!,courseManage));
+    assert.equal(findRoute(toManage,overview.key),overview);assert.equal(findRoute(toManage,preload.key),preload);
+    const guard={key:request.key,scope,dirty:true,blocked:true};
+    assert.deepEqual(campusRemovedGuards([guard],[request.key],scope),{blocked:true,dirty:[guard]},'journal/busy guard still applies to the exact removed request');
+    assert.equal(projectCampusOriginReturn(tree,{scopeKey:scope,originKey:request.key,destinationKey:review.key},scope===liveScope?simulationScope:liveScope),null);
+  }
+});

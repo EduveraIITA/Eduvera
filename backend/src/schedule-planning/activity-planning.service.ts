@@ -1,5 +1,6 @@
-import { BadRequestException, ConflictException, ForbiddenException, HttpException, Inject, Injectable, NotFoundException } from '@nestjs/common';
+import { BadRequestException, ConflictException, ForbiddenException, HttpException, Inject, Injectable, NotFoundException, Optional } from '@nestjs/common';
 import { createHash, randomUUID } from 'node:crypto';
+import { isDeepStrictEqual } from 'node:util';
 import { sql, type Transaction } from 'kysely';
 import { z } from 'zod';
 import type { AuthenticatedRequest, AuthUser } from '../common/request.js';
@@ -8,7 +9,7 @@ import type { Database } from '../database/types.js';
 import { executionNow } from '../campus-model-core/execution-time.runtime.js';
 import { retainOperatingDestination, retainTimetableContinuation } from '../institution-onboarding/operating-resume.js';
 import { canManageActivityPlanning } from './activity-planning-readiness.js';
-import { DOMAIN_COMMAND_GATEWAY_PORT, type DomainCommandGatewayPort, type PreparedDomainCommand } from '../campus-model-core/domain-command-gateway.port.js';
+import { DOMAIN_COMMAND_GATEWAY_PORT, PREPARED_DOMAIN_COMMAND_VERIFICATION_PORT, type PreparedDomainCommandVerificationPort, type DomainCommandGatewayPort, type PreparedDomainCommand } from '../campus-model-core/domain-command-gateway.port.js';
 import { PLAN_OCCURRENCE_PORT, type PlanOccurrencePort, type PlanOccurrenceProjection } from '../campus-model-core/plan-occurrence.port.js';
 import { HUMAN_AGENT_IDENTITY_PORT, type HumanAgentIdentityPort } from '../campus-model-core/human-agent-identity.port.js';
 import { RESPONSIBILITY_PROJECTION_PORT, type ResponsibilityProjectionPort } from '../campus-model-core/responsibility-projection.port.js';
@@ -18,9 +19,18 @@ import { ActivityOccurrenceEngine, activityOccurrenceId, firstOccurrenceConflict
 import { lockSchedule } from '../day-plans/schedule.js';
 import { assessmentWorkHref, eventWorkHref } from '../workspace/canonical-application-links.js';
 import { assertSpacesNotResidential } from '../common/campus-space-use.js';
+import { offeringAcademicContext, offeringAcademicReferences } from '../learning/learning-offering-academic.js';
+import type { ElectiveRosterPreview, ElectiveRosterApplyReceipt } from '../learning/learning-offering-elective-roster.js';
+import { ElectiveRuleRefusal } from '../learning/learning-elective-change.contracts.js';
+
+/** Explicit native rule refusals; authority, Core and persistence failures are not classified here. */
+export class ActivityPlanRuleConflict extends ConflictException {}
+export class ActivityPlanRuleInputRefusal extends BadRequestException {}
+
+type ActivityRequest = Pick<AuthenticatedRequest, "authUser" | "requestId">;
 
 interface PlanRow {
-  id: string; school_id: string; class_section_id: string | null; term_id: string | null;
+  id: string; school_id: string; class_section_id: string | null; term_id: string | null; offering_id: string | null;
   state: 'draft' | 'published' | 'discarded' | 'cancelled'; starts_on: string; ends_on: string | null;
   revision: number; planning_origin: 'academic' | 'activity'; activity_title: string;
   activity_purpose: ActivityPlanInput['purpose']; activity_description: string; activity_timezone: string;
@@ -56,9 +66,54 @@ export class ActivityPlanningService {
     @Inject(PLAN_OCCURRENCE_PORT) private readonly projection: PlanOccurrencePort,
     @Inject(HUMAN_AGENT_IDENTITY_PORT) private readonly identities: HumanAgentIdentityPort,
     @Inject(RESPONSIBILITY_PROJECTION_PORT) private readonly responsibilities: ResponsibilityProjectionPort,
+    @Optional() @Inject(PREPARED_DOMAIN_COMMAND_VERIFICATION_PORT) private readonly commandVerifier?: PreparedDomainCommandVerificationPort,
   ) { this.engine = new ActivityOccurrenceEngine(identities, responsibilities); }
 
-  private async command<T>(req: AuthenticatedRequest, schoolId: string, key: string, identity: unknown,
+  /** Explicit internal handoff from the prepared Learning enrollment command.
+   * Reuse the ordinary revise/publication invariants and retain each actual Core
+   * receipt, rather than directly editing frozen roster sources or old actuals. */
+  async publishOfferingEnrollmentChange(db: Transaction<Database>, req: ActivityRequest, schoolId: string,
+    reviewed: ElectiveRosterPreview, sourceCommandId: string, sourceCorrelationId: string): Promise<ElectiveRosterApplyReceipt['schedule_revisions']> {
+    await lockSchedule(db, schoolId);
+    await this.manager(db, req.authUser, schoolId);
+    if (!this.commandVerifier) throw new ConflictException('Prepared enrollment command verification is unavailable.');
+    const proof = await this.commandVerifier.verifyPreparedDomainCommand(db, { school_id: schoolId, actor_user_id: req.authUser.id,
+      command_id: sourceCommandId, correlation_id: sourceCorrelationId, source_domain: 'learning', required_capability: 'campus.setup',
+      allowed_command_types: ['learning.offering.elective.transfer'] });
+    const source = proof.safe_context.elective_change as Record<string, unknown> | undefined;
+    if (!source || source.fingerprint !== reviewed.fingerprint || source.person_id !== reviewed.selection.person.id
+      || source.source_offering_id !== reviewed.selection.source_offering.id || source.destination_offering_id !== reviewed.selection.destination_offering.id
+      || source.effective_on !== reviewed.selection.effective_on || !isDeepStrictEqual(source.plans, reviewed.schedule.impacts))
+      throw new ConflictException('The exact reviewed course enrollment and plan scope do not match the prepared Learning command.');
+    const results: ElectiveRosterApplyReceipt['schedule_revisions'] = [];
+    const ordered = [...reviewed.schedule.impacts].sort((a,b) => Number(b.offering_id === reviewed.selection.source_offering.id) - Number(a.offering_id === reviewed.selection.source_offering.id) || a.plan_id.localeCompare(b.plan_id));
+    for (const impact of ordered) {
+      const current = await this.row(db, schoolId, impact.plan_id, true);
+      if (current.offering_id !== impact.offering_id || current.revision !== impact.revision || current.state !== 'published'
+        || ![reviewed.selection.source_offering.id,reviewed.selection.destination_offering.id].includes(current.offering_id ?? ''))
+        throw new ElectiveRuleRefusal('An affected course plan changed. Review the enrollment change again.');
+      try {
+      const draftId = activityOccurrenceId(schoolId, 'elective_plan_revision', sourceCommandId, impact.plan_id);
+      const reviseContext: ActivityCommandContext = { prepared: null, savepoint: false };
+      await this.reviseWithinTransaction(req, schoolId, impact.plan_id, { idempotency_key: draftId, expected_revision: impact.revision,
+        starts_on: impact.replacement_starts_on, reason: 'Explicitly reviewed course enrollment change' }, db, reviseContext);
+      if (reviseContext.savepoint) await sql`RELEASE SAVEPOINT activity_domain_effects`.execute(db);
+      const publishKey = activityOccurrenceId(schoolId, 'elective_plan_publish', sourceCommandId, impact.plan_id);
+      const publishContext: ActivityCommandContext = { prepared: null, savepoint: false };
+      const published = await this.publishWithinTransaction(req, schoolId, draftId, { idempotency_key: publishKey, expected_revision: 1 }, db, publishContext);
+      if (publishContext.savepoint) await sql`RELEASE SAVEPOINT activity_domain_effects`.execute(db);
+      if (!publishContext.prepared) throw new ConflictException('The exact course plan publication receipt is unavailable.');
+      results.push({ previous_plan_id: impact.plan_id, plan_id: draftId, revision: published.revision, command_id: publishContext.prepared.command_id });
+      } catch (cause) {
+        if (cause instanceof ActivityPlanRuleConflict || cause instanceof ActivityPlanRuleInputRefusal)
+          throw new ElectiveRuleRefusal(cause.getResponse());
+        throw cause;
+      }
+    }
+    return results;
+  }
+
+  private async command<T>(req: ActivityRequest, schoolId: string, key: string, identity: unknown,
     run: (db: Transaction<Database>, context: ActivityCommandContext) => Promise<T>): Promise<T> {
     const hash = createHash('sha256').update(JSON.stringify(identity)).digest('hex');
     const refused: { error: HttpException | null } = { error: null };
@@ -135,7 +190,7 @@ export class ActivityPlanningService {
     const school = (await sql<{ timezone: string }>`SELECT timezone FROM schools WHERE id=${schoolId}::uuid`.execute(this.db)).rows[0]!;
     if (!manager) {
       await this.actingPerson(this.db, user, schoolId);
-      return { school_id: schoolId, timezone: school.timezone, can_manage: false, can_create_places: false, campuses: [], people: [], recorders: [], reviewers: [], groups: [], spaces: [], classes: [], subjects: [], terms: [],
+      return { school_id: schoolId, timezone: school.timezone, can_manage: false, can_create_places: false, campuses: [], people: [], recorders: [], reviewers: [], groups: [], spaces: [], classes: [], subjects: [], terms: [], offerings: [],
         purposes: ['teaching', 'duty', 'training', 'meeting', 'other'], people_limit: 2000, people_truncated: false };
     }
     const people = (await sql<{ id: string; label: string; affiliations: string[] }>`SELECT person.id,
@@ -167,7 +222,8 @@ export class ActivityPlanningService {
     const classes = (await sql<{ id: string; label: string }>`SELECT id,concat('Class ',grade,section) AS label FROM class_sections WHERE school_id=${schoolId}::uuid ORDER BY grade,section,id`.execute(this.db)).rows;
     const subjects = (await sql<{ id: string; label: string }>`SELECT id,name AS label FROM subjects WHERE school_id=${schoolId}::uuid ORDER BY name,id`.execute(this.db)).rows;
     const terms = (await sql<{ id: string; label: string; starts_on: string; ends_on: string }>`SELECT id,name AS label,starts_on::text,ends_on::text FROM academic_terms WHERE school_id=${schoolId}::uuid ORDER BY starts_on DESC,id`.execute(this.db)).rows;
-    return { school_id: schoolId, timezone: school.timezone, can_manage: true, can_create_places: canCreatePlaces, campuses, people, recorders, reviewers, groups, spaces, classes, subjects, terms,
+    const offerings = await offeringAcademicReferences(this.db, schoolId);
+    return { school_id: schoolId, timezone: school.timezone, offerings, can_manage: true, can_create_places: canCreatePlaces, campuses, people, recorders, reviewers, groups, spaces, classes, subjects, terms,
       purposes: ['teaching', 'duty', 'training', 'meeting', 'other'], people_limit: 2000, people_truncated: people.length === 2000 };
   }
 
@@ -201,7 +257,8 @@ export class ActivityPlanningService {
       ends_at: first?.ends_at.slice(0, 5) ?? '10:00', end_day_offset: first?.end_day_offset ?? 0,
       space_id: first?.space_id ?? null, person_ids: personIds, group_ids: groupIds,
       lead_person_id: row.lead_person_id, recorder_person_id: row.recorder_person_id, reviewer_person_id: row.reviewer_person_id,
-      attendance_mode: row.attendance_mode, class_section_id: row.class_section_id, term_id: row.term_id,
+      attendance_mode: row.attendance_mode, class_section_id: row.class_section_id, term_id: row.term_id, offering_id: row.offering_id,
+      academic_context: row.offering_id ? await offeringAcademicContext(db, row.school_id, row.offering_id) : null,
       subject_id: first?.subject_id ?? null, source: row.planning_origin, source_ref: row.id,
       source_href: row.planning_origin === 'academic' ? `/areas/timetable/planning?class=${row.class_section_id}&term=${row.term_id}` : null,
       location_kind: row.location_kind, location_label: row.location_label, location_url: row.location_url,
@@ -261,6 +318,22 @@ export class ActivityPlanningService {
     }
     if (input.space_id && !(await sql`SELECT id FROM campus_spaces WHERE id=${input.space_id}::uuid AND school_id=${schoolId}::uuid AND status='active' FOR SHARE`.execute(db)).rows.length)
       throw new BadRequestException('Choose an active place in this institution.');
+    if (input.offering_id) {
+      const offering = (await sql`SELECT id FROM learning_offerings WHERE school_id=${schoolId}::uuid AND id=${input.offering_id}::uuid AND state='active' FOR SHARE`.execute(db)).rows[0];
+      if (!offering) throw new BadRequestException('Choose an active course or learning group from this campus.');
+      const academic = await offeringAcademicContext(db, schoolId, input.offering_id);
+      if(academic){
+        const campus=(await sql<{timezone:string}>`SELECT timezone FROM schools WHERE id=${schoolId}::uuid`.execute(db)).rows[0]!;
+        if(input.timezone!==campus.timezone)throw new ActivityPlanRuleInputRefusal(`Course timetables use the campus timezone (${campus.timezone}) so course enrollment and term dates remain consistent. Use campus time for this course.`);
+      }
+      if (academic && (input.starts_on < academic.starts_on || !input.ends_on || input.ends_on > academic.ends_on))
+        throw new BadRequestException('Keep this course plan within its configured term. Basic learning groups can use an open recurring plan without a term.');
+      if (publishing && !input.lead_person_id) throw new BadRequestException('Choose the responsible instructor before publishing this course plan.');
+      if (input.lead_person_id && !(await sql`SELECT 1 FROM learning_offering_teaching_assignments appointment
+        WHERE appointment.school_id=${schoolId}::uuid AND appointment.offering_id=${input.offering_id}::uuid AND appointment.person_id=${input.lead_person_id}::uuid
+          AND appointment.can_publish AND appointment.starts_on<=${input.starts_on}::date AND(appointment.ends_on IS NULL OR appointment.ends_on>${input.starts_on}::date) FOR SHARE`.execute(db)).rows.length)
+        throw new BadRequestException('Choose the offering instructor appointed for this date. A scheduled lead does not receive a teaching appointment automatically.');
+    }
     if (input.class_section_id) {
       if (!input.ends_on || !(await sql`SELECT class.id FROM class_sections class JOIN academic_terms term ON term.school_id=class.school_id AND term.academic_year=class.academic_year
         WHERE class.id=${input.class_section_id}::uuid AND class.school_id=${schoolId}::uuid AND term.id=${input.term_id}::uuid
@@ -287,7 +360,7 @@ export class ActivityPlanningService {
     }
   }
 
-  private async prepare(db: Transaction<Database>, req: AuthenticatedRequest, schoolId: string, target: PlanRow | null,
+  private async prepare(db: Transaction<Database>, req: ActivityRequest, schoolId: string, target: PlanRow | null,
     id: string, action: string, key: string, expected: number, context: Record<string, unknown>, commandContext: ActivityCommandContext) {
     await this.manager(db, req.authUser, schoolId);
     const command = await this.commands.prepareDomainCommand(db, {
@@ -310,7 +383,7 @@ export class ActivityPlanningService {
     return command;
   }
 
-  private async audit(db: Transaction<Database>, req: AuthenticatedRequest, schoolId: string, id: string, action: string, revision: number) {
+  private async audit(db: Transaction<Database>, req: ActivityRequest, schoolId: string, id: string, action: string, revision: number) {
     await db.insertInto('audit_events').values({ school_id: schoolId, actor_id: req.authUser.id, action: `schedule.activity.${action}`,
       target_type: 'schedule', target_id: id, request_id: req.requestId, ip_hash: null, metadata: { revision } }).execute();
     const users=new Set([req.authUser.id]);
@@ -357,6 +430,13 @@ export class ActivityPlanningService {
         JOIN academic_terms term ON term.id=enrollment.term_id AND term.school_id=plan.school_id
         JOIN students learner ON learner.id=enrollment.student_id AND learner.school_id=plan.school_id
         UNION ALL
+        SELECT enrollment.person_id,'participant','learning_offering',enrollment.id::text,enrollment.revision,
+          GREATEST(plan.begins,GREATEST(enrollment.starts_on,term.starts_on)::timestamp AT TIME ZONE plan.activity_timezone),
+          LEAST(plan.ends,LEAST(enrollment.ends_on,term.ends_on+1)::timestamp AT TIME ZONE plan.activity_timezone)
+        FROM plan JOIN learning_offering_enrollments enrollment ON enrollment.school_id=plan.school_id AND enrollment.offering_id=plan.offering_id
+        LEFT JOIN learning_offering_academic_contexts binding ON binding.school_id=plan.school_id AND binding.offering_id=plan.offering_id
+        LEFT JOIN academic_terms term ON term.id=binding.term_id AND term.school_id=binding.school_id
+        UNION ALL
         SELECT member.person_id,'participant','group',member.id::text,member.revision,
           GREATEST(plan.begins,member.starts_on::timestamp AT TIME ZONE plan.activity_timezone),
           LEAST(plan.ends,CASE WHEN member.ends_on IS NULL THEN NULL ELSE (member.ends_on+1)::timestamp AT TIME ZONE plan.activity_timezone END)
@@ -394,20 +474,24 @@ export class ActivityPlanningService {
       VALUES(${row.id}::uuid,${row.school_id}::uuid,${row.revision + 1},${createHash('sha256').update(JSON.stringify(sources)).digest('hex')},${publishedAt}::timestamptz,${actorId}::uuid,${JSON.stringify(resources)}::jsonb)`.execute(db);
   }
 
-  async create(req: AuthenticatedRequest, schoolId: string, body: unknown) { return this.save(req, schoolId, null, body); }
-  async update(req: AuthenticatedRequest, schoolId: string, id: string, body: unknown) { return this.save(req, schoolId, id, body); }
+  async create(req: ActivityRequest, schoolId: string, body: unknown) { return this.save(req, schoolId, null, body); }
+  async update(req: ActivityRequest, schoolId: string, id: string, body: unknown) { return this.save(req, schoolId, id, body); }
 
-  async revise(req: AuthenticatedRequest, schoolId: string, id: string, body: unknown) {
+  async revise(req: ActivityRequest, schoolId: string, id: string, body: unknown) {
     const input = activityRevisionInput.parse(body);
-    return this.command(req, schoolId, input.idempotency_key, { action: 'revise', id, ...input }, async (db, commandContext) => {
+    return this.command(req, schoolId, input.idempotency_key, { action: 'revise', id, ...input }, (db, commandContext) => this.reviseWithinTransaction(req, schoolId, id, input, db, commandContext));
+  }
+
+  private async reviseWithinTransaction(req: ActivityRequest, schoolId: string, id: string, input: z.infer<typeof activityRevisionInput>,
+    db: Transaction<Database>, commandContext: ActivityCommandContext) {
       const source = await this.row(db, schoolId, id, true);
       const command = await this.prepare(db, req, schoolId, source, id, 'revise', input.idempotency_key, input.expected_revision, { ...input, source_id: id }, commandContext);
       if (command.status === 'completed') return this.view(db, await this.row(db, schoolId, input.idempotency_key));
-      if (source.planning_origin !== 'activity' || source.state !== 'published') throw new ConflictException('Choose a published activity plan. Academic changes use the owning dated timetable editor.');
+      if (source.planning_origin !== 'activity' || source.state !== 'published') throw new ActivityPlanRuleConflict('Choose a published activity plan. Academic changes use the owning dated timetable editor.');
       const existing = (await sql`SELECT id FROM schedule_versions WHERE replaces_version_id=${id}::uuid AND state='draft'`.execute(db)).rows[0];
-      if (existing) throw new ConflictException('This plan already has a change being prepared or published. Open that dated plan to continue.');
+      if (existing) throw new ActivityPlanRuleConflict('This plan already has a change being prepared or published. Open that dated plan to continue.');
       if (source.recurrence_kind !== 'once' && (input.starts_on < source.starts_on || (source.ends_on && input.starts_on > source.ends_on)))
-        throw new BadRequestException('Choose a change date within this plan.');
+        throw new ActivityPlanRuleInputRefusal('Choose a change date within this plan.');
       if(source.recurrence_kind==='once')await this.oneOffReplacementBounds(db,source);
       const covered=(await sql<{replacement_plan_id:string;from:string;until:string|null}>`SELECT replacement_version_id AS replacement_plan_id,
         (effective_from AT TIME ZONE ${source.activity_timezone})::date::text AS "from",(effective_until AT TIME ZONE ${source.activity_timezone})::date::text AS until
@@ -422,10 +506,10 @@ export class ActivityPlanningService {
         await this.assertNoStartedReplacement(db,source,new Date(timing.from).toISOString(),null);
       }
       const newId = input.idempotency_key;
-      await sql`INSERT INTO schedule_versions(id,school_id,class_section_id,term_id,state,starts_on,ends_on,created_by,planning_origin,
+      await sql`INSERT INTO schedule_versions(id,school_id,class_section_id,term_id,offering_id,state,starts_on,ends_on,created_by,planning_origin,
         activity_title,activity_purpose,activity_description,activity_timezone,recurrence_kind,attendance_mode,lead_person_id,recorder_person_id,reviewer_person_id,
         location_kind,location_label,location_url,replaces_version_id,replaces_source_revision,revision_reason)
-        SELECT ${newId}::uuid,school_id,class_section_id,term_id,'draft',${input.starts_on}::date,
+        SELECT ${newId}::uuid,school_id,class_section_id,term_id,offering_id,'draft',${input.starts_on}::date,
           CASE WHEN recurrence_kind='once' THEN ${input.starts_on}::date ELSE ends_on END,${req.authUser.id}::uuid,planning_origin,
           activity_title,activity_purpose,activity_description,activity_timezone,recurrence_kind,attendance_mode,lead_person_id,recorder_person_id,reviewer_person_id,
           location_kind,location_label,location_url,id,revision,${input.reason} FROM schedule_versions WHERE id=${id}::uuid`.execute(db);
@@ -439,10 +523,9 @@ export class ActivityPlanningService {
         explanation: 'A copy was prepared for a dated change. The existing plan is unchanged until review and publication.', resulting_revision: 1,
         domain_event_id: eventId, metadata: { plan_id: newId, replaces_version_id: id }, completed_at: executionNow().toISOString() });
       return this.view(db, await this.row(db, schoolId, newId));
-    });
   }
 
-  private async save(req: AuthenticatedRequest, schoolId: string, existingId: string | null, body: unknown) {
+  private async save(req: ActivityRequest, schoolId: string, existingId: string | null, body: unknown) {
     const input = activityPlanInput.parse(body);
     if (existingId && !input.expected_revision) throw new BadRequestException('Refresh this draft and provide its current revision.');
     // A create key deterministically addresses its aggregate, allowing safe HTTP retries.
@@ -456,13 +539,13 @@ export class ActivityPlanningService {
       await this.validate(db, schoolId, input);
       const endsOn = input.recurrence === 'once' ? input.starts_on : input.ends_on;
       let revision = 1;
-      if (!current) await sql`INSERT INTO schedule_versions(id,school_id,class_section_id,term_id,state,starts_on,ends_on,created_by,
+      if (!current) await sql`INSERT INTO schedule_versions(id,school_id,class_section_id,term_id,offering_id,state,starts_on,ends_on,created_by,
         planning_origin,activity_title,activity_purpose,activity_description,activity_timezone,recurrence_kind,attendance_mode,lead_person_id,recorder_person_id,reviewer_person_id,location_kind,location_label,location_url)
-        VALUES(${id}::uuid,${schoolId}::uuid,${input.class_section_id}::uuid,${input.term_id}::uuid,'draft',${input.starts_on}::date,${endsOn}::date,${req.authUser.id}::uuid,
+        VALUES(${id}::uuid,${schoolId}::uuid,${input.class_section_id}::uuid,${input.term_id}::uuid,${input.offering_id ?? null}::uuid,'draft',${input.starts_on}::date,${endsOn}::date,${req.authUser.id}::uuid,
         'activity',${input.title},${input.purpose},${input.description},${input.timezone},${input.recurrence},${input.attendance_mode},${input.lead_person_id}::uuid,${input.recorder_person_id}::uuid,${input.reviewer_person_id}::uuid,${input.location_kind},${input.location_label},${input.location_url})`.execute(db);
       else {
         revision = current.revision + 1;
-        await sql`UPDATE schedule_versions SET starts_on=${input.starts_on}::date,ends_on=${endsOn}::date,class_section_id=${input.class_section_id}::uuid,term_id=${input.term_id}::uuid,
+        await sql`UPDATE schedule_versions SET starts_on=${input.starts_on}::date,ends_on=${endsOn}::date,class_section_id=${input.class_section_id}::uuid,term_id=${input.term_id}::uuid,offering_id=${input.offering_id ?? null}::uuid,
           activity_title=${input.title},activity_purpose=${input.purpose},activity_description=${input.description},activity_timezone=${input.timezone},recurrence_kind=${input.recurrence},
           attendance_mode=${input.attendance_mode},lead_person_id=${input.lead_person_id}::uuid,recorder_person_id=${input.recorder_person_id}::uuid,reviewer_person_id=${input.reviewer_person_id}::uuid,revision=${revision}
           ,location_kind=${input.location_kind},location_label=${input.location_label},location_url=${input.location_url}
@@ -489,21 +572,25 @@ export class ActivityPlanningService {
     });
   }
 
-  async publish(req: AuthenticatedRequest, schoolId: string, id: string, body: unknown) {
+  async publish(req: ActivityRequest, schoolId: string, id: string, body: unknown) {
     const input = activityActionInput.parse(body);
-    return this.command(req, schoolId, input.idempotency_key, { action: 'publish', id, ...input }, async (db, commandContext) => {
+    return this.command(req, schoolId, input.idempotency_key, { action: 'publish', id, ...input }, (db, commandContext) => this.publishWithinTransaction(req, schoolId, id, input, db, commandContext));
+  }
+
+  private async publishWithinTransaction(req: ActivityRequest, schoolId: string, id: string, input: z.infer<typeof activityActionInput>,
+    db: Transaction<Database>, commandContext: ActivityCommandContext) {
       await lockSchedule(db, schoolId);
       const row = await this.row(db, schoolId, id, true);
       const command = await this.prepare(db, req, schoolId, row, id, 'publish', input.idempotency_key, input.expected_revision, { plan_id: id }, commandContext);
       if (command.status === 'completed') return this.view(db, row);
-      if (row.planning_origin !== 'activity' || row.state !== 'draft') throw new ConflictException('Only a current activity draft can be published here.');
+      if (row.planning_origin !== 'activity' || row.state !== 'draft') throw new ActivityPlanRuleConflict('Only a current activity draft can be published here.');
       const replaced = row.replaces_version_id ? await this.row(db, schoolId, row.replaces_version_id, true) : null;
       if (replaced && (replaced.state !== 'published' || replaced.revision !== row.replaces_source_revision))
-        throw new ConflictException('The original plan changed or already has a replacement. Prepare a fresh change from the current plan.');
+        throw new ActivityPlanRuleConflict('The original plan changed or already has a replacement. Prepare a fresh change from the current plan.');
       const view = await this.view(db, row);
       const editableFields = ['title', 'purpose', 'description', 'timezone', 'starts_on', 'ends_on', 'recurrence', 'weekdays',
         'starts_at', 'ends_at', 'end_day_offset', 'space_id', 'person_ids', 'group_ids', 'lead_person_id', 'recorder_person_id',
-        'reviewer_person_id', 'attendance_mode', 'class_section_id', 'term_id', 'subject_id', 'location_kind', 'location_label', 'location_url'] as const;
+        'reviewer_person_id', 'attendance_mode', 'class_section_id', 'term_id', 'subject_id', 'offering_id', 'location_kind', 'location_label', 'location_url'] as const;
       const editable = Object.fromEntries(editableFields.map(key => [key, view[key]]));
       await this.validate(db, schoolId, activityPlanInput.parse({ ...editable, idempotency_key: input.idempotency_key }), true);
       const publishedAt = executionNow().toISOString();
@@ -520,7 +607,7 @@ export class ActivityPlanningService {
         CASE WHEN ${row.ends_on}::date IS NULL THEN NULL ELSE ((${row.ends_on}::date+1)::timestamp AT TIME ZONE ${row.activity_timezone}) END AS until`.execute(db)).rows[0]! : null;
       if(replaced&&replacedBounds){
         if(proposed.some(occurrence=>new Date(occurrence.starts_at).getTime()<=executionNow().getTime()))
-          throw new ConflictException('The revised activity would already have started. Choose a later time today or start tomorrow. Earlier plans and attendance are retained.');
+          throw new ActivityPlanRuleConflict('The revised activity would already have started. Choose a later time today or start tomorrow. Earlier plans and attendance are retained.');
         await this.assertNoStartedReplacement(db,replaced,new Date(replacedBounds.from).toISOString(),replacedBounds.until?new Date(replacedBounds.until).toISOString():null);
       }
       const willReplace = (occurrence: ActivityOccurrence) => Boolean(replacedBounds && occurrence.plan_version_id === replaced!.id
@@ -567,7 +654,7 @@ export class ActivityPlanningService {
         const later = await this.engine.expand(db, schoolId, boundary, through, id);
         const expected=later.filter(occurrence => occurrence.plan_version_id === id);
         if(expected.some(occurrence=>!occurrence.participants.some(person=>person.attendance_expected!==false)&&occurrence.attendance_mode!=='none'))
-          throw new BadRequestException(`The captured participant group has no eligible people on ${boundary}. Correct its effective membership or bound this plan before publishing.`);
+          throw new ActivityPlanRuleInputRefusal(`The captured participant group has no eligible people on ${boundary}. Correct its effective membership or bound this plan before publishing.`);
         await this.checkConflicts(db, schoolId, expected,
           later.filter(occurrence => occurrence.plan_version_id !== id && !willReplace(occurrence)));
       }
@@ -597,7 +684,6 @@ export class ActivityPlanningService {
         '/areas/attendance/registers', { onlyPending: true, source: 'accepted_activity_publication' });
       await retainTimetableContinuation(db, req.authUser, schoolId, published);
       return { ...await this.view(db, published), conflict_horizon_until: until };
-    });
   }
 
   private async oneOffReplacementBounds(db:PlanningDb,source:PlanRow){
@@ -606,7 +692,7 @@ export class ActivityPlanningService {
       ((${source.starts_on}::date+1)::timestamp AT TIME ZONE ${source.activity_timezone}) AS until
       FROM schedule_periods period WHERE period.version_id=${source.id}::uuid`.execute(db)).rows[0];
     if(!bounds?.from||new Date(bounds.from).getTime()<=executionNow().getTime())
-      throw new ConflictException('This one-off activity has already started. Its planned time and evidence are retained; create a separate new activity instead.');
+      throw new ActivityPlanRuleConflict('This one-off activity has already started. Its planned time and evidence are retained; create a separate new activity instead.');
     return bounds;
   }
 
@@ -620,18 +706,18 @@ export class ActivityPlanningService {
     const occurrences=await this.engine.expand(db,source.school_id,days.from,days.today);
     if(occurrences.some(occurrence=>occurrence.plan_version_id===source.id&&occurrence.state==='expected'
       &&occurrence.starts_at>=from&&(!until||occurrence.starts_at<until)&&Date.parse(occurrence.starts_at)<=now.getTime()))
-      throw new ConflictException('This dated change would replace an activity that has already started. Choose tomorrow or a later date. Earlier plans and attendance are retained.');
+      throw new ActivityPlanRuleConflict('This dated change would replace an activity that has already started. Choose tomorrow or a later date. Earlier plans and attendance are retained.');
   }
 
   private replacementConflict(window:{replacement_plan_id:string;from:string;until:string|null}){
-    return new ConflictException({message:`This date range already has a reviewed change from ${window.from}${window.until?` until ${window.until} (exclusive)`:' onward'}. Open that replacement to change its dates, or choose a disjoint range.`,
+    return new ActivityPlanRuleConflict({message:`This date range already has a reviewed change from ${window.from}${window.until?` until ${window.until} (exclusive)`:' onward'}. Open that replacement to change its dates, or choose a disjoint range.`,
       replacement_plan_id:window.replacement_plan_id,from:window.from,until:window.until});
   }
 
   private async checkConflicts(db: PlanningDb, schoolId: string, proposed: ActivityOccurrence[], existing: ActivityOccurrence[]) {
     await assertSpacesNotResidential(db,schoolId,proposed.filter(item=>item.state==='expected').flatMap(item=>item.space_id?[item.space_id]:[]));
     const found=firstOccurrenceConflict(proposed,existing);
-    if(found){const {conflict,other}=found;throw new ConflictException({message:`${conflict.label} conflicts with “${other.title}” on ${other.local_date}. Change the people, place or time before publishing.`,
+    if(found){const {conflict,other}=found;throw new ActivityPlanRuleConflict({message:`${conflict.label} conflicts with “${other.title}” on ${other.local_date}. Change the people, place or time before publishing.`,
       conflicts:[{...conflict,occurrence_id:other.id,activity_id:other.activity_id,local_date:other.local_date}]});}
     const personIds=[...new Set(proposed.flatMap(occurrence=>occurrence.participants.filter(person=>person.requirement==='required').map(person=>person.person_id)))];
     const leave=personIds.length?(await sql<{person_id:string;label:string;starts_at:Date;ends_at:Date}>`SELECT profile.person_id,
@@ -643,7 +729,7 @@ export class ActivityPlanningService {
     for (const occurrence of proposed) {
       const people=new Set(occurrence.participants.filter(person=>person.requirement==='required').map(person=>person.person_id));
       const unavailable=leave.find(row=>people.has(row.person_id)&&new Date(row.starts_at).toISOString()<occurrence.ends_at&&new Date(row.ends_at).toISOString()>occurrence.starts_at);
-      if (unavailable) throw new ConflictException(`${unavailable.label} has approved leave during “${occurrence.title}” on ${occurrence.local_date}. Choose another person or change the time.`);
+      if (unavailable) throw new ActivityPlanRuleConflict(`${unavailable.label} has approved leave during “${occurrence.title}” on ${occurrence.local_date}. Choose another person or change the time.`);
     }
   }
 
@@ -694,7 +780,7 @@ export class ActivityPlanningService {
     return receipts;
   }
 
-  async cancel(req: AuthenticatedRequest, schoolId: string, id: string, body: unknown) {
+  async cancel(req: ActivityRequest, schoolId: string, id: string, body: unknown) {
     const input = activityActionInput.parse(body);
     if (!input.reason) throw new BadRequestException('Explain why this plan is being cancelled. Historical attendance is retained.');
     return this.command(req, schoolId, input.idempotency_key, { action: 'cancel', id, ...input }, async (db, commandContext) => {

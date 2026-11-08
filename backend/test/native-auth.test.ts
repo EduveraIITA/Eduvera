@@ -4,6 +4,8 @@ import { Controller, Get, Module, Post, Req } from "@nestjs/common";
 import { APP_GUARD, NestFactory, Reflector } from "@nestjs/core";
 import { FastifyAdapter, type NestFastifyApplication } from "@nestjs/platform-fastify";
 import type { FastifyRequest } from "fastify";
+import { DummyDriver, Kysely, PostgresAdapter, PostgresIntrospector, PostgresQueryCompiler, type CompiledQuery, type DatabaseConnection, type QueryResult } from "kysely";
+import type { Database } from "../src/database/types.js";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import { AuthService } from "../src/auth/auth.service.js";
 import { NativeAuthController } from "../src/auth/native-auth.controller.js";
@@ -31,7 +33,11 @@ const switchedToken = `tc_native_${"c".repeat(43)}`;
 const audit = { record: vi.fn().mockResolvedValue(undefined) };
 const auth = {
   login: vi.fn((body: { identifier: string }) => Promise.resolve(body.identifier === "mfa" ? { user, mfaChallenge: "challenge" } : { user })),
-  completeMfaLogin: vi.fn((body: { code: string }) => body.code === "123456" ? Promise.resolve(user) : Promise.reject(new Error("Bad MFA proof"))),
+  completeMfaLogin: vi.fn((body: { code: string }) => {
+    if (body.code !== "123456") return Promise.reject(new Error("Bad MFA proof"));
+    tokens.set(nativeToken, identity());
+    return Promise.resolve({ user, session: { rawToken: nativeToken, csrfToken: "native-csrf", expiresAt: identity().expiresAt } });
+  }),
   register: vi.fn(() => Promise.resolve({ user, verification: { required: true } })),
   publicDemoUser: vi.fn(() => Promise.resolve(user)),
   canUseDemoProfileSwitcher: vi.fn(() => true),
@@ -99,6 +105,8 @@ describe("native auth HTTP transport through ordinary session and CSRF guards", 
     const completed = await app.inject({ method: "POST", url: "/api/v1/auth/native/mfa/login/", payload: { challenge_token: "challenge", code: "123456" } });
     expect(completed.statusCode).toBe(200);
     expect(completed.json()).toHaveProperty("access_token", nativeToken);
+    expect(auth.createSession.mock.calls.length).toBe(before);
+    expect(auth.completeMfaLogin).toHaveBeenLastCalledWith(expect.objectContaining({ code: '123456' }), expect.anything(), { transport: 'native' });
   });
 
   it("registers through the existing account workflow and exposes native reset ceremonies", async () => {
@@ -218,14 +226,28 @@ describe("native auth HTTP transport through ordinary session and CSRF guards", 
 describe("native sessions reuse durable existing session records", () => {
   it("stores only a hash with the ordinary expiry and retains the selected institution", async () => {
     let stored: Record<string, unknown> | undefined;
-    const db = { insertInto: () => ({ values: (values: Record<string, unknown>) => { stored = values; return { execute: () => Promise.resolve() }; } }) };
-    const service = new AuthService(db as never, {} as never, {} as never, {} as never);
-    const result = await service.createSession({ ...user }, { ip: "127.0.0.1", headers: { "user-agent": "ThatCampus native test" } } as FastifyRequest, { transport: "native" });
-    expect(result.rawToken).toMatch(/^tc_native_[A-Za-z0-9_-]{43}$/u);
-    expect(stored).toMatchObject({ token_hash: AuthService.tokenHash(result.rawToken), active_school_id: user.active_school_id, user_id: user.id });
-    expect(JSON.stringify(stored)).not.toContain(result.rawToken);
-    expect(new Date(result.expiresAt).getTime() - Date.now()).toBeGreaterThan(28_799_000);
-    expect(new Date(result.expiresAt).getTime() - Date.now()).toBeLessThanOrEqual(28_800_000);
+    class Driver extends DummyDriver {
+      override acquireConnection(): Promise<DatabaseConnection> { return Promise.resolve({ executeQuery: <R>(query: CompiledQuery): Promise<QueryResult<R>> => {
+        let rows: unknown[] = [];
+        if (query.sql.includes('from "users"')) rows = [{ id: user.id, password_hash: 'current-hash' }];
+        else if (query.sql.startsWith("SELECT status='active' AS active")) rows = [{ active: false }];
+        else if (query.sql.startsWith('insert into "auth_sessions"')) {
+          const columns = query.sql.slice(query.sql.indexOf('(') + 1, query.sql.indexOf(')')).split(',').map(value => value.trim().replaceAll('"', ''));
+          stored = Object.fromEntries(columns.map((key, index) => [key, query.parameters[index]]));
+        } else throw new Error('Unexpected native session persistence query.');
+        return Promise.resolve({ rows: rows as R[] });
+      }, streamQuery: () => { throw new Error('No streaming in the native session fixture.'); } }); }
+    }
+    const db = new Kysely<Database>({ dialect: { createAdapter: () => new PostgresAdapter(), createDriver: () => new Driver(), createIntrospector: value => new PostgresIntrospector(value), createQueryCompiler: () => new PostgresQueryCompiler() } });
+    try {
+      const service = new AuthService(db as never, {} as never, {} as never, {} as never);
+      const result = await service.createSession({ ...user }, { ip: "127.0.0.1", headers: { "user-agent": "ThatCampus native test" } } as FastifyRequest, { transport: "native" });
+      expect(result.rawToken).toMatch(/^tc_native_[A-Za-z0-9_-]{43}$/u);
+      expect(stored).toMatchObject({ token_hash: AuthService.tokenHash(result.rawToken), active_school_id: user.active_school_id, user_id: user.id });
+      expect(JSON.stringify(stored)).not.toContain(result.rawToken);
+      expect(new Date(result.expiresAt).getTime() - Date.now()).toBeGreaterThan(28_799_000);
+      expect(new Date(result.expiresAt).getTime() - Date.now()).toBeLessThanOrEqual(28_800_000);
+    } finally { await db.destroy(); }
   });
 
   it.each(["login/", "public-demo-session/", "demo-profile-switch/", "mfa/login/", "register/", "password-reset/request/", "password-reset/confirm/"])("applies web-equivalent abuse limits to %s", path => {

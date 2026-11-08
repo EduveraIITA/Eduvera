@@ -6,7 +6,8 @@ import { sql, type Kysely } from "kysely";
 import { z } from "zod";
 import { config } from "../config.js";
 import { AuditService } from "../common/audit.service.js";
-import { accountEmailMode, deliverAccountAction } from "../common/account-email.js";
+import { accountEmailMode } from "../common/account-email.js";
+import { assertLiveAccountMailControl, prepareAccountMail } from '../common/account-email-queue.js';
 import type { AuthenticatedRequest, AuthUser } from "../common/request.js";
 import { accountProfileChangeSchema } from "./account-profile.contracts.js";
 import { executionEnvironmentStorage } from "../campus-model-core/execution-time.runtime.js";
@@ -306,7 +307,18 @@ export class AuthService {
   }
 
   async createSession(user: AuthUser, request: FastifyRequest, options: { publicDemo?: boolean; ttlSeconds?: number; transport?: "native" } = {}): Promise<{ rawToken: string; csrfToken: string; expiresAt: string }> {
-    return this.createSessionWithDb(this.db, user, request, options);
+    return this.db.transaction().execute(async db => {
+      const current = await db.selectFrom('users').select(['id','password_hash']).where('id','=',user.id).where('is_active','=',true).forNoKeyUpdate().executeTakeFirst();
+      // Primary password login carries the verified row internally; never let a
+      // reset between verification and issuance create an old-password session.
+      if (!current || ('password_hash' in user && user.password_hash !== current.password_hash))
+        throw new UnauthorizedException('Your account changed. Sign in again.');
+      // Factor activation takes the same account lock. A password-only
+      // controller step paused before activation must restart with an MFA proof.
+      const factor = await sql<{ active: boolean }>`SELECT status='active' AS active FROM auth_mfa_factors WHERE user_id=${user.id}::uuid`.execute(db);
+      if (factor.rows[0]?.active) throw new UnauthorizedException('Two-step verification is required. Start sign-in again.');
+      return this.createSessionWithDb(db, user, request, options);
+    });
   }
 
   private async createSessionWithDb(db: Kysely<Database>, user: AuthUser, request: FastifyRequest, options: { publicDemo?: boolean; ttlSeconds?: number; transport?: "native" } = {}, lockSelectedMembership = false): Promise<{ rawToken: string; csrfToken: string; expiresAt: string }> {
@@ -415,22 +427,28 @@ export class AuthService {
   }
 
   async finishPrimaryLogin(user: AuthUser, request: FastifyRequest): Promise<{ user: AuthUser; mfaChallenge?: string }> {
-    const factor = await sql<{ active: boolean }>`SELECT status='active' AS active FROM auth_mfa_factors WHERE user_id=${user.id}::uuid`.execute(this.db);
-    if (factor.rows[0]?.active) {
-      const challenge = randomBytes(32).toString("base64url");
-      await this.db.transaction().execute(async (db) => {
-        await sql`DELETE FROM auth_mfa_login_challenges WHERE user_id=${user.id}::uuid OR expires_at<now()`.execute(db);
-        await sql`INSERT INTO auth_mfa_login_challenges(token_hash,user_id,expires_at)
-          VALUES(${AuthService.tokenHash(challenge)},${user.id}::uuid,now()+interval '5 minutes')`.execute(db);
-      });
-      await this.audit.record({ action: "auth.login.mfa_challenged", request, actorId: user.id });
-      return { user, mfaChallenge: challenge };
-    }
-    await this.audit.record({ action: "auth.login.succeeded", request, actorId: user.id });
-    return { user };
+    const result = await this.db.transaction().execute(async db => {
+      // Password verification happens before this transaction. Reset, factor
+      // writers, challenge issuance and session issuance serialize on account.
+      const account = await db.selectFrom('users').selectAll().where('id','=',user.id).where('is_active','=',true).forNoKeyUpdate().executeTakeFirst();
+      if (!account || ('password_hash' in user && user.password_hash !== account.password_hash))
+        throw new UnauthorizedException('Your account changed. Sign in again.');
+      const current: AuthUser = { ...account, active_school_id: user.active_school_id ?? null };
+      const factor = await sql<{ active: boolean }>`SELECT status='active' AS active FROM auth_mfa_factors WHERE user_id=${current.id}::uuid`.execute(db);
+      if (!factor.rows[0]?.active) return { user: current };
+      const challenge = randomBytes(32).toString('base64url');
+      // Never acquire another account's challenge locks while holding this one.
+      await sql`DELETE FROM auth_mfa_login_challenges WHERE user_id=${current.id}::uuid`.execute(db);
+      await sql`INSERT INTO auth_mfa_login_challenges(token_hash,user_id,expires_at)
+        VALUES(${AuthService.tokenHash(challenge)},${current.id}::uuid,now()+interval '5 minutes')`.execute(db);
+      return { user: current, mfaChallenge: challenge };
+    });
+    await this.audit.record({ action: result.mfaChallenge ? 'auth.login.mfa_challenged' : 'auth.login.succeeded', request, actorId: user.id });
+    return result;
   }
 
   async register(body: unknown, request: FastifyRequest) {
+    assertLiveAccountMailControl();
     const data = registrationSchema.parse(body);
     const errors = validatePassword(data.password, { email: data.email });
     if (errors.length) {
@@ -456,7 +474,8 @@ export class AuthService {
           role: "admin",
         }).returningAll().executeTakeFirstOrThrow();
         const schoolId = await this.progressiveWorkspaces.createForAccount(db, account, "UTC");
-        return { account, schoolId };
+        const verification = await prepareAccountMail(db, account.id, 'email_verification', 24 * 60 * 60_000);
+        return { account, schoolId, verification };
       });
       const user: AuthUser = { ...registration.account, active_school_id: registration.schoolId };
       await this.audit.record({
@@ -464,47 +483,38 @@ export class AuthService {
         schoolId: registration.schoolId, targetType: "user", targetId: user.id,
         metadata: { role: user.role, onboarding_status: "purpose_required" },
       });
-      const verification = await this.issueAccountToken(user.id, "email_verification", 24 * 60 * 60_000);
-      const delivery = await deliverAccountAction({ email: user.email, token: verification.raw, purpose: "email_verification", expiresAt: verification.expiresAt });
-      return { user, verification: { ...delivery, expires_at: verification.expiresAt } };
+      return { user, verification: registration.verification };
     } catch (error: any) {
       if (error?.code === "23505") throw new ConflictException("An account with this email already exists.");
       throw error;
     }
   }
 
-  private async issueAccountToken(userId: string, purpose: "email_verification" | "password_reset", ttlMs: number) {
-    const raw = randomBytes(32).toString("base64url");
-    const expiresAt = new Date(Date.now() + ttlMs);
-    await this.db.transaction().execute(async (db) => {
-      await sql`UPDATE auth_account_tokens SET consumed_at=COALESCE(consumed_at,now())
-        WHERE user_id=${userId}::uuid AND purpose=${purpose} AND consumed_at IS NULL`.execute(db);
-      await sql`INSERT INTO auth_account_tokens(user_id,purpose,token_hash,expires_at)
-        VALUES(${userId}::uuid,${purpose},${AuthService.tokenHash(raw)},${expiresAt})`.execute(db);
-    });
-    return { raw, expiresAt };
+  private async prepareAccountAction(userId: string, purpose: 'email_verification' | 'password_reset', ttlMs: number) {
+    return this.db.transaction().execute(db => prepareAccountMail(db, userId, purpose, ttlMs));
   }
 
   async requestEmailVerification(user: AuthUser, request: FastifyRequest) {
+    assertLiveAccountMailControl();
     if (user.email_verified_at) return { verified: true, delivery: "not_required" as const };
     if (accountEmailMode() === "unavailable") {
       await this.audit.record({ action: "auth.email_verification.unavailable", request, actorId: user.id, targetType: "user", targetId: user.id });
       return { verified: false, delivery: "unavailable" as const };
     }
-    const recent = await sql`SELECT 1 FROM auth_account_tokens WHERE user_id=${user.id}::uuid
-      AND purpose='email_verification' AND created_at>now()-interval '1 minute' AND consumed_at IS NULL`.execute(this.db);
-    if (recent.rows.length) throw new ConflictException("A verification message was sent recently. Wait a minute before requesting another.");
-    const token = await this.issueAccountToken(user.id, "email_verification", 24 * 60 * 60_000);
-    const delivery = await deliverAccountAction({ email: user.email, token: token.raw, purpose: "email_verification", expiresAt: token.expiresAt });
+    const delivery = await this.prepareAccountAction(user.id, 'email_verification', 24 * 60 * 60_000);
     await this.audit.record({ action: "auth.email_verification.requested", request, actorId: user.id, targetType: "user", targetId: user.id, metadata: { delivery: delivery.delivery } });
-    return { verified: false, ...delivery, expires_at: token.expiresAt };
+    return { verified: delivery.delivery === 'not_required', ...delivery };
   }
 
   async confirmEmailVerification(user: AuthUser, body: unknown, request: FastifyRequest) {
+    assertLiveAccountMailControl();
     const data = tokenSchema.parse(body);
     const result = await this.db.transaction().execute(async (db) => {
+      const account = await db.selectFrom('users').select('email').where('id','=',user.id).where('is_active','=',true).forNoKeyUpdate().executeTakeFirst();
+      if (!account) throw new BadRequestException('This verification link is invalid or expired.');
       const token = (await sql<{ id: string; user_id: string }>`SELECT id,user_id FROM auth_account_tokens
         WHERE token_hash=${AuthService.tokenHash(data.token)} AND purpose='email_verification'
+          AND email_at_issue=lower(${account.email})
           AND consumed_at IS NULL AND expires_at>now() FOR UPDATE`.execute(db)).rows[0];
       if (!token || token.user_id !== user.id) throw new BadRequestException("This verification link is invalid or expired.");
       await sql`UPDATE auth_account_tokens SET consumed_at=now() WHERE id=${token.id}::uuid`.execute(db);
@@ -517,6 +527,7 @@ export class AuthService {
   }
 
   async requestPasswordReset(body: unknown, request: FastifyRequest) {
+    assertLiveAccountMailControl();
     const data = resetRequestSchema.parse(body);
     // The same deployment-wide result for every address. Do not manufacture an
     // inaccessible proof or claim mail was requested when delivery is disabled.
@@ -526,8 +537,7 @@ export class AuthService {
     }
     const user = await this.db.selectFrom("users").select(["id", "email"]).where(sql<boolean>`lower(email)=${data.email}`).where("is_active", "=", true).executeTakeFirst();
     if (user) {
-      const token = await this.issueAccountToken(user.id, "password_reset", 30 * 60_000);
-      const delivery = await deliverAccountAction({ email: user.email, token: token.raw, purpose: "password_reset", expiresAt: token.expiresAt });
+      const delivery = await this.prepareAccountAction(user.id, 'password_reset', 30 * 60_000);
       await this.audit.record({ action: "auth.password_reset.requested", request, actorId: user.id, targetType: "user", targetId: user.id, metadata: { delivery: delivery.delivery } });
       return { accepted: true, recovery_available: true, ...(config().DEMO_MODE && config().NODE_ENV !== "production" ? delivery : {}) };
     }
@@ -536,18 +546,25 @@ export class AuthService {
   }
 
   async confirmPasswordReset(body: unknown, request: FastifyRequest) {
+    assertLiveAccountMailControl();
     const data = resetConfirmSchema.parse(body);
     const tokenHash = AuthService.tokenHash(data.token);
     const result = await this.db.transaction().execute(async (db) => {
+      const candidate = (await sql<{user_id:string}>`SELECT user_id FROM auth_account_tokens WHERE token_hash=${tokenHash} AND purpose='password_reset'`.execute(db)).rows[0];
+      if (!candidate) throw new BadRequestException('This password-reset link is invalid or expired.');
+      // Same account -> token lock order as issuance/verification. A new request
+      // cannot race consumption or leave two usable proofs.
+      await sql`SELECT id FROM users WHERE id=${candidate.user_id}::uuid FOR NO KEY UPDATE`.execute(db);
       const token = (await sql<{ id: string; user_id: string; email: string; first_name: string; last_name: string }>`SELECT token.id,token.user_id,account.email,account.first_name,account.last_name
         FROM auth_account_tokens token JOIN users account ON account.id=token.user_id
         WHERE token.token_hash=${tokenHash} AND token.purpose='password_reset' AND token.consumed_at IS NULL
-          AND token.expires_at>now() AND account.is_active FOR UPDATE OF token`.execute(db)).rows[0];
+          AND token.expires_at>now() AND account.is_active
+          AND token.email_at_issue=lower(account.email) FOR UPDATE OF token`.execute(db)).rows[0];
       if (!token) throw new BadRequestException("This password-reset link is invalid or expired.");
       const errors = validatePassword(data.password, { email: token.email, firstName: token.first_name, lastName: token.last_name });
       if (errors.length) throw new BadRequestException({ message: "Choose a stronger password.", fields: { password: errors }, code: "validation_error" });
       await sql`UPDATE users SET password_hash=${await hashPassword(data.password)},updated_at=now() WHERE id=${token.user_id}::uuid`.execute(db);
-      await sql`UPDATE auth_account_tokens SET consumed_at=now() WHERE id=${token.id}::uuid`.execute(db);
+      await sql`UPDATE auth_account_tokens SET consumed_at=now() WHERE user_id=${token.user_id}::uuid AND purpose='password_reset' AND consumed_at IS NULL`.execute(db);
       await sql`DELETE FROM auth_sessions WHERE user_id=${token.user_id}::uuid`.execute(db);
       await sql`DELETE FROM auth_mfa_login_challenges WHERE user_id=${token.user_id}::uuid`.execute(db);
       return { reset: true, userId: token.user_id };
@@ -607,12 +624,19 @@ export class AuthService {
     return { active: true, recovery_codes: codes };
   }
 
-  async completeMfaLogin(body: unknown, request: FastifyRequest): Promise<AuthUser> {
+  async completeMfaLogin(body: unknown, request: FastifyRequest, options: { transport?: 'native' } = {}): Promise<{ user: AuthUser; session: { rawToken: string; csrfToken: string; expiresAt: string } }> {
     const data = mfaLoginSchema.parse(body);
     const challengeHash = AuthService.tokenHash(data.challenge_token);
     const result = await this.db.transaction().execute(async (db) => {
+      // Candidate lookup grants nothing. Recheck the exact unconsumed challenge
+      // only after locking its account, matching reset and factor writers.
+      const candidate = (await sql<{ user_id: string }>`SELECT user_id FROM auth_mfa_login_challenges
+        WHERE token_hash=${challengeHash} AND consumed_at IS NULL AND expires_at>now()`.execute(db)).rows[0];
+      if (!candidate) throw new UnauthorizedException("The sign-in verification expired. Start again.");
+      const account = await db.selectFrom('users').selectAll().where('id','=',candidate.user_id).where('is_active','=',true).forNoKeyUpdate().executeTakeFirst();
+      if (!account) throw new UnauthorizedException("This account is unavailable.");
       const challenge = (await sql<{ user_id: string }>`SELECT user_id FROM auth_mfa_login_challenges
-        WHERE token_hash=${challengeHash} AND consumed_at IS NULL AND expires_at>now() FOR UPDATE`.execute(db)).rows[0];
+        WHERE token_hash=${challengeHash} AND user_id=${account.id}::uuid AND consumed_at IS NULL AND expires_at>now() FOR UPDATE`.execute(db)).rows[0];
       if (!challenge) throw new UnauthorizedException("The sign-in verification expired. Start again.");
       const factor = (await sql<{ encrypted_secret: Buffer; secret_iv: Buffer; secret_tag: Buffer; last_used_step: string | null }>`SELECT encrypted_secret,secret_iv,secret_tag,last_used_step
         FROM auth_mfa_factors WHERE user_id=${challenge.user_id}::uuid AND status='active' FOR UPDATE`.execute(db)).rows[0];
@@ -631,11 +655,12 @@ export class AuthService {
       if (recoveryHash) await sql`UPDATE auth_mfa_recovery_codes SET used_at=now() WHERE user_id=${challenge.user_id}::uuid AND code_hash=${recoveryHash}`.execute(db);
       else await sql`UPDATE auth_mfa_factors SET last_used_step=${step},updated_at=now() WHERE user_id=${challenge.user_id}::uuid`.execute(db);
       await sql`UPDATE auth_mfa_login_challenges SET consumed_at=now() WHERE token_hash=${challengeHash}`.execute(db);
-      const account = await db.selectFrom("users").selectAll().where("id", "=", challenge.user_id).where("is_active", "=", true).executeTakeFirst();
-      if (!account) throw new UnauthorizedException("This account is unavailable.");
-      return account;
+      // Consumption and issuance commit together under the account lock. Reset
+      // either removes this challenge first or subsequently revokes this session.
+      const user: AuthUser = { ...account, active_school_id: null };
+      return { user, session: await this.createSessionWithDb(db, user, request, options, true) };
     });
-    await this.audit.record({ action: "auth.login.succeeded", request, actorId: result.id, metadata: { mfa: true } });
+    await this.audit.record({ action: "auth.login.succeeded", request, actorId: result.user.id, metadata: { mfa: true } });
     return result;
   }
 

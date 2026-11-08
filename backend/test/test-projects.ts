@@ -5,6 +5,8 @@ import { join, relative } from "node:path";
 // suite; it is not promoted to the no-database fast lane by a filename suffix.
 export const FAST_TEST_FILES = [
   "account-email-readiness.test.ts",
+  "account-mail-queue.test.ts",
+  "auth-mfa-reset.test.ts",
   "activity-attendance-history.test.ts",
   "activity-attendance-queue.test.ts",
   "activity-attendance.test.ts",
@@ -37,6 +39,7 @@ export const FAST_TEST_FILES = [
   "database-query-metrics.test.ts",
   "database-unavailable-response.test.ts",
   "directory-import.test.ts",
+  "elective-work-source.test.ts",
   "execution-clock.test.ts",
   "fee-authority.test.ts",
   "fees-first-readiness.test.ts",
@@ -58,6 +61,7 @@ export const FAST_TEST_FILES = [
   "people-import-scope.test.ts",
   "progressive-goal-destination.test.ts",
   "progressive-setup.contracts.test.ts",
+  "public-live-account-control.test.ts",
   "razorpay-config.test.ts",
   "scoped-role-policy.test.ts",
   "simulation-behaviour-policy.test.ts",

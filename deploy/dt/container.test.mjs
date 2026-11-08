@@ -6,7 +6,7 @@ import { dirname, join, matchesGlob, posix, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import test from 'node:test';
 import { productionApiOrigin, verifyWebExport } from './verify-web-export.mjs';
-import { SIMULATION_CONFORMANCE_EVIDENCE, SIMULATION_SAFETY_EVIDENCE, SIMULATION_SHARED_MATERIAL_FILES } from '../../backend/src/simulation-conformance/simulation-conformance.registry.ts';
+import { SIMULATION_CONFORMANCE_EVIDENCE, SIMULATION_SAFETY_EVIDENCE, SIMULATION_SHARED_MATERIAL_FILES, SIMULATION_FRONTEND_ENVIRONMENT_FILES } from '../../backend/src/simulation-conformance/simulation-conformance.registry.ts';
 
 const here = dirname(fileURLToPath(import.meta.url));
 const dockerfile = await readFile(join(here, 'Dockerfile'), 'utf8');
@@ -63,6 +63,7 @@ test('every registered conformance proof and shared material reaches its exact b
     ...SIMULATION_CONFORMANCE_EVIDENCE.map(evidence => evidence.test_file),
     ...SIMULATION_SAFETY_EVIDENCE.map(evidence => evidence.test_file),
     ...SIMULATION_SHARED_MATERIAL_FILES,
+    ...SIMULATION_FRONTEND_ENVIRONMENT_FILES,
   ])];
   const missing = required.filter(file => !contextIncludesWithParents(file) || !copies.some(copy => {
     const child = posix.relative(copy.source, file);

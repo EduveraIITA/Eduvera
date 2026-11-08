@@ -3,6 +3,7 @@ import { readFileSync, readdirSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import test from 'node:test';
+import { runInNewContext } from 'node:vm';
 import ts from 'typescript';
 import type { ResultPolicySnapshot } from '../../packages/contracts/src/academic-reports';
 import * as results from '../../packages/contracts/src/result-presentation';
@@ -134,4 +135,28 @@ test('unavailable cumulative evidence retains distinct correction and policy exp
   assert.equal(results.cumulativeUnavailableReason(null), 'Cumulative result unavailable.');
   assert.equal(results.policyDescription(policy), '10-point scale · Credit weighted');
   assert.equal(results.policyDescription(null), 'Percentage and grade');
+});
+
+test('result display precision stays policy-bound while credits lose only storage padding and missing stays distinct from zero',()=>{
+  const original=JSON.stringify(policy);
+  for(const places of [0,1,2,4]){const frozen={...policy,configuration:{...policy.configuration,decimal_places:places}};assert.equal(results.resultNumber('9.8765',frozen),(9.8765).toFixed(places));assert.equal(results.resultNumber('0.0000',frozen),(0).toFixed(places));}
+  for(const [input,expected]of [['4.0000','4'],['4.2500','4.25'],['4.1234','4.1234'],['0.0000','0'],[4.25,'4.25']]as const)assert.equal(results.creditNumber(input),expected);
+  for(const input of [null,undefined,'',' ','NaN',Infinity])assert.equal(results.creditNumber(input),'—');assert.equal(JSON.stringify(policy),original);
+});
+
+test('policy point presentation agrees with the actual grading owner half-up GPA at ties without changing raw values or credits',()=>{
+  const file=path.join(repository,'backend/src/academic-reports/grading-policy.ts'),owner=source(file),names=new Set(['roundGradeValue','calculateCreditGpa']);
+  const declarations=owner.statements.filter(node=>ts.isFunctionDeclaration(node)&&!!node.name&&names.has(node.name.text));assert.equal(declarations.length,2);
+  const exports:{roundGradeValue?(value:number,places:number):number;calculateCreditGpa?(configuration:ResultPolicySnapshot['configuration'],courses:unknown[]):{gpa:number|null}}={};
+  runInNewContext(ts.transpileModule(declarations.map(node=>node.getText(owner)).join('\n'),{compilerOptions:{module:ts.ModuleKind.CommonJS,target:ts.ScriptTarget.ES2022}}).outputText,{exports});
+  assert.ok(exports.roundGradeValue);assert.ok(exports.calculateCreditGpa);const original=JSON.stringify(policy);
+  for(const [points,expected]of [[9.995,'10.00'],[1.005,'1.01'],[0,'0.00']]as const){
+    const frozen={...policy,configuration:{...policy.configuration,bands:[{code:'P',label:'Recorded points',minimum_percentage:0,maximum_percentage:100,grade_points:points,passed:true}]}};
+    const course={course_code:'MTH501',credits:1,grade_points:points,passed:true,outcome:'complete',term_index:1,batch_id:'batch',report_student_id:'row',report_subject_id:'subject',percentage:80};
+    const before=JSON.stringify({frozen,course}),canonical=exports.calculateCreditGpa(frozen.configuration,[course]);
+    assert.equal(results.resultNumber(points.toFixed(4),frozen),expected);assert.equal(results.resultNumber(points.toFixed(4),frozen),canonical.gpa!.toFixed(2));assert.equal(results.resultNumber(points.toFixed(4),frozen),exports.roundGradeValue(points,2).toFixed(2));
+    assert.equal(results.assessmentPrimaryResult({outcome:'scored',marks:'80',maximum_marks:'100',grade:'P',grade_points:points.toFixed(4),result_policy:frozen}).value,expected+' / 10');
+    assert.equal(results.resultNumber(points.toFixed(4)),points.toFixed(4));assert.equal(results.creditNumber(points.toFixed(4)),String(points));assert.equal(JSON.stringify({frozen,course}),before);
+  }
+  assert.equal(results.resultNumber(null,policy),'—');assert.equal(results.creditNumber(null),'—');assert.equal(JSON.stringify(policy),original);
 });

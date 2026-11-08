@@ -54,6 +54,7 @@ function service(snapshot: WorkspaceRepositorySnapshot, dependencies?: {
   dining?: { work: ReturnType<typeof vi.fn>; discovery: ReturnType<typeof vi.fn>; ownedAvailability?: ReturnType<typeof vi.fn> };
   care?: { discovery: ReturnType<typeof vi.fn> };
   visits?: { work: ReturnType<typeof vi.fn>; discovery: ReturnType<typeof vi.fn> };
+  assessments?: { discovery: ReturnType<typeof vi.fn> };
 }) {
   const repository = { load: vi.fn().mockResolvedValue(snapshot) };
   const clock = {
@@ -87,6 +88,8 @@ function service(snapshot: WorkspaceRepositorySnapshot, dependencies?: {
       (dependencies?.dining ? { ...dependencies.dining, ownedAvailability: dependencies.dining.ownedAvailability ?? vi.fn().mockResolvedValue({ items: [], warnings: [] }) } : undefined) as never,
       dependencies?.visits as never,
       dependencies?.care as never,
+      undefined,
+      dependencies?.assessments as never,
     ),
     repository,
     clock,
@@ -386,6 +389,39 @@ describe("responsibility-composed workspace manifest", () => {
     expect(closed.revision).not.toBe(pending.revision);
   });
 
+  it.each([false, true])("discovers current native assessment assignments without broad staff/report authority (simulation=%s)", async simulation => {
+    const assessments = { discovery: vi.fn().mockResolvedValue({ has_assigned: false, can_plan_course: false }) };
+    const current = service({ ...base, membership_roles: ["staff"], assignments: [] }, { assessments });
+    const view = simulation ? { mode: "simulation" as const, institution_id: ids.school,
+      namespace_id: "scenario:11111111-1111-4111-8111-111111111111:run:22222222-2222-4222-8222-222222222222" as const,
+      scenario_id: "11111111-1111-4111-8111-111111111111", run_id: "22222222-2222-4222-8222-222222222222",
+      virtual_clock: { now: instant.toISOString(), time_zone: "Asia/Kolkata" },
+      source_snapshot_at: "2026-10-18T00:00:00.000Z", expires_at: "2026-10-20T00:00:00.000Z" }
+      : { mode: "live" as const, institution_id: ids.school, namespace_id: `live:${ids.school}` as const };
+    // An account title and ordinary staff membership are insufficient.
+    const absent = await current.instance.manifest(user, null, view);
+    expect(absent.areas.some(area => area.key === "assessments" || area.key === "reports")).toBe(false);
+    assessments.discovery.mockResolvedValue({ has_assigned: true, can_plan_course: false });
+    const assigned = await current.instance.manifest(user, null, view);
+    expect(assessments.discovery).toHaveBeenCalledWith(user, ids.school);
+    expect(assigned.context.environment.namespace_id).toBe(view.namespace_id);
+    expect(assigned.areas.find(area => area.key === "assessments")).toMatchObject({ capabilities: ["assessments.view"],
+      scopes: [{ kind: "self", label: "My assessment assignments" }],
+      surfaces: [{ key: "assigned", href: "/areas/assessments/assigned", capabilities: ["assessments.view"] }] });
+    expect(assigned.areas.some(area => area.key === "reports")).toBe(false);
+    expect(assigned.work.items).toEqual([]);
+    expect(assigned.revision).not.toBe(absent.revision);
+    assessments.discovery.mockResolvedValue({ has_assigned: false, can_plan_course: false });
+    const revoked = await current.instance.manifest(user, null, view);
+    expect(revoked.areas.some(area => area.key === "assessments")).toBe(false);
+    expect(revoked.revision).not.toBe(assigned.revision);
+    assessments.discovery.mockResolvedValue({ has_assigned: false, can_plan_course: true });
+    const firstCourseTest = await current.instance.manifest(user, null, view);
+    expect(firstCourseTest.areas.find(area => area.key === "assessments")).toMatchObject({ capabilities: ["assessments.mark"],
+      surfaces: [{ key: "assigned", href: "/areas/assessments/assigned", capabilities: ["assessments.mark"] }] });
+    expect(firstCourseTest.areas.some(area => area.key === "reports")).toBe(false);
+  });
+
   it("treats administrator membership as setup authority plus institution oversight", async () => {
     const result = await service(base).instance.manifest(user, null, {
       mode: "live", institution_id: ids.school, namespace_id: `live:${ids.school}`,
@@ -408,6 +444,10 @@ describe("responsibility-composed workspace manifest", () => {
         scopes: [{ kind: "institution", id: ids.school, label: "Cambridge International School" }],
         surfaces: [expect.objectContaining({ key: "manage", href: "/areas/calendar?surface=manage", capabilities: ["schedule.manage"] })],
       }),
+      expect.objectContaining({ key: "assessments", capabilities: ["assessments.moderate"],
+        surfaces: [expect.objectContaining({ key: "manage", href: "/areas/assessments/manage" })] }),
+      expect.objectContaining({ key: "reports", capabilities: ["reports.comment"],
+        surfaces: [expect.objectContaining({ key: "remarks", href: "/areas/reports/remarks" })] }),
       expect.objectContaining({
         key: "insights",
         capabilities: ["insights.manage"],
@@ -679,6 +719,8 @@ describe("responsibility-composed workspace manifest", () => {
           expect.objectContaining({ key: "manage", href: "/areas/in-out/manage" }),
         ],
       }),
+      expect.objectContaining({ key: "assessments", capabilities: ["assessments.moderate"] }),
+      expect.objectContaining({ key: "reports", capabilities: ["reports.comment"] }),
       expect.objectContaining({ key: "insights", capabilities: ["insights.manage"] }),
       expect.objectContaining({key:"people",capabilities:["sis.manage"]}),
     ]);

@@ -17,7 +17,7 @@ export function reportCommandScopeKey(scope: ReportCommandScope): string {
   if (!scope.actorId || !scope.schoolId || !['live', 'simulation'].includes(scope.mode) || scope.mode === 'simulation' && !scope.namespaceId || origin.origin !== scope.origin || !['http:', 'https:'].includes(origin.protocol) || origin.username || origin.password) throw new Error('Confirm the exact account, campus, world and server before continuing.');
   return JSON.stringify([scope.actorId, scope.schoolId, scope.mode, scope.namespaceId, scope.origin]);
 }
-export function reportCommandKind(command: Pick<ReportCommand, 'endpoint' | 'method' | 'scope'>): { kind: 'policy' | 'scheme' | 'batch' | 'comments'; target?: string; studentId?: string; action: string } | null {
+export function reportCommandKind(command: Pick<ReportCommand, 'endpoint' | 'method' | 'scope'>): { kind: 'policy' | 'scheme' | 'batch' | 'comments'; target?: string; studentId?: string; learnerId?: string; action: string } | null {
   const root = `/api/v1/schools/${encodeURIComponent(command.scope.schoolId)}/academic-reports/`;
   if (!command.endpoint.startsWith(root)) return null;
   const path = command.endpoint.slice(root.length);
@@ -29,14 +29,22 @@ export function reportCommandKind(command: Pick<ReportCommand, 'endpoint' | 'met
   if (match && uuid(match[1]) && command.method === 'PUT') return { kind: 'scheme', target: match[1], action: 'subject' };
   match = /^batches\/([^/]+)\/actions\/(review|publish|cancel)\/$/.exec(path);
   if (match && uuid(match[1]) && command.method === 'POST') return { kind: 'batch', target: match[1], action: match[2]! };
-  match = /^batches\/([^/]+)\/students\/([^/]+)\/comments\/$/.exec(path);
-  if (match && uuid(match[1]) && uuid(match[2]) && command.method === 'PUT') return { kind: 'comments', target: match[1], studentId: match[2], action: 'comments' };
+  match = /^batches\/([^/]+)\/(students|learners)\/([^/]+)\/comments\/$/.exec(path);
+  if (match && uuid(match[1]) && uuid(match[3]) && command.method === 'PUT') return { kind: 'comments', target: match[1], ...(match[2] === 'learners' ? { learnerId: match[3] } : { studentId: match[3] }), action: 'comments' };
   return null;
+}
+function reportSchemeRequestContextMatches(body: Record<string, unknown>, result: Record<string, unknown>): boolean {
+  const kind = body.context_kind ?? 'class_term';
+  if ((result.context_kind ?? 'class_term') !== kind || result.class_section_id !== body.class_section_id) return false;
+  if (kind === 'class_term') return uuid(body.class_section_id) && (!body.offering_ids || Array.isArray(body.offering_ids) && body.offering_ids.length === 0) && (!result.offering_ids || Array.isArray(result.offering_ids) && result.offering_ids.length === 0);
+  const ids = body.offering_ids, returned = result.offering_ids;
+  return kind === 'learning_offering' && body.class_section_id === null && Array.isArray(ids) && ids.length > 0 && ids.length <= 100 && ids.every(uuid) && new Set(ids).size === ids.length
+    && Array.isArray(returned) && returned.every(uuid) && new Set(returned).size === returned.length && sameJson([...ids].sort(), [...returned].sort());
 }
 export function reportCommandResultMatches(command: ReportCommand, value: unknown): boolean {
   const kind = reportCommandKind(command), result = object(value), body = object(JSON.parse(command.body));
   if (!kind || !result || !body || !uuid(result.id) || Object.prototype.hasOwnProperty.call(result, 'school_id') && result.school_id !== command.scope.schoolId) return false;
-  if (kind.kind === 'comments') return result.student_id === kind.studentId && revision(result.comment_revision) && result.comment_revision === Number(body.expected_revision) + 1 && revision(result.batch_revision) && result.batch_revision === Number(body.expected_batch_revision) + 1 && typeof body.class_teacher_comment === 'string' && typeof body.principal_comment === 'string' && result.class_teacher_comment === body.class_teacher_comment.trim() && result.principal_comment === body.principal_comment.trim();
+  if (kind.kind === 'comments') return (kind.learnerId ? result.learner_id === kind.learnerId && (result.student_id === null || uuid(result.student_id)) : result.student_id === kind.studentId) && revision(result.comment_revision) && result.comment_revision === Number(body.expected_revision) + 1 && revision(result.batch_revision) && result.batch_revision === Number(body.expected_batch_revision) + 1 && typeof body.class_teacher_comment === 'string' && typeof body.principal_comment === 'string' && result.class_teacher_comment === body.class_teacher_comment.trim() && result.principal_comment === body.principal_comment.trim();
   if (!revision(result.revision)) return false;
   if (kind.action === 'generate') return result.scheme_id === kind.target && result.status === 'draft' && revision(result.sequence);
   if (kind.target && result.id !== kind.target) return false;
@@ -44,10 +52,11 @@ export function reportCommandResultMatches(command: ReportCommand, value: unknow
   if (kind.action === 'create') {
     if (result.status !== 'draft' || result.revision !== 1 || typeof body.name !== 'string' || typeof body.code !== 'string' || result.name !== body.name.trim() || result.code !== body.code.trim().toUpperCase()) return false;
     if (kind.kind === 'policy') return revision(result.version) && !!object(body.configuration) && sameJson(result.configuration, body.configuration);
-    if (kind.kind === 'scheme') return result.term_id === body.term_id && result.class_section_id === body.class_section_id && result.grading_policy_id === body.grading_policy_id && result.review_mode === body.review_mode && result.absence_treatment === body.absence_treatment && result.programme_key === (typeof body.programme_key === 'string' ? body.programme_key.trim().toUpperCase() : null) && result.term_index === (body.term_index ?? null);
+    if (kind.kind === 'scheme') return result.term_id === body.term_id && reportSchemeRequestContextMatches(body, result) && result.grading_policy_id === body.grading_policy_id && result.review_mode === body.review_mode && result.absence_treatment === body.absence_treatment && result.programme_key === (typeof body.programme_key === 'string' ? body.programme_key.trim().toUpperCase() : null) && result.term_index === (body.term_index ?? null);
     return false;
   }
   if (kind.kind === 'policy') return ['draft', 'active'].includes(String(result.status)) && (kind.action !== 'activate' || result.status === 'active');
+  if (kind.kind === 'scheme' && kind.action === 'subject' && body.offering_id !== undefined && (!uuid(body.offering_id) || !uuid(body.subject_id) || result.status !== 'draft' || result.offering_id !== body.offering_id || result.subject_id !== body.subject_id || typeof body.course_code !== 'string' || result.course_code !== body.course_code.trim().toUpperCase() || !Number.isFinite(Number(result.credits)) || Number(result.credits) !== body.credits)) return false;
   if (kind.kind === 'scheme') return ['draft', 'active', 'archived'].includes(String(result.status)) && (kind.action !== 'activate' || result.status === 'active');
   return result.status === ({ review: 'reviewed', publish: 'published', cancel: 'cancelled' } as Record<string, string>)[kind.action];
 }

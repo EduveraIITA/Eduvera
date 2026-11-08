@@ -5,10 +5,11 @@ import {runInNewContext} from 'node:vm';
 import ts from 'typescript';
 import {createVisitJoinContinuations} from '../src/auth/visit-join-continuation';
 import * as policy from '../src/auth/visit-join-policy';
+import {accountMailNativeHref} from '../src/auth/account-mail-link';
 import {createGoogleNativeReturnRegistry} from '../src/auth/google-native-flow';
 test('the real native URL hook scrubs invitations into an origin-bound volatile nonce and preserves Google handling',()=>{
  const vault=createVisitJoinContinuations(),returns=createGoogleNativeReturnRegistry(),token='V'.repeat(43),origin='https://campus.example';let serial=0;
- const exports:any={},dependencies:any={'../src/auth/google-native-flow':{googleNativeReturns:returns},'expo-crypto':{randomUUID:()=>`10000000-0000-4000-8000-${String(++serial).padStart(12,'0')}`},'../src/lib/api':{getApiOrigin:()=>origin},'../src/auth/visit-join-continuation':{visitJoinContinuations:vault},'../src/auth/visit-join-policy':policy};
+ const exports:any={},dependencies:any={'../src/auth/account-mail-link':{accountMailNativeHref},'../src/auth/google-native-flow':{googleNativeReturns:returns},'expo-crypto':{randomUUID:()=>`10000000-0000-4000-8000-${String(++serial).padStart(12,'0')}`},'../src/lib/api':{getApiOrigin:()=>origin},'../src/auth/visit-join-continuation':{visitJoinContinuations:vault},'../src/auth/visit-join-policy':policy};
  const source=ts.transpileModule(readFileSync(new URL('../app/+native-intent.tsx',import.meta.url),'utf8'),{compilerOptions:{module:ts.ModuleKind.CommonJS,target:ts.ScriptTarget.ES2022}}).outputText;
  runInNewContext(source,{exports,require:(name:string)=>{assert.ok(name in dependencies,name);return dependencies[name];}});
  for(const initial of [true,false]){

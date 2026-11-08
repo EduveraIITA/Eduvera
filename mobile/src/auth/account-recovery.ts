@@ -7,6 +7,10 @@ export interface AccountRecoveryApi { apiFetch<T>(path: string, init?: RequestIn
  * ambiguous and must not select a token or a return destination implicitly. */
 export function accountSecurityEntryHref(params: Record<string, unknown>): string | null {
   const query = new URLSearchParams();
+  if (params.continue !== undefined) {
+    if (typeof params.continue !== 'string' || !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(params.continue) || params.token !== undefined) return null;
+    query.set('continue', params.continue);
+  }
   if (params.token !== undefined) {
     if (typeof params.token !== 'string' || !accountActionToken(params.token)) return null;
     query.set('token', params.token.trim());
@@ -55,6 +59,8 @@ export function passwordResetRequestFeedback(value: unknown): { message: string;
 }
 
 export function verificationEmailFeedback(value: { delivery: string; development_token?: string }): { message: string; tone: 'success' | 'warning'; developmentToken?: string } {
+  if (value.delivery === 'queued' || value.delivery === 'sending') return { tone: 'success', message: 'Verification email is queued. Check your inbox shortly. Another request within a minute keeps the same link.' };
+  if (value.delivery === 'not_required') return { tone: 'success', message: 'Your email is already verified. Refresh your account to continue.' };
   if (value.delivery === 'email_accepted') return { tone: 'success', message: 'Verification email accepted by the mail server. Check your inbox.' };
   if (value.delivery === 'manual' && typeof value.development_token === 'string' && accountActionToken(value.development_token)) return { tone: 'warning', message: 'Development verification token is ready below.', developmentToken: value.development_token };
   if (value.delivery === 'unavailable' || value.delivery === 'manual') return { tone: 'warning', message: 'Verification email is currently unavailable. No email was sent. You can enter a verification token you already received, or contact ThatCampus support.' };

@@ -1,6 +1,7 @@
 /** Shared declaration-only contracts used by the universal frontend.
  * Keep domain authority and HTTP execution with the owning services. */
 import type { ActivityRegisterCategory, ActivityRegisterSummary } from '../../../activity-register';
+import type { LearningOfferingAcademicContext, LearningOfferingReference } from '../learning/offeringApi';
 
 export type ActivityPurpose = "teaching" | "duty" | "training" | "meeting" | "other";
 
@@ -16,6 +17,7 @@ export interface ActivityCatalogue {
   groups: Array<ActivityChoice & { kind: "class" | "team" | "group" }>;
   spaces: ActivityChoice[]; classes: ActivityChoice[]; subjects: ActivityChoice[];
   terms: Array<ActivityChoice & { starts_on: string; ends_on: string }>;
+  offerings?: LearningOfferingReference[];
   purposes: ActivityPurpose[];
   people_truncated?: boolean;
 }
@@ -28,6 +30,7 @@ export interface ActivityPlanInput {
   lead_person_id: string | null; recorder_person_id: string | null; reviewer_person_id: string | null;
   attendance_mode: "none" | "roll_call";
   class_section_id: string | null; term_id: string | null; subject_id: string | null;
+  offering_id?: string | null;
   location_kind?: "on_campus" | "online" | "off_site" | "unspecified";
   location_label?: string; location_url?: string;
 }
@@ -35,6 +38,7 @@ export interface ActivityPlanInput {
 export interface ActivityPlan extends ActivityPlanInput {
   id: string; state: "draft" | "published" | "cancelled"; revision: number;
   can_edit: boolean; source: "activity" | "academic"; source_ref: string;
+  academic_context?: LearningOfferingAcademicContext | null;
   source_href?: string;
   replaces_version_id?: string | null; revision_reason?: string | null; superseded_on?: string | null;
   can_plan_change?: boolean; pending_revision_id?: string | null;

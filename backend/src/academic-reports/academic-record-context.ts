@@ -1,6 +1,8 @@
 import { ConflictException } from "@nestjs/common";
 import { sql, type Kysely, type Transaction } from "kysely";
 import type { Database } from "../database/types.js";
+import { executionNow } from "../campus-model-core/execution-time.runtime.js";
+import { offeringAcademicContext } from "../learning/learning-offering-academic.js";
 
 type Db = Kysely<Database> | Transaction<Database>;
 export interface AcademicRecordContext {
@@ -62,23 +64,93 @@ export async function captureAcademicContext(db: Db, schoolId: string, classId: 
   return { schema_version: 1, ...row };
 }
 
-export function retainedAcademicContext(value: unknown): AcademicRecordContext | null {
+export function retainedAcademicContext(value: unknown): AcademicRecordContext | Awaited<ReturnType<typeof captureOfferingAcademicContext>> | null {
   if (!value || typeof value !== "object" || Array.isArray(value)) return null;
-  const row = value as Partial<AcademicRecordContext>;
-  return row.schema_version === 1 && typeof row.class_section_id === "string" && typeof row.class_name === "string"
-    && typeof row.term_id === "string" && typeof row.term_name === "string" && typeof row.academic_year === "string"
-    ? row as AcademicRecordContext : null;
+  const row = value as Record<string, unknown>;
+  if (typeof row.term_id !== "string" || typeof row.term_name !== "string" || typeof row.academic_year !== "string" || typeof row.class_name !== "string") return null;
+  if (row.schema_version === 1 && typeof row.class_section_id === "string") return value as AcademicRecordContext;
+  if (row.schema_version === 2 && row.context_kind === "learning_offering" && row.class_section_id === null
+    && typeof row.offering_id === "string" && typeof row.offering_name === "string" && typeof row.offering_revision === "number"
+    && typeof row.subject_id === "string" && typeof row.course_code === "string" && typeof row.credits === "number")
+    return value as Awaited<ReturnType<typeof captureOfferingAcademicContext>>;
+  return null;
 }
 
 export interface PublishedRosterSource {
   assessment_id: string;
   publication_id: string;
   scheduled_on: string | null;
-  results: ReadonlyMap<string, { academic_roster_source: unknown }>;
+  results: ReadonlyMap<string, { academic_roster_source: unknown; person_id?: string; student_id?: string | null }>;
 }
 export interface PublishedAcademicLearner {
-  student_id: string;
+  student_id: string | null;
+  learner_id?: string;
+  person_id?: string;
   academic_roster_source: Record<string, unknown>;
+}
+
+export interface OfferingEnrollmentSource {
+  schema_version: 2; kind: "learning_offering"; offering_id: string; person_id: string;
+  enrollment_id: string; enrollment_revision: number; as_of: string;
+}
+export async function datedOfferingRoster(db: Db, schoolId: string, offeringId: string, termId: string, asOf: string) {
+  const rows = (await sql<{ person_id: string; enrollment_id: string; enrollment_revision: number }>`SELECT enrollment.person_id,enrollment.id AS enrollment_id,enrollment.revision AS enrollment_revision
+    FROM learning_offering_enrollments enrollment JOIN school_people person ON person.school_id=enrollment.school_id AND person.id=enrollment.person_id
+    JOIN learning_offering_academic_contexts binding ON binding.school_id=enrollment.school_id AND binding.offering_id=enrollment.offering_id
+    JOIN academic_terms term ON term.school_id=binding.school_id AND term.id=binding.term_id
+    WHERE enrollment.school_id=${schoolId}::uuid AND enrollment.offering_id=${offeringId}::uuid AND term.id=${termId}::uuid
+      AND ${asOf}::date BETWEEN term.starts_on AND term.ends_on AND enrollment.starts_on<=${asOf}::date
+      AND(enrollment.ends_on IS NULL OR enrollment.ends_on>${asOf}::date)
+      AND(person.retired_at IS NULL OR person.retired_at>(${asOf}::date::timestamp AT TIME ZONE (SELECT timezone FROM schools WHERE id=${schoolId}::uuid)))
+    ORDER BY enrollment.person_id,enrollment.id FOR SHARE OF enrollment,person,binding,term`.execute(db)).rows;
+  const seen = new Set<string>();
+  return rows.map(row => {
+    if (seen.has(row.person_id)) throw new ConflictException("This assessment date has overlapping course enrollments. Correct the offering history before opening marking.");
+    seen.add(row.person_id);
+    const source: OfferingEnrollmentSource = { schema_version: 2, kind: "learning_offering", offering_id: offeringId, person_id: row.person_id,
+      enrollment_id: row.enrollment_id, enrollment_revision: row.enrollment_revision, as_of: asOf };
+    return { learner_id: row.person_id, person_id: row.person_id, student_id: null, academic_roster_source: source };
+  });
+}
+
+export async function captureOfferingAcademicContext(db: Db, schoolId: string, offeringId: string, assessmentOn?: string) {
+  const offering = await db.selectFrom("learning_offerings").select(["id", "name", "revision"]).where("school_id", "=", schoolId).where("id", "=", offeringId).forShare().executeTakeFirst();
+  const binding = await offeringAcademicContext(db, schoolId, offeringId);
+  if (!offering || !binding) throw new ConflictException("This course's term and subject are unavailable. Review its setup before continuing.");
+  return { schema_version: 2 as const, context_kind: "learning_offering" as const, offering_id: offering.id, offering_name: offering.name,
+    offering_revision: offering.revision, class_section_id: null, class_name: offering.name, ...binding, ...(assessmentOn ? { assessment_on: assessmentOn } : {}) };
+}
+
+/** A first course report freezes immutable publication audiences plus enrollment
+ * at the selected campus date (capped at term end). A missing result stays
+ * incomplete; an ended elective without marks is excluded. Corrections retain
+ * the first audience, enrollment evidence and included course set. */
+export async function publishedOfferingRoster(db: Db, schoolId: string, schemeId: string, sources: readonly PublishedRosterSource[]): Promise<PublishedAcademicLearner[]> {
+  const previous = await db.selectFrom("grading_report_batches").select("id").where("school_id", "=", schoolId).where("scheme_id", "=", schemeId).orderBy("sequence", "desc").executeTakeFirst();
+  if (previous) return db.selectFrom("grading_report_students").select(["student_id", "learner_id", "person_id", "academic_roster_source"])
+    .where("school_id", "=", schoolId).where("batch_id", "=", previous.id).orderBy("learner_id").execute();
+  const term=(await sql<{starts_on:string;as_of:string}>`SELECT term.starts_on::text,LEAST(term.ends_on,(${executionNow()}::timestamptz AT TIME ZONE school.timezone)::date)::text AS as_of
+    FROM grading_schemes scheme JOIN academic_terms term ON term.school_id=scheme.school_id AND term.id=scheme.term_id JOIN schools school ON school.id=scheme.school_id
+    WHERE scheme.school_id=${schoolId}::uuid AND scheme.id=${schemeId}::uuid FOR SHARE OF scheme,term`.execute(db)).rows[0];
+  if(!term||term.as_of<term.starts_on)throw new ConflictException("The course report term has not started. Keep future expectations separate from an issued academic report.");
+  const dated = (await sql<{person_id:string;offering_id:string;enrollment_id:string;enrollment_revision:number;as_of:string}>`SELECT enrollment.person_id,selected.offering_id,
+      enrollment.id AS enrollment_id,enrollment.revision AS enrollment_revision,${term.as_of}::text AS as_of
+    FROM grading_scheme_offerings selected JOIN learning_offering_enrollments enrollment ON enrollment.school_id=selected.school_id AND enrollment.offering_id=selected.offering_id
+    JOIN school_people person ON person.school_id=enrollment.school_id AND person.id=enrollment.person_id JOIN schools school ON school.id=selected.school_id
+    WHERE selected.school_id=${schoolId}::uuid AND selected.scheme_id=${schemeId}::uuid
+      AND enrollment.starts_on<=${term.as_of}::date AND(enrollment.ends_on IS NULL OR enrollment.ends_on>${term.as_of}::date)
+      AND(person.retired_at IS NULL OR person.retired_at>(${term.as_of}::date::timestamp AT TIME ZONE school.timezone))
+    ORDER BY enrollment.person_id,selected.offering_id,enrollment.id FOR SHARE OF enrollment,person`.execute(db)).rows;
+  const ids = [...new Set([...sources.flatMap(source => [...source.results.keys()]),...dated.map(row=>row.person_id)])].sort();
+  return ids.map(id => {
+    const evidence = sources.filter(source => source.results.has(id));
+    const identities = evidence.map(source => source.results.get(id)!);
+    if (identities.some(row => row.student_id !== null || row.person_id !== id)) throw new ConflictException("The selected course publications have incompatible learner identity.");
+    const provenance = evidence.map(source => ({ assessment_id: source.assessment_id, publication_id: source.publication_id,
+      enrollment_source: source.results.get(id)!.academic_roster_source }));
+    return { student_id: null, learner_id: id, person_id: id, academic_roster_source: { schema_version: 2, kind: "published_and_dated_offering_roster", sources: provenance, eligibility_as_of:term.as_of,
+      dated_enrollments:dated.filter(row=>row.person_id===id) } };
+  });
 }
 
 /** Report membership comes from the selected immutable publications. A correction
@@ -110,4 +182,15 @@ export async function publishedAcademicRoster(db: Db, schoolId: string, schemeId
       enrollment_source: resolved, roll_number: resolved?.roll_number ?? null,
       unavailable_reason: resolved ? null : unique.size > 1 ? "ambiguous_published_enrollment" : "historical_enrollment_not_recorded" } };
   });
+}
+
+/** Existing family selectors keep their class-history floor. New course records
+ * additionally require the currently linked canonical student/guardian endpoint. */
+export async function currentFamilyCourseAccess(db:Db,schoolId:string,userId:string,studentId:string){
+  return (await sql<{allowed:boolean}>`SELECT EXISTS(SELECT 1 FROM students student JOIN school_memberships member ON member.school_id=student.school_id AND member.user_id=${userId}::uuid AND member.is_active
+    WHERE student.school_id=${schoolId}::uuid AND student.id=${studentId}::uuid AND(
+      (member.role='student' AND student.user_id=${userId}::uuid AND campus_model_account_person_is_active(${schoolId}::uuid,${userId}::uuid,student.person_id,${executionNow()}::timestamptz))
+      OR(member.role='guardian' AND EXISTS(SELECT 1 FROM guardian_relationships relationship JOIN parents parent ON parent.id=relationship.guardian_id AND parent.user_id=${userId}::uuid
+        JOIN guardian_school_profiles profile ON profile.school_id=relationship.school_id AND profile.guardian_id=parent.id
+        WHERE relationship.school_id=student.school_id AND relationship.student_id=student.id AND campus_model_account_person_is_active(${schoolId}::uuid,${userId}::uuid,profile.person_id,${executionNow()}::timestamptz))))) AS allowed`.execute(db)).rows[0]!.allowed;
 }

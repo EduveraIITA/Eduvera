@@ -31,6 +31,13 @@ test('progress uses the exact manifest relationship and never crosses learner co
   assert.equal(reportRelationships(manifest([surface('self', 'me'), surface('self', 'me')])).length, 0);
   assert.equal(reportRelationships(manifest([{ ...surface('dependent', 'a'), scopes: [{ kind: 'dependent', id: 'b' }] }])).length, 0);
 });
+test('canonical own progress requires its exact person scope and cannot substitute a legacy student relationship',()=>{
+  const own={key:'progress:mine:person',label:'My progress',href:'/areas/reports/progress?scope=mine&person_id=person',scopes:[{kind:'person',id:'person'}],capabilities:[]};
+  const source=manifest([own,surface('dependent','child')]);
+  const selected=resolveReportRelationship(source,own.href);assert.equal(selected?.kind,'mine');assert.equal(selected?.personId,'person');assert.equal(selected?.studentId,undefined);
+  for(const query of ['scope=mine&person_id=other','scope=mine&student_id=person','scope=dependent&person_id=person','scope=mine&person_id=person&student_id=child','scope=mine&person_id=person&person_id=person'])assert.equal(resolveReportRelationship(source,`/areas/reports/progress?${query}`),null);
+  assert.equal(reportRelationships(manifest([{...own,scopes:[{kind:'person',id:'other'}]}])).length,0);
+});
 test('report routes retain query modes and reject mixed, duplicate, unknown or empty exact selectors', () => {
   assert.deepEqual(academicReportRoute('/areas/reports/remarks?view=schemes&scheme=source'), { view: 'schemes', batchId: null, schemeId: 'source', create: null, sourcePolicyId: null, status: 'all' });
   assert.equal(academicReportRoute('/areas/reports/remarks?view=policies&create=policy&policy=source')?.sourcePolicyId, 'source');

@@ -169,6 +169,9 @@ export function nativeCalendarEventEntries(items: readonly CampusEventDto[], sco
 export function nativeCalendarAssessmentEntries(items: readonly CalendarAssessmentDate[], scope: CampusCalendarScope): CalendarEntry[] {
   return deduplicate(items.map(item => {
     if (!identifier(item.id) || !text(item.title) || !instant(item.scheduled_at) || !text(item.venue) || !text(item.subject_name) || !text(item.class_name)
+      || item.context_kind !== undefined && !['class_term', 'learning_offering'].includes(item.context_kind)
+      || item.context_kind === 'learning_offering' && (!identifier(item.offering_id) || !identifier(item.subject_id))
+      || item.context_kind === 'class_term' && item.offering_id != null
       || item.duration_minutes !== null && (!Number.isFinite(item.duration_minutes) || item.duration_minutes < 0)) invalid('Assessments returned an invalid dated record.');
     const endsAt = new Date(Date.parse(item.scheduled_at) + (item.duration_minutes ?? 0) * 60_000).toISOString();
     return { id: `assessments:${item.id}`, category: 'assessments', sourceId: item.id, title: item.title,
@@ -208,6 +211,10 @@ function contributedSource(scope: CampusCalendarScope, category: 'events' | 'ass
   const pattern = category === 'events' ? /^\/areas\/events\/(?:manage|assigned|calendar)\/?$/ : /^\/areas\/assessments\/(?:manage|assigned|results)\/?$/;
   if (!target || !pattern.test(target.pathname)) invalid('This source is not available in the selected Calendar context.');
   if (scope.studentId && (target.searchParams.get('student_id') !== scope.studentId || !['self', 'dependent'].includes(target.searchParams.get('scope') ?? ''))) invalid('The Calendar source did not match the selected learner.');
+  if (category === 'assessments' && scope.personId && (scope.studentId || target.pathname !== '/areas/assessments/results'
+    || target.searchParams.getAll('scope').length !== 1 || target.searchParams.get('scope') !== 'mine'
+    || target.searchParams.getAll('person_id').length !== 1 || target.searchParams.get('person_id') !== scope.personId || target.searchParams.has('student_id')))
+    invalid('The Calendar source did not match your current campus person.');
 }
 
 /** Source-owned reads only. Authentication/world binding remain the injected transport's responsibility. */
@@ -260,7 +267,8 @@ export async function loadNativeCalendarSource(category: CalendarCategory, scope
   }
   if (category === 'assessments') {
     contributedSource(scope, category);
-    const params = new URLSearchParams({ from, to: until }); if (scope.studentId) params.set('student_id', scope.studentId);
+    const params = new URLSearchParams({ from, to: until, academic_context: 'offering_v1' });
+    if (scope.studentId) params.set('student_id', scope.studentId); else if (scope.personId) params.set('person_id', scope.personId);
     const result = await read<{ items: CalendarAssessmentDate[] }>(`/api/v1/schools/${encodeURIComponent(scope.schoolId)}/assessments/calendar/?${params}`);
     if (!result || !Array.isArray(result.items)) invalid('Assessments returned an incomplete response.');
     return { entries: overlap(nativeCalendarAssessmentEntries(result.items, scope)), partial: false };

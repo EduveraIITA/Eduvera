@@ -14,7 +14,7 @@ publication and traceable correction.
 
 The workflow answers four operational questions:
 
-1. What offline assessment is scheduled, for which class and subject?
+1. What offline assessment is scheduled, for which class or configured course and subject?
 2. Who may record and who must independently moderate its results?
 3. Is every learner accounted for with a truthful result state?
 4. Which immutable result revision has actually been published to the learner/family?
@@ -22,8 +22,40 @@ The workflow answers four operational questions:
 Supported institution types are school, college, coaching and hybrid. Labels and
 assessment kinds are configurable at record level; no CBSE-only grading rule is
 embedded in code. Initial scoring is marks-based with an optional displayed grade.
-Weighted term aggregation, board-specific grade calculation and transcript/certificate
-generation remain later policy packs and must not be inferred from this release.
+Configured term aggregation belongs to the
+[grading/report owner](CONFIGURABLE_GRADING_REPORT_CARDS.md), not an inferred rule
+on an assessment. Board-specific rules and transcript/certificate generation remain
+separate capabilities.
+
+### Canonical course assessments
+
+The same assessment lifecycle supports an explicit learning-offering context with
+its own term and subject. It uses canonical person learners, with nullable legacy
+student/class identifiers; no artificial class or student is created. An appointed
+instructor still needs current scoped assessment authority. Workspace, detail and
+refresh disclosure use that current permission floor; an old assignment alone must
+not expose private instructions after authority ends.
+
+Opening marking freezes enrollment applicable on the assessment's campus-local
+date, with exact enrollment identity/revision. Parallel courses keep separate
+registers. Later elective changes cannot rewrite that frozen audience. Examiner,
+independent moderator and administrator publication retain their existing checks.
+Zero remains a real mark, while absent, exempt, withheld and not evaluated stay
+explicit. Corrections append a new reviewed publication and retain earlier releases.
+Current canonical learners receive only their own published result; existing family
+selectors retain their class-history floor and recheck current identity for added
+course records.
+
+Current offering delivery is bounded to nonphysical quiz, class-test, assignment
+and project assessment records. Physical offering exams, practicals and vivas are
+explicitly unavailable until the existing examination owner captures their canonical
+offering candidates. The physical-examination product target and existing class
+examination path below remain in force; this limit does not substitute an online
+test engine or guessed candidates. Workspace clients opt into offering shapes with
+`academic_context=offering_v1`; absent opt-in preserves class-only rows and counts.
+The same opt-in adds scheduled course dates to Calendar for the current canonical
+learner, real family relationship or scoped assigned staff. It exposes dates and
+course context only; drafts and private marking instructions remain undisclosed.
 
 ## Roles and authority
 

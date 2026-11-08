@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react';
 import { Text } from 'react-native';
 import { useRouter } from 'expo-router';
 import { useSession } from './SessionProvider';
-import { apiFetch, captureApiContext } from '../lib/api';
+import { apiFetch, captureApiContext, getApiOrigin } from '../lib/api';
 import { ApiError } from '../lib/api-client';
 import { useApi } from '../lib/query';
 import { Alert } from '../ui/Alert';
@@ -13,10 +13,26 @@ import { accountReturnTitle, safeAccountReturnTarget } from './account-return';
 import { nativeAuthDestination } from './auth-entry';
 import { visitJoinReturnTarget } from './visit-join-policy';
 import { AuthenticatorQr } from './AuthenticatorQr';
-import { verificationEmailFeedback } from './account-recovery';
+import { accountSecurityEntryHref, verificationEmailFeedback } from './account-recovery';
+import { accountMailLinks } from './account-mail-link';
+import { useAccountMailEntry } from './use-account-mail-entry';
 
 type Enrollment = { secret: string; otpauth_uri: string };
 export function AccountSecurityScreen({ href }: { href: string }) {
+  const query = new URL(href, 'https://thatcampus.invalid').searchParams, params: Record<string, unknown> = {};
+  for (const key of query.keys()) { const values = query.getAll(key); params[key] = values.length === 1 ? values[0] : values; }
+  const entry = useAccountMailEntry('email_verification', params);
+  const safeHref = entry.invalid ? null : accountSecurityEntryHref({ ...params, token: undefined,
+    ...(entry.continuation ? { continue: entry.continuation } : {}) });
+  if (!entry.ready) return <Page title="Account security"><Loading label="Opening your secure link…" /></Page>;
+  if (!safeHref) return <Page title="Account security"><Empty title="Open the original verification email"
+    message="This link is incomplete or is no longer held on this device. Open the email again, or request a new verification email from Account security." /></Page>;
+  // Neither the navigation owner nor a mounted form receives an incoming proof
+  // URL. Only the origin/purpose-bound in-memory entry may prefill this form.
+  return <AccountSecurityContent key={`${getApiOrigin()}:${safeHref}`} href={safeHref} verificationToken={entry.token ?? ''} />;
+}
+
+function AccountSecurityContent({ href, verificationToken }: { href: string; verificationToken: string }) {
   const session = useSession(), { colors } = useTheme(), navigation = useCampusNavigation(href), router = useRouter();
   const params = new URL(href, 'https://thatcampus.invalid').searchParams;
   const origin = safeAccountReturnTarget(params.get('from')) ?? safeAccountReturnTarget(params.get('next'));
@@ -25,7 +41,7 @@ export function AccountSecurityScreen({ href }: { href: string }) {
   const verified = session.user?.email_verified === true, writable = session.status === 'authenticated' && !session.publicDemo && session.environment.mode === 'live';
   const mfa = useApi<{ status: string; recovery_codes_remaining: number }>(!onboarding ? '/api/v1/auth/mfa/' : null);
   const sessions = useApi<{ results: Array<{ current: boolean; user_agent: string; last_seen_at: string; expires_at: string }> }>(!onboarding ? '/api/v1/auth/sessions/' : null);
-  const [verification, setVerification] = useState(() => params.get('token') ?? ''), [code, setCode] = useState('');
+  const [verification, setVerification] = useState(verificationToken), [code, setCode] = useState('');
   const [setup, setSetup] = useState<Enrollment | null>(null), [codes, setCodes] = useState<string[]>([]);
   const [busy, setBusy] = useState(false), [message, setMessage] = useState(''), [error, setError] = useState(''), [uncertain, setUncertain] = useState(false);
   const [messageTone, setMessageTone] = useState<'success' | 'warning'>('success');
@@ -63,6 +79,7 @@ export function AccountSecurityScreen({ href }: { href: string }) {
       <Field label="Verification token" value={verification} onChangeText={setVerification} autoCapitalize="none" autoCorrect={false} textContentType="oneTimeCode" />
       <Button title="Confirm email" busy={busy} disabled={!writable || uncertain || verification.trim().length < 32} onPress={() => { void perform(async () => {
         const context = captureApiContext(); await apiFetch('/api/v1/auth/email-verification/confirm/', { method: 'POST', body: JSON.stringify({ token: verification.trim() }) }); context.assertCurrent();
+        if (params.get('continue')) accountMailLinks.remove(params.get('continue')!);
         setVerification(''); setMessage('Email verified.'); await session.refresh();
       }); }} />
     </> : null}</Section>
