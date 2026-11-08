@@ -25,16 +25,17 @@ function load(path: string, dependencies: Record<string, unknown>, window: Windo
 }
 type Field = { label: string; value: string };
 type Button = { title: string; disabled?: boolean; busy?: boolean; onPress(): void };
+type MountOptions = { historyState?: unknown; verificationError?: ApiError; emailVerified?: boolean };
 async function mounted(url: string, work: (h: { document: Document; fields: Map<string, Field>; buttons: Map<string, Button>;
   navigations: string[]; posts: Array<{ path: string; body: string }>; rerender(): Promise<void>; remount(): Promise<void> }) => Promise<void>,
-  historyState?: unknown, verificationError?: ApiError) {
+  options: MountOptions = {}) {
   const { JSDOM } = require('jsdom'), dom = new JSDOM('<div id="root"></div>', { url });
-  if (historyState !== undefined) dom.window.history.replaceState(historyState, '', url);
+  if (options.historyState !== undefined) dom.window.history.replaceState(options.historyState, '', url);
   const previous = { window: globalThis.window, document: globalThis.document,
     IS_REACT_ACT_ENVIRONMENT: (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT };
   Object.assign(globalThis, { window: dom.window, document: dom.window.document, IS_REACT_ACT_ENVIRONMENT: true });
   const fields = new Map<string, Field>(), buttons = new Map<string, Button>(), navigations: string[] = [], posts: Array<{path:string;body:string}> = [];
-  const session = { status: 'authenticated', user: { id: randomUUID(), email: 'person@example.test', email_verified: false },
+  const session = { status: 'authenticated', user: { id: randomUUID(), email: 'person@example.test', email_verified: options.emailVerified ?? false },
     environment: { mode: 'live' }, memberships: [], publicDemo: false, onboarding: { status: 'complete' }, refresh: async () => {} };
   const Box = ({ children, title, message }: React.PropsWithChildren<{ title?: string; message?: string }>) => React.createElement('section', null, title, message, children);
   const hook = load('src/auth/use-account-mail-entry.ts', { react: React, 'expo-crypto': { randomUUID }, '../lib/api': { getApiOrigin: () => origin },
@@ -47,7 +48,7 @@ async function mounted(url: string, work: (h: { document: Document; fields: Map<
       posts.push({ path, body: String(init.body) });
       if (path === '/api/v1/auth/email-verification/request/') return { delivery: 'queued' };
       assert.equal(path, '/api/v1/auth/email-verification/confirm/');
-      if (verificationError) throw verificationError;
+      if (options.verificationError) throw options.verificationError;
       return { verified: true };
     } }, '../lib/api-client': { ApiError }, '../lib/query': { useApi: () => ({ data: { status: 'inactive', results: [] }, isPending: false, isError: false }) },
     '../ui/Alert': { Alert: { alert() {} } }, '../ui/BackNavigation': { ScreenBack: () => null, useScreenExitGuard() {},
@@ -86,7 +87,7 @@ test('canonical browser query proof is scrubbed before navigation/forms and one 
     assert.deepEqual(h.posts, [{ path: '/api/v1/auth/email-verification/confirm/', body: JSON.stringify({ token: proof }) }]);
     assert.equal(accountMailLinks.read(nonce, 'email_verification', origin), null);
     await h.remount(); assert.equal(h.fields.has('Verification token'), false); assert.match(h.document.body.textContent ?? '', /original verification email/);
-  }, { route: `/more/account/security?token=${proof}`, params: { token: proof }, index: 7 });
+  }, { historyState: { route: `/more/account/security?token=${proof}`, params: { token: proof }, index: 7 } });
 });
 
 test('both browser security aliases keep generated fragment proofs out of navigation and retain only a volatile nonce', async () => {
@@ -98,7 +99,19 @@ test('both browser security aliases keep generated fragment proofs out of naviga
     assert.ok(!globalThis.window.location.href.includes(proof)); assert.ok(h.navigations.every(href => !href.includes(proof)));
     const current = globalThis.window.location.href; await h.rerender(); assert.equal(globalThis.window.location.href, current);
     assert.deepEqual(globalThis.window.history.state, { index: 7, key: 'safe-router-entry' });
-  }, { index: 7, key: 'safe-router-entry' });
+  }, { historyState: { index: 7, key: 'safe-router-entry' } });
+});
+
+test('an already verified session identifies its address without claiming the opened link was confirmed', async () => {
+  await mounted(`${origin}/more/account/security#token=${proof}`, async h => {
+    const visibleText = h.document.body.textContent ?? '';
+    assert.match(visibleText, /Email already verified/);
+    assert.match(visibleText, /person@example\.test/);
+    assert.match(visibleText, /sign in.*(?:account|address).*reopen/i);
+    assert.equal(h.buttons.has('Confirm email'), false);
+    assert.deepEqual(h.posts, []);
+    assert.ok(!h.document.body.innerHTML.includes(proof));
+  }, { emailVerified: true });
 });
 
 test('an unverified account without a link can request email without entering a credential', async () => {
@@ -133,7 +146,7 @@ test('a rejected verification link retires its proof and lets the user request a
     assert.ok(send && !send.disabled);
     await act(async () => send.onPress());
     assert.deepEqual(h.posts, [confirmation, { path: '/api/v1/auth/email-verification/request/', body: '{}' }]);
-  }, undefined, invalid);
+  }, { verificationError: invalid });
 });
 
 test('canonical duplicate/mixed proof values are scrubbed and never choose a token or dispatch', async () => {

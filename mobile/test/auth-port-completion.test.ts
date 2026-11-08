@@ -222,16 +222,24 @@ test('mounted recovery uses the same check-inbox message without revealing accou
 
 test('a signed-in user can request a replacement reset link without leaving the recovery route', () => {
   const Redirect = Symbol('Redirect'), LoginScreen = Symbol('LoginScreen'), Page = Symbol('Page');
+  const Button = Symbol('Button');
+  const paths: string[] = [];
+  let params: Record<string, unknown> = {};
   const { AuthEntryScreen } = load('src/auth/AuthEntryScreen.tsx', {
-    'react/jsx-runtime': require('react/jsx-runtime'), 'expo-router': { Redirect, useLocalSearchParams: () => ({}) },
+    'react/jsx-runtime': require('react/jsx-runtime'), 'expo-router': { Redirect, useLocalSearchParams: () => params, useRouter: () => ({ replace: (href: string) => paths.push(href) }) },
     './SessionProvider': { useSession: () => session }, './LoginScreen': { LoginScreen }, './auth-entry': { nativeAuthDestination },
-    '../ui/components': { Button: Symbol('Button'), Empty: Symbol('Empty'), Loading: Symbol('Loading'), Page },
+    '../ui/components': { Button, Empty: Symbol('Empty'), Loading: Symbol('Loading'), Page },
   });
-  const Screen = AuthEntryScreen as (props: { mode?: 'login' | 'recovery' }) => React.ReactElement<{ initialMode?: string }>;
+  const Screen = AuthEntryScreen as (props: { mode?: 'login' | 'recovery' }) => React.ReactElement<{ initialMode?: string; children?: React.ReactElement<ButtonProps>[] }>;
   assert.equal(Screen({ mode: 'login' }).type, Redirect);
   const recovery = Screen({ mode: 'recovery' });
   assert.equal(recovery.type, LoginScreen);
   assert.equal(recovery.props.initialMode, 'recovery');
+  params = { account_link: 'invalid' };
+  const invalid = Screen({ mode: 'login' });
+  assert.equal(invalid.type, Page);
+  for (const child of invalid.props.children ?? []) if (child.type === Button) child.props.onPress();
+  assert.deepEqual(paths, ['/account/security', '/forgot-password']);
 });
 
 

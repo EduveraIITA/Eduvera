@@ -66,14 +66,17 @@ function AccountSecurityContent({ href, verificationToken }: { href: string; ver
     if (target.startsWith('/onboarding/') || visitJoinReturnTarget(target)) router.replace(target as never);
     else navigation.complete(target);
   }
-  const title = emailOnly ? verified ? 'Email confirmed' : verification ? 'Confirm your email' : 'Check your email' : 'Account security';
+  const alreadyVerified = verified && !!verification;
+  const title = emailOnly ? verified ? alreadyVerified ? 'Email already verified' : 'Email confirmed' : verification ? 'Confirm your email' : 'Check your email' : 'Account security';
   return <Page title={title} subtitle={onboarding && verified ? 'Choose the first campus task you want to run.' : undefined}
     refreshing={mfa.isRefetching || sessions.isRefetching} onRefresh={busy ? undefined : () => { void session.refresh(); if (!emailOnly) { void mfa.refetch(); void sessions.refetch(); } }}>
     <ScreenBack fallbackHref={back} title={accountReturnTitle(back)} disabled={busy} />
     {error ? <Notice tone="danger" message={error} /> : null}{message ? <Notice message={message} tone={messageTone} /> : null}
     {session.publicDemo ? <Notice message="This public demo is read-only. Sign in with your own account to manage security." /> : session.environment.mode !== 'live' ? <><Notice message="Account security is managed in Live. Return to Live before changing your account." /><Button title="Open Simulation controls" kind="secondary" onPress={() => navigation.onNavigate('/more/simulation')} /></> : null}
     {uncertain ? <Notice tone="warning" message="The result is unconfirmed. Security actions are paused on this screen. Check your account’s current status before starting another setup; the action has not been repeated." /> : null}
-    <Section title="Email"><Row title={session.user?.email ?? 'Your email'} status={verified ? 'Verified' : 'Not verified'} />{!verified && (verification ? <>
+    <Section title="Email"><Row title={session.user?.email ?? 'Your email'} status={verified ? 'Verified' : 'Not verified'} />
+    {alreadyVerified ? <Text style={{ color: colors.muted, fontSize: 15, lineHeight: 23 }}>If the email was sent to a different address, sign in to that account and reopen the link.</Text> : null}
+    {!verified && (verification ? <>
       <Text style={{ color: colors.muted, fontSize: 15, lineHeight: 23 }}>Confirm this address if it matches the email you opened.</Text>
       <Button title="Confirm email" busy={busy} disabled={!writable || uncertain} onPress={() => { void perform(async () => {
         const context = captureApiContext();
