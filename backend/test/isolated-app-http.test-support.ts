@@ -18,7 +18,9 @@ import { NestFactory, ModulesContainer } from "@nestjs/core";
 import { FastifyAdapter } from "@nestjs/platform-fastify";
 import { AppModule } from "./dist/app.module.js";
 import { ApiExceptionFilter } from "./dist/common/errors.js";
-const app = await NestFactory.create(AppModule, new FastifyAdapter({logger:{level:"error",redact:["req.headers.cookie","req.headers.authorization","res.headers.set-cookie"]},routerOptions:{ignoreTrailingSlash:true}}), {logger:false});
+// Keep startup failures as rejected exceptions. Nest's default abortOnError
+// exits silently when its logger is disabled and hides the failing DI token.
+const app = await NestFactory.create(AppModule, new FastifyAdapter({logger:{level:"error",redact:["req.headers.cookie","req.headers.authorization","res.headers.set-cookie"]},routerOptions:{ignoreTrailingSlash:true}}), {logger:false,abortOnError:false});
 const background = new Set(["MarketingNotificationWorker","AgentChannelService","InvitationEmailWorker",
   "TransportRetentionService","AgentMemoryService","SimulationWorkerService","PeopleImportService",
   "PaymentEmailService","SchoolEventService","StaffOperationsService"]);

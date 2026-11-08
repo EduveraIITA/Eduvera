@@ -277,9 +277,59 @@ Use the existing theme and concise source/release context; verify meaningful
 correction/moderation/republication in Live and isolated COW with unchanged Live
 and sibling records.
 
-Scheduled exam amendment, student result-query cases, group submissions and
-automatic reminders remain separate gaps. Do not unlock scheduled arrangements
-by removing a UI condition or claim those journeys from the correction action.
+Student result-query cases, group submissions and automatic reminders remain
+separate gaps. Scheduled physical examination amendments use the distinct
+reviewed contract below; the result correction action never changes a sitting.
+
+### Future scheduled examination amendments
+
+A current institution administrator can deliberately revise the time, duration,
+canonical room or invigilation duties of an already scheduled physical sitting.
+The assessment and sitting retain their identities and frozen candidate roster.
+Only a future, never-started sitting with no recorded participation commands,
+entries or incidents is eligible. Started/completed evidence, marks, corrections
+and prior accepted duty responses are never rewritten to permit a move.
+
+**Change scheduled arrangements** opens a separate compact editor, followed by a
+review of old/new arrangements, retained candidate count, affected duties,
+conflicts and a required reason. A fresh server impact digest binds publication
+to that review. The final **Publish revised arrangements** command makes the new
+time/room current explicitly; it withdraws readiness and retires the old planned
+expectation. Staff detail and the exam-day workspace say **Revised arrangements
+awaiting confirmation**. Time/room changes require every affected invigilator to
+answer a new duty Offer. A staff-only change retains unaffected current accepted
+duties, revokes removed duties and offers only the added or otherwise changed
+duties. No replacement Offer is automatically accepted.
+
+An administrator separately chooses **Confirm revised schedule** after the
+current acceptance minimum is satisfied. This rechecks room capacity and current
+examination, timetable and staff conflicts before restoring the sitting's ready
+state and expected footprint. Revision commands atomically advance the canonical
+occurrence and pristine participation context, including institution-local date
+on a cross-day move; they retain occurrence identity, frozen roster identity and
+immutable preceding plan/import/schedule snapshots. Default shared planning and
+participation preparation do not gain implicit rescheduling behavior.
+
+The preview, publish and confirm endpoints are under the existing assessment's
+`sitting/schedule-amendments/` owner. Publish/confirm require the exact current
+assessment/sitting revisions and a command identity. Native recovery reuses that
+same request after an interrupted response, verifies the command receipt and
+immutable schedule-history key, and rechecks current administrator authority.
+A retained source-owned refusal releases only its exact actor/campus/source/
+revision-bound intent and requires a fresh review before new work; generic
+conflicts or another command's refusal never establish an outcome. Frozen-cohort
+refresh notifications still require the learner's or linked guardian's current
+canonical account/person endpoint. Family result views remain publication-only
+and do not receive the private examination operation or cohort.
+
+`exam-schedule-amendments.integration.test.ts` exercises native mutations with
+actual Core and participation services, same-day canonical changes, immutable
+history, exact retries/refusals/current authority, conflicts, started-sitting
+rejection, current frozen-cohort endpoint eligibility and a real cross-day COW
+mutation with unchanged Live and sibling state. The existing examination-day
+regression remains required. Mobile source/type and journal recovery checks are
+separate from rendered device acceptance; this contract does not claim a
+completed rendered tour or production rollout.
 
 ### 27 October — historical roster and evidence acceptance
 

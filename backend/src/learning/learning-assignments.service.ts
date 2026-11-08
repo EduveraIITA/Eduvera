@@ -12,6 +12,7 @@ import { config } from "../config.js";
 import { assignmentCommand, learningAssignmentDraft, assignmentId, assignmentLimits, assignmentPublication, assignmentReceipts, offeringAssignmentReceipts, assignmentReview, assignmentSubmit, assignmentUpload, learnerDraft, type AssignmentUpload } from "./learning-assignment.contracts.js";
 import { LearningAssignmentContextService, type AssignmentSource } from "./learning-assignment-context.service.js";
 import { assignmentHash, LearningAssignmentModelService, type AssignmentRoute } from "./learning-assignment-model.service.js";
+import { assignmentHandoverReferences, currentAssignmentAttempt } from "./learning-assignment-handover-state.js";
 import { readAssignmentsReadiness } from "./learning-assignment-readiness.js";
 import { retainAssignmentsContinuation } from "../institution-onboarding/operating-resume.js";
 
@@ -240,7 +241,7 @@ export class LearningAssignmentsService {
       .where("assignment_id", "=", source.id).where("learner_id", "=", studentId).executeTakeFirst() : undefined;
     const files = self ? await tx.selectFrom("learning_assignment_files").select(["id", "original_name", "content_type", "size_bytes", "sha256"])
       .where("school_id", "=", source.school_id).where("assignment_id", "=", source.id).where("learner_id", "=", studentId).where("draft_attached", "=", true).orderBy("created_at").orderBy("id").execute() : [];
-    const last = attempts[0], lastReview = last ? reviews.find(review => review.attempt_id === last.id) : undefined;
+    const last = await currentAssignmentAttempt(tx, source.school_id, source.id, attempts[0]), lastReview = last ? reviews.find(review => review.attempt_id === last.id) : undefined;
     let canWrite = false;
     if (self) try { await this.context.family(tx, user, studentId, source, true); canWrite = true; }
     catch (cause) { if (!(cause instanceof ForbiddenException || cause instanceof NotFoundException)) throw cause; /* Historical reads do not restore enrollment. */ }
@@ -286,11 +287,11 @@ export class LearningAssignmentsService {
   }
 
   private async lockWork(tx: Transaction<Database>, user: AuthUser, id: string, studentId: string) {
-    const source = await this.context.source(tx, user, assignmentId.parse(id));
+    const source = await this.context.source(tx, user, assignmentId.parse(id), "share");
     const access = await this.context.family(tx, user, assignmentId.parse(studentId), source, true);
     await sql`SELECT pg_advisory_xact_lock(hashtextextended(${`assignment-work:${id}:${studentId}`},0))`.execute(tx);
     const draft = await tx.selectFrom("learning_assignment_drafts").selectAll().where("school_id", "=", source.school_id).where("assignment_id", "=", id).where("learner_id", "=", studentId).forUpdate().executeTakeFirst();
-    const last = await tx.selectFrom("learning_assignment_attempts").selectAll().where("school_id", "=", source.school_id).where("assignment_id", "=", id).where("learner_id", "=", studentId).orderBy("attempt_number", "desc").executeTakeFirst();
+    const last = await currentAssignmentAttempt(tx, source.school_id, id, await tx.selectFrom("learning_assignment_attempts").selectAll().where("school_id", "=", source.school_id).where("assignment_id", "=", id).where("learner_id", "=", studentId).orderBy("attempt_number", "desc").executeTakeFirst());
     const review = last ? await tx.selectFrom("learning_assignment_reviews").selectAll().where("school_id", "=", source.school_id).where("attempt_id", "=", last.id).executeTakeFirst() : undefined;
     return { source, access, draft, last, review };
   }
@@ -428,10 +429,10 @@ export class LearningAssignmentsService {
   async review(user: AuthUser, id: string, studentId: string, raw: unknown) {
     const data = assignmentReview.parse(raw);
     return this.db.transaction().execute(async tx => {
-      const source = await this.context.source(tx, user, assignmentId.parse(id));
+      const source = await this.context.source(tx, user, assignmentId.parse(id), "share");
       const access = await this.context.reviewer(tx, user, source); assignmentId.parse(studentId);
       await sql`SELECT pg_advisory_xact_lock(hashtextextended(${`assignment-work:${id}:${studentId}`},0))`.execute(tx);
-      const attempt = await tx.selectFrom("learning_assignment_attempts").selectAll().where("school_id", "=", source.school_id).where("assignment_id", "=", id).where("learner_id", "=", studentId).orderBy("attempt_number", "desc").executeTakeFirst();
+      const attempt = await currentAssignmentAttempt(tx, source.school_id, id, await tx.selectFrom("learning_assignment_attempts").selectAll().where("school_id", "=", source.school_id).where("assignment_id", "=", id).where("learner_id", "=", studentId).orderBy("attempt_number", "desc").executeTakeFirst());
       if (!attempt) throw new NotFoundException("No submitted attempt is available.");
       const prepared = await this.model.prepare(tx, user, { ...source, revision: attempt.attempt_number }, "review", data, { id, studentId, ...data }, access.grants);
       if (prepared.status === "completed") return { ...workReceipts(source).reviewed.parse(prepared.metadata), replayed: true };
@@ -514,6 +515,7 @@ export class LearningAssignmentsService {
           AND (student.user_id=${user.id}::uuid OR audience.person_id=${school.actor.person_id}::uuid OR assignment.reviewer_id=${user.id}::uuid)
           AND review.decision IS DISTINCT FROM 'reviewed' ORDER BY assignment.created_at,assignment.id,audience.learner_id`.execute(tx)).rows;
       const result: LearningAssignmentWorkItem[] = [], reviewerAccess = new Map<string, boolean>();
+      const handoverMessages = await assignmentHandoverReferences(tx, school.id, rows.flatMap(row => row.attempt_id ? [row.attempt_id] : []));
       for (const row of rows) {
         if (row.assignment.context_kind === "learning_offering") {
           const learner = await this.model.identityPort().resolvePersonAgent(tx, { school_id: school.id, person_id: row.person_id, at: executionNow().toISOString() });
@@ -528,6 +530,8 @@ export class LearningAssignmentsService {
           try { await this.context.reviewer(tx, { ...user, id: source.reviewer_id }, source); reviewerAccess.set(accessKey, true); }
           catch (cause) { if (cause instanceof ForbiddenException || cause instanceof NotFoundException) reviewerAccess.set(accessKey, false); else throw cause; }
         }
+        const currentAttempt = row.attempt_id ? await currentAssignmentAttempt(tx, source.school_id, source.id, { id: row.attempt_id, review_message_id: row.review_message_id, revision_message_id: row.revision_message_id }, handoverMessages) : undefined;
+        if (currentAttempt) { row.review_message_id = currentAttempt.review_message_id; row.revision_message_id = currentAttempt.revision_message_id; }
         const reviewerCurrent = reviewerAccess.get(accessKey)!;
         const action = row.attempt_id ? row.decision === "request_changes" ? "revise" as const : "review" as const : "submit" as const;
         const routeOpen = !row.attempt_id || await this.model.handoffOpen(tx, source, row.attempt_id,

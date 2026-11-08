@@ -5,6 +5,13 @@ import { config } from "../config.js";
 
 const logger = new Logger("AccountEmail");
 
+/** Deployment availability, never a fact about a requested email/account. */
+export function accountEmailMode(): "email" | "development" | "unavailable" {
+  const settings = config();
+  if (settings.INVITATION_EMAIL_ENABLED) return "email";
+  return settings.DEMO_MODE && settings.NODE_ENV !== "production" ? "development" : "unavailable";
+}
+
 export async function deliverAccountAction(input: {
   email: string;
   token: string;
@@ -12,12 +19,9 @@ export async function deliverAccountAction(input: {
   expiresAt: Date;
 }) {
   const settings = config();
-  if (!settings.INVITATION_EMAIL_ENABLED) {
-    return {
-      delivery: "manual" as const,
-      ...(settings.DEMO_MODE && settings.NODE_ENV !== "production" ? { development_token: input.token } : {}),
-    };
-  }
+  const mode = accountEmailMode();
+  if (mode === "unavailable") return { delivery: "unavailable" as const };
+  if (mode === "development") return { delivery: "manual" as const, development_token: input.token };
   const path = input.purpose === "email_verification" ? "/account/security" : "/reset-password";
   const link = new URL(path, settings.PUBLIC_URL);
   link.searchParams.set("token", input.token);
@@ -33,7 +37,7 @@ export async function deliverAccountAction(input: {
     });
     return { delivery: "email_accepted" as const };
   } catch {
-    logger.warn("Account email was not confirmed by SMTP; no token was written to logs.");
+    logger.warn("Account email was not confirmed by the mail provider; no token was written to logs.");
     return { delivery: "failed" as const };
   }
 }

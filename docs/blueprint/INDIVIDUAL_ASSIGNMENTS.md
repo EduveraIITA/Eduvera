@@ -66,9 +66,40 @@ may read permitted instructions, submitted attempts and feedback, not learner dr
 or submit on the learner's behalf. An unrelated teacher cannot read private work.
 
 The exact reviewer is retained at publication. Revocation blocks their actions;
-another officeholder or teacher never silently inherits the source. Expose safe
-recovery rather than saying the learner is finished. Explicit reassignment and group
-submission/grading remain separate owning workflows unless delivered in this slice.
+another officeholder or teacher never silently inherits the source. An explicit
+review handover may change the current responsibility projection while retaining
+the original reviewer and every subsequent change as immutable history. Group
+submission/grading remain separate owning workflows.
+
+### Explicit reviewer handover
+
+A person with current protected campus setup authority may repair a published
+assignment's reviewer through **Review handovers**. The view exposes assignment
+identity, current reviewer, pending counts and eligible replacements, never private
+drafts, submitted answers, attachment names or feedback. Setup authority does not
+grant instruction publication or review authority. The replacement must already
+have current review authority in the exact class/subject or offering and a current
+canonical person/account endpoint; a learner in that frozen audience cannot become
+the reviewer through this action.
+
+One preview binds the assignment revision, exact latest attempts and current review
+or requested-revision handoffs. The operator explicitly selects the next reviewer
+and gives a reason. A changed preview requires fresh review; a matching record is
+not command acceptance. One atomic owning command retains the responsibility change,
+advances its source revision, supersedes obsolete open tasks through the Core port,
+and reissues exact pending tasks. Existing learner revision tasks keep their
+attributed request-for-changes feedback while receiving current source lineage.
+Original instructions, audience, attempts, manifests, completed reviews and message
+references are not rewritten. Future submissions use the newly named reviewer.
+
+This follows the existing explicit reviewer Task policy, without an invented Offer,
+extra acceptance ceremony, reminder or SLA. The task is assigned by the authorized
+operator; the successor's actual review is a separate attributed response, not an
+implied prior acceptance. Known acceptance followed by a failed read recovers only
+by read; unknown outcome replays the exact command after current authority checks.
+An exact receipt-absent monotonic preview/revision proof may release stale intent for
+fresh review. The same source and immutable handover/message history operate in
+an isolated world with no Live or sibling mutation.
 
 ## Commands and handoffs
 
@@ -175,9 +206,10 @@ they are not automatically assigned to themselves. Instructor and learner must b
 different people in this adapter: self-assessment and dual-role review need an
 explicit assessment policy, not an implied permission. This is a named delivery
 limit, not a rule imposed on every campus. A manager may end an appointment and
-explicitly appoint a replacement for new assignments. Already-published authors
-and reviewers are not transferred; outstanding work requiring reassignment remains
-visible as waiting rather than silently inherited by the replacement.
+explicitly appoint a replacement for new assignments. Published authors remain
+unchanged. Previously published reviews move only through the explicit source-bound
+review handover above; a replacement appointment alone never grants that historical
+private work. Until handover, outstanding work remains visibly waiting.
 
 An active neutral app member may submit their own offering work when the current
 person endpoint, frozen audience and exact effective registration allow it. No

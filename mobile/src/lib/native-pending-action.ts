@@ -3,7 +3,9 @@ import { isInternalHref } from './api-policy';
 import { nativeAuthoringActionAllowed } from './native-authoring-policy';
 import { pendingFileUriAllowed } from './private-file-policy';
 import { privateUploadForm } from './upload-form';
-import { nativePeopleAcademicCatalogueAllowed } from './people-academic-catalogue';
+import { academicCatalogueCommandObsolete, nativePeopleAcademicCatalogueAllowed } from './people-academic-catalogue';
+import { definitiveExamScheduleRefusal } from './assessment-schedule-amendments';
+import { assignmentHandoverObsolete } from './assignment-handover-policy';
 import { nativePeopleAcademicImportAllowed } from './people-academic-import';
 import { attendanceReconciliationActionAllowed } from './attendance-continuity';
 import { campusMembershipActionAllowed } from './people-access';
@@ -120,8 +122,18 @@ export function validateNativePendingAction(value: unknown, scope: NativePending
     return nativeAuthoringActionAllowed(record, scope);
   } catch { return false; }
 }
-export function definitiveNativeRefusal(error: unknown, alreadyUncertain: boolean, action?: Pick<NativePendingAction, 'domain'>) {
+/** Domain proofs are evaluated for the retained action, independent of which screen first mounted the shared journal. */
+function nativePendingObsoleteProof(error: unknown, action: NativePendingAction): boolean {
+  try {
+    if (action.domain === 'people') return academicCatalogueCommandObsolete(error, action);
+    if (action.domain === 'assessments') return definitiveExamScheduleRefusal(error, action);
+    if (action.domain === 'learning') return assignmentHandoverObsolete(error, action);
+    return false;
+  } catch { return false; }
+}
+export function definitiveNativeRefusal(error: unknown, alreadyUncertain: boolean, action?: Pick<NativePendingAction, 'domain'> & Partial<NativePendingAction>) {
   const status = object(error)?.status;
+  if (action?.scope && nativePendingObsoleteProof(error, action as NativePendingAction)) return true;
   if (!alreadyUncertain && action?.domain === 'simulation' && status === 429) {
     const refusal = object(object(object(error)?.details)?.error);
     if (refusal?.status === 429 && refusal.code === 'simulation_institution_capacity'
@@ -220,7 +232,8 @@ export class NativePendingActionJournal {
       // The acknowledged command is already cleared. A late focus/context loss
       // suppresses follow-up work without resurrecting that completed intent.
       if (cleared) { this.update({ error: message(cause) }); return false; }
-      if (action.phase !== 'accepted' && (this.options.obsolete?.(cause, action) || definitiveCampusImportFailure(cause, action) || definitiveNativeRefusal(cause, alreadyUncertain, action))) { const obsolete = !!this.options.obsolete?.(cause, action); context.assertActive(); await this.options.storage.clear(); this.update({ action: null, obsolete, error: obsolete ? 'The owning service proved this exact command permanently inapplicable. Review the current saved source before continuing.' : message(cause) }); await this.options.cleanup?.(action).catch(() => {}); return false; }
+      const obsolete = action.phase !== 'accepted' && (!!this.options.obsolete?.(cause, action) || nativePendingObsoleteProof(cause, action));
+      if (action.phase !== 'accepted' && (obsolete || definitiveCampusImportFailure(cause, action) || definitiveNativeRefusal(cause, alreadyUncertain, action))) { context.assertActive(); await this.options.storage.clear(); this.update({ action: null, obsolete, error: obsolete ? 'The owning service proved this exact command permanently inapplicable. Review the current saved source before continuing.' : message(cause) }); await this.options.cleanup?.(action).catch(() => {}); return false; }
       this.update({ action, error: action.phase === 'accepted' ? `Saved. Recovery performs only a read: ${message(cause)}` : `${message(cause)} The exact action remains securely retained.` }); return false;
     }
   }

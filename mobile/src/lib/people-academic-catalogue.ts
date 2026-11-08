@@ -69,9 +69,22 @@ function fieldsMatch(row: Record<string, unknown>, body: AcademicCatalogueValues
 export function academicCatalogueRefreshPath(value: unknown, action: NativePendingAction) {
   const row = object(value), { kind, id, body } = mutation(action), expected = id ? Number(body.expected_revision) + 1 : 1;
   if (!row || !academicCatalogueUuid(row.id) || row.school_id !== action.scope.schoolId || id && row.id !== id || row.revision !== expected || !fieldsMatch(row, body, kind)) throw new Error('The catalogue receipt did not match this exact reviewed change.');
+  if (action.replayPolicy === 'same_request') {
+    if (row.id !== body.catalog_id) throw new Error('The catalogue receipt belongs to another exact record.');
+    return academicCatalogueConfirmationPath(action.scope.schoolId, kind, String(body.catalog_id), action.clientId);
+  }
   return academicCatalogueRead(action.scope.schoolId) + '?' + new URLSearchParams({ catalog_kind: kind, catalog_id: row.id, catalog_revision: String(expected) });
 }
 export function acceptedAcademicCatalogue(value: unknown, action: NativePendingAction) {
+  if (action.replayPolicy === 'same_request') {
+    const receipt = object(value), { kind, id, body } = mutation(action), row = object(receipt?.result);
+    const expected = id ? Number(body.expected_revision) + 1 : 1;
+    if (!receipt || receipt.handler !== 'academic.catalogue' || receipt.state !== 'accepted' || receipt.school_id !== action.scope.schoolId
+      || receipt.kind !== kind || receipt.source_id !== body.catalog_id || receipt.command_id !== action.clientId
+      || receipt.expected_revision !== action.source?.revision || !row || row.id !== body.catalog_id || row.school_id !== action.scope.schoolId
+      || row.revision !== expected || !fieldsMatch(row, body, kind)) throw new Error('The exact saved catalogue command could not be confirmed.');
+    return { data: null, row: row as unknown as AcademicCatalogueRow, kind };
+  }
   if (!academicCatalogueMatches(value, action.scope.schoolId)) throw new Error('The saved catalogue belongs to another campus or is incomplete.');
   const read = new URL(action.refreshPath, 'https://thatcampus.invalid'), { kind, body } = mutation(action), id = read.searchParams.get('catalog_id'), expected = Number(read.searchParams.get('catalog_revision'));
   const row = value[kind].find(item => item.id === id);
@@ -80,6 +93,7 @@ export function acceptedAcademicCatalogue(value: unknown, action: NativePendingA
 }
 export function nativePeopleAcademicCatalogueAllowed(record: NativePendingAction, scope: NativePendingScope): boolean {
   try {
+    if (record.replayPolicy === 'same_request') return identifiedCatalogueAllowed(record, scope);
     if (record.domain !== 'people' || record.replayPolicy !== 'inspect_only' || record.payload.kind !== 'json' || !record.source) return false;
     const { kind, id, body } = mutation(record), root = academicCatalogueRead(scope.schoolId), read = new URL(record.refreshPath, 'https://thatcampus.invalid');
     if (record.endpoint !== academicCatalogueEndpoint(scope.schoolId, kind, id) || read.pathname !== root || 'school_id' in body || ['command_id', 'idempotency_key', 'client_id'].some(key => key in body) || record.source.kind !== `academic_catalog_${kind}`) return false;
@@ -91,5 +105,35 @@ export function nativePeopleAcademicCatalogueAllowed(record: NativePendingAction
     if (record.phase !== 'accepted') return !read.search;
     const keys = [...read.searchParams.keys()];
     return keys.length === 3 && new Set(keys).size === 3 && keys.every(key => ['catalog_kind', 'catalog_id', 'catalog_revision'].includes(key)) && read.searchParams.get('catalog_kind') === kind && academicCatalogueUuid(read.searchParams.get('catalog_id')) && (!id || read.searchParams.get('catalog_id') === id) && read.searchParams.get('catalog_revision') === String(id ? record.source.revision + 1 : 1);
+  } catch { return false; }
+}
+
+
+export function academicCatalogueConfirmationPath(schoolId: string, kind: AcademicCatalogueKind, id: string, commandId: string) {
+  return `${academicCatalogueEndpoint(schoolId, kind, id)}commands/${encodeURIComponent(commandId)}/`;
+}
+function identifiedCatalogueAllowed(record: NativePendingAction, scope: NativePendingScope): boolean {
+  if (record.domain !== 'people' || record.payload.kind !== 'json' || !record.source) return false;
+  const { kind, id, body } = mutation(record), fields = Object.keys(academicCatalogueFields(kind));
+  const allowed = [...fields, 'command_id', 'catalog_id', ...(id ? ['expected_revision', 'confirmed', 'change_reason'] : [])];
+  if (record.endpoint !== academicCatalogueEndpoint(scope.schoolId, kind, id) || body.command_id !== record.clientId
+    || !academicCatalogueUuid(body.catalog_id) || record.source.kind !== `academic_catalog_${kind}` || record.source.sourceId !== body.catalog_id
+    || Object.keys(body).some(key => !allowed.includes(key)) || !fields.every(key => key in body)
+    || kind === 'terms' && typeof body.attendance_threshold !== 'number' || !fieldsMatch(body, academicCatalogueInput(kind, body), kind)) return false;
+  if (id ? record.method !== 'PATCH' || id !== body.catalog_id || !revision(record.source.revision) || body.expected_revision !== record.source.revision
+    || typeof body.confirmed !== 'boolean' || typeof body.change_reason !== 'string' || body.change_reason.length > 240
+    : record.method !== 'POST' || record.source.revision !== 0) return false;
+  return record.refreshPath === (record.phase === 'accepted'
+    ? academicCatalogueConfirmationPath(scope.schoolId, kind, body.catalog_id, record.clientId)
+    : academicCatalogueRead(scope.schoolId));
+}
+/** Only the owning, actor/world-bound command proof can retire an uncertain stale edit. */
+export function academicCatalogueCommandObsolete(error: unknown, action: NativePendingAction): boolean {
+  try {
+    if (action.replayPolicy !== 'same_request' || !identifiedCatalogueAllowed(action, action.scope)) return false;
+    const response = object(error), fields = object(object(object(response?.details)?.error)?.fields), proof = object(fields?.catalogue_obsolete);
+    return response?.status === 409 && proof?.handler === 'academic.catalogue' && proof.confirmation === 'permanently_inapplicable'
+      && proof.receipt_state === 'absent' && proof.source_id === action.source?.sourceId && proof.command_id === action.clientId
+      && typeof proof.expected_revision === 'number' && proof.expected_revision === action.source?.revision && revision(proof.current_revision) && proof.current_revision > proof.expected_revision;
   } catch { return false; }
 }

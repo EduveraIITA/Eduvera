@@ -72,6 +72,15 @@ export class AssessmentsController {
   @Post(":assessmentId/sitting/arrangements/")
   updateSittingArrangements(@Req() req:AuthenticatedRequest,@Param("schoolId") schoolId:string,@Param("assessmentId") assessmentId:string,@Body() body:unknown){ return this.examOperations.updateArrangements(req.authUser,schoolId,assessmentId,body); }
 
+  @Post(":assessmentId/sitting/schedule-amendments/preview/")
+  previewScheduleAmendment(@Req() req:AuthenticatedRequest,@Param("schoolId") schoolId:string,@Param("assessmentId") assessmentId:string,@Body() body:unknown){ return this.examOperations.previewScheduleAmendment(req.authUser,schoolId,assessmentId,body); }
+
+  @Post(":assessmentId/sitting/schedule-amendments/")
+  amendSchedule(@Req() req:AuthenticatedRequest,@Param("schoolId") schoolId:string,@Param("assessmentId") assessmentId:string,@Body() body:unknown){ return this.examOperations.amendSchedule(req.authUser,schoolId,assessmentId,body); }
+
+  @Post(":assessmentId/sitting/schedule-amendments/confirm/")
+  confirmScheduleAmendment(@Req() req:AuthenticatedRequest,@Param("schoolId") schoolId:string,@Param("assessmentId") assessmentId:string,@Body() body:unknown){ return this.examOperations.confirmScheduleAmendment(req.authUser,schoolId,assessmentId,body); }
+
   @Post(":assessmentId/sitting/invigilators/:assignmentId/response/")
   respondInvigilator(@Req() req:AuthenticatedRequest,@Param("schoolId") schoolId:string,@Param("assessmentId") assessmentId:string,@Param("assignmentId") assignmentId:string,@Body() body:unknown){ return this.examOperations.respondInvigilator(req.authUser,schoolId,assessmentId,assignmentId,body); }
 

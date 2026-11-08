@@ -44,6 +44,8 @@ export interface LearningAssignmentTables {
   learning_offerings: LearningOfferingTable;
   learning_offering_enrollments: LearningOfferingEnrollmentTable;
   learning_offering_teaching_assignments: LearningOfferingTeachingAssignmentTable;
+  learning_assignment_review_handovers: LearningAssignmentReviewHandoverTable;
+  learning_assignment_handover_messages: LearningAssignmentHandoverMessageTable;
   learning_assignments: LearningAssignmentTable;
   learning_assignment_audience: LearningAssignmentAudienceTable;
   learning_assignment_drafts: LearningAssignmentDraftTable;
@@ -64,4 +66,14 @@ export interface LearningOfferingEnrollmentTable {
 }
 export interface LearningOfferingTeachingAssignmentTable extends LearningOfferingEnrollmentTable {
   can_publish: boolean; can_review: boolean;
+}
+
+export interface LearningAssignmentReviewHandoverTable {
+  id: string; school_id: string; assignment_id: string; source_revision: number; previous_revision: number;
+  previous_reviewer_id: string; previous_reviewer_person_id: string | null; reviewer_id: string; reviewer_person_id: string | null;
+  review_route_version_id: string; review_subscription_id: string; command_id: string; assigned_by: string; reason: string; created_at: Instant;
+}
+export interface LearningAssignmentHandoverMessageTable {
+  school_id: string; assignment_id: string; handover_id: string; attempt_id: string; learner_id: string; kind: "review" | "revision";
+  source_revision: number; previous_message_id: string | null; message_id: string; created_at: Instant;
 }

@@ -11,7 +11,7 @@ import { getRoutes } from 'expo-router/build/getRoutesCore';
 import { getReactNavigationConfig } from 'expo-router/build/getReactNavigationConfig';
 import { getStateFromPath } from 'expo-router/build/fork/getStateFromPath';
 import type { RequireContext } from 'expo-router/build/types';
-import { accountSecurityEntryHref, confirmedPasswordReset, guardedAccountRecoveryApi, passwordResetInput, type AccountRecoveryOperation } from '../src/auth/account-recovery';
+import { accountSecurityEntryHref, confirmedPasswordReset, guardedAccountRecoveryApi, passwordResetInput, passwordResetRequestFeedback, verificationEmailFeedback, type AccountRecoveryOperation } from '../src/auth/account-recovery';
 import { nativeAuthDestination } from '../src/auth/auth-entry';
 import { safeAccountReturnTarget } from '../src/auth/account-return';
 import { createPublicFormLease } from '../src/auth/public-form-operation';
@@ -95,7 +95,7 @@ test('a normal browser reset keeps exact CSRF retry semantics and rejects late r
 type FieldProps = { label: string; value: string; onChangeText(value: string): void; editable?: boolean };
 type ButtonProps = { title: string; disabled?: boolean; busy?: boolean; onPress(): void };
 type Harness = { fields: Map<string, FieldProps>; buttons: Map<string, ButtonProps>; text(): string; fill(label: string, value: string): Promise<void>; press(title: string): Promise<void>; paths: string[]; refreshes(): number; rebind(): Promise<void>; scrollProps(): Record<string, any>; keyboardAvoiderCount(): number };
-async function mountedReset(run: (h: Harness) => Promise<void>, confirm: (token: string, password: string, operation: AccountRecoveryOperation) => Promise<unknown> = async (_token, _password, operation) => { operation.assertCurrent(); operation.onDispatch?.(); return { reset: true }; }, options: { platform?: 'ios' | 'android' | 'web'; mode?: 'login' | 'register' | 'recovery' | 'reset' } = {}) {
+async function mountedReset(run: (h: Harness) => Promise<void>, confirm: (token: string, password: string, operation: AccountRecoveryOperation) => Promise<unknown> = async (_token, _password, operation) => { operation.assertCurrent(); operation.onDispatch?.(); return { reset: true }; }, options: { platform?: 'ios' | 'android' | 'web'; mode?: 'login' | 'register' | 'recovery' | 'reset'; requestReset?: () => Promise<unknown> } = {}) {
   const { JSDOM } = require('jsdom') as { JSDOM: new (html: string) => { window: Window & typeof globalThis } }, dom = new JSDOM('<div id="root"></div>');
   const previous = { window: globalThis.window, document: globalThis.document, IS_REACT_ACT_ENVIRONMENT: (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT };
   Object.assign(globalThis, { window: dom.window, document: dom.window.document, IS_REACT_ACT_ENVIRONMENT: true });
@@ -108,7 +108,7 @@ async function mountedReset(run: (h: Harness) => Promise<void>, confirm: (token:
     'react-native-safe-area-context': { SafeAreaView: Container }, './SessionProvider': { useSession: () => ({ status: 'anonymous', scopeKey: scope, error: null, refresh: async () => { refreshes++; } }) },
     '../ui/components': { Field: (props: FieldProps) => { fields.set(props.label, props); return React.createElement('label', null, props.label); }, Button: (props: ButtonProps) => { buttons.set(props.title, props); return React.createElement('button', { disabled: props.disabled || props.busy, onClick: props.onPress }, props.title); }, Notice: ({ message }: { message: string }) => React.createElement('p', null, message) },
     '../ui/theme': { useTheme: () => ({ colors: {}, dark: false }) }, '../lib/api': { getApiOrigin: () => 'https://campus.example.test', setApiOrigin() {} }, '../lib/api-client': { ApiError },
-    './account-ceremonies': { confirmPasswordReset: confirm, requestPasswordReset: async () => ({ accepted: true }) }, './account-recovery': { accountActionToken: (value: string) => value.trim().length >= 32, confirmedPasswordReset, passwordResetInput }, './public-form-operation': { createPublicFormLease }, './account-return': { safeAccountReturnTarget },
+    './account-ceremonies': { confirmPasswordReset: confirm, requestPasswordReset: options.requestReset ?? (async () => ({ accepted: true })) }, './account-recovery': { accountActionToken: (value: string) => value.trim().length >= 32, confirmedPasswordReset, passwordResetInput, passwordResetRequestFeedback }, './public-form-operation': { createPublicFormLease }, './account-return': { safeAccountReturnTarget },
     '../ui/Glass': { Glass: Container }, './GoogleSignInButton': { GoogleSignInButton: () => null },
     'expo-router': { useIsFocused: () => true, useLocalSearchParams: () => ({}), usePathname: () => '/reset-password', useRouter: () => ({ replace: (href: string) => paths.push(href), push: (href: string) => paths.push(href), setParams() {} }) },
   };
@@ -175,4 +175,60 @@ test('actual verification adapter redirects anonymously through sign-in and dire
   status = 'authenticated'; node = Screen(); assert.equal(node.type, Redirect); assert.equal(node.props.href, target);
   status = 'loading'; assert.equal(Screen().type, Page);
   params = { token: [proof, proof] }; assert.equal(Screen().type, Page);
+});
+
+
+test('email feedback distinguishes disabled delivery and real development proof without promising a missing token', () => {
+  assert.equal(verificationEmailFeedback({ delivery: 'manual' }).tone, 'warning');
+  assert.match(verificationEmailFeedback({ delivery: 'manual' }).message, /currently unavailable/);
+  assert.doesNotMatch(verificationEmailFeedback({ delivery: 'manual' }).message, /Development verification token/);
+  assert.equal(verificationEmailFeedback({ delivery: 'unavailable' }).developmentToken, undefined);
+  assert.equal(verificationEmailFeedback({ delivery: 'manual', development_token: 'short' }).developmentToken, undefined);
+  const dev = verificationEmailFeedback({ delivery: 'manual', development_token: proof });
+  assert.equal(dev.developmentToken, proof); assert.match(dev.message, /ready below/);
+  assert.equal(verificationEmailFeedback({ delivery: 'email_accepted' }).tone, 'success');
+  assert.match(verificationEmailFeedback({ delivery: 'failed' }).message, /could not be confirmed/);
+  assert.equal(passwordResetRequestFeedback({ accepted: true, recovery_available: false }).tone, 'warning');
+  assert.equal(passwordResetRequestFeedback({ accepted: true }).tone, 'success', 'older server response remains compatible');
+  assert.throws(() => passwordResetRequestFeedback({ accepted: false }));
+});
+
+test('mounted recovery form shows global unavailable result without claiming instructions were sent', async () => {
+  let requests = 0;
+  await mountedReset(async h => {
+    await h.fill('Email', 'person@example.test'); await h.press('Send reset instructions');
+    assert.equal(requests, 1); assert.match(h.text(), /Email recovery is currently unavailable/);
+    assert.match(h.text(), /No reset email was requested/); assert.doesNotMatch(h.text(), /instructions will be sent/);
+    assert.ok(h.text().includes('Back to sign in'));
+  }, undefined, { mode: 'recovery', requestReset: async () => { requests++; return { accepted: true, recovery_available: false }; } });
+});
+
+
+test('mounted verification screen shows unavailable warning for a production response and never invents a development token', async () => {
+  for (const response of [{ delivery: 'unavailable' }, { delivery: 'manual' }]) {
+    const { JSDOM } = require('jsdom'), dom = new JSDOM('<div id="root"></div>');
+    const previous = { window: globalThis.window, document: globalThis.document, IS_REACT_ACT_ENVIRONMENT: (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT };
+    Object.assign(globalThis, { window: dom.window, document: dom.window.document, IS_REACT_ACT_ENVIRONMENT: true });
+    const { createRoot } = require('react-dom/client'), fields = new Map<string, FieldProps>(), buttons = new Map<string, ButtonProps>(); let sends = 0;
+    const Box = ({ children }: React.PropsWithChildren) => React.createElement('div', null, children);
+    const dependencies = {
+      react: React, 'react/jsx-runtime': require('react/jsx-runtime'), 'react-native': { Text: Box },
+      'expo-router': { useRouter: () => ({ replace() {} }) }, './SessionProvider': { useSession: () => ({ ...session, refresh: async () => {} }) },
+      '../lib/api': { captureApiContext: () => ({ assertCurrent() {} }), apiFetch: async () => { sends++; return response; } }, '../lib/api-client': { ApiError },
+      '../lib/query': { useApi: () => ({ data: null }) }, '../ui/Alert': { Alert: { alert() {} } },
+      '../ui/BackNavigation': { ScreenBack: () => null, useScreenExitGuard() {}, useCampusNavigation: () => ({ onNavigate() {}, complete() {} }) },
+      '../ui/components': { Page: Box, Section: Box, Row: Box, Empty: Box, Loading: Box, Field: (props: FieldProps) => { fields.set(props.label, props); return React.createElement('label', null, props.label); }, Button: (props: ButtonProps) => { buttons.set(props.title, props); return React.createElement('button', { disabled: props.disabled || props.busy, onClick: props.onPress }, props.title); }, Notice: ({ message, tone }: { message: string; tone: string }) => React.createElement('p', { 'data-tone': tone }, message) },
+      '../ui/theme': { useTheme: () => ({ colors: {} }) }, './account-return': { accountReturnTitle: () => 'Back', safeAccountReturnTarget }, './auth-entry': { nativeAuthDestination },
+      './visit-join-policy': { visitJoinReturnTarget: () => null }, './AuthenticatorQr': { AuthenticatorQr: () => null }, './account-recovery': { verificationEmailFeedback },
+    };
+    const Screen = load('src/auth/AccountSecurityScreen.tsx', dependencies).AccountSecurityScreen as React.ComponentType<{ href: string }>, root = createRoot(dom.window.document.getElementById('root'));
+    try {
+      await act(async () => root.render(React.createElement(Screen, { href: '/more/account/security?from=%2Fonboarding%2Fstart' })));
+      await act(async () => { buttons.get('Send verification email')!.onPress(); });
+      assert.equal(sends, 1); assert.match(dom.window.document.body.textContent, /Verification email is currently unavailable/);
+      assert.doesNotMatch(dom.window.document.body.textContent, /Development verification token is ready/);
+      assert.equal(fields.get('Verification token')?.value, '');
+      assert.equal(dom.window.document.querySelector('[data-tone="warning"]')?.textContent.includes('No email was sent'), true);
+    } finally { await act(async () => root.unmount()); dom.window.close(); Object.assign(globalThis, previous); }
+  }
 });

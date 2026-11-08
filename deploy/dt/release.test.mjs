@@ -4,6 +4,7 @@ import { createRequire } from 'node:module';
 import { readFile, access, mkdtemp, writeFile, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { runInNewContext } from 'node:vm';
 import test from 'node:test';
 import { TARGET, guard, assertRuntime, buildConfig, sourceIgnore, immutableImage, verify, release, webAssemblyManifest } from './release.mjs';
 
@@ -236,4 +237,40 @@ test('one maintained workflow verifies only active applications, uses pinned OID
   const releaseStep = workflow.jobs.deploy.steps.find(row => row.run === 'node deploy/dt/release.mjs');
   assert.equal(releaseStep.env.CLOUDSDK_AUTH_ACCESS_TOKEN, '${{ steps.google-auth.outputs.access_token }}');
   await assert.rejects(access(new URL('../../.github/workflows/digital-twin.yml', import.meta.url)), /ENOENT/u);
+});
+
+test('the owned PostgreSQL gate retains all26 files, explicit temporary HTTP build and one bounded Simulation target', async () => {
+  const require = createRequire(new URL('../../mobile/package.json', import.meta.url)), yaml = require('js-yaml');
+  const workflow = yaml.load(await readFile(new URL('../../.github/workflows/digital-twin-deploy.yml', import.meta.url), 'utf8'));
+  const step = workflow.jobs.verify.steps.find(row => row.name === 'Native identity, role revocation and real isolated-world regressions');
+  const declaration = step.run.match(/const files = (\[[\s\S]*?\])\.map\(name => `test\/\$\{name\}\.integration\.test\.ts`\);/u);
+  assert.ok(declaration, 'Regression inventory must remain explicit');
+  const names = Array.from(runInNewContext(declaration[1]));
+  assert.equal(names.length, 26); assert.equal(new Set(names).size, 26);
+  for (const name of ['academic-catalogue-recovery', 'academic-catalogue-recovery-http', 'learning-assignment-handover', 'learning-assignment-handover-worlds', 'domain-message-supersession', 'learning-assignments', 'learning-assignment-files-worlds', 'exam-schedule-amendments', 'exam-operations'])
+    assert.ok(names.includes(name), name);
+  for (const name of names) await access(new URL(`../../backend/test/${name}.integration.test.ts`, import.meta.url));
+  for (const name of ['LEARNING_ASSIGNMENTS_SIMULATION_TEST_TARGET_URL', 'ASSESSMENTS_SIMULATION_TEST_TARGET_URL', 'ACADEMIC_CATALOGUE_SIMULATION_TEST_TARGET_URL'])
+    assert.equal(step.env[name], step.env.CAMPUS_SIMULATION_DATABASE_URL, name);
+  assert.equal(new URL(step.env.CAMPUS_SIMULATION_DATABASE_URL).pathname, '/thatcampus_dt_simulation_test');
+  assert.equal(new URL(step.env.CAMPUS_SIMULATION_DATABASE_URL).hostname, '127.0.0.1');
+  assert.match(step.run, /VISIT_ONBOARDING_HTTP_COMPILED_ROOT: join\(directory, 'dist'\)/u);
+  assert.match(step.run, /await cp\(resolve\('dist'\), join\(directory, 'dist'\), \{ recursive: true \}\)/u);
+  assert.equal(workflow.jobs.verify['timeout-minutes'], 45); assert.equal(workflow.jobs.deploy['timeout-minutes'], 60);
+  assert.equal(step.env.DATABASE_POOL_MAX, '2');
+  assert.doesNotMatch(step.run, /printenv|console\.log\(process\.env|JSON\.stringify\(process\.env|set -x/u);
+});
+
+test('the actual workflow summary gate rejects missing, skipped, todo, failed or fewer than150 PostgreSQL cases', async () => {
+  const require = createRequire(new URL('../../mobile/package.json', import.meta.url)), yaml = require('js-yaml');
+  const workflow = yaml.load(await readFile(new URL('../../.github/workflows/digital-twin-deploy.yml', import.meta.url), 'utf8'));
+  const source = workflow.jobs.verify.steps.find(row => row.name === 'Native identity, role revocation and real isolated-world regressions').run;
+  const guard = source.match(/if \(summary\.numTotalTests[\s\S]*?throw new Error\('[^']+'\);/u)?.[0];
+  assert.ok(guard); assert.match(guard, /summary\.numTotalTests < 150/u);
+  const accepted = { numTotalTests: 150, numPassedTests: 150, numPendingTests: 0, numTodoTests: 0 };
+  const check = summary => runInNewContext(guard, { summary });
+  assert.doesNotThrow(() => check(accepted));
+  assert.doesNotThrow(() => check({ ...accepted, numTotalTests: 151, numPassedTests: 151 }));
+  for (const summary of [{}, { ...accepted, numTotalTests: 149, numPassedTests: 149 }, { ...accepted, numPassedTests: 149 },
+    { ...accepted, numPendingTests: 1 }, { ...accepted, numTodoTests: 1 }]) assert.throws(() => check(summary), /150/u);
 });

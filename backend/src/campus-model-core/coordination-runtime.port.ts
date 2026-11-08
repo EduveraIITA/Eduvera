@@ -83,6 +83,9 @@ export interface DomainMessageSupersessionInput {
   /** Explicit older open work for this exact source, not a substitute for the
    * freshly checked current command revision. Omission retains adjacent-only semantics. */
   previous_source_revision?: number;
+  /** Optional native subject identity when exact source work is a child record (for example an assignment attempt).
+   * It must equal the existing previous/command/resulting subject; omission retains source-record identity. */
+  subject_record_id?: string;
   resulting_event_id: string;
   required_capability: string;
   occurred_at: string;

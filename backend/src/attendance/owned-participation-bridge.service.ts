@@ -1,4 +1,4 @@
-import { ConflictException, Injectable } from '@nestjs/common';
+import { ConflictException, Inject, Injectable, Optional } from '@nestjs/common';
 import { createHash, randomUUID } from 'node:crypto';
 import { sql, type Transaction } from 'kysely';
 import type { AuthenticatedRequest, AuthUser } from '../common/request.js';
@@ -8,6 +8,7 @@ import { activityOccurrenceId } from '../schedule-planning/activity-occurrence.e
 import { ActivityAttendanceService } from './activity-attendance.service.js';
 import { participationRosterFingerprint, type ParticipationCaptureSources, type ParticipationStatus } from './activity-attendance.contracts.js';
 import type { OwningParticipationSource } from './participation-context-authority.js';
+import { PREPARED_DOMAIN_COMMAND_VERIFICATION_PORT, type PreparedDomainCommandVerificationPort } from '../campus-model-core/domain-command-gateway.port.js';
 
 type Tx = Transaction<Database>;
 export interface OwnedParticipationPerson {
@@ -31,7 +32,54 @@ interface RetainedEntry {
  */
 @Injectable()
 export class OwnedParticipationBridge {
-  constructor(private readonly attendance: ActivityAttendanceService) {}
+  constructor(private readonly attendance: ActivityAttendanceService,
+    @Optional() @Inject(PREPARED_DOMAIN_COMMAND_VERIFICATION_PORT) private readonly verification?:PreparedDomainCommandVerificationPort) {}
+
+  /** A reviewed future examination amendment may move a pristine context, never
+   * an observation. Previous import snapshots/receipts remain append-only. */
+  async rescheduleExamination(tx:Tx,user:AuthUser,context:OwnedParticipationContext,people:OwnedParticipationPerson[],
+    proof:{command_id:string;correlation_id:string;expected_revision:number}){
+    if(context.source!=='examination'||context.locked||!this.verification)throw new ConflictException('Examination context rescheduling is unavailable.');
+    const command=await this.verification.verifyPreparedDomainCommand(tx,{school_id:context.school_id,actor_user_id:user.id,
+      command_id:proof.command_id,correlation_id:proof.correlation_id,source_domain:'assessments',required_capability:'assessments.manage',
+      allowed_command_types:['examination.sitting.amend','examination.sitting.confirm']});
+    if(command.expected_revision!==proof.expected_revision||context.revision!==proof.expected_revision+1
+      ||command.safe_context.sitting_id!==context.source_id||command.safe_context.assessment_id!==context.context_ref)
+      throw new ConflictException('The examination context does not match the prepared source command.');
+    await sql`SELECT pg_advisory_xact_lock(hashtextextended(${`owned-participation:${context.school_id}:examination:${context.source_id}`},0))`.execute(tx);
+    const current=(await sql<{id:string;revision:number;occurrence_revision:number;context_source_fingerprint:string;has_evidence:boolean}>`
+      SELECT register.id,register.revision,occurrence.revision AS occurrence_revision,register.context_source_fingerprint,
+        (EXISTS(SELECT 1 FROM activity_attendance_entries entry WHERE entry.register_id=register.id)
+          OR EXISTS(SELECT 1 FROM activity_attendance_commands prior WHERE prior.register_id=register.id)) AS has_evidence
+      FROM activity_attendance_registers register JOIN schedule_activity_occurrences occurrence ON occurrence.id=register.occurrence_id
+        AND occurrence.school_id=register.school_id AND occurrence.source='examination' AND occurrence.source_ref=${context.source_id}
+      JOIN assessment_sittings sitting ON sitting.school_id=register.school_id AND sitting.id::text=register.context_source_id
+      WHERE register.school_id=${context.school_id}::uuid AND register.context_source_kind='examination'
+        AND register.context_source_id=${context.source_id} AND register.context_state='active' AND register.state='draft'
+        AND (register.context_snapshot->'context'->>'revision')::int=${proof.expected_revision}
+        AND sitting.assessment_id=${context.context_ref}::uuid AND sitting.revision=${context.revision} AND sitting.started_at IS NULL
+        AND sitting.state IN('planning','ready') AND occurrence.local_date=${context.date}::date
+        AND occurrence.starts_at=${context.starts_at} AND occurrence.ends_at=${context.ends_at}
+        AND occurrence.space_id IS NOT DISTINCT FROM ${context.space_id}::uuid
+      FOR UPDATE OF register,occurrence,sitting`.execute(tx)).rows[0];
+    if(!current||current.has_evidence)throw new ConflictException('Recorded participation cannot be moved to a revised examination schedule.');
+    const roster=(await sql<{student_id:string;person_id:string}>`SELECT academic_student_id AS student_id,person_id
+      FROM activity_attendance_roster WHERE school_id=${context.school_id}::uuid AND register_id=${current.id}::uuid ORDER BY person_id`.execute(tx)).rows;
+    if(JSON.stringify(roster)!==JSON.stringify(people.map(person=>({student_id:person.student_id,person_id:person.person_id})).sort((a,b)=>a.person_id.localeCompare(b.person_id))))
+      throw new ConflictException('The frozen examination participation roster changed.');
+    const snapshot={context,entry_ids:[],attribution:'reviewed_examination_schedule_revision',source_command_id:proof.command_id,
+      previous_source_fingerprint:current.context_source_fingerprint};
+    const fingerprint=createHash('sha256').update(JSON.stringify({context,people,command_id:proof.command_id})).digest('hex');
+    await sql`UPDATE activity_attendance_registers SET context_snapshot=${JSON.stringify(snapshot)}::jsonb,
+      context_imported_revision=${context.revision},context_imported_at=${executionNow()},context_source_fingerprint=${fingerprint},
+      roster_source_revision=${current.occurrence_revision},revision=revision+1
+      WHERE id=${current.id}::uuid AND school_id=${context.school_id}::uuid AND revision=${current.revision}`.execute(tx);
+    await sql`INSERT INTO activity_attendance_import_receipts(school_id,register_id,source_kind,source_id,source_revision,
+      source_fingerprint,source_refs,counts,requested_by) VALUES(${context.school_id}::uuid,${current.id}::uuid,'examination',
+      ${context.source_id},${context.revision},${fingerprint},${JSON.stringify(snapshot)}::jsonb,
+      ${JSON.stringify({people:people.length,entries:0,rescheduled:true})}::jsonb,${user.id}::uuid)`.execute(tx);
+    return {register_id:current.id,revision:current.revision+1};
+  }
 
   async prepare(tx: Tx, user: AuthUser, context: OwnedParticipationContext, people: OwnedParticipationPerson[]) {
     await sql`SELECT pg_advisory_xact_lock(hashtextextended(${`owned-participation:${context.school_id}:${context.source}:${context.source_id}`},0))`.execute(tx);

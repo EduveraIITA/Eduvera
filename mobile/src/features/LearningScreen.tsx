@@ -1,4 +1,5 @@
 import { ScreenBack, useScreenExitGuard } from '../ui/BackNavigation';
+import { LearningAssignmentHandovers } from './LearningAssignmentHandovers';
 import { LearningAssignmentComposer } from './LearningAssignmentComposer';
 import { LearningClassPractice } from './LearningPractice';
 import { LearningWorkLink } from './LearningWorkLink';
@@ -92,6 +93,7 @@ export function LearningScreen(props: Props) {
   if (path.includes('/session')) return <TeachingSessions key={`${scopeKey}:${props.href}`} {...props} date={date} />;
   const assignments = path.includes('/assignments'), prefix = assignments ? 'assignments' : 'diary', surfaces = manifest.areas.flatMap(area => area.surfaces).filter(surface => surface.key.startsWith(`${prefix}:`));
   const scope = q.get('scope'), id = scope === 'class' ? q.get('class_section_id') : scope === 'offering' ? q.get('offering_id') : scope === 'person' ? q.get('person_id') : q.get('student_id');
+  if (assignments && scope === 'review_handover') return <LearningAssignmentHandovers key={`${scopeKey}:review-handovers:${props.href}`} {...props} />;
   const expected = `${prefix}:${scope}:${id}`;
   if (assignments && !scope && !id) return <LearningOfferingsHub {...props} surfaces={surfaces} />;
   if (assignments && scope === 'offering' && id) return <LearningOfferingPanel key={`${scopeKey}:offering:${id}`} id={id} {...props} renderContent={header => <Assignments {...props} scope={scope} identityId={id} header={header} />} />;

@@ -18,6 +18,7 @@ import { HUMAN_AGENT_IDENTITY_PORT, type HumanAgentIdentityPort } from '../campu
 import { OwnedPlanFootprintBridge, type OwnedPlanPerson } from '../schedule-planning/owned-plan-footprint.bridge.js';
 import { ActivityPlanningService } from '../schedule-planning/activity-planning.service.js';
 import { datedAcademicRoster } from '../academic-reports/academic-record-context.js';
+import { lockSchedule } from '../day-plans/schedule.js';
 
 type Db = Kysely<Database> | Transaction<Database>;
 type PhysicalKind = "exam" | "practical" | "viva";
@@ -67,6 +68,12 @@ export const sittingArrangementInput=z.object({
     context.addIssue({code:"custom",path:["invigilator_user_ids"],message:"Each invigilator can be assigned only once."});
   }
 });
+export const scheduleAmendmentInput=z.object({
+  command_id:uuid,expected_assessment_revision:z.number().int().positive(),expected_sitting_revision:z.number().int().positive(),
+  scheduled_at:z.iso.datetime(),duration_minutes:z.number().int().positive().max(1440),space_id:uuid,
+  invigilator_user_ids:z.array(uuid).min(1).max(20),reason:z.string().trim().min(3).max(1000),preview_hash:z.string().regex(/^[a-f0-9]{64}$/),
+}).strict();
+export const scheduleAmendmentPreviewInput=scheduleAmendmentInput.omit({command_id:true,preview_hash:true});
 export const invigilatorResponseInput=z.object({command_id:uuid,expected_revision:z.coerce.number().int().positive(),decision:z.enum(["accepted","declined"]),note:z.string().trim().max(500).default("")});
 export const sittingActionInput=z.object({expected_revision:z.coerce.number().int().positive()});
 export const attendanceInput=z.object({
@@ -162,6 +169,9 @@ export class ExamOperationsService {
 
   private async administrator(user:AuthUser,schoolId:string,db:Db=this.db){
     uuid.parse(schoolId);
+    if(user.active_school_id&&user.active_school_id!==schoolId)throw new ForbiddenException('Choose this institution before changing its examination.');
+    const active=await db.selectFrom('users').select('id').where('id','=',user.id).where('is_active','=',true).executeTakeFirst();
+    if(!active)throw new ForbiddenException('An active account is required.');
     const membership=await db.selectFrom("school_memberships").select("id").where("school_id","=",schoolId).where("user_id","=",user.id).where("role","=","admin").where("is_active","=",true).executeTakeFirst();
     if(!membership) throw new ForbiddenException("Institution administrator access is required.");
   }
@@ -223,7 +233,14 @@ export class ExamOperationsService {
   }
 
   private async emit(db:Db,schoolId:string,sittingId:string,assessmentId:string,action:string,revision:number,eventIdentity=action,additionalAudienceUserIds:string[]=[]){
-    const audienceUserIds=[...new Set([...await this.audience(db,schoolId,sittingId),...additionalAudienceUserIds])];
+    const candidates=action==='schedule'?(await sql<{user_id:string}>`SELECT student.user_id FROM assessment_sitting_candidates candidate
+      JOIN students student ON student.id=candidate.student_id AND student.school_id=candidate.school_id
+      WHERE candidate.school_id=${schoolId}::uuid AND candidate.sitting_id=${sittingId}::uuid AND student.user_id IS NOT NULL
+      UNION SELECT parent.user_id FROM assessment_sitting_candidates candidate JOIN guardian_relationships relationship
+        ON relationship.school_id=candidate.school_id AND relationship.student_id=candidate.student_id
+      JOIN parents parent ON parent.id=relationship.guardian_id WHERE candidate.school_id=${schoolId}::uuid
+        AND candidate.sitting_id=${sittingId}::uuid AND parent.user_id IS NOT NULL`.execute(db)).rows.map(row=>row.user_id):[];
+    const audienceUserIds=[...new Set([...await this.audience(db,schoolId,sittingId),...additionalAudienceUserIds,...candidates])];
     await this.events.enqueueUserEvent(db,{schoolId,eventType:"assessment.updated",aggregateType:"assessment_sitting",aggregateId:sittingId,audienceUserIds,payload:{assessment_id:assessmentId,sitting_id:sittingId,action,state_action:action,revision,refresh:["assessments","teacher.home","principal.home","requests","notifications","attention","calendar","campus-view","activities","attendance","workspace","today"]},idempotencyKey:`assessment-sitting:${sittingId}:${eventIdentity}:${revision}`});
     return (await sql<{id:string}>`SELECT id FROM event_outbox WHERE school_id=${schoolId}::uuid AND idempotency_key=${`assessment-sitting:${sittingId}:${eventIdentity}:${revision}`}`.execute(db)).rows[0]!.id;
   }
@@ -311,15 +328,20 @@ export class ExamOperationsService {
 
   async updateArrangements(user:AuthUser,schoolId:string,assessmentId:string,body:unknown){
     const data=sittingArrangementInput.parse(body);
-    return this.db.transaction().execute(async db=>{
+    return this.db.transaction().execute(db=>this.updateArrangementsIn(db,user,schoolId,assessmentId,data));
+  }
+
+  private async updateArrangementsIn(db:Transaction<Database>,user:AuthUser,schoolId:string,assessmentId:string,
+    data:z.infer<typeof sittingArrangementInput>,amendment?:{reason:string;commandId:string;commandKey:string;correlationId:string}){
       await this.administrator(user,schoolId,db);
       const assessment=await db.selectFrom("assessments").selectAll().where("school_id","=",schoolId).where("id","=",assessmentId).forUpdate().executeTakeFirst();
       if(!assessment) throw new NotFoundException("Assessment not found.");
       const sitting=await db.selectFrom("assessment_sittings").selectAll().where("school_id","=",schoolId).where("assessment_id","=",assessmentId).forUpdate().executeTakeFirst();
       if(!sitting) throw new NotFoundException("This assessment does not have a physical sitting.");
-      if(assessment.status!=="draft"||sitting.state!=="planning") throw new ConflictException("Exam arrangements can be changed only before the assessment is scheduled.");
+      if(!amendment&&(assessment.status!=="draft"||sitting.state!=="planning")) throw new ConflictException("Exam arrangements can be changed only before the assessment is scheduled.");
       if(assessment.revision!==data.expected_assessment_revision||sitting.revision!==data.expected_sitting_revision) throw new ConflictException("These exam arrangements changed. Refresh before saving.");
 
+      if(amendment)await this.assertAmendable(db,assessment,sitting);
       const space=await db.selectFrom("campus_spaces").select(["id","campus_id","name","status","is_bookable"]).where("school_id","=",schoolId).where("id","=",data.space_id).executeTakeFirst();
       if(!space||space.status!=="active"||!space.is_bookable) throw new BadRequestException("Choose an active bookable campus space.");
       const eligible=(await sql<{count:number}>`SELECT count(DISTINCT membership.user_id)::int AS count
@@ -370,7 +392,7 @@ export class ExamOperationsService {
       if(added.length) offersToPublish.push(...await db.insertInto("assessment_sitting_invigilators").values(added.map(userId=>({school_id:schoolId,sitting_id:sitting.id,assessment_id:assessmentId,user_id:userId,assigned_by:user.id}))).returningAll().execute());
 
       const updatedAssessment=await db.updateTable("assessments").set({scheduled_at:startsAt,duration_minutes:data.duration_minutes,venue:space.name,revision:assessment.revision+1,updated_by:user.id,updated_at:now}).where("id","=",assessment.id).where("revision","=",assessment.revision).returningAll().executeTakeFirst();
-      const updatedSitting=await db.updateTable("assessment_sittings").set({campus_id:space.campus_id,space_id:space.id,starts_at:startsAt,ends_at:endsAt,revision:sitting.revision+1,updated_by:user.id,updated_at:now}).where("id","=",sitting.id).where("revision","=",sitting.revision).returningAll().executeTakeFirst();
+      const updatedSitting=await db.updateTable("assessment_sittings").set({...(amendment?{state:"planning" as const}:{}),campus_id:space.campus_id,space_id:space.id,starts_at:startsAt,ends_at:endsAt,revision:sitting.revision+1,updated_by:user.id,updated_at:now}).where("id","=",sitting.id).where("revision","=",sitting.revision).returningAll().executeTakeFirst();
       if(!updatedAssessment||!updatedSitting) throw new ConflictException("These exam arrangements changed. Refresh before saving.");
       for(const assignment of offersToPublish) await this.invigilationOffers.publishOffer(db,{
         school_id:schoolId,
@@ -378,17 +400,193 @@ export class ExamOperationsService {
         assignment_id:assignment.id,
         source_assignment_revision:assignment.revision,
       });
-      await this.audit(db,user,schoolId,assessmentId,sitting.id,"assessment.sitting.arrangements_updated","planning","planning",{
+      await this.audit(db,user,schoolId,assessmentId,sitting.id,amendment?"assessment.sitting.schedule_amended":"assessment.sitting.arrangements_updated",sitting.state,updatedSitting.state,{
         previous:{scheduled_at:new Date(sitting.starts_at).toISOString(),ends_at:new Date(sitting.ends_at).toISOString(),space_id:sitting.space_id,invigilator_user_ids:existing.filter(item=>item.status!=="revoked").map(item=>item.user_id)},
         current:{scheduled_at:startsAt.toISOString(),ends_at:endsAt.toISOString(),space_id:space.id,invigilator_user_ids:data.invigilator_user_ids},
-        confirmations_reset:timingOrSpaceChanged,
+        confirmations_reset:timingOrSpaceChanged,...(amendment?{reason:amendment.reason,command_id:amendment.commandId}:{}),
       });
-      await this.emit(db,schoolId,sitting.id,assessmentId,"sitting.arrangements_updated",updatedSitting.revision,"sitting.arrangements_updated",existing.filter(item=>item.status!=="revoked").map(item=>item.user_id));
-      return {assessment:updatedAssessment,sitting:updatedSitting};
+      if(amendment){
+        await this.projectPlan(db,user,updatedSitting,amendment.correlationId,'cancelled',{commandId:amendment.commandId,expectedRevision:sitting.revision});
+        const previous=await this.scheduleSnapshot(db,assessment,sitting,existing.filter(row=>row.status!=='revoked').map(row=>row.user_id));
+        const current=await this.scheduleSnapshot(db,updatedAssessment,updatedSitting,data.invigilator_user_ids);
+        await sql`INSERT INTO assessment_schedule_revisions(school_id,assessment_id,sitting_id,revision,actor_user_id,command_id,command_key,action,reason,previous_snapshot,snapshot,recorded_at)
+          VALUES(${schoolId}::uuid,${assessmentId}::uuid,${sitting.id}::uuid,${updatedSitting.revision},${user.id}::uuid,${amendment.commandId}::uuid,
+            ${amendment.commandKey}::uuid,'amended',${amendment.reason},${JSON.stringify(previous)}::jsonb,${JSON.stringify(current)}::jsonb,${now})`.execute(db);
+      }
+      const eventId=await this.emit(db,schoolId,sitting.id,assessmentId,amendment?'schedule':"sitting.arrangements_updated",updatedSitting.revision,
+        amendment?'schedule.amended':"sitting.arrangements_updated",existing.filter(item=>item.status!=="revoked").map(item=>item.user_id));
+      return {assessment:updatedAssessment,sitting:updatedSitting,...(amendment?{command_id:amendment.commandKey,event_id:eventId,schedule_state:"awaiting_confirmation"}:{} )};
+  }
+
+  private async assertAmendable(db:Db,current:AssessmentRecord,sitting:Selectable<AssessmentSittingTable>){
+    if(current.status!=='scheduled'||!['ready','planning'].includes(sitting.state)||!sitting.roster_frozen_at||sitting.started_at||sitting.completed_at
+      ||new Date(sitting.starts_at).getTime()<=executionNow().getTime())throw new ConflictException('Only a future, never-started scheduled examination can have its arrangements revised.');
+    const evidence=(await sql<{recorded:boolean}>`SELECT
+      EXISTS(SELECT 1 FROM assessment_candidate_attendance WHERE school_id=${current.school_id}::uuid AND sitting_id=${sitting.id}::uuid AND status<>'unrecorded')
+      OR EXISTS(SELECT 1 FROM assessment_sitting_incidents WHERE school_id=${current.school_id}::uuid AND sitting_id=${sitting.id}::uuid)
+      OR EXISTS(SELECT 1 FROM activity_attendance_registers register JOIN activity_attendance_commands command ON command.register_id=register.id
+        WHERE register.school_id=${current.school_id}::uuid AND register.context_source_kind='examination' AND register.context_source_id=${sitting.id})
+      OR EXISTS(SELECT 1 FROM activity_attendance_registers register JOIN activity_attendance_entries entry ON entry.register_id=register.id
+        WHERE register.school_id=${current.school_id}::uuid AND register.context_source_kind='examination' AND register.context_source_id=${sitting.id}) AS recorded`.execute(db)).rows[0];
+    if(evidence?.recorded)throw new ConflictException('An examination with recorded participation or incidents cannot be rescheduled.');
+  }
+
+  private async scheduleSnapshot(db:Db,current:AssessmentRecord,sitting:Selectable<AssessmentSittingTable>,invigilatorIds?:string[]){
+    const staff=invigilatorIds??(await db.selectFrom('assessment_sitting_invigilators').select('user_id').where('school_id','=',current.school_id)
+      .where('sitting_id','=',sitting.id).where('status','!=','revoked').execute()).map(row=>row.user_id);
+    return {assessment_id:current.id,sitting_id:sitting.id,assessment_revision:current.revision,revision:sitting.revision,
+      scheduled_at:new Date(sitting.starts_at).toISOString(),ends_at:new Date(sitting.ends_at).toISOString(),space_id:sitting.space_id,
+      duration_minutes:current.duration_minutes,invigilator_user_ids:[...staff].sort(),state:sitting.state,
+      candidate_ids:(await db.selectFrom('assessment_sitting_candidates').select('id').where('school_id','=',current.school_id)
+        .where('sitting_id','=',sitting.id).orderBy('id').execute()).map(row=>row.id)};
+  }
+
+  private async amendmentPreviewIn(db:Db,current:AssessmentRecord,sitting:Selectable<AssessmentSittingTable>,data:z.infer<typeof scheduleAmendmentPreviewInput>){
+    await this.assertAmendable(db,current,sitting);
+    if(current.revision!==data.expected_assessment_revision||sitting.revision!==data.expected_sitting_revision)
+      throw new ConflictException('These examination arrangements changed. Review the current schedule before publishing a revision.');
+    const starts=assertFutureExamStart(data.scheduled_at),ends=new Date(starts.getTime()+data.duration_minutes*60000);
+    const selected=[...data.invigilator_user_ids].sort();
+    const eligible=(await sql<{count:number}>`SELECT count(DISTINCT member.user_id)::int AS count FROM school_memberships member
+      JOIN users account ON account.id=member.user_id AND account.is_active WHERE member.school_id=${current.school_id}::uuid
+      AND member.user_id=ANY(${selected}::uuid[]) AND member.is_active AND member.role IN('staff','admin')`.execute(db)).rows[0]!.count;
+    if(eligible!==selected.length)throw new BadRequestException('Choose current active staff as invigilators.');
+    const room=await db.selectFrom('campus_spaces').select(['id','name','campus_id','capacity','revision']).where('school_id','=',current.school_id)
+      .where('id','=',data.space_id).where('status','=','active').where('is_bookable','=',true).executeTakeFirst();
+    if(!room)throw new BadRequestException('Choose a current bookable examination room.');
+    const previous=await this.scheduleSnapshot(db,current,sitting);
+    const material=new Date(sitting.starts_at).getTime()!==starts.getTime()||new Date(sitting.ends_at).getTime()!==ends.getTime()||sitting.space_id!==room.id;
+    const assignments=await db.selectFrom('assessment_sitting_invigilators').select(['id','user_id','status','revision']).where('school_id','=',current.school_id)
+      .where('sitting_id','=',sitting.id).orderBy('id').execute();
+    if(!material&&JSON.stringify(previous.invigilator_user_ids)===JSON.stringify(selected)
+      &&assignments.every(row=>row.status==='accepted'||row.status==='revoked'))throw new BadRequestException('Change the time, room or invigilation duty before publishing a revision.');
+    const proposed={...sitting,space_id:room.id,campus_id:room.campus_id,starts_at:starts,ends_at:ends};
+    const readiness=await this.readinessSnapshot(db,{...current,scheduled_at:starts,duration_minutes:data.duration_minutes},proposed,
+      {invigilatorIds:selected,resetAcceptances:material});
+    const changedInvigilators=selected.filter(id=>material||!assignments.some(row=>row.user_id===id&&row.status==='accepted'));
+    const result={previous,proposed:{scheduled_at:starts.toISOString(),ends_at:ends.toISOString(),duration_minutes:data.duration_minutes,
+      space_id:room.id,space_name:room.name,invigilator_user_ids:selected},candidate_count:previous.candidate_ids.length,
+      reissued_invigilator_user_ids:changedInvigilators,removed_invigilator_user_ids:previous.invigilator_user_ids.filter(id=>!selected.includes(id)),
+      blockers:readiness.blockers.filter(row=>row.code!=='invigilators'),confirmation_message:'The revised schedule replaces the current one. Invigilators must confirm changed duties before the sitting can become ready.',
+      reason:data.reason};
+    return {...result,can_publish:result.blockers.length===0,preview_hash:createHash('sha256').update(JSON.stringify({result,assignments,room_revision:room.revision})).digest('hex')};
+  }
+
+  async previewScheduleAmendment(user:AuthUser,schoolId:string,assessmentId:string,body:unknown){
+    const data=scheduleAmendmentPreviewInput.parse(body);
+    return this.db.transaction().execute(async db=>{
+      await this.administrator(user,schoolId,db);
+      const current=await db.selectFrom('assessments').selectAll().where('school_id','=',schoolId).where('id','=',assessmentId).executeTakeFirst();
+      const sitting=await db.selectFrom('assessment_sittings').selectAll().where('school_id','=',schoolId).where('assessment_id','=',assessmentId).executeTakeFirst();
+      if(!current||!sitting)throw new NotFoundException('Examination sitting not found.');
+      return this.amendmentPreviewIn(db,current,sitting,data);
     });
   }
 
-  private async readinessSnapshot(db:Db,current:AssessmentRecord,sitting:Selectable<AssessmentSittingTable>):Promise<ExamReadiness>{
+  async amendSchedule(user:AuthUser,schoolId:string,assessmentId:string,body:unknown){
+    const data=scheduleAmendmentInput.parse(body);
+    return this.scheduleCommand(user,schoolId,assessmentId,'amend',data);
+  }
+
+  async confirmScheduleAmendment(user:AuthUser,schoolId:string,assessmentId:string,body:unknown){
+    const data=z.object({command_id:uuid,expected_assessment_revision:z.number().int().positive(),expected_sitting_revision:z.number().int().positive(),
+      reason:z.string().trim().min(3).max(1000)}).strict().parse(body);
+    return this.scheduleCommand(user,schoolId,assessmentId,'confirm',data);
+  }
+
+  private async scheduleCommand(user:AuthUser,schoolId:string,assessmentId:string,action:'amend'|'confirm',data:{command_id:string;expected_assessment_revision:number;
+    expected_sitting_revision:number;reason:string}&Partial<z.infer<typeof scheduleAmendmentInput>>){
+    const hash=createHash('sha256').update(JSON.stringify({action,assessment_id:assessmentId,...data,
+      ...(data.invigilator_user_ids?{invigilator_user_ids:[...data.invigilator_user_ids].sort()}: {})})).digest('hex');
+    let refusal:HttpException|undefined;
+    const result=await this.db.transaction().execute(async db=>{
+      await this.administrator(user,schoolId,db);
+      await lockSchedule(db,schoolId);
+      await sql`SELECT pg_advisory_xact_lock(hashtextextended(${`exam-schedule-command:${schoolId}:${user.id}:${data.command_id}`},0))`.execute(db);
+      const prior=(await sql<{request_hash:string;result:Record<string,unknown>}>`SELECT request_hash,result FROM day_plan_commands
+        WHERE school_id=${schoolId}::uuid AND actor_id=${user.id}::uuid AND command_key=${data.command_id}::uuid`.execute(db)).rows[0];
+      if(prior){
+        if(prior.request_hash!==hash)throw new ConflictException('This command identity belongs to different examination arrangements.');
+        if(prior.result.exam_schedule_refusal){refusal=new HttpException(prior.result.exam_schedule_refusal as Record<string,unknown>,409);return null;}
+        return prior.result;
+      }
+      const current=await db.selectFrom('assessments').selectAll().where('school_id','=',schoolId).where('id','=',assessmentId).forUpdate().executeTakeFirst();
+      const sitting=await db.selectFrom('assessment_sittings').selectAll().where('school_id','=',schoolId).where('assessment_id','=',assessmentId).forUpdate().executeTakeFirst();
+      if(!current||!sitting)throw new NotFoundException('Examination sitting not found.');
+      const correlationId=randomUUID();
+      const command=await this.commands.prepareDomainCommand(db,{school_id:schoolId,actor_user_id:user.id,command_type:`examination.sitting.${action}`,
+        handler_key:'assessments.schedule_amendments',handler_version:1,source_domain:'assessments',
+        target:{kind:'exam_sitting',domain:'assessments',domain_id:sitting.id,label:'Physical examination sitting',lifecycle_state:'planned',source_revision:sitting.revision,metadata:{}},
+        current_revision:sitting.revision,expected_revision:sitting.revision,capability:'assessments.manage',purpose:`${action}_future_examination_schedule`,
+        requested_at:executionNow().toISOString(),correlation_id:correlationId,causation_id:null,idempotency_key:`exam-schedule:${user.id}:${data.command_id}`,
+        operating_rule_version_ref:`assessment_operation_policy:${sitting.policy_revision}`,configuration_refs:[{kind:'assessment_operation_policy',ref:schoolId,version:String(sitting.policy_revision)}],
+        authority_attestation:{evaluator_domain:'assessments',decision:'allowed',reason_codes:['current_institution_administrator'],
+          authority_source_refs:[{school_id:schoolId,user_id:user.id,assessment_id:assessmentId,assessment_revision:current.revision}],
+          operating_rule_refs:[{policy_revision:sitting.policy_revision}],valid_until:null},
+        safe_context:{assessment_id:assessmentId,sitting_id:sitting.id,expected_assessment_revision:data.expected_assessment_revision,
+          expected_sitting_revision:data.expected_sitting_revision,request_hash:hash,operation:action}});
+      if(command.status!=='ready')throw new ConflictException('This examination command needs its retained domain receipt.');
+      await sql`SAVEPOINT exam_schedule_native_effects`.execute(db);
+      try{
+        await this.assertAmendable(db,current,sitting);
+        if(current.revision!==data.expected_assessment_revision||sitting.revision!==data.expected_sitting_revision)
+          throw new ConflictException('These examination arrangements changed. Review the saved schedule before continuing.');
+        await sql`SELECT pg_advisory_xact_lock(hashtextextended(${`assessment-exam-schedule:${schoolId}`},0))`.execute(db);
+        let accepted:Record<string,unknown>;
+        if(action==='amend'){
+          const input=scheduleAmendmentInput.parse(data),preview=await this.amendmentPreviewIn(db,current,sitting,input);
+          if(input.preview_hash!==preview.preview_hash)throw new ConflictException('The schedule impact changed. Review the current impact before publishing.');
+          if(!preview.can_publish)throw new ConflictException(preview.blockers[0]!.message);
+          accepted=await this.updateArrangementsIn(db,user,schoolId,assessmentId,input,{reason:data.reason,commandId:command.command_id,
+            commandKey:data.command_id,correlationId});
+        }else{
+          if(sitting.state!=='planning'||!(await sql`SELECT 1 FROM assessment_schedule_revisions WHERE school_id=${schoolId}::uuid
+            AND sitting_id=${sitting.id}::uuid AND action='amended'`.execute(db)).rows.length)
+            throw new ConflictException('Only a revised schedule awaiting confirmation can be confirmed.');
+          const readiness=await this.readinessSnapshot(db,current,sitting);
+          if(!readiness.can_schedule)throw new ConflictException(readiness.blockers[0]!.message);
+          const previous=await this.scheduleSnapshot(db,current,sitting);
+          const now=executionNow();
+          const updatedSitting=await db.updateTable('assessment_sittings').set({state:'ready',revision:sitting.revision+1,updated_by:user.id,updated_at:now})
+            .where('id','=',sitting.id).returningAll().executeTakeFirstOrThrow();
+          const updatedAssessment=await db.updateTable('assessments').set({revision:current.revision+1,updated_by:user.id,updated_at:now})
+            .where('id','=',current.id).returningAll().executeTakeFirstOrThrow();
+          await this.projectPlan(db,user,updatedSitting,correlationId,'expected',{commandId:command.command_id,expectedRevision:sitting.revision});
+          const snapshot=await this.scheduleSnapshot(db,updatedAssessment,updatedSitting);
+          await sql`INSERT INTO assessment_schedule_revisions(school_id,assessment_id,sitting_id,revision,actor_user_id,command_id,command_key,action,reason,previous_snapshot,snapshot,recorded_at)
+            VALUES(${schoolId}::uuid,${assessmentId}::uuid,${sitting.id}::uuid,${updatedSitting.revision},${user.id}::uuid,${command.command_id}::uuid,
+              ${data.command_id}::uuid,'confirmed',${data.reason},${JSON.stringify(previous)}::jsonb,${JSON.stringify(snapshot)}::jsonb,${now})`.execute(db);
+          await this.audit(db,user,schoolId,assessmentId,sitting.id,'assessment.sitting.schedule_confirmed','planning','ready',{reason:data.reason,command_id:command.command_id});
+          const event=await this.emit(db,schoolId,sitting.id,assessmentId,'schedule',updatedSitting.revision,'schedule.confirmed');
+          accepted={assessment:updatedAssessment,sitting:updatedSitting,command_id:data.command_id,event_id:event,schedule_state:'ready'};
+        }
+        accepted=JSON.parse(JSON.stringify(accepted)) as Record<string,unknown>;
+        await this.commands.completeDomainCommand(db,{school_id:schoolId,command_id:command.command_id,terminal_state:'accepted',
+          code:action==='amend'?'exam_schedule_amended':'exam_schedule_confirmed',explanation:action==='amend'?'The revised schedule is published and awaits current invigilation confirmation.':'The revised schedule is ready after current staffing and conflict checks.',
+          resulting_revision:sitting.revision+1,domain_event_id:String(accepted.event_id),metadata:{assessment_id:assessmentId,sitting_id:sitting.id,
+            domain_command_key:data.command_id},completed_at:executionNow().toISOString()});
+        await sql`RELEASE SAVEPOINT exam_schedule_native_effects`.execute(db);
+        await sql`INSERT INTO day_plan_commands(school_id,actor_id,command_key,request_hash,result) VALUES(${schoolId}::uuid,${user.id}::uuid,
+          ${data.command_id}::uuid,${hash},${JSON.stringify(accepted)}::jsonb)`.execute(db);
+        return accepted;
+      }catch(error){
+        if(!(error instanceof HttpException)||![400,403,409,422].includes(error.getStatus()))throw error;
+        await sql`ROLLBACK TO SAVEPOINT exam_schedule_native_effects`.execute(db);await sql`RELEASE SAVEPOINT exam_schedule_native_effects`.execute(db);
+        const refused={message:error.message,code:'exam_schedule_command_refused',fields:{command_id:data.command_id,school_id:schoolId,actor_user_id:user.id,assessment_id:assessmentId,
+          sitting_id:sitting.id,action,expected_assessment_revision:data.expected_assessment_revision,expected_sitting_revision:data.expected_sitting_revision}};
+        await this.commands.completeDomainCommand(db,{school_id:schoolId,command_id:command.command_id,terminal_state:error.getStatus()===409?'conflicted':'rejected',
+          code:'exam_schedule_invariant_refused',explanation:'The owning examination rules refused this exact schedule command; no arrangements, candidates or commitments changed.',
+          resulting_revision:sitting.revision,domain_event_id:null,metadata:{assessment_id:assessmentId,sitting_id:sitting.id},completed_at:executionNow().toISOString()});
+        await sql`INSERT INTO day_plan_commands(school_id,actor_id,command_key,request_hash,result) VALUES(${schoolId}::uuid,${user.id}::uuid,
+          ${data.command_id}::uuid,${hash},${JSON.stringify({exam_schedule_refusal:refused})}::jsonb)`.execute(db);
+        refusal=new HttpException(refused,409);return null;
+      }
+    });
+    if(refusal)throw refusal;
+    return result;
+  }
+
+  private async readinessSnapshot(db:Db,current:AssessmentRecord,sitting:Selectable<AssessmentSittingTable>,options?:{invigilatorIds:string[];resetAcceptances:boolean}):Promise<ExamReadiness>{
     const startsAt=new Date(current.scheduled_at??sitting.starts_at);
     const endsAt=new Date(startsAt.getTime()+(current.duration_minutes??0)*60_000);
     const policy=sitting.policy_snapshot as ReturnType<ExamOperationsService["policyProjection"]>;
@@ -399,17 +597,19 @@ export class ExamOperationsService {
       JOIN assessment_cycles cycle ON cycle.school_id=school.id AND cycle.id=${current.cycle_id}::uuid
       WHERE school.id=${current.school_id}::uuid
     `.execute(db)).rows[0];
-    const candidateCount=context?(await datedAcademicRoster(db,current.school_id,current.class_section_id,context.term_id,context.exam_date)).length:0;
+    const candidateCount=current.status==='scheduled'&&sitting.roster_frozen_at
+      ?Number((await db.selectFrom('assessment_sitting_candidates').select(({fn})=>fn.countAll<number>().as('count')).where('school_id','=',current.school_id).where('sitting_id','=',sitting.id).executeTakeFirstOrThrow()).count)
+      :context?(await datedAcademicRoster(db,current.school_id,current.class_section_id,context.term_id,context.exam_date)).length:0;
     const space=await db.selectFrom("campus_spaces").select(["name","capacity","status","is_bookable"]).where("school_id","=",current.school_id).where("id","=",sitting.space_id).executeTakeFirst();
-    const acceptedInvigilators=(await sql<{user_id:string;name:string}>`
-      SELECT assignment.user_id,concat_ws(' ',account.first_name,account.last_name) AS name
+    const acceptedInvigilators=(await sql<{user_id:string;name:string;status:string}>`
+      SELECT assignment.user_id,assignment.status,concat_ws(' ',account.first_name,account.last_name) AS name
       FROM assessment_sitting_invigilators assignment
       JOIN users account ON account.id=assignment.user_id AND account.is_active
       JOIN school_memberships membership ON membership.school_id=assignment.school_id
         AND membership.user_id=assignment.user_id AND membership.is_active
         AND membership.role IN ('staff','admin')
       WHERE assignment.school_id=${current.school_id}::uuid
-        AND assignment.sitting_id=${sitting.id}::uuid AND assignment.status='accepted'
+        AND assignment.sitting_id=${sitting.id}::uuid AND ((${options?.invigilatorIds??null}::uuid[] IS NULL AND assignment.status='accepted') OR assignment.user_id=ANY(${options?.invigilatorIds??[]}::uuid[]))
       ORDER BY lower(concat_ws(' ',account.first_name,account.last_name)),assignment.user_id
     `.execute(db)).rows;
     const otherExams=(await sql<{id:string;title:string;room_conflict:boolean;class_conflict:boolean}>`
@@ -426,23 +626,18 @@ export class ExamOperationsService {
         AND other.starts_at<${endsAt}::timestamptz AND other.ends_at>${startsAt}::timestamptz
       ORDER BY other.starts_at,other.id
     `.execute(db)).rows;
+    const checkedStaff=options?.invigilatorIds??acceptedInvigilators.map(row=>row.user_id);
     const otherInvigilation=(await sql<{id:string;title:string;user_id:string;name:string}>`
-      SELECT other.id,other_assessment.title,mine.user_id,
-        concat_ws(' ',account.first_name,account.last_name) AS name
-      FROM assessment_sitting_invigilators mine
-      JOIN assessment_sitting_invigilators assigned
-        ON assigned.school_id=mine.school_id AND assigned.user_id=mine.user_id
-        AND assigned.status='accepted'
-      JOIN assessment_sittings other ON other.id=assigned.sitting_id
-        AND other.state IN ('ready','in_progress')
-      JOIN assessments other_assessment ON other_assessment.id=other.assessment_id
-      JOIN users account ON account.id=mine.user_id
-      WHERE mine.sitting_id=${sitting.id}::uuid AND mine.status='accepted'
-        AND other.id<>${sitting.id}::uuid
+      SELECT other.id,other_assessment.title,assigned.user_id,concat_ws(' ',account.first_name,account.last_name) AS name
+      FROM assessment_sitting_invigilators assigned JOIN assessment_sittings other ON other.id=assigned.sitting_id
+      JOIN assessments other_assessment ON other_assessment.id=other.assessment_id AND other_assessment.school_id=other.school_id
+      JOIN users account ON account.id=assigned.user_id
+      WHERE assigned.school_id=${current.school_id}::uuid AND assigned.user_id=ANY(${checkedStaff}::uuid[]) AND assigned.status='accepted'
+        AND other.state IN('ready','in_progress') AND other.id<>${sitting.id}::uuid
         AND other.starts_at<${endsAt}::timestamptz AND other.ends_at>${startsAt}::timestamptz
-      ORDER BY lower(concat_ws(' ',account.first_name,account.last_name)),other.starts_at,other.id
-    `.execute(db)).rows;
-    const acceptedIds=acceptedInvigilators.map(row=>row.user_id);
+      ORDER BY assigned.user_id,other.starts_at,other.id`.execute(db)).rows;
+    const acceptedIds=options?.invigilatorIds??acceptedInvigilators.map(row=>row.user_id);
+    const acceptedCount=options?.resetAcceptances?0:acceptedInvigilators.filter(row=>row.status==='accepted').length;
     const timetableConflicts=(await sql<{
       id:string;occurrence_key:string;title:string;class_section_id:string;class_name:string;
       space_id:string|null;teacher_user_id:string|null;teacher_name:string|null;
@@ -480,7 +675,7 @@ export class ExamOperationsService {
     if(!space||space.status!=="active"||!space.is_bookable) add({code:"space",message:"The selected examination space is not currently bookable.",source:"exam_sitting",source_id:sitting.space_id});
     else if(space.capacity===null) add({code:"capacity",message:`Add a capacity for ${space.name} before scheduling.`,source:"exam_sitting",source_id:sitting.space_id});
     else if(space.capacity<candidateCount) add({code:"capacity",message:`${space.name} holds ${space.capacity} people, but ${candidateCount} candidates are enrolled.`,source:"exam_sitting",source_id:sitting.space_id});
-    if(acceptedInvigilators.length<policy.minimum_invigilators) add({code:"invigilators",message:`${policy.minimum_invigilators-acceptedInvigilators.length} more invigilator acceptance${policy.minimum_invigilators-acceptedInvigilators.length===1?" is":"s are"} needed.`,source:"exam_sitting",source_id:sitting.id});
+    if(acceptedCount<policy.minimum_invigilators) add({code:"invigilators",message:`${policy.minimum_invigilators-acceptedCount} more invigilator acceptance${policy.minimum_invigilators-acceptedCount===1?" is":"s are"} needed.`,source:"exam_sitting",source_id:sitting.id});
     for(const conflict of otherExams){
       const scope=conflict.room_conflict&&conflict.class_conflict?"room and class":conflict.room_conflict?"room":"class";
       add({code:"other_exam",message:`${conflict.title} already uses this ${scope} during the examination.`,source:"exam_sitting",source_id:conflict.id});
@@ -492,7 +687,7 @@ export class ExamOperationsService {
       if(conflict.space_id===sitting.space_id) add({code:"room_timetable",message:`${space?.name??"The room"} is already used by ${conflict.class_name} for ${conflict.title} (${period}).`,source:"effective_timetable",source_id:`room:${conflict.occurrence_key}`});
       if(conflict.teacher_user_id&&acceptedIds.includes(conflict.teacher_user_id)) add({code:"invigilator_timetable",message:`${conflict.teacher_name||"An accepted invigilator"} is teaching ${conflict.class_name} (${period}).`,source:"effective_timetable",source_id:`teacher:${conflict.teacher_user_id}:${conflict.occurrence_key}`});
     }
-    return {checked_at:executionNow().toISOString(),can_schedule:blockers.length===0,blockers,candidate_count:candidateCount,room_capacity:space?.capacity??null,accepted_invigilator_count:acceptedInvigilators.length,required_invigilator_count:policy.minimum_invigilators,timetable_contract:"effective_school_schedule_v4"};
+    return {checked_at:executionNow().toISOString(),can_schedule:blockers.length===0,blockers,candidate_count:candidateCount,room_capacity:space?.capacity??null,accepted_invigilator_count:acceptedCount,required_invigilator_count:policy.minimum_invigilators,timetable_contract:"effective_school_schedule_v4"};
   }
 
   async readiness(user:AuthUser,schoolId:string,assessmentId:string){
@@ -558,7 +753,7 @@ export class ExamOperationsService {
     });
   }
 
-  private async projectPlan(db:Transaction<Database>,user:AuthUser,sitting:Selectable<AssessmentSittingTable>,correlationId:string,state:'expected'|'cancelled'){
+  private async projectPlan(db:Transaction<Database>,user:AuthUser,sitting:Selectable<AssessmentSittingTable>,correlationId:string,state:'expected'|'cancelled',reschedule?:{commandId:string;expectedRevision:number}){
     const {context,people}=await this.participationContext(db,sitting.school_id,sitting.id);
     const planned:OwnedPlanPerson[]=people.map(person=>({...person,role:'participant',attendance_expected:true}));
     if(state==='expected'){
@@ -575,11 +770,14 @@ export class ExamOperationsService {
           role:'lead',required:true,attendance_expected:false,source_ref:`assessment_invigilator:${assignment.id}`,source_revision:assignment.revision});
       }
     }
-    const projection=await this.footprints.record(db,{school_id:sitting.school_id,actor_user_id:user.id,source:'examination',plan_id:sitting.id,
+    const footprint={school_id:sitting.school_id,actor_user_id:user.id,source:'examination' as const,plan_id:sitting.id,
       context_id:sitting.assessment_id,context_entity_id:sitting.id,title:context.title,revision:sitting.revision,state,
       occurred_at:executionNow().toISOString(),correlation_id:correlationId,occurrences:[{source_id:sitting.id,source_revision:sitting.revision,
         title:context.title,local_date:context.date,starts_at:new Date(sitting.starts_at).toISOString(),ends_at:new Date(sitting.ends_at).toISOString(),
-        timezone:context.timezone,attendance_mode:'roll_call',space_id:sitting.space_id,people:planned}]});
+        timezone:context.timezone,attendance_mode:'roll_call' as const,space_id:sitting.space_id,people:planned}]};
+    const projection=reschedule?await this.footprints.rescheduleExamination(db,footprint,reschedule.commandId,reschedule.expectedRevision)
+      :await this.footprints.record(db,footprint);
+    if(reschedule)await this.participation.rescheduleExamination(db,user,context,people,{command_id:reschedule.commandId,correlation_id:correlationId,expected_revision:reschedule.expectedRevision});
     if(state==='expected'){
       const end=(await sql<{date:string}>`SELECT (${sitting.ends_at}::timestamptz AT TIME ZONE ${context.timezone})::date::text AS date`.execute(db)).rows[0]!.date;
       await this.planning.validateOwnedPublication(db,sitting.school_id,'examination',sitting.assessment_id,context.date,end);
@@ -683,7 +881,12 @@ export class ExamOperationsService {
     const readiness=sitting.state==="planning"
       ? await this.readinessSnapshot(this.db,assessment,sitting)
       : null;
-    return {assessment,sitting,space,invigilators,viewer_assignment:viewerAssignment,candidates,incidents,attendance_counts:counts,policy:sitting.policy_snapshot,readiness};
+    const history=(await sql<{revision:number;action:string;reason:string;previous_snapshot:Record<string,unknown>;snapshot:Record<string,unknown>;recorded_at:Date}>`
+      SELECT revision,action,reason,command_key,previous_snapshot,snapshot,recorded_at FROM assessment_schedule_revisions
+      WHERE school_id=${schoolId}::uuid AND assessment_id=${assessmentId}::uuid ORDER BY revision DESC LIMIT 50`.execute(this.db)).rows;
+    return {assessment,sitting,space,invigilators,viewer_assignment:viewerAssignment,candidates,incidents,attendance_counts:counts,policy:sitting.policy_snapshot,readiness,
+      schedule_state:assessment.status==='scheduled'&&sitting.state==='planning'&&history.length?'awaiting_confirmation':sitting.state,
+      schedule_history:history};
   }
 
   async start(user:AuthUser,schoolId:string,assessmentId:string,body:unknown){

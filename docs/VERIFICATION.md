@@ -444,6 +444,36 @@ finding. A successful read is not proof an earlier ambiguous write committed.
 
 `https://app2.thatcampus.com` serves the isolated DT backend and sole Expo web app through dedicated edge/Cloud Run resources, identities, separate Live/Simulation databases on shared PostgreSQL 17 and private persistent files. The owner chose to retain the shared server and existing limits: no new server, resize or pool/concurrency increase. Old ERP and maintained Mac development remain separate targets. Operations and code-versus-data rollback belong to the [DT runbook](../deploy/dt/README.md).
 
+The first closure wave adds exact academic catalogue recovery, explicit assignment
+review handover, future examination amendments and truthful unavailable-email
+handling. The [final isolated PostgreSQL run](../artifacts/core-functionality-fixes/postgres/20261108_8fba98a0/runner.json)
+passes **30/30 actual cases across nine files**, with no failed/skipped/todo cases,
+including ordinary compiled cookie/CSRF HTTP recovery and real COW mutations with
+unchanged Live/sibling state. Both owned databases were dropped with zero clients
+and no forced disconnect. Earlier HTTP startup and adversarial-fixture failures
+remain in their original receipts; the first HTTP startup cause was not established
+by its empty suite-level report. The harness now preserves rejected startup
+exceptions and bounded redacted diagnostics without extending timeouts.
+
+The [final mobile suite](../artifacts/core-functionality-fixes/mobile-final.log)
+passes 1867 cases with no failures/skips, including the mounted examination forms. The
+[sequential fast backend rerun](../artifacts/core-functionality-fixes/backend-fast-sequential.log)
+passes 540/540. Its earlier concurrent source-scan timeout is retained in
+`backend-fast.log`, with no timeout extension. The deployment lint gate accepts
+58 exact unchanged prior errors, with no new errors or warnings; this is not clean
+ordinary lint. Types and focused checks pass. The
+[narrow source-ledger review](../artifacts/core-functionality-fixes/parity/review.json)
+registers 17 reviewed mobile/wire sources while retaining the exact same 53 unrelated
+findings, route/capability inventory and implemented-unverified statuses. This is
+source review, not rendered acceptance. The
+[independent platform review](../artifacts/core-functionality-fixes/review/source-conformance-review.json)
+covers the narrow Core subject extension, guarded examination bridges and exact
+namespace provenance. The [manual216 seal](../artifacts/core-functionality-fixes/review/manual-seal-216.json)
+and strict verification retain fingerprint
+`sha256:c86eba855ef9b91c316de02f023c769e976104b90a086889511e684982c5039b`;
+new timers, providers and workers were not introduced. Actual email delivery, hosted historical Simulation recovery,
+rendered multi-account journeys and broader lifecycle gaps remain open.
+
 Conformance **215** is live at `https://app2.thatcampus.com`, release `3b88a167ac475c44b9b8e93f804f6ab2cb1622c8`, revision `thatcampus-dt-r-3b88a167ac47-41198125236-1`, image digest `sha256:d3cd55072f7a0e1af4788f696e61e4a5d31de111cebf2b873ee456091709987b`. [Actions run 41198125236](https://github.com/EduveraIITA/Eduvera/actions/runs/41198125236) and the [release receipt](../artifacts/app2-cloud-deployment/ci-215/digital-twin-release-41198125236-1/release.json) record successful one-attempt migration `thatcampus-dt-migrate-vwnlw` and candidate/public smoke. [CI](../artifacts/app2-cloud-deployment/ci-215-verify.log) passes 120 actual PostgreSQL cases across 17 files with zero skipped/todo cases, 533 fast backend cases, 40 source/auth cases, 1834 mobile cases and 41 deployment/edge/container guards, plus strict conformance/types/build/export checks. These are bounded checks, not complete workflow or sustained-capacity acceptance.
 
 Release 215 restricts teaching-context horizon expansion to activity sources, preserves the caller transaction, adds bounded pool acquisition/lease telemetry, and returns a canonical read-versus-unconfirmed-action 503 for exact acquisition failures, including Fastify's pre-controller rate-limit hook. [Real pool tests](../artifacts/app2-cloud-deployment/pool-telemetry-validation.json), [source/safety review](../artifacts/app2-cloud-deployment/215-independent-source-and-seal-review.json), the retained red regression and CI cover these changes. Pool size remains four. The earlier 214 failures below remain evidence; the latest passes do not identify their historical cause.

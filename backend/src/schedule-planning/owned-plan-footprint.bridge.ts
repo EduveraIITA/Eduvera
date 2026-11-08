@@ -1,8 +1,9 @@
-import { Inject, Injectable } from '@nestjs/common';
+import { ConflictException, Inject, Injectable, Optional } from '@nestjs/common';
 import { sql, type Transaction } from 'kysely';
 import type { Database } from '../database/types.js';
 import { PLAN_OCCURRENCE_PORT, type PlanOccurrencePort } from '../campus-model-core/plan-occurrence.port.js';
 import { activityOccurrenceId } from './activity-occurrence.engine.js';
+import { PREPARED_DOMAIN_COMMAND_VERIFICATION_PORT, type PreparedDomainCommandVerificationPort } from '../campus-model-core/domain-command-gateway.port.js';
 
 export interface OwnedPlanPerson {
   person_id:string;label:string;person_revision:number;role:'participant'|'lead';source_ref:string;source_revision:number;
@@ -20,15 +21,72 @@ export interface OwnedPlanFootprint {
 /** Translation only. The owning event/examination command validates and commits. */
 @Injectable()
 export class OwnedPlanFootprintBridge {
-  constructor(@Inject(PLAN_OCCURRENCE_PORT) private readonly projections:PlanOccurrencePort){}
+  constructor(@Inject(PLAN_OCCURRENCE_PORT) private readonly projections:PlanOccurrencePort,
+    @Optional() @Inject(PREPARED_DOMAIN_COMMAND_VERIFICATION_PORT) private readonly verification?:PreparedDomainCommandVerificationPort){}
 
   async record(tx:Transaction<Database>,input:OwnedPlanFootprint){
+    return this.write(tx,input);
+  }
+
+  /** Explicit examination correction only. Default publication never rewrites an
+   * existing occurrence. A pristine frozen register retains its stable identity;
+   * immutable source revisions retain the previous arrangements. */
+  async rescheduleExamination(tx:Transaction<Database>,input:OwnedPlanFootprint,commandId:string,expectedRevision:number){
+    if(input.source!=='examination'||input.occurrences.length!==1||!this.verification)throw new ConflictException('Examination rescheduling is unavailable.');
+    const proof=await this.verification.verifyPreparedDomainCommand(tx,{school_id:input.school_id,actor_user_id:input.actor_user_id,
+      command_id:commandId,correlation_id:input.correlation_id,source_domain:'assessments',required_capability:'assessments.manage',
+      allowed_command_types:['examination.sitting.amend','examination.sitting.confirm']});
+    if(proof.expected_revision!==expectedRevision||proof.safe_context.sitting_id!==input.plan_id
+      ||proof.safe_context.assessment_id!==input.context_id||input.revision!==expectedRevision+1)
+      throw new ConflictException('The rescheduling command does not match this examination revision.');
+    const next=input.occurrences[0]!;
+    const current=(await sql<{id:string;register_id:string;state:string;started_at:Date|null;revision:number;has_evidence:boolean}>`
+      SELECT occurrence.id,register.id AS register_id,register.state,sitting.started_at,sitting.revision,
+        (EXISTS(SELECT 1 FROM activity_attendance_entries entry WHERE entry.register_id=register.id)
+          OR EXISTS(SELECT 1 FROM activity_attendance_commands command WHERE command.register_id=register.id)
+          OR EXISTS(SELECT 1 FROM assessment_candidate_attendance_legacy_source mark WHERE mark.sitting_id=sitting.id AND mark.status<>'unrecorded')
+          OR EXISTS(SELECT 1 FROM assessment_sitting_incidents incident WHERE incident.sitting_id=sitting.id)) AS has_evidence
+      FROM assessment_sittings sitting JOIN assessments assessment ON assessment.id=sitting.assessment_id AND assessment.school_id=sitting.school_id
+      JOIN activity_attendance_registers register ON register.school_id=sitting.school_id AND register.context_source_kind='examination'
+        AND register.context_source_id=sitting.id::text AND register.context_state='active'
+      JOIN schedule_activity_occurrences occurrence ON occurrence.id=register.occurrence_id AND occurrence.school_id=sitting.school_id
+        AND occurrence.source='examination' AND occurrence.source_ref=sitting.id::text
+      WHERE sitting.school_id=${input.school_id}::uuid AND sitting.id=${input.plan_id}::uuid
+        AND sitting.assessment_id=${input.context_id}::uuid AND assessment.status='scheduled'
+        AND sitting.state IN('planning','ready') AND sitting.revision=${input.revision}
+        AND sitting.starts_at=${next.starts_at}::timestamptz AND sitting.ends_at=${next.ends_at}::timestamptz
+        AND sitting.space_id IS NOT DISTINCT FROM ${next.space_id}::uuid
+        AND sitting.starts_at>${input.occurred_at}::timestamptz
+      FOR UPDATE OF sitting,register,occurrence`.execute(tx)).rows[0];
+    if(!current||current.started_at||current.state!=='draft'||current.has_evidence)
+      throw new ConflictException('Only a never-started examination with no recorded participation or incidents can be rescheduled.');
+    const roster=(await sql<{person_id:string}>`SELECT person_id FROM activity_attendance_roster
+      WHERE school_id=${input.school_id}::uuid AND register_id=${current.register_id}::uuid ORDER BY person_id`.execute(tx)).rows.map(row=>row.person_id);
+    const participants=next.people.filter(person=>person.attendance_expected).map(person=>person.person_id).sort();
+    if(JSON.stringify(roster)!==JSON.stringify(participants)||next.source_id!==input.plan_id||next.source_revision!==input.revision)
+      throw new ConflictException('The frozen examination candidates cannot change during rescheduling.');
+    await sql`UPDATE schedule_activity_occurrences SET local_date=${next.local_date}::date,starts_at=${next.starts_at}::timestamptz,
+      ends_at=${next.ends_at}::timestamptz,timezone=${next.timezone},space_id=${next.space_id}::uuid,source_revision=${input.revision},
+      state=${input.state},revision=revision+1 WHERE id=${current.id}::uuid AND school_id=${input.school_id}::uuid`.execute(tx);
+    // This is the current plan projection, not attendance evidence. Previous
+    // participant/duty snapshots remain in immutable Core publication history.
+    await sql`DELETE FROM schedule_activity_occurrence_people WHERE school_id=${input.school_id}::uuid
+      AND occurrence_id=${current.id}::uuid AND NOT attendance_expected`.execute(tx);
+    for(const person of next.people.filter(person=>!person.attendance_expected))await sql`
+      INSERT INTO schedule_activity_occurrence_people(occurrence_id,school_id,person_id,label,participation_role,source_kind,
+        source_ref,source_revision,person_revision,requirement,attendance_expected)
+      VALUES(${current.id}::uuid,${input.school_id}::uuid,${person.person_id}::uuid,${person.label},${person.role},'examination',
+        ${person.source_ref},${person.source_revision},${person.person_revision},${person.required?'required':'optional'},false)`.execute(tx);
+    return this.write(tx,input,[current.id]);
+  }
+
+  private async write(tx:Transaction<Database>,input:OwnedPlanFootprint,retainedIds?:string[]){
     const domain=input.source==='event'?'events':'assessments';
     const contextKind=input.source==='event'?'campus_event':'exam_sitting';
     const ids:string[]=[];
     const captured:OwnedPlanOccurrence[]=[];
     for(const occurrence of input.occurrences){
-      const id=activityOccurrenceId(input.school_id,input.source,occurrence.source_id,occurrence.local_date);
+      const id=retainedIds?.[ids.length]??activityOccurrenceId(input.school_id,input.source,occurrence.source_id,occurrence.local_date);
       ids.push(id);
       const inserted=(await sql<{id:string}>`INSERT INTO schedule_activity_occurrences(id,school_id,activity_id,period_id,source,source_ref,source_revision,
         title,purpose,local_date,starts_at,ends_at,timezone,space_id,attendance_mode,context_kind,context_ref,state)

@@ -165,6 +165,7 @@ const domainMessageSupersessionSchema = z.object({
   message_id: uuid,
   previous_event_id: uuid,
   previous_source_revision: z.number().int().positive().optional(),
+  subject_record_id: uuid.optional(),
   resulting_event_id: uuid,
   required_capability: z.string().trim().min(3).max(120),
   occurred_at: z.string().datetime({ offset: true }),
@@ -2330,7 +2331,7 @@ export class CampusModelCoreService implements CampusModelCorePort, ObservationI
       JOIN campus_model_entities target ON target.id=command.target_entity_id
         AND target.school_id=command.school_id AND target.realm_id=command.realm_id
         AND target.environment_namespace_id=command.environment_namespace_id
-        AND target.domain=command.source_domain AND target.domain_id=previous.source_record_id
+        AND target.domain=command.source_domain AND target.domain_id=coalesce(${input.subject_record_id ?? null}::text,previous.source_record_id)
       JOIN campus_model_events resulting ON resulting.id=${input.resulting_event_id}::uuid
         AND resulting.school_id=command.school_id AND resulting.realm_id=command.realm_id
         AND resulting.environment_namespace_id=command.environment_namespace_id

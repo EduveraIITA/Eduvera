@@ -4,6 +4,7 @@ import { join, relative } from "node:path";
 // Reviewed logic/source contracts only. A new test is ALWAYS in the complete
 // suite; it is not promoted to the no-database fast lane by a filename suffix.
 export const FAST_TEST_FILES = [
+  "account-email-readiness.test.ts",
   "activity-attendance-history.test.ts",
   "activity-attendance-queue.test.ts",
   "activity-attendance.test.ts",

@@ -40,6 +40,8 @@ export const assignmentUpload = assignmentCommand.extend({ file_id: assignmentId
 export const assignmentSubmit = assignmentCommand.extend({ attempt_id: assignmentId }).strict();
 export const assignmentReview = assignmentCommand.extend({ review_id: assignmentId, attempt_id: assignmentId,
   decision: z.enum(["reviewed", "request_changes"]), feedback: text(4000).min(1) }).strict();
+export const assignmentReviewerHandover = assignmentCommand.extend({ reviewer_id: assignmentId, preview_hash: z.string().regex(/^[a-f0-9]{64}$/), reason: text(500).min(3) }).strict();
+export const assignmentHandoverReceipt = z.object({ id: assignmentId, handover_id: assignmentId, revision: z.number().int().positive(), reviewer_id: assignmentId, reviews_reissued: z.number().int().nonnegative() }).strict();
 export interface AssignmentUpload { filename: string; mimetype: string; data: Buffer }
 export const assignmentLimits = { file_bytes: 5 * 1024 * 1024, files: 3, page_size: 10 } as const;
 export type AssignmentCommand = z.infer<typeof assignmentCommand>;

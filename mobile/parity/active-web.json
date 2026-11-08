@@ -961,11 +961,14 @@
         "mobile/src/features/PeopleAccessScreen.tsx",
         "mobile/src/features/InvitationsScreen.tsx",
         "mobile/src/lib/people-access.ts",
-        "mobile/src/lib/campus-invitations.ts"
+        "mobile/src/lib/campus-invitations.ts",
+        "mobile/src/lib/people-academic-catalogue.ts",
+        "mobile/src/lib/native-pending-action.ts"
       ],
       "queryModes": [
         "Institution campus/academics/operating-rules/history/promotion; manifest People setup, current membership access and invitation directory; organization; responsibilities/:staffProfileId; capabilities; whole-campus guidance.",
-        "context=work remains the exact canonical People work-record bookmark; scoped responsibility editing uses its staff owner."
+        "context=work remains the exact canonical People work-record bookmark; scoped responsibility editing uses its staff owner.",
+        "Academic catalogue exact command/catalog_id and expected revision; reviewed add/edit, same-command recovery and current-record re-review. Legacy requests without exact receipts remain inspect-only."
       ],
       "capabilities": [
         {
@@ -1859,10 +1862,16 @@
         "mobile/src/features/AssessmentsScreen.tsx",
         "mobile/src/features/AssessmentAuthoringScreen.tsx",
         "mobile/src/features/AssessmentEvidenceScreen.tsx",
-        "mobile/src/features/AssessmentExamDayScreen.tsx"
+        "mobile/src/features/AssessmentExamDayScreen.tsx",
+        "mobile/src/features/AssessmentScheduleAmendmentScreen.tsx",
+        "mobile/src/lib/assessment-authoring.ts",
+        "mobile/src/lib/assessment-schedule-amendments.ts",
+        "mobile/src/lib/native-pending-action.ts",
+        "packages/contracts/src/assessments.ts"
       ],
       "queryModes": [
-        "assessment vs assessment_id/publication_id/report_batch_id; create=class-test; result_year/kind/search/page; status; marks/moderation/publication vs exam arrangements/attendance/incidents/evidence."
+        "assessment vs assessment_id/publication_id/report_batch_id; create=class-test; result_year/kind/search/page; status; marks/moderation/publication vs exam arrangements/attendance/incidents/evidence.",
+        "edit=schedule-amendment|confirm-schedule with one exact assessment; review changed future time/room/invigilator impact, explicit publication, renewed readiness and immutable schedule history."
       ],
       "capabilities": [
         {
@@ -2003,11 +2012,16 @@
         "mobile/src/features/LearningOfferings.tsx",
         "mobile/src/features/LearningAssignmentComposer.tsx",
         "mobile/src/features/LearningPractice.tsx",
-        "mobile/src/features/LearningWorkLink.tsx"
+        "mobile/src/features/LearningWorkLink.tsx",
+        "mobile/src/features/LearningAssignmentHandovers.tsx",
+        "mobile/src/lib/assignment-handover-policy.ts",
+        "mobile/src/lib/native-pending-action.ts",
+        "packages/contracts/src/wire/features/learning/assignmentApi.ts"
       ],
       "queryModes": [
         "scope=class|offering|person|self|dependent/learner; class_section_id/offering_id/person_id/student_id; assignment+learner.",
-        "session_id/occurrence_id/date/period; hub/group setup/practice dialogs; prepare/report/resource earlier versions and work links."
+        "session_id/occurrence_id/date/period; hub/group setup/practice dialogs; prepare/report/resource earlier versions and work links.",
+        "scope=review_handover; exact assignment/page metadata-only review handover, current eligible reviewer/reason/preview and retained-command recovery. Assignment by the coordinator is distinct from the reviewer\u2019s own response."
       ],
       "capabilities": [
         {
@@ -2194,7 +2208,8 @@
         "mobile/src/features/VisitJoinScreen.tsx",
         "mobile/src/auth/visit-join-continuation.ts",
         "mobile/src/auth/visit-join-policy.ts",
-        "mobile/src/auth/visit-onboarding-request.ts"
+        "mobile/src/auth/visit-onboarding-request.ts",
+        "mobile/src/auth/account-recovery.ts"
       ],
       "queryModes": [
         "Canonical login/signup/forgot/reset/demo, MFA challenge, reset token and safe next continuation.",
@@ -3408,20 +3423,20 @@
     "mobile/scripts/serve-web-preview.cjs": "9c449f6d40d7da8054f4c48bfa4656dfea1b31ae056d68865cfe9c6f7a9d5817",
     "mobile/scripts/web-metro-preview.cjs": "0441effe0a6ead827b1cb03fb6607e7c4e97a7e67f74d7402b47122c26cb39fa",
     "mobile/src/auth/AccountSecurityEntryScreen.tsx": "ce84fa6ac0585c579e64f854a45e07eeef0922363b3e922d6fc51723cbbb284f",
-    "mobile/src/auth/AccountSecurityScreen.tsx": "d360282aa1965f6f9e2715dc8c048ce587acab4c11b84c8aa0ad289cf7ee38e4",
+    "mobile/src/auth/AccountSecurityScreen.tsx": "f3e2a30663ce8c53dd04f13f431ad2a6226e880cc0622acf74885565747a05f3",
     "mobile/src/auth/AuthEntryScreen.tsx": "f1ef423bf8f77256ab309c58cfe97335f0975a83575c49ac7a044f68a06e9f99",
     "mobile/src/auth/AuthenticatorQr.tsx": "adb3f85c85a6a3cca52c3bc937d21baef6d549aabbd3efd9beda9a0566b9c3eb",
     "mobile/src/auth/DemoProfileSwitcher.tsx": "a264a96dc345b93bfa64d5dd7b2ee6cebc51122be1d85993ab569b74a0d5ef97",
     "mobile/src/auth/GoogleSignInButton.tsx": "614673d3779cda783aa3839908a3efe3db269f815bbcb6a9fe8d2d9f4b1c2921",
     "mobile/src/auth/GoogleSignInButton.web.tsx": "d40b868a6baaf07cc9369492e60498fbb470c07bd7bf06b469dcced4267f50aa",
     "mobile/src/auth/JoinScreen.tsx": "c9d18d0378c234f2d7f0c11ba44ef7bb85ace8e85d1d1002ac7b4f6416172060",
-    "mobile/src/auth/LoginScreen.tsx": "fcbfeba03fbfbb4377d5090529959cacabc945507c9f2080d0a3836cd419fc88",
+    "mobile/src/auth/LoginScreen.tsx": "a87d1a7be4b7b4c06f2c1c0ee3b94becf7c2e5fa5b9f0841d4fc1c3107e37811",
     "mobile/src/auth/PublicDemoScreen.tsx": "3cbb377157f8fa6f138b1970cea2b2b7b2cfb02c13a0d6b2cbfe6dc1eca2594a",
     "mobile/src/auth/SessionProvider.tsx": "e16e547e817cd6b4c097e067ca66c8aaf68185b2f870e9dcd5c020b589017987",
     "mobile/src/auth/SessionProvider.web.tsx": "80daf784080010caf36aba9cf030aacd0c12452564335b3b7796a8478010c126",
     "mobile/src/auth/account-ceremonies.ts": "29a1abdbe74a16101eb4134a150bae34453322091da8d3b0c3b46e35fd347f55",
     "mobile/src/auth/account-ceremonies.web.ts": "b790a7ef5faed73b577e5695ab44568ceda17c2f1803b94a4c5bb4e0b1df02d0",
-    "mobile/src/auth/account-recovery.ts": "ca68f23f72fcdcc6a37b263a9fcc62c3652a5b5a71d31f6e537c5c20bce06027",
+    "mobile/src/auth/account-recovery.ts": "2f84d8d6db935d80a3238a8698c8d0bd35f5e354a16c58fad4163912050c3692",
     "mobile/src/auth/account-return.ts": "19f51dd066fce5bebde645124798410e6c1939c46cb8ffb746408cbf4db1a3d7",
     "mobile/src/auth/auth-entry.ts": "2ba003a80fa85ed11e4c6121550090e5a1bfa2b4d2dc8d2414f57b8453795b6a",
     "mobile/src/auth/authenticator-qr.ts": "95bcbba62fa654d8a5f96e1ba1e5e2797d707b2798eea2db92250f62183b6562",
@@ -3451,8 +3466,9 @@
     "mobile/src/features/AccountScreen.tsx": "a7b25214b3e01692851c0b6ab29f77f1ffde340f41e2d44ca379c8808456de39",
     "mobile/src/features/AssessmentAuthoringScreen.tsx": "22e8c4b902d7f256b2a617e223b8e9361ae97b5f5e057ee0064d1d3466ee4a25",
     "mobile/src/features/AssessmentEvidenceScreen.tsx": "55fdda58e9511fbfa6c4570bdf8409053cc730dd4249adb8bde0c99639ab1380",
-    "mobile/src/features/AssessmentExamDayScreen.tsx": "95ff0031912ab4473b016b534d81f1c197c838e14135cea75d1be5c4d85b78a1",
-    "mobile/src/features/AssessmentsScreen.tsx": "bf16edf5dcec3fdb0a44a2a84b2f1d1d589f179410077fb100b4e67673a869e9",
+    "mobile/src/features/AssessmentExamDayScreen.tsx": "012f602dc524807e98fec5d52e5c9a7ef063371b78e71c0b6ca30fbb34808843",
+    "mobile/src/features/AssessmentScheduleAmendmentScreen.tsx": "68ecf4121bb44ad2a38be5dacbc4500070ff787f2baeb88234d3a37e8d8c2eb4",
+    "mobile/src/features/AssessmentsScreen.tsx": "102cbb60b75057548a484743a277b1b2e42be7ca0541d18576622808c9119f96",
     "mobile/src/features/AssistantScreen.tsx": "8ca62c2a68b65ff555f8bdd5f7779466fe64e87961b9b9d92376eaa0eeba18c6",
     "mobile/src/features/AttendanceContinuityScreen.tsx": "fb20e0fbae1d9c0146256251c2e421500cbf1a2b614f495c1195348bcb857817",
     "mobile/src/features/AttendanceEvidenceScreen.tsx": "297aa35e2ee1b584828e3520b17b0c501326789688d0846ca09ca1660fe1158f",
@@ -3529,10 +3545,11 @@
     "mobile/src/features/InstitutionSetupScreen.tsx": "180705cec5c8e1dfc35451516e0ab47a15be8be3d8527cfb01700bff07f8164f",
     "mobile/src/features/InvitationsScreen.tsx": "bb8ca9881faf47c96cf84d4b43b420d60a3643a5febe562aeb0cf7c2226fdbbd",
     "mobile/src/features/LearningAssignmentComposer.tsx": "0fc03ec5db9f6d58c5686b35de78f8a545d4c422f0607d88f1594203e36dc52b",
+    "mobile/src/features/LearningAssignmentHandovers.tsx": "240e16aa45fbff1e1dcbbb9650573191b7149838794740fd6655c56204774850",
     "mobile/src/features/LearningDiary.tsx": "96bfe05c04ee3c06329660185c89dbee73ad7062f8f89bca0987ec1109f8bab0",
-    "mobile/src/features/LearningOfferings.tsx": "1a6b4236d2e5d421e24ca9fe7690f349611fdf21c270a113b4ef5a8d0e95bd75",
+    "mobile/src/features/LearningOfferings.tsx": "8d057d07e6d61d5b6da57ba79a3b720ddb6fbfff02878e56b9fdd2dbd1e2fc35",
     "mobile/src/features/LearningPractice.tsx": "363af507a3451236a09d0b24348a7d5459a5f9c2f107cba13aabf3b81850f9b0",
-    "mobile/src/features/LearningScreen.tsx": "a882280eb004505d2295b246e606ee54f3188039556aaab625c38cb31c446745",
+    "mobile/src/features/LearningScreen.tsx": "c2dda8593feba6f8418a4d1d23bd262b9631459fbf8587153645f3e34e7dd7dc",
     "mobile/src/features/LearningWorkLink.tsx": "30e3364544ee7dfd4fa06f3a370e43ff3740d6ea37792721c65ade36d54b1da9",
     "mobile/src/features/MessagesScreen.tsx": "71d7aef052191a73a1e837d3e4b9530f50c02453e3848f236a176952b2d3fbcc",
     "mobile/src/features/MorePoliciesScreen.tsx": "d3bf69f7efc202d5fafdfbd9563af6fc787e29a21ef1702fbb17d8779123f416",
@@ -3549,7 +3566,7 @@
     "mobile/src/features/PeopleAcademicIdentityPicker.tsx": "b2703e210b1d7ba087c978ee7730a57ab4ee51211e2a56e79a76e4651fc648b8",
     "mobile/src/features/PeopleAcademicImport.tsx": "f264c8f405d88216c1712f37a72fcc2a228a848f9b03d271059219456d1160e3",
     "mobile/src/features/PeopleAcademicRecords.tsx": "ebf090669a762c8a6c5a9f79abd6fa262a3ff3bd04bc64907971f84a79e072c4",
-    "mobile/src/features/PeopleAcademicSetup.tsx": "297a98a2b0fe76280bf2f16f7b4491a648fa4ee4700cf864a2109de9a1153f67",
+    "mobile/src/features/PeopleAcademicSetup.tsx": "81c55cdfe3db7ccc93318a781cee1563e834641ce2cce1410a4cdcb8ade08787",
     "mobile/src/features/PeopleAccessScreen.tsx": "5110bf10f856264492d645d5c61fa4a84913b6f512e67fbb779495e6dacc755e",
     "mobile/src/features/PeopleScreen.tsx": "000843e1a6f30f8902232b5dd372c19564f59c5161b4b5ac64a03c49b215c1ef",
     "mobile/src/features/PeopleSetupScreen.tsx": "ae48c643dd25dee6eb52ade4fd2c1d80d70c0353e31ca74a58e72d4b306893c7",
@@ -3662,8 +3679,10 @@
     "mobile/src/lib/api-policy.ts": "ba60f37b8f4ffe77f02209bf7125100363460f67ddea12d9ca7838c83a036ba5",
     "mobile/src/lib/api.ts": "ff354070a8a1447a1f414d37818d5321c8bbfab942cd67fb103c3fe0cf861a8f",
     "mobile/src/lib/api.web.ts": "bdd8d1f7be726ed7873d0eeb8f26d552047c70b4e985dcbe676207f015a422f0",
-    "mobile/src/lib/assessment-authoring.ts": "0d8e9062fcd9c8f353ff56a1e61f0472022abd0daabc3e8a45806d055832c724",
+    "mobile/src/lib/assessment-authoring.ts": "53fb68cc1e7c65e8e9b91fd1c375feee97a6aa403da5379ee9906823c7303be2",
     "mobile/src/lib/assessment-operations.ts": "f26a90034d984c858866a07b41b3d2cbbfccfaf15448d24a35fb86a1407cfe33",
+    "mobile/src/lib/assessment-schedule-amendments.ts": "beb64a56945885f1d47d47c83c68dee0563499a8819666e0c7cefbda01608d57",
+    "mobile/src/lib/assignment-handover-policy.ts": "a093fad0b667421466dd3c7509feca564014b8fdf4d16cb093621bbfdeb30bac",
     "mobile/src/lib/assistant-access.ts": "4309c953611af6d3c596a05dad273cdd3162a83d3659599af6148f06c2bc81f9",
     "mobile/src/lib/assistant-command.ts": "873fc2d47f7a1392b9725eecd77428ee32c3a224c41057a85d5ec08ec1a750b1",
     "mobile/src/lib/assistant-layout.ts": "2a12200443474957d53b56421bcb89bfb9818f80faec70da9056abbc3b29153f",
@@ -3763,13 +3782,13 @@
     "mobile/src/lib/native-campus.ts": "edf4c3fb84e379e76a253f45b689969cc5d6a9245d688a97748ad2f3e2c2ee94",
     "mobile/src/lib/native-insights.ts": "cc3c537dd59af5eb037da31d26d9ad21d2fabb656bb5c0335a13f54e64256279",
     "mobile/src/lib/native-institution-insights.ts": "ef1eec47f214d5aa343c3560a7d5989801836ff14ef3ce1397fdb815121833ac",
-    "mobile/src/lib/native-pending-action.ts": "a93c2137930bb6b532e001a0b766141d12bda981127975c7d2e7676e688a58f7",
+    "mobile/src/lib/native-pending-action.ts": "3f8dc0ec9744367d5ce2d4984c8f802b7348b0b734d0f34d0ac195efabeef590",
     "mobile/src/lib/native-scene-lighting.ts": "400b8deef191c7ec4d51d6d7a177b16edf1c5ecfd821b9a9708a5ffaaaef5a17",
     "mobile/src/lib/navigation.ts": "814a8dc86a17a6669b926a92ca517f09db63da9517a395589c8a0e8e53e2b05a",
     "mobile/src/lib/onboarding-policy.ts": "18aebea4d70cc81f98b062ae4cd234bdcafe616529002d55490ded63de6603bc",
     "mobile/src/lib/operation-clock.ts": "f5cb9d9ebce5af15bd7b33570ef6afb1fb6e1c777eaacf057eb47d8c7365775c",
     "mobile/src/lib/organization-verification.ts": "cefe9f9690f199393937c4568738604c2a3763abaed80bd5343c87b19eb46a92",
-    "mobile/src/lib/people-academic-catalogue.ts": "e4cbbd2dcf3d98dabe22f62a2114432913d60f4ddc8aadcef02f559553b84d00",
+    "mobile/src/lib/people-academic-catalogue.ts": "78fa20502ce2c1bf25b31efb14d2a1a46578287ad51daf59a3e9dc98c8f65122",
     "mobile/src/lib/people-academic-classes.ts": "6430b2bc237618a4f9178f5cddb668e199ad849c87f89df4b2d500034248ea4a",
     "mobile/src/lib/people-academic-enrollment.ts": "a8054bb1a4e60ac5c6a5e936edbedc3772fa99d1d97b0438c3da1d9ec09945d6",
     "mobile/src/lib/people-academic-import.ts": "e2548cf64b222c605154a0d7bde0133586c392536339f8909ec39de07d4ef38f",
@@ -3875,6 +3894,7 @@
     "mobile/src/ui/theme.tsx": "5aa7d1017b7f85fe4d292a340e49c6f60f8613014bfb14657cce2bc6472eaa7c",
     "packages/contracts/src/academic-planner.ts": "385967f6d4b5bfd9700661c4f46412b11d1d7d88af837d5815f76256a8d2e402",
     "packages/contracts/src/activity-attendance-queue.ts": "c025d310cf359cf2463e1a1be385cffad2dea1a6f7241b8690091fa49b7c9f4c",
+    "packages/contracts/src/assessments.ts": "6edc6f965ce6263f59549311d7bb16e4acc9054161b26f8ebc5d7f92b2be13e2",
     "packages/contracts/src/auth-entry.ts": "1e002011fb002c91fb93c28aa0a0b73286dd790c4914b8afdc56a7c3562a7299",
     "packages/contracts/src/campus-motion-validation.ts": "24ef7c53ae53546edcbb55facb183aa4dce3a41c26a68c486377d3fe6251eba6",
     "packages/contracts/src/campus-operation-presentation.ts": "fcd5bceb7dc4759b9c7df33bd45c0ba08b2241d0fbc4d1ba8051a35cdf47db72",
@@ -3939,7 +3959,7 @@
     "packages/contracts/src/wire/features/gate/visitApi.ts": "72d4b4f3a309bf808ac57c46ae003b8661136a9c30505107e029e71cba3313be",
     "packages/contracts/src/wire/features/gate/visitSharingApi.ts": "1329dafff3416e44124ba642d312196d879327b7c238f11515b3fa0cbf4e34ee",
     "packages/contracts/src/wire/features/governance/api.ts": "1cee14cf0efd37907c8e996710031ef5d69d9ce6b67e68c70c7b8f636a346707",
-    "packages/contracts/src/wire/features/learning/assignmentApi.ts": "6024d1209df79e726f32e8541784370276cf7616e8e94a4077088d95ae9f7334",
+    "packages/contracts/src/wire/features/learning/assignmentApi.ts": "7610df5de762967af40cc9ce3de5bf4ca53c264001713b46b22da48695a87d3f",
     "packages/contracts/src/wire/features/learning/offeringApi.ts": "4ef0d8f9e7b313056bcbaec0c276d87418f346d203654b3075d4e6091dc43279",
     "packages/contracts/src/wire/features/notices/api.ts": "4bf196ff8ad2927013b4e6b08701d9b708d53a87320d446974e5c808595c1007",
     "packages/contracts/src/wire/features/notices/classPracticeApi.ts": "f2bac933f19dffb5fc6bac95cd6d41c4015636a5862c973f5570132b4d5c02fa",
@@ -4125,6 +4145,8 @@
     "mobile/src/features/UpdatesScreen.tsx",
     "mobile/src/features/WorkspaceScreen.tsx",
     "mobile/src/features/insights/InstitutionInsights.tsx",
+    "packages/contracts/src/assessments.ts",
+    "packages/contracts/src/visit-onboarding.ts",
     "packages/contracts/src/wire/features/accommodation/accommodationApi.ts",
     "packages/contracts/src/wire/features/activities/api.ts",
     "packages/contracts/src/wire/features/analytics/api.ts",
@@ -4172,7 +4194,6 @@
     "packages/contracts/src/wire/features/staff-operations/access-api.ts",
     "packages/contracts/src/wire/features/staff-operations/api.ts",
     "packages/contracts/src/wire/features/teacher-feedback/api.ts",
-    "packages/contracts/src/wire/features/teaching-sessions/api.ts",
-    "packages/contracts/src/visit-onboarding.ts"
+    "packages/contracts/src/wire/features/teaching-sessions/api.ts"
   ]
 }

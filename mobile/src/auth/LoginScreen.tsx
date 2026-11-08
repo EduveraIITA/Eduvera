@@ -7,7 +7,7 @@ import { useTheme } from '../ui/theme';
 import { getApiOrigin, setApiOrigin } from '../lib/api';
 import { ApiError } from '../lib/api-client';
 import { confirmPasswordReset, requestPasswordReset } from './account-ceremonies';
-import { accountActionToken, confirmedPasswordReset, passwordResetInput } from './account-recovery';
+import { accountActionToken, confirmedPasswordReset, passwordResetInput, passwordResetRequestFeedback } from './account-recovery';
 import { createPublicFormLease, type PublicFormState } from './public-form-operation';
 import { safeAccountReturnTarget } from './account-return';
 import { Glass } from '../ui/Glass';
@@ -29,7 +29,7 @@ export function LoginScreen({ resetToken, initialMode = 'login' }: { resetToken?
   const [code, setCode] = useState('');
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState('');
-  const [success, setSuccess] = useState(false);
+  const [messageTone, setMessageTone] = useState<'success' | 'warning' | 'danger'>('danger');
   const [serverOpen, setServerOpen] = useState(false);
   const [server, setServer] = useState(getApiOrigin());
   const mounted = useRef(true), running = useRef(false);
@@ -49,7 +49,7 @@ export function LoginScreen({ resetToken, initialMode = 'login' }: { resetToken?
   const title = resetDone ? 'Password updated' : challenge ? 'Verify your sign-in' : mode === 'register' ? 'Create your account' : mode === 'recovery' ? 'Reset your password' : mode === 'reset' ? 'Choose a new password' : 'Welcome back';
   async function submit() {
     if (running.current || !focused || recoveryUnknown && (mode === 'recovery' || mode === 'reset')) return; running.current = true;
-    setMessage(''); setSuccess(false); setBusy(true);
+    setMessage(''); setMessageTone('danger'); setBusy(true);
     let assertRecovery: (() => void) | undefined, recoverySent = false;
     const sourceIdentity = recoveryIdentity;
     try {
@@ -57,13 +57,13 @@ export function LoginScreen({ resetToken, initialMode = 'login' }: { resetToken?
       else if (mode === 'register') await register(identifier, password);
       else if (mode === 'recovery') {
         assertRecovery = recoveryLease.current.capture();
-        await requestPasswordReset(identifier, { assertCurrent: assertRecovery }); assertRecovery();
-        setSuccess(true); setMessage('If this email has an account, password reset instructions will be sent to it.');
+        const response = await requestPasswordReset(identifier, { assertCurrent: assertRecovery }); assertRecovery();
+        const feedback = passwordResetRequestFeedback(response); setMessageTone(feedback.tone); setMessage(feedback.message);
       } else if (mode === 'reset') {
         const input = passwordResetInput(resetValue,password,confirmation);
         assertRecovery = recoveryLease.current.capture();
         const result = await confirmPasswordReset(input.token,input.password,{ assertCurrent: assertRecovery,onDispatch: () => { recoverySent = true; } }); assertRecovery(); confirmedPasswordReset(result);
-        setResetDone(true); setPassword(''); setConfirmation(''); setResetValue(''); setSuccess(true); setMessage('Your password has been reset. Previous sessions are signed out. Sign in to continue.');
+        setResetDone(true); setPassword(''); setConfirmation(''); setResetValue(''); setMessageTone('success'); setMessage('Your password has been reset. Previous sessions are signed out. Sign in to continue.');
       } else setChallenge(await login(identifier, password));
     } catch (error) {
       if (recoverySent && recoveryState.current.identity === sourceIdentity && (!(error instanceof ApiError) || error.status >= 500 || error.status === 408)) setRecoveryUnknown(true);
@@ -73,7 +73,7 @@ export function LoginScreen({ resetToken, initialMode = 'login' }: { resetToken?
   }
   async function google(credential?: string) {
     if (running.current || !focused || challenge || !['login','register'].includes(mode)) return;
-    running.current = true; setMessage(''); setSuccess(false); setBusy(true);
+    running.current = true; setMessage(''); setMessageTone('danger'); setBusy(true);
     const source = { ...presentation.current };
     const assertCurrent = () => {
       const current = presentation.current;
@@ -105,7 +105,7 @@ export function LoginScreen({ resetToken, initialMode = 'login' }: { resetToken?
         <Text style={[styles.tagline, { color: colors.muted }]}>Not just any campus. That campus.</Text>
         <View style={{ height: 32 }} />
         <Text accessibilityRole="header" style={[styles.title, { color: colors.ink }]}>{title}</Text>
-        <Text style={[styles.description, { color: colors.muted }]}>{resetDone ? 'Continue through secure sign-in with your new password.' : challenge ? 'Enter the code from your authenticator or a recovery code.' : mode === 'register' ? 'Start with what your campus needs today.' : mode === 'recovery' ? 'We’ll send instructions to your account email.' : mode === 'reset' ? 'Use a strong password for your campus account.' : 'Your campus, your people, your day.'}</Text>
+        <Text style={[styles.description, { color: colors.muted }]}>{resetDone ? 'Continue through secure sign-in with your new password.' : challenge ? 'Enter the code from your authenticator or a recovery code.' : mode === 'register' ? 'Start with what your campus needs today.' : mode === 'recovery' ? 'Request a secure reset link for your account email.' : mode === 'reset' ? 'Use a strong password for your campus account.' : 'Your campus, your people, your day.'}</Text>
         {resetDone ? null : challenge ? <Field label="Verification or recovery code" value={code} onChangeText={setCode} textContentType="oneTimeCode" /> : <>
           {mode !== 'reset' ? <Field label={mode === 'login' ? 'Email or username' : 'Email'} value={identifier} onChangeText={setIdentifier} keyboardType="email-address" textContentType="username" autoComplete="username" /> : null}
           {mode === 'reset' ? <Field label="Reset token" value={resetValue} onChangeText={setResetValue} autoCapitalize="none" autoCorrect={false} autoComplete="off" maxLength={256} editable={!busy && !recoveryUnknown} /> : null}
@@ -113,7 +113,7 @@ export function LoginScreen({ resetToken, initialMode = 'login' }: { resetToken?
           {mode === 'reset' ? <><Text style={{ color: colors.muted,fontSize: 14,lineHeight: 21 }}>Use at least 12 characters with upper- and lowercase letters, a number and a symbol. Resetting signs out previous sessions.</Text><Field label="Confirm password" value={confirmation} onChangeText={setConfirmation} secureTextEntry textContentType="newPassword" autoComplete="new-password" maxLength={128} editable={!busy && !recoveryUnknown} onSubmitEditing={() => { if (accountActionToken(resetValue) && password && confirmation) void submit(); }} /></> : null}
         </>}
         {sessionError ? <><Notice message={sessionError} tone="warning" /><Button title="Retry sign-out" kind="secondary" busy={busy} onPress={() => { setBusy(true); void logout().finally(() => setBusy(false)); }} /></> : null}
-        {message ? <Notice message={message} tone={success ? 'success' : 'danger'} /> : null}
+        {message ? <Notice message={message} tone={messageTone} /> : null}
         {recoveryUnknown ? <Notice tone="warning" message="The reset result is unconfirmed. This request has not been repeated. Try signing in with the new password, or request a fresh reset link." /> : null}
         {resetDone ? <Button title="Sign in" onPress={signInAfterReset} /> : <Button title={challenge ? 'Verify and sign in' : mode === 'register' ? 'Create account' : mode === 'recovery' ? 'Send reset instructions' : mode === 'reset' ? 'Save new password' : 'Sign in'} onPress={() => { void submit(); }} busy={busy} disabled={recoveryUnknown || (challenge ? !code.trim() : mode === 'reset' ? !accountActionToken(resetValue) || !password || !confirmation : !identifier.trim() || (mode !== 'recovery' && !password))} />}
         {mode === 'reset' && !resetDone ? <Pressable accessibilityRole="button" disabled={busy} style={styles.link} onPress={() => router.replace('/forgot-password')}><Text style={{ color: colors.link,fontSize: 15 }}>Request a new reset link</Text></Pressable> : null}
@@ -122,7 +122,7 @@ export function LoginScreen({ resetToken, initialMode = 'login' }: { resetToken?
         <View style={{ height: 16 }} />
         {!resetDone ? <Glass style={styles.switcher}><Pressable accessibilityRole="button" style={styles.link} onPress={() => mode === 'reset' ? signInAfterReset() : changeMode(mode === 'login' && !challenge ? 'register' : 'login')}><Text style={{ color: colors.ink, fontSize: 15, fontWeight: '600' }}>{mode === 'login' && !challenge ? 'New to ThatCampus? Create an account' : 'Back to sign in'}</Text></Pressable></Glass> : null}
         {!challenge && mode === 'login' ? <><Pressable accessibilityRole="button" disabled={busy} style={styles.link} onPress={() => router.push('/join')}><Text style={{color:colors.link,fontSize:15}}>Have a campus invitation?</Text></Pressable><Pressable accessibilityRole="button" disabled={busy} style={styles.link} onPress={() => router.push('/demo')}><Text style={{color:colors.link,fontSize:15}}>Explore the sample campus</Text></Pressable></> : null}
-        {__DEV__ ? <><Pressable accessibilityRole="button" disabled={busy} style={styles.link} onPress={() => setServerOpen(!serverOpen)}><Text style={{ color: colors.muted, fontSize: 13 }}>Development server</Text></Pressable>{serverOpen ? <><Field label="API server address" value={server} onChangeText={setServer} keyboardType="url" editable={!busy} /><Button title="Use this server" kind="secondary" disabled={busy} onPress={() => { try { setApiOrigin(server); setServerOpen(false); setSuccess(true); setMessage('Server address updated.'); } catch (error) { setSuccess(false); setMessage(String(error)); } }} /></> : null}</> : null}
+        {__DEV__ ? <><Pressable accessibilityRole="button" disabled={busy} style={styles.link} onPress={() => setServerOpen(!serverOpen)}><Text style={{ color: colors.muted, fontSize: 13 }}>Development server</Text></Pressable>{serverOpen ? <><Field label="API server address" value={server} onChangeText={setServer} keyboardType="url" editable={!busy} /><Button title="Use this server" kind="secondary" disabled={busy} onPress={() => { try { setApiOrigin(server); setServerOpen(false); setMessageTone('success'); setMessage('Server address updated.'); } catch (error) { setMessageTone('danger'); setMessage(String(error)); } }} /></> : null}</> : null}
       </View>
     </ScrollView>
   </SafeAreaView>;

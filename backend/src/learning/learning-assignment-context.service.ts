@@ -142,10 +142,11 @@ export class LearningAssignmentContextService {
     return access;
   }
 
-  async source(tx: Transaction<Database>, user: AuthUser, id: string, lock = false) {
+  async source(tx: Transaction<Database>, user: AuthUser, id: string, lock: boolean | "share" = false) {
     const school = await this.account(tx, user);
     let query = tx.selectFrom("learning_assignments").selectAll().where("school_id", "=", school.id).where("id", "=", id);
-    if (lock) query = query.forUpdate();
+    if (lock === "share") query = query.forShare();
+    else if (lock) query = query.forUpdate();
     const source = await query.executeTakeFirst();
     if (!source) throw new NotFoundException("Assignment unavailable.");
     return source;

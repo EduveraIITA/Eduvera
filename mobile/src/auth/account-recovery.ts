@@ -47,3 +47,16 @@ export function guardedAccountRecoveryApi(api: AccountRecoveryApi, operation?: A
 export function confirmedPasswordReset(value: unknown): void {
   if (!value || typeof value !== 'object' || (value as { reset?: unknown }).reset !== true) throw new Error('The password reset could not be confirmed. Try signing in with the new password or request a fresh link.');
 }
+
+export function passwordResetRequestFeedback(value: unknown): { message: string; tone: 'success' | 'warning' } {
+  if (!value || typeof value !== 'object' || (value as { accepted?: unknown }).accepted !== true) throw new Error('The reset request could not be confirmed. Please try again.');
+  if ((value as { recovery_available?: unknown }).recovery_available === false) return { tone: 'warning', message: 'Email recovery is currently unavailable. No reset email was requested. Try again later or contact ThatCampus support.' };
+  return { tone: 'success', message: 'Reset request received. If this email has an account, check your inbox for instructions. If nothing arrives, try again later.' };
+}
+
+export function verificationEmailFeedback(value: { delivery: string; development_token?: string }): { message: string; tone: 'success' | 'warning'; developmentToken?: string } {
+  if (value.delivery === 'email_accepted') return { tone: 'success', message: 'Verification email accepted by the mail server. Check your inbox.' };
+  if (value.delivery === 'manual' && typeof value.development_token === 'string' && accountActionToken(value.development_token)) return { tone: 'warning', message: 'Development verification token is ready below.', developmentToken: value.development_token };
+  if (value.delivery === 'unavailable' || value.delivery === 'manual') return { tone: 'warning', message: 'Verification email is currently unavailable. No email was sent. You can enter a verification token you already received, or contact ThatCampus support.' };
+  return { tone: 'warning', message: 'Email delivery could not be confirmed. Check your inbox and wait before requesting another verification email.' };
+}

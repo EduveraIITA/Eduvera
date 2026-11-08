@@ -13,6 +13,7 @@ import { accountReturnTitle, safeAccountReturnTarget } from './account-return';
 import { nativeAuthDestination } from './auth-entry';
 import { visitJoinReturnTarget } from './visit-join-policy';
 import { AuthenticatorQr } from './AuthenticatorQr';
+import { verificationEmailFeedback } from './account-recovery';
 
 type Enrollment = { secret: string; otpauth_uri: string };
 export function AccountSecurityScreen({ href }: { href: string }) {
@@ -27,13 +28,14 @@ export function AccountSecurityScreen({ href }: { href: string }) {
   const [verification, setVerification] = useState(() => params.get('token') ?? ''), [code, setCode] = useState('');
   const [setup, setSetup] = useState<Enrollment | null>(null), [codes, setCodes] = useState<string[]>([]);
   const [busy, setBusy] = useState(false), [message, setMessage] = useState(''), [error, setError] = useState(''), [uncertain, setUncertain] = useState(false);
+  const [messageTone, setMessageTone] = useState<'success' | 'warning'>('success');
   useEffect(() => { if (mfa.data?.status === 'active') { setSetup(null); setCode(''); } }, [mfa.data?.status]);
   useScreenExitGuard({ blocked: busy, dirty: !!setup || codes.length > 0, title: codes.length ? 'Have you saved your recovery codes?' : 'Leave authenticator setup?',
     message: codes.length ? 'These recovery codes will not be shown again. Save them somewhere private before leaving.' : 'The setup key is kept only on this screen. You can request a new setup later.',
     onLeave: () => { setSetup(null); setCode(''); setCodes([]); } });
   async function perform(work: () => Promise<void>, uncertainWrite = false) {
     if (!writable || busy || uncertain) return;
-    setBusy(true); setError(''); setMessage('');
+    setBusy(true); setError(''); setMessage(''); setMessageTone('success');
     try { await work(); }
     catch (cause) {
       if (uncertainWrite && (!(cause instanceof ApiError) || cause.status >= 500 || cause.status === 408)) setUncertain(true);
@@ -47,15 +49,16 @@ export function AccountSecurityScreen({ href }: { href: string }) {
   return <Page title={onboarding ? verified ? 'Email confirmed' : 'Confirm your email' : 'Account security'} subtitle={onboarding ? verified ? `${session.user?.email ?? 'Your email'} is ready. Choose the first campus task you want to run.` : 'Confirm your email before choosing your first campus task.' : undefined}
     refreshing={mfa.isRefetching || sessions.isRefetching} onRefresh={busy ? undefined : () => { void session.refresh(); if (!onboarding) { void mfa.refetch(); void sessions.refetch(); } }}>
     <ScreenBack fallbackHref={back} title={accountReturnTitle(back)} disabled={busy} />
-    {error ? <Notice tone="danger" message={error} /> : null}{message ? <Notice message={message} tone="success" /> : null}
+    {error ? <Notice tone="danger" message={error} /> : null}{message ? <Notice message={message} tone={messageTone} /> : null}
     {session.publicDemo ? <Notice message="This public demo is read-only. Sign in with your own account to manage security." /> : session.environment.mode !== 'live' ? <><Notice message="Account security is managed in Live. Return to Live before changing your account." /><Button title="Open Simulation controls" kind="secondary" onPress={() => navigation.onNavigate('/more/simulation')} /></> : null}
     {uncertain ? <Notice tone="warning" message="The result is unconfirmed. Security actions are paused on this screen. Check your account’s current status before starting another setup; the action has not been repeated." /> : null}
     <Section title="Email"><Row title={session.user?.email ?? 'Your email'} status={verified ? 'Verified' : 'Not verified'} />{!verified ? <>
       <Button title="Send verification email" busy={busy} disabled={!writable || uncertain} onPress={() => { void perform(async () => {
         const context = captureApiContext();
         const response = await apiFetch<{ delivery: string; development_token?: string }>('/api/v1/auth/email-verification/request/', { method: 'POST', body: '{}' }); context.assertCurrent();
-        if (response.development_token) setVerification(response.development_token);
-        setMessage(response.delivery === 'email_accepted' ? 'Verification email accepted by the mail server. Check your inbox.' : response.delivery === 'manual' ? 'Development verification token is ready below.' : 'Email delivery could not be confirmed. Try again shortly.');
+        const feedback = verificationEmailFeedback(response);
+        if (feedback.developmentToken) setVerification(feedback.developmentToken);
+        setMessage(feedback.message); setMessageTone(feedback.tone);
       }); }} />
       <Field label="Verification token" value={verification} onChangeText={setVerification} autoCapitalize="none" autoCorrect={false} textContentType="oneTimeCode" />
       <Button title="Confirm email" busy={busy} disabled={!writable || uncertain || verification.trim().length < 32} onPress={() => { void perform(async () => {

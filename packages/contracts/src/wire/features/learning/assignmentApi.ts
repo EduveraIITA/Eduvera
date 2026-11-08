@@ -36,3 +36,14 @@ export interface AssignmentClassDetail {
   publication_preview: { count: number; audience_hash: string } | null;
   progress: { items: Array<{ id: string; name: string; status: string }>; total: number; submitted: number; needs_review: number; page: number; has_more: boolean };
 }
+
+/** Responsibility metadata only. Campus setup access never exposes private assignment work. */
+export interface AssignmentHandoverItem {
+  id: string; title: string; revision: number; reviewer: { id: string; name: string; current: boolean };
+  pending_reviews: number; requested_revisions: number; preview_hash: string;
+}
+export interface AssignmentHandoverList { items: AssignmentHandoverItem[]; page: number; has_more: boolean }
+export interface AssignmentHandoverDetail extends AssignmentHandoverItem {
+  reviewers: Array<{ id: string; name: string }>; privacy: string;
+  history: Array<{ id: string; source_revision: number; reason: string; created_at: string; previous_reviewer_id: string; reviewer_id: string }>;
+}

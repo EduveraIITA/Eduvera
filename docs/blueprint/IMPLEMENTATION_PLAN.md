@@ -133,15 +133,23 @@ historical checkpoint. Core safety conformance 215 is ready with no blockers, wh
 different inventory and are not 80 reproduced defects. Do not refresh hashes or
 promote statuses without exact review and journey evidence.
 
-| Order | Person and outcome | Confirmed gap and bounded next delivery |
+| Order | Person and outcome | Bounded delivery and remaining work |
 | --- | --- | --- |
-| 1 | Administrator safely finishes setup after a lost response | Legacy `inspect_only` catalogue/membership writes retain an unconfirmed journal and block later People writes. Start with one academic catalogue create: atomic command identity, exact receipt/status and safe relaunch recovery. Preserve the fail-closed guard; matching current rows never proves acceptance. |
-| 2 | New user verifies email, accepts an invitation or recovers access | Cloud transactional email is disabled; ordinary production verification/reset cannot complete by email. Configure an approved sender and prove owned-mailbox roundtrips, single-use/expiry/wrong-account and web/native continuation. Optional SMS is deliberately disconnected; it does not block ordinary email sign-in. |
-| 3 | Learner gets a pending assignment reviewed after staff changes | The source projects `needs_reassignment`, but published reviewer identity cannot be transferred through an owning endpoint. Add revision-bound successor acceptance/reissued work while retaining original signatures and refusing revoked actors. |
-| 4 | Exam officer changes a scheduled room/time | Arrangements edits require draft/planning. Add an explicit stable-exam amendment with conflict/impact preview, immutable prior schedule and only affected work reissued; cancellation is not amendment acceptance. |
+| 1 | Administrator safely finishes setup after a lost response | Terms, classes and subjects now use atomic command identity, exact retained receipts and same-request recovery after later edits. Typed obsolete-command proof requires a fresh review. Real PostgreSQL/COW, ordinary compiled HTTP and journal tests pass; release checks are being finalized. Other legacy membership/invitation `inspect_only` writes remain guarded and open; matching rows never proves acceptance. |
+| 2 | New user verifies email, accepts an invitation or recovers access | Production verification/reset now report unavailable delivery truthfully, without issuing an inaccessible token or revealing whether a reset address exists. Provider-disabled and auth tests pass. Cloud transactional email remains disabled: approved sender configuration and owned-mailbox single-use/expiry/wrong-account/web/native roundtrips remain open. Optional SMS remains disconnected. |
+| 3 | Learner gets a pending assignment reviewed after staff changes | A setup-authorized coordinator can review metadata, explicitly choose a currently eligible reviewer and reissue exact pending attempt Tasks. Immutable instructions, submissions, feedback and original signatures remain. The existing Task policy does not add a successor Offer or imply personal acceptance. Repeated multi-learner handover, revocation, exact recovery and real COW isolation pass; rendered multi-account acceptance remains open. |
+| 4 | Exam officer changes a scheduled room/time | A reviewed amendment now revises future never-started scheduled sittings, retains frozen candidates and prior schedule history, updates canonical schedule/participation context atomically and reissues material invigilator Offers. Explicit readiness confirmation rechecks current accepts/conflicts. Exact accepted/refused recovery and real COW tests pass; started/recorded actuals cannot be reset. Rendered acceptance remains open. |
 | 5 | College learner follows parallel courses through the whole teaching cycle | Person-based offerings/enrollment exist; assessment/report/schedule/attendance owners are not integrated with that roster. Complete one offering → teaching/schedule → attendance → assessment → configured report loop, then elective-change impact/acceptance with an explicit Finance outcome. |
 | 6 | Transport coordinator enables colleague cover at a newly onboarded campus | Exact colleague/decision routes are installed only by the guarded development seed; ordinary setup lacks the configuration writer. Add reviewed institution-owned routing and an independently durable refused-attempt recovery handoff. Existing administrator collector assignment remains the bounded fallback. |
 | Alongside each | Every actor can finish, correct and recover the same workflow in the selected world | Close the existing source ledger and ordinary multi-account acceptance per journey; hosted historical Simulation restoration, authenticated attachment roundtrips and sustained shared-capacity testing remain open. Do not call a GET tour a completed mutation workflow. |
+
+The first wave's [final database receipt](../../artifacts/core-functionality-fixes/postgres/20261108_8fba98a0/runner.json)
+passes30 actual cases across nine files; the shared mobile suite passes1867 and
+fast backend540. [Manual conformance216](../../artifacts/core-functionality-fixes/review/manual-seal-216.json)
+passes strict source verification. Narrow native source review retains all53
+unrelated findings and existing acceptance states. Publication/rendered/cloud
+checks are separate; do not treat the bounded source delivery as closure of rows5–6
+or the outstanding provider, membership, attachment and hosted Simulation work.
 
 For each slice, define the person's starting point and natural finished outcome,
 then verify normal operation, current authority/revocation, correction, lost response

@@ -64,3 +64,91 @@ test('uncertain catalogue create stays inspect-only and cannot infer success fro
   const restarted = new NativePendingActionJournal({ scope, domain: 'people', storage, randomId: () => actor, send: async () => { sends++; }, read: async () => { reads++; return overview({ ...cls, revision: 1 }); } });
   await restarted.hydrate(); assert.equal(await restarted.recover({ ownerHref: input.ownerHref, assertActive() {}, accepted: () => { callbacks++; } }), false); assert.equal(sends, 1); assert.equal(reads, 1); assert.equal(callbacks, 0); assert.equal(JSON.parse(raw!).phase, 'unknown');
 });
+
+function identified(edit = false): NativePendingAction {
+  const legacy = action(edit), body = JSON.parse((legacy.payload as { body: string }).body);
+  return { ...legacy, replayPolicy: 'same_request', source: { ...legacy.source!, sourceId: id },
+    payload: { kind: 'json', body: JSON.stringify({ ...body, catalog_id: id, command_id: key }) } };
+}
+const confirmation = (record: NativePendingAction, row: AcademicCatalogueRow) => ({ handler: 'academic.catalogue', school_id: school,
+  kind: 'classes', source_id: id, command_id: key, state: 'accepted', expected_revision: record.source!.revision, result: row });
+
+test('identified catalogue actions bind command, source, fields and exact confirmation path', () => {
+  const record = identified(), row = { ...cls, revision: 1 }, accepted = { ...record, phase: 'accepted' as const, refreshPath: academicCatalogueRefreshPath(row, record) };
+  assert.equal(validateNativePendingAction(record, scope, 'people'), true);
+  assert.equal(validateNativePendingAction(accepted, scope, 'people'), true);
+  assert.equal(acceptedAcademicCatalogue(confirmation(record, row), accepted).row.id, id);
+  assert.equal(acceptedAcademicCatalogue(confirmation(record, row), accepted).data, null);
+  for (const changed of [{ ...record, source: { ...record.source!, sourceId: school } }, { ...record, clientId: actor },
+    { ...accepted, refreshPath: academicCatalogueRead(school) }, { ...accepted, refreshPath: accepted.refreshPath + '?extra=1' },
+    { ...record, payload: { kind: 'json' as const, body: JSON.stringify({ ...values, catalog_id: id, command_id: key, arbitrary: true }) } }])
+    assert.equal(validateNativePendingAction(changed, scope, 'people'), false);
+  for (const changed of [{ ...confirmation(record, row), source_id: actor }, { ...confirmation(record, row), command_id: actor },
+    { ...confirmation(record, row), state: 'pending' }, { ...confirmation(record, row), result: { ...row, revision: 2 } }])
+    assert.throws(() => acceptedAcademicCatalogue(changed, accepted));
+  assert.throws(() => acceptedAcademicCatalogue(overview(row), accepted));
+});
+
+test('lost identified response reuses one retained intent after relaunch without a new catalogue create', async () => {
+  let raw: string | null = null, dispatches = 0, committed = 0, commandBody = '';
+  const input = identified(), row = { ...cls, revision: 1 }, storage = { read: async () => raw, write: async (value: string) => { raw = value; }, clear: async () => { raw = null; } };
+  const first = new NativePendingActionJournal({ scope, domain: 'people', storage, randomId: () => key,
+    send: async record => { dispatches++; commandBody = (record.payload as { body: string }).body; committed++; throw new Error('Reply lost after commit'); }, read: async () => { throw new Error('Not accepted yet'); } });
+  await first.hydrate();
+  assert.equal(await first.run({ endpoint: input.endpoint, body: { ...values, catalog_id: id }, serverKey: 'command_id', source: input.source },
+    { ownerHref: input.ownerHref, refreshPath: input.refreshPath, assertActive() {}, resolveRefreshPath: academicCatalogueRefreshPath }), false);
+  const resumed = new NativePendingActionJournal({ scope, domain: 'people', storage, randomId: () => actor,
+    send: async record => { dispatches++; assert.equal((record.payload as { body: string }).body, commandBody); return row; }, read: async () => confirmation(input, row) });
+  await resumed.hydrate();
+  assert.equal(await resumed.recover({ ownerHref: input.ownerHref, assertActive() {}, resolveRefreshPath: academicCatalogueRefreshPath,
+    accepted: (value, _, record) => { assert.equal(acceptedAcademicCatalogue(value, record).row.revision, 1); } }), true);
+  assert.equal(dispatches, 2); assert.equal(committed, 1); assert.equal(raw, null);
+});
+
+test('accepted identified edit uses receipt reads after relaunch even if current details have advanced', async () => {
+  let raw: string | null = null, sends = 0, reads = 0;
+  const input = identified(true), row = { ...cls, room_number: '205', revision: 4 }, storage = { read: async () => raw, write: async (value: string) => { raw = value; }, clear: async () => { raw = null; } };
+  const first = new NativePendingActionJournal({ scope, domain: 'people', storage, randomId: () => key,
+    send: async () => { sends++; return row; }, read: async () => { reads++; throw new Error('Receipt refresh unavailable'); } });
+  await first.hydrate();
+  await first.run({ endpoint: input.endpoint, method: 'PATCH', body: { ...values, room_number: '205', expected_revision: 3, confirmed: true, change_reason: 'Reviewed room allocation', catalog_id: id }, serverKey: 'command_id', source: input.source },
+    { ownerHref: input.ownerHref, refreshPath: input.refreshPath, assertActive() {}, resolveRefreshPath: academicCatalogueRefreshPath });
+  assert.equal(JSON.parse(raw!).phase, 'accepted');
+  const second = new NativePendingActionJournal({ scope, domain: 'people', storage, randomId: () => actor,
+    send: async () => { throw new Error('Accepted commands must not dispatch again'); }, read: async () => { reads++; return confirmation(input, row); } });
+  await second.hydrate();
+  assert.equal(await second.recover({ ownerHref: input.ownerHref, assertActive() {}, accepted: (value, _, record) => {
+    assert.equal(acceptedAcademicCatalogue(value, record).row.revision, 4);
+  } }), true);
+  assert.equal(sends, 1); assert.equal(reads, 2); assert.equal(raw, null);
+});
+
+test('only exact owning absent receipt and stale-revision proof can release an uncertain identified edit', async () => {
+  const { academicCatalogueCommandObsolete } = await import('../src/lib/people-academic-catalogue');
+  const record = identified(true), proof = { confirmation: 'permanently_inapplicable', receipt_state: 'absent', handler: 'academic.catalogue',
+    source_id: id, command_id: key, expected_revision: 3, current_revision: 4 };
+  const error = (p: unknown) => ({ status: 409, details: { error: { fields: { catalogue_obsolete: p } } } });
+  assert.equal(academicCatalogueCommandObsolete(error(proof), record), true);
+  for (const changed of [{ ...proof, command_id: actor }, { ...proof, source_id: actor }, { ...proof, current_revision: 3 }, { ...proof, receipt_state: 'pending' }, { ...proof, expected_revision: 2 }])
+    assert.equal(academicCatalogueCommandObsolete(error(changed), record), false);
+  assert.equal(academicCatalogueCommandObsolete(error(proof), action(true)), false);
+});
+
+test('real journal retains uncertain edits for unrelated proofs and clears only the exact obsolete action', async () => {
+  let raw: string | null = null, clears = 0;
+  const record = identified(true), storage = { read: async () => raw, write: async (value: string) => { raw = value; }, clear: async () => { clears++; raw = null; } };
+  const first = new NativePendingActionJournal({ scope, domain: 'people', storage, randomId: () => key,
+    send: async () => { throw new Error('Response lost'); }, read: async () => ({}) });
+  const options = { endpoint: record.endpoint, method: 'PATCH' as const, body: { ...values, room_number: '205', expected_revision: 3, confirmed: true, change_reason: 'Reviewed room allocation', catalog_id: id }, serverKey: 'command_id' as const, source: record.source };
+  await first.hydrate(); await first.run(options, { ownerHref: record.ownerHref, refreshPath: record.refreshPath, assertActive() {} });
+  const proof = { confirmation: 'permanently_inapplicable', receipt_state: 'absent', handler: 'academic.catalogue', source_id: id, command_id: actor, expected_revision: 3, current_revision: 4 };
+  let exact = false;
+  const second = new NativePendingActionJournal({ scope, domain: 'people', storage, randomId: () => actor,
+    send: async () => { throw { status: 409, details: { error: { fields: { catalogue_obsolete: { ...proof, command_id: exact ? key : actor } } } } }; }, read: async () => ({}) });
+  await second.hydrate();
+  assert.equal(await second.recover({ ownerHref: record.ownerHref, assertActive() {} }), false);
+  assert.equal(clears, 0); assert.equal(JSON.parse(raw!).phase, 'unknown');
+  exact = true;
+  assert.equal(await second.recover({ ownerHref: record.ownerHref, assertActive() {} }), false);
+  assert.equal(clears, 1); assert.equal(raw, null); assert.equal(second.snapshot().action, null);
+});

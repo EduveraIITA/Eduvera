@@ -24,6 +24,7 @@ import { feeLedgerProjections, feeLedgerQuerySchema, type FeeLedgerQuery } from 
 import { config } from "../config.js";
 import { sendTransactionalEmail } from "../common/email-transport.js";
 import { invitationRecipientProofHash, invitationRecipientProofMatches } from "./invitation-recipient-proof.js";
+import { AcademicCatalogueModelService, type CatalogueCommand, type CatalogueKind, type CatalogueSaved } from "./academic-catalogue-model.service.js";
 
 type Db = Kysely<Database> | Transaction<Database>;
 type Permission = "sis.manage" | "fees.manage" | "members.invite";
@@ -48,6 +49,7 @@ export class OperationsService {
     @Optional() private readonly personInvitations?: PersonAccountInvitationsService,
     @Optional() private readonly legacyPeopleModel?: LegacyPeopleModelService,
     @Optional() private readonly feeLedger?: FeeLedgerService,
+    @Optional() private readonly catalogueModel?: AcademicCatalogueModelService,
   ) {}
 
   createSchool() {
@@ -167,6 +169,7 @@ export class OperationsService {
     action: string,
     work: (db: Transaction<Database>) => Promise<T>,
     auditDetails?: (result: T) => { targetId?: string; metadata?: Record<string, unknown> },
+    lifecycle?: { before(db: Transaction<Database>): Promise<{ replay: T } | null>; after(db: Transaction<Database>, result: T): Promise<void> },
   ): Promise<T> {
     try {
       return await this.db.transaction().execute(async (db) => {
@@ -174,10 +177,13 @@ export class OperationsService {
         // also makes preview/confirm imports and last-admin checks race-safe.
         await sql`SELECT pg_advisory_xact_lock(hashtextextended(${schoolId},0))`.execute(db);
         await this.authorize(user, schoolId, permission, db);
+        const replay = await lifecycle?.before(db);
+        if (replay) return replay.replay;
         const result = await work(db);
         const details = auditDetails?.(result);
         const inferredTargetId = typeof result === "object" && result !== null && "id" in result && typeof result.id === "string" ? result.id : undefined;
         await this.audit(db, user, schoolId, action, details?.targetId ?? inferredTargetId, details?.metadata);
+        await lifecycle?.after(db, result);
         return result;
       });
     } catch (error) {
@@ -291,9 +297,21 @@ export class OperationsService {
     if (kind !== "terms" && kind !== "classes" && kind !== "subjects") throw new NotFoundException();
     const catalogKind = kind;
     const controls = catalogMutationSchema.parse(body);
+    const raw = z.record(z.string(), z.unknown()).parse(body);
+    const identified = "command_id" in raw || "catalog_id" in raw
+      ? z.object({ command_id: uuid, catalog_id: uuid }).parse(raw) : null;
+    if (identified && !id && controls.expected_revision !== undefined) throw new BadRequestException("A new catalogue record has no previous revision.");
+    if (identified && id && identified.catalog_id !== id) throw new BadRequestException("This command belongs to another catalogue record.");
+    const command: CatalogueCommand | null = identified ? { ...identified, expected_revision: id ? controls.expected_revision ?? -1 : 0 } : null;
+    const normalized = catalogKind === "terms" ? termSchema.parse(body) : catalogKind === "classes" ? classSchema.parse(body) : subjectSchema.parse(body);
+    const payload = { kind: catalogKind, id: command?.catalog_id ?? id ?? null, values: normalized,
+      expected_revision: command?.expected_revision ?? controls.expected_revision ?? 0, confirmed: controls.confirmed, change_reason: controls.change_reason };
+    let preparedCommand: string | null = null;
+    const model = this.catalogueModel;
+    if (command && !model) throw new ConflictException("Exact catalogue recovery is unavailable. Nothing was saved.");
     if (id && controls.expected_revision === undefined) throw new BadRequestException("Refresh this record before editing it.");
     let auditMetadata: Record<string, unknown> = { catalog_kind: catalogKind };
-    return this.mutate(user, schoolId, "sis.manage", `${catalogKind}.${id ? "updated" : "created"}`, async (db) => {
+    return this.mutate<CatalogueSaved>(user, schoolId, "sis.manage", `${catalogKind}.${id ? "updated" : "created"}`, async (db) => {
       const requireReviewedImpact = (usage: { total: number }) => {
         if (!usage.total) return;
         if (!controls.confirmed) throw new BadRequestException(`This record is linked to ${usage.total} school records. Review the impact before saving.`);
@@ -322,7 +340,7 @@ export class OperationsService {
           await this.enqueueCatalogUpdate(db, schoolId, catalogKind, row, "updated");
           return { ...row, ...usage };
         }
-        const row = await db.insertInto("academic_terms").values({ ...data, school_id: schoolId, attendance_threshold: data.attendance_threshold.toFixed(2), updated_by: user.id }).returningAll().executeTakeFirstOrThrow();
+        const row = await db.insertInto("academic_terms").values({ ...(command ? { id: command.catalog_id } : {}), ...data, school_id: schoolId, attendance_threshold: data.attendance_threshold.toFixed(2), updated_by: user.id }).returningAll().executeTakeFirstOrThrow();
         auditMetadata = { catalog_kind: catalogKind, revision: row.revision };
         await this.enqueueCatalogUpdate(db, schoolId, catalogKind, row, "created");
         return { ...row, enrollment_count: 0, timetable_count: 0, register_count: 0, total: 0 };
@@ -342,7 +360,7 @@ export class OperationsService {
           await this.enqueueCatalogUpdate(db, schoolId, catalogKind, row, "updated");
           return { ...row, ...usage };
         }
-        const row = await db.insertInto("class_sections").values({ ...data, school_id: schoolId, updated_by: user.id }).returningAll().executeTakeFirstOrThrow();
+        const row = await db.insertInto("class_sections").values({ ...(command ? { id: command.catalog_id } : {}), ...data, school_id: schoolId, updated_by: user.id }).returningAll().executeTakeFirstOrThrow();
         auditMetadata = { catalog_kind: catalogKind, revision: row.revision };
         await this.enqueueCatalogUpdate(db, schoolId, catalogKind, row, "created");
         return { ...row, enrollment_count: 0, timetable_count: 0, assignment_count: 0, total: 0 };
@@ -360,13 +378,37 @@ export class OperationsService {
         await this.enqueueCatalogUpdate(db, schoolId, catalogKind, row, "updated");
         return { ...row, ...usage };
       }
-      const row = await db.insertInto("subjects").values({ ...data, school_id: schoolId, updated_by: user.id }).returningAll().executeTakeFirstOrThrow();
+      const row = await db.insertInto("subjects").values({ ...(command ? { id: command.catalog_id } : {}), ...data, school_id: schoolId, updated_by: user.id }).returningAll().executeTakeFirstOrThrow();
       auditMetadata = { catalog_kind: catalogKind, revision: row.revision };
       await this.enqueueCatalogUpdate(db, schoolId, catalogKind, row, "created");
       return { ...row, timetable_count: 0, attendance_count: 0, diary_count: 0, day_plan_count: 0, total: 0 };
     }, (result) => {
       const targetId = typeof result === "object" && result !== null && "id" in result && typeof result.id === "string" ? result.id : undefined;
       return { ...(targetId ? { targetId } : {}), metadata: auditMetadata };
+    }, command && model ? {
+      before: async db => {
+        const table = { terms: "academic_terms", classes: "class_sections", subjects: "subjects" }[catalogKind] as "academic_terms" | "class_sections" | "subjects";
+        const current = await db.selectFrom(table).select("revision").where("school_id", "=", schoolId).where("id", "=", command.catalog_id).executeTakeFirst();
+        if (id && !current) throw new NotFoundException("This academic record is no longer available.");
+        const prepared = await model.prepare(db, user, schoolId, catalogKind, command, current?.revision ?? 0, payload);
+        if ("replay" in prepared) return { replay: prepared.replay };
+        preparedCommand = prepared.command; return null;
+      },
+      after: async (db, result) => {
+        if (!preparedCommand) throw new ConflictException("The exact catalogue command was not prepared. Nothing was saved.");
+        await model.complete(db, user, schoolId, catalogKind, preparedCommand, result, command.command_id);
+      },
+    } : undefined);
+  }
+
+  async confirmCatalog(user: AuthUser, schoolId: string, kind: string, id: string, commandId: string) {
+    if (!["terms", "classes", "subjects"].includes(kind)) throw new NotFoundException();
+    uuid.parse(id); uuid.parse(commandId);
+    if (!this.catalogueModel) throw new ConflictException("Exact catalogue recovery is unavailable.");
+    return this.db.transaction().execute(async db => {
+      await sql`SELECT pg_advisory_xact_lock(hashtextextended(${schoolId},0))`.execute(db);
+      await this.authorize(user, schoolId, "sis.manage", db);
+      return this.catalogueModel!.confirmation(db, user, schoolId, kind as CatalogueKind, id, commandId);
     });
   }
 

@@ -76,6 +76,13 @@ export class OperationsController {
   @RequirePermission("sis.manage")
   updateCatalog(@Req() req: AuthenticatedRequest, @Param("schoolId") school: string, @Param("kind") kind: string, @Param("id") id: string) { return this.operations.saveCatalog(req.authUser, school, kind, req.body, id); }
 
+  @Get("schools/:schoolId/catalog/:kind/:id/commands/:commandId/")
+  @RequirePermission("sis.manage")
+  catalogConfirmation(@Req() req: AuthenticatedRequest, @Param("schoolId") school: string, @Param("kind") kind: string,
+    @Param("id") id: string, @Param("commandId") commandId: string) {
+    return this.operations.confirmCatalog(req.authUser, school, kind, id, commandId);
+  }
+
   @Post("schools/:schoolId/students/")
   @RequirePermission("sis.manage")
   student(@Req() req: AuthenticatedRequest, @Param("schoolId") school: string) { return this.operations.student(req.authUser, school, req.body); }

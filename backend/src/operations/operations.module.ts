@@ -1,3 +1,4 @@
+import { AcademicCatalogueModelService } from "./academic-catalogue-model.service.js";
 import { RazorpayClient } from "./razorpay.client.js";
 import { PaymentEmailService } from "./payment-email.service.js";
 import { RazorpayService } from "./razorpay.service.js";
@@ -17,5 +18,5 @@ import { FeeCorrectionsService } from "./fee-corrections.service.js";
 import { FeeCorrectionsController } from "./fee-corrections.controller.js";
 import { NativeFeeReviewsModule } from "./native-fee-reviews.module.js";
 
-@Module({ imports: [StaffCoverageReconciliationModule, CampusModelCoreModule, NativeFeeReviewsModule], controllers: [OperationsController, RazorpayController, FeeChargeBatchController, FeeCorrectionsController], providers: [OperationsService, PersonAccountInvitationsService, LegacyPeopleModelService, FeeLedgerService, FeeChargeBatchService, FeeCorrectionsService, FeeReviewService, RazorpayClient, RazorpayService, PaymentEmailService], exports: [RazorpayService, PaymentEmailService] })
+@Module({ imports: [StaffCoverageReconciliationModule, CampusModelCoreModule, NativeFeeReviewsModule], controllers: [OperationsController, RazorpayController, FeeChargeBatchController, FeeCorrectionsController], providers: [AcademicCatalogueModelService, OperationsService, PersonAccountInvitationsService, LegacyPeopleModelService, FeeLedgerService, FeeChargeBatchService, FeeCorrectionsService, FeeReviewService, RazorpayClient, RazorpayService, PaymentEmailService], exports: [RazorpayService, PaymentEmailService] })
 export class OperationsModule {}

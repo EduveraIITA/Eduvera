@@ -6,7 +6,7 @@ import { sql, type Kysely } from "kysely";
 import { z } from "zod";
 import { config } from "../config.js";
 import { AuditService } from "../common/audit.service.js";
-import { deliverAccountAction } from "../common/account-email.js";
+import { accountEmailMode, deliverAccountAction } from "../common/account-email.js";
 import type { AuthenticatedRequest, AuthUser } from "../common/request.js";
 import { accountProfileChangeSchema } from "./account-profile.contracts.js";
 import { executionEnvironmentStorage } from "../campus-model-core/execution-time.runtime.js";
@@ -487,6 +487,10 @@ export class AuthService {
 
   async requestEmailVerification(user: AuthUser, request: FastifyRequest) {
     if (user.email_verified_at) return { verified: true, delivery: "not_required" as const };
+    if (accountEmailMode() === "unavailable") {
+      await this.audit.record({ action: "auth.email_verification.unavailable", request, actorId: user.id, targetType: "user", targetId: user.id });
+      return { verified: false, delivery: "unavailable" as const };
+    }
     const recent = await sql`SELECT 1 FROM auth_account_tokens WHERE user_id=${user.id}::uuid
       AND purpose='email_verification' AND created_at>now()-interval '1 minute' AND consumed_at IS NULL`.execute(this.db);
     if (recent.rows.length) throw new ConflictException("A verification message was sent recently. Wait a minute before requesting another.");
@@ -514,15 +518,21 @@ export class AuthService {
 
   async requestPasswordReset(body: unknown, request: FastifyRequest) {
     const data = resetRequestSchema.parse(body);
+    // The same deployment-wide result for every address. Do not manufacture an
+    // inaccessible proof or claim mail was requested when delivery is disabled.
+    if (accountEmailMode() === "unavailable") {
+      await this.audit.record({ action: "auth.password_reset.unavailable", request });
+      return { accepted: true, recovery_available: false };
+    }
     const user = await this.db.selectFrom("users").select(["id", "email"]).where(sql<boolean>`lower(email)=${data.email}`).where("is_active", "=", true).executeTakeFirst();
     if (user) {
       const token = await this.issueAccountToken(user.id, "password_reset", 30 * 60_000);
       const delivery = await deliverAccountAction({ email: user.email, token: token.raw, purpose: "password_reset", expiresAt: token.expiresAt });
       await this.audit.record({ action: "auth.password_reset.requested", request, actorId: user.id, targetType: "user", targetId: user.id, metadata: { delivery: delivery.delivery } });
-      return { accepted: true, ...(config().DEMO_MODE && config().NODE_ENV !== "production" ? delivery : {}) };
+      return { accepted: true, recovery_available: true, ...(config().DEMO_MODE && config().NODE_ENV !== "production" ? delivery : {}) };
     }
     await this.audit.record({ action: "auth.password_reset.requested_unknown", request, metadata: { email_hash: createHash("sha256").update(data.email).digest("hex") } });
-    return { accepted: true };
+    return { accepted: true, recovery_available: true };
   }
 
   async confirmPasswordReset(body: unknown, request: FastifyRequest) {

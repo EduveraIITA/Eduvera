@@ -1,3 +1,4 @@
+import { examScheduleActionAllowed } from './assessment-schedule-amendments';
 import type { AssessmentDetail, AssessmentWorkspace } from '../../../packages/contracts/src/assessments';
 import type { NativePendingAction, NativePendingScope } from './native-pending-action';
 
@@ -99,6 +100,7 @@ export function assessmentAuthoringAccepted(value: unknown, action: NativePendin
 }
 
 export function assessmentAuthoringActionAllowed(record: NativePendingAction, scope: NativePendingScope): boolean {
+  if(examScheduleActionAllowed(record,scope))return true;
   try {
     if (record.domain !== 'assessments' || record.method !== 'POST' || record.payload.kind !== 'json' || record.replayPolicy !== 'inspect_only' || !record.source) return false;
     const root = assessmentAuthoringRoot(scope.schoolId), source = record.source, body = object(JSON.parse(record.payload.body)), read = new URL(record.refreshPath,'https://thatcampus.invalid');

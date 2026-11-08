@@ -89,7 +89,7 @@ export class LearningAssignmentModelService {
   }
 
   async prepare(tx: Transaction<Database>, user: AuthUser, source: Source, action: string, command: AssignmentCommand,
-    payload: unknown, authority: unknown[], self = false) {
+    payload: unknown, authority: unknown[], self = false, setup = false) {
     const actor = await this.acting(tx, user, source.school_id), hash = assignmentHash(payload);
     const key = `assignment:${user.id}:${command.command_id}`;
     const prior = await this.receipts.readDomainCommandReceipt(tx, { school_id: source.school_id, actor_user_id: user.id,
@@ -111,10 +111,10 @@ export class LearningAssignmentModelService {
     return this.commands.prepareDomainCommand(tx, { school_id: source.school_id, actor_user_id: user.id,
       command_type: `learning.assignment.${action}`, handler_key: "learning.assignments", handler_version: 1, source_domain: "learning_assignments",
       target: { kind: "learning_work", domain: "learning_assignments", domain_id: source.id, label: "Individual assignment", source_revision: Math.max(1, source.revision), lifecycle_state: "active", metadata: {} },
-      expected_revision: command.expected_revision, current_revision: source.revision, capability: self ? "learning.assignment.self" : "learning.assignments.manage",
+      expected_revision: command.expected_revision, current_revision: source.revision, capability: setup ? "campus.setup" : self ? "learning.assignment.self" : "learning.assignments.manage",
       purpose: `assignment_${action.replaceAll(".", "_")}`, requested_at: executionNow().toISOString(), correlation_id: command.command_id,
       causation_id: null, idempotency_key: key, operating_rule_version_ref: null, configuration_refs: [],
-      authority_attestation: { evaluator_domain: "learning_assignments", decision: "allowed", reason_codes: [self ? "exact_current_learner" : source.context_kind === "learning_offering" ? "current_offering_teaching_assignment" : "current_class_learning_assignment"],
+      authority_attestation: { evaluator_domain: "learning_assignments", decision: "allowed", reason_codes: [setup ? "current_protected_campus_setup_authority" : self ? "exact_current_learner" : source.context_kind === "learning_offering" ? "current_offering_teaching_assignment" : "current_class_learning_assignment"],
         authority_source_refs: authority, operating_rule_refs: [], valid_until: null }, safe_context: { assignment_id: source.id, payload_hash: hash } });
   }
 
@@ -133,7 +133,7 @@ export class LearningAssignmentModelService {
   }
 
   /** The publication/submission review explicitly approves this exact person route. */
-  async route(tx: Transaction<Database>, user: AuthUser, source: Source, kind: "review" | "revision", recipientId: string, commandId: string) {
+  async route(tx: Transaction<Database>, user: AuthUser, source: Source, kind: "review" | "revision", recipientId: string, commandId: string, handover = false) {
     const recipient = await this.identity.resolveAccountEndpoint(tx, { school_id: source.school_id, user_id: recipientId, at: executionNow().toISOString() });
     if (!recipient.acting) throw new ForbiddenException("The selected recipient needs a current campus account link.");
     const suffix = assignmentHash([source.id, kind, recipientId]).slice(0, 32), now = executionNow().toISOString();
@@ -142,7 +142,7 @@ export class LearningAssignmentModelService {
       configuration_key: selectorKey, source_domain: "learning_assignments", source_record_id: source.id, source_revision: source.revision,
       operating_rule_ref: rule, effective_from: now, enabled: true, behaviour_key: selectorKey, behaviour_schema_version: 1,
       behaviour_configuration: { workflow: `learning_assignment_${kind}`, assignment_id: source.id, recipient_user_id: recipientId,
-        timing: "no_response_deadline", approved_in: kind === "review" ? "assignment_publication" : "learner_submission" },
+        timing: "no_response_deadline", approved_in: handover ? "assignment_reviewer_handover" : kind === "review" ? "assignment_publication" : "learner_submission" },
       subscription: { source_domain: "learning_assignments", event_type: kind === "review" ? "learning.assignment.submitted" : "learning.assignment.changes_requested",
         reaction_kind: `learning_assignment_${kind}`, message_kind: "task", selector_key: selectorKey,
         required_capability: kind === "review" ? "learning.assignment.review.respond" : "learning.assignment.revision.respond",
@@ -155,7 +155,7 @@ export class LearningAssignmentModelService {
       school_id: source.school_id, actor_user_id: user.id, command_type: `learning_assignments.coordination.configure.${phase}`,
       handler_key: "learning_assignments.coordination.configure", handler_version: 1, source_domain: "learning_assignments",
       target: { kind: "learning_work", domain: "learning_assignments", domain_id: source.id, label: "Assignment routing", source_revision: source.revision, lifecycle_state: "active", metadata: {} },
-      expected_revision: source.revision, current_revision: source.revision, capability: kind === "review" ? "learning.assignments.manage" : "learning.assignment.self",
+      expected_revision: source.revision, current_revision: source.revision, capability: handover ? "campus.setup" : kind === "review" ? "learning.assignments.manage" : "learning.assignment.self",
       purpose: "assignment_route_confirmation", requested_at: now, correlation_id: commandId, causation_id: causation,
       idempotency_key: `${selectorKey}:${source.revision}:${commandId}:${phase}`, operating_rule_version_ref: rule, configuration_refs: [],
       authority_attestation: { evaluator_domain: "learning_assignments", decision: "allowed", reason_codes: ["explicit_exact_assignment_route"], authority_source_refs: [{ assignment_id: source.id, recipient_user_id: recipientId }], operating_rule_refs: [], valid_until: null },
@@ -173,8 +173,8 @@ export class LearningAssignmentModelService {
   }
 
   async event(tx: Transaction<Database>, user: AuthUser, source: Source, action: string, commandId: string, audience: string[],
-    details: { student_id?: string; person_id?: string; attempt_id?: string } = {}, handoff?: { route: AssignmentRoute; recipient: string; href: string }) {
-    const eventKey = `assignment:${user.id}:${source.id}:${commandId}:${action}`, now = executionNow().toISOString();
+    details: { student_id?: string; person_id?: string; attempt_id?: string } = {}, handoff?: { route: AssignmentRoute; recipient: string; href: string }, keySuffix = "") {
+    const eventKey = `assignment:${user.id}:${source.id}:${commandId}:${action}${keySuffix ? ":" + keySuffix : ""}`, now = executionNow().toISOString();
     const safe = { assignment_id: source.id, revision: source.revision, action, ...details };
     await this.events.enqueueUserEvent(tx, { schoolId: source.school_id, eventType: "diary.updated", aggregateType: "learning_assignment",
       aggregateId: source.id, audienceUserIds: [...new Set(audience)], payload: { ...safe, refresh: ["learning-assignments", "workspace", "requests", "today"] }, idempotencyKey: eventKey });
@@ -207,7 +207,7 @@ export class LearningAssignmentModelService {
     sourceRecordId: string, triggeringAction: "submitted" | "changes_requested", outboxEventId: string) {
     if (!messageId) return;
     const trace = await this.coordination.findExactTrace(tx, { school_id: source.school_id, source_domain: "learning_assignments",
-      source_record_id: sourceRecordId, event_type: `learning.assignment.${triggeringAction}`, source_revision: source.revision });
+      source_record_id: sourceRecordId, event_type: `learning.assignment.${triggeringAction}`, source_revision: source.revision, message_id: messageId });
     if (!trace || trace.message_id !== messageId || trace.message_open !== true) throw new ConflictException("The retained assignment handoff is unavailable. Your saved work remains available; contact the responsible reviewer.");
     await this.coordination.recordRecipientResponse(tx, { school_id: source.school_id, message_id: messageId, correlation_id: trace.correlation_id,
       recipient: { agent_kind: "human", user_id: user.id }, actor: { agent_kind: "human", user_id: user.id },
@@ -216,10 +216,49 @@ export class LearningAssignmentModelService {
       response: { action, assignment_id: source.id }, occurred_at: executionNow().toISOString(), idempotency_key: `assignment-message:${commandId}:${action}` });
   }
 
+  async handoffTrace(tx: Transaction<Database>, source: Source, attemptId: string, action: "submitted" | "changes_requested", messageId: string | null) {
+    if (!messageId) return null;
+    return this.coordination.findExactTrace(tx, { school_id: source.school_id, source_domain: "learning_assignments",
+      source_record_id: attemptId, event_type: `learning.assignment.${action}`, source_revision: source.revision, message_id: messageId });
+  }
+
+  /** Prepare before moving the assignment revision. The exact earlier delivery supplies correlation/causation. */
+  async prepareHandoverClosure(tx: Transaction<Database>, user: AuthUser, source: Source, attemptId: string, kind: "review" | "revision",
+    trace: { event_id: string; correlation_id: string; message_id: string }, handoverId: string) {
+    return this.commands.prepareDomainCommand(tx, { school_id: source.school_id, actor_user_id: user.id,
+      command_type: "learning.assignment.handover.supersede", handler_key: "learning.assignments", handler_version: 1, source_domain: "learning_assignments",
+      target: { kind: "learning_work", domain: "learning_assignments", domain_id: source.id, label: "Assignment review responsibility", source_revision: source.revision, lifecycle_state: "active", metadata: {} },
+      expected_revision: source.revision, current_revision: source.revision, capability: "campus.setup", purpose: "assignment_review_handover",
+      requested_at: executionNow().toISOString(), correlation_id: trace.correlation_id, causation_id: trace.event_id,
+      idempotency_key: `assignment-handover:${handoverId}:${attemptId}:${kind}`, operating_rule_version_ref: null, configuration_refs: [],
+      authority_attestation: { evaluator_domain: "learning_assignments", decision: "allowed", reason_codes: ["current_protected_campus_setup_authority"],
+        authority_source_refs: [{ assignment_id: source.id, attempt_id: attemptId, previous_message_id: trace.message_id }], operating_rule_refs: [], valid_until: null },
+      safe_context: { assignment_id: source.id, attempt_id: attemptId, handover_id: handoverId, kind } });
+  }
+
+  async closeHandoverMessage(tx: Transaction<Database>, user: AuthUser, source: Source, attemptId: string, kind: "review" | "revision",
+    trace: { event_id: string; correlation_id: string; message_id: string }, commandId: string, handoverId: string) {
+    const now = executionNow().toISOString(), key = `assignment-handover:${handoverId}:${attemptId}:${kind}:superseded`;
+    const learner = await tx.selectFrom("learning_assignment_attempts").select(["student_id", "learner_id"]).where("school_id", "=", source.school_id).where("assignment_id", "=", source.id).where("id", "=", attemptId).executeTakeFirstOrThrow();
+    const payload = { assignment_id: source.id, attempt_id: attemptId, handover_id: handoverId, revision: source.revision, source_command_id: commandId,
+      ...(source.context_kind === "learning_offering" ? { person_id: learner.learner_id } : { student_id: learner.student_id! }) };
+    const outbox = await tx.insertInto("event_outbox").values({ school_id: source.school_id, event_type: "learning.assignment.review_handover",
+      aggregate_type: "learning_assignment_attempt", aggregate_id: attemptId, audience_user_ids: [], payload, idempotency_key: key }).returning("id").executeTakeFirstOrThrow();
+    const event = await this.journal.recordAcceptedEvent(tx, { school_id: source.school_id, source_outbox_event_id: outbox.id, event_type: "learning.assignment.review_handover",
+      subject: { kind: "learning_work", domain: "learning_assignments", domain_id: source.id, label: "Individual assignment", source_revision: source.revision, lifecycle_state: "active", metadata: {} },
+      context: null, actor_user_id: user.id, occurred_at: now, effective_from: now, effective_until: null,
+      source_domain: "learning_assignments", source_record_id: attemptId, source_revision: source.revision,
+      correlation_id: trace.correlation_id, causation_event_id: trace.event_id, idempotency_key: key, audience_user_ids: [], payload });
+    await this.coordination.supersedeDomainMessage(tx, { school_id: source.school_id, command_id: commandId, message_id: trace.message_id,
+      previous_event_id: trace.event_id, previous_source_revision: source.revision - 1, subject_record_id: source.id,
+      resulting_event_id: event.event_id, required_capability: "campus.setup", occurred_at: now, idempotency_key: `${key}:message` });
+    await this.finish(tx, source, commandId, { assignment_id: source.id, attempt_id: attemptId, handover_id: handoverId }, outbox.id);
+  }
+
   async handoffOpen(tx: Transaction<Database>, source: Source, attemptId: string, action: "submitted" | "changes_requested", messageId: string | null) {
     if (!messageId) return false;
     const trace = await this.coordination.findExactTrace(tx, { school_id: source.school_id, source_domain: "learning_assignments",
-      source_record_id: attemptId, event_type: `learning.assignment.${action}`, source_revision: source.revision });
+      source_record_id: attemptId, event_type: `learning.assignment.${action}`, source_revision: source.revision, message_id: messageId });
     return trace?.message_id === messageId && trace.message_open === true;
   }
 }
