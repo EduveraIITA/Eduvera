@@ -1480,6 +1480,16 @@ domain depends on real devices or people.
 
 ## 26. Current implementation status — 16 October 2026
 
+This is a **historical implementation checkpoint**, not the current missing-feature
+list. The [current delivery plan](IMPLEMENTATION_PLAN.md#core-functionality-closure)
+and [8 November source audit](../../artifacts/core-functionality-audit/dt-operations-audit.json)
+distinguish later bounded implementations from unresolved acceptance: staff-leave
+rerouting, invigilation policy approval/activation, coverage expiry/fallback and the
+selected-world execution seam now have source implementations. The older bullets
+below must not trigger reimplementation or imply those complete workflows have been
+accepted. Transport setup and independently durable refused-attempt recovery remain
+concrete gaps. Current runtime safety readiness and capability evidence are separate.
+
 Implemented locally on `codex/campus-digital-twin` before the coordination-runtime
 slice:
 

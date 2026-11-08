@@ -1,6 +1,6 @@
 # Current delivery and next work
 
-Updated 31 October 2026. This is current bounded delivery status, not a release diary
+Updated 8 November 2026. This is current bounded delivery status, not a release diary
 or a claim that the full product blueprint is complete. Requirements live in the
 [contract index](README.md); repeatable checks, exact receipts and fixture tours
 live in [Verification](../VERIFICATION.md). The original chronological record is
@@ -93,7 +93,7 @@ platform, domain, Simulation, recovery or release acceptance.
 
 ## Isolated app2 release
 
-Conformance 214 is live at `https://app2.thatcampus.com`. Actions run 41192996403 succeeded for release `f1d4508617f73467704e50d2fa14faf9bc044b44`, revision `thatcampus-dt-r-f1d4508617f7-41192996403-1`, digest `sha256:380ea1f0c8139e0c95aaa07e53601a82b5afd7bf3e85a48a1fe68ec46f80feb3`. The [release receipt](../../artifacts/app2-cloud-deployment/ci-214/digital-twin-release-41192996403-1/release.json) records one successful migration execution, `thatcampus-dt-migrate-4bsnx`, and candidate/public smoke. [CI](../../artifacts/app2-cloud-deployment/ci-214-verify.log) passes 107 real PostgreSQL cases across 13 files with zero skipped/todo tests, 519 fast backend cases, 1834 mobile cases and 41 release guards. [Existing-target verification](../../artifacts/app2-cloud-deployment/old-deployments-preserved-214.json) retains all four old serving revisions/traffic unchanged with no old service mutation. Maintained Mac development remains separate; operations belong to the [DT runbook](../../deploy/dt/README.md).
+Conformance **215** is live at `https://app2.thatcampus.com`, release `3b88a167ac475c44b9b8e93f804f6ab2cb1622c8`, revision `thatcampus-dt-r-3b88a167ac47-41198125236-1`, image digest `sha256:d3cd55072f7a0e1af4788f696e61e4a5d31de111cebf2b873ee456091709987b`. [Actions run 41198125236](https://github.com/EduveraIITA/Eduvera/actions/runs/41198125236) and the [release receipt](../../artifacts/app2-cloud-deployment/ci-215/digital-twin-release-41198125236-1/release.json) record successful one-attempt migration `thatcampus-dt-migrate-vwnlw` and candidate/public smoke. [CI](../../artifacts/app2-cloud-deployment/ci-215-verify.log) passes 120 actual PostgreSQL cases across 17 files with zero skipped/todo cases, 533 fast backend cases, 40 source/auth cases, 1834 mobile cases and 41 deployment/edge/container guards, plus strict conformance/types/build/export checks. These are bounded checks, not complete workflow or sustained-capacity acceptance.
 
 The owner chose to keep the existing shared PostgreSQL server and limits: no new server, resize or pool/concurrency increase. Release 214 source-scopes activity horizon expansion, reuses current notification authorization in one statement/client, stops terminal-error campus polling, clears stale resource intent on explicit Campus navigation and corrects the reproduced floor canvas/Back problem. [Local recovery evidence](../../artifacts/app2-cloud-deployment/notification-recovery-review.json) retains exact source hashes, 7 real notification parity cases, 39 existing checks, 207 focused mobile cases including 11 recovery cases, and types/lint. [Nine worker PG cases](../../artifacts/app2-cloud-deployment/bridge-native-tests-final.json) include a real mixed academic/activity COW checkpoint, current-policy refusal and unchanged Live/sibling. [Local four-client load proof](../../artifacts/app2-cloud-deployment/notifications-concurrency-local.json) preserves exact results for 20 bell reads/four native session restores; the [owned test DB was removed](../../artifacts/app2-cloud-deployment/notifications-cleanup.json).
 
@@ -101,13 +101,66 @@ The [first 214 native login failed](../../artifacts/app2-cloud-deployment/concur
 
 A later failure at 11:06 UTC occurred after the old process had drained: map and personal-context requests again timed out waiting for a pooled client. The [later diagnostic review](../../artifacts/app2-cloud-deployment/pool-214-later-diagnostic-review.json) retains both request IDs and unsuccessful reproduction attempts. Fresh map/mine/bell reads, a fair JIT on/off pair and 90-second periodic-worker sampling subsequently passed; they do not identify the cause or close intermittent reliability. Idle PostgreSQL sessions alone do not prove clients were returned to the application pool. No persistent JIT or capacity setting was changed.
 
-[Six rendered browser checks](../../artifacts/app2-cloud-deployment/browser-cloud-214.json) pass for fresh floor canvas, exact computer/status, report prefill, Report Back with visible canvas/exact floor-room-resource context, Campus clearing prior resource/interior intent and canonical first-floor selection. No report was submitted. This closes the reproduced floor/Back case in the listed browser scope; the historical transient outdoor issue remains unclosed. Native Release build 3 is [installed](../../artifacts/app2-cloud-deployment/ios-build3-install.json), with permanent [origin/version](../../artifacts/app2-cloud-deployment/ios-build3-origin.json), [ABI](../../artifacts/app2-cloud-deployment/ios-build3-abi.json) and [code-signing](../../artifacts/app2-cloud-deployment/ios-build3-codesign.log) evidence. iPhone Today and map visibly load, but remote coordinate input did not reliably reach the phone; the owner's In & Out/Arrange visit check is pending. Full physical touring, mutations, frame-rate, heat and battery remain unaccepted.
+[Six rendered browser checks](../../artifacts/app2-cloud-deployment/browser-cloud-214.json) pass for fresh floor canvas, exact computer/status, report prefill, Report Back with visible canvas/exact floor-room-resource context, Campus clearing prior resource/interior intent and canonical first-floor selection. No report was submitted. This closes the reproduced floor/Back case in the listed browser scope; the historical transient outdoor issue remains unclosed. Native Release build 3 is [installed](../../artifacts/app2-cloud-deployment/ios-build3-install.json), with permanent [origin/version](../../artifacts/app2-cloud-deployment/ios-build3-origin.json), [ABI](../../artifacts/app2-cloud-deployment/ios-build3-abi.json) and [code-signing](../../artifacts/app2-cloud-deployment/ios-build3-codesign.log) evidence. Recorded iPhone checks showed Today and map loading, but remote coordinate input did not reliably reach the phone; the owner's In & Out/Arrange visit check is pending. Full physical touring, mutations, frame-rate, heat and battery remain unaccepted.
 
-[Migration 281 verification](../../artifacts/app2-cloud-deployment/role-source-forward-migration-receipt.json) retains 5/6 before, 6/6 after and 42/42 PG checks, unchanged historical migration/trigger identity and safe refusal of unchanged old 211 captures. No automatic world upgrade is implied. Lint accepts exact existing debt, not clean ordinary lint. Existing 49 unrelated source errors and 29 unfinished parity groups remain; deployment does not close retirement or full-workflow acceptance.
+[Migration 281 verification](../../artifacts/app2-cloud-deployment/role-source-forward-migration-receipt.json) retains 5/6 before, 6/6 after and 42/42 PG checks, unchanged historical migration/trigger identity and safe refusal of unchanged old 211 captures. No automatic world upgrade is implied. Lint accepts exact existing debt, not clean ordinary lint. The prior inventory retained 49 source-review findings; the current audit records 53 and 29 implemented-unverified groups; deployment does not close retirement or full-workflow acceptance.
 
 Simulation continuation `22wz4` [failed](../../artifacts/app2-cloud-deployment/restore-continuation-result.json). The [remaining-only comparison](../../artifacts/app2-cloud-deployment/simulation-postdata-continuation-plan-20261031.json) matches 4597 table counts/238 sequence states and selects 17905 missing DDL entries (14707 foreign keys/3198 RLS flags), not full row-content equivalence. The newer [bounded shared-capacity packet](../../artifacts/app2-cloud-deployment/bounded-postdata-shared-capacity-plan.json), review `b1be4c07e1463bc874ab9ff9aacfa8b608c0223177dd70fd2c354c12277d24d9`, passes 18 policy cases plus [independent review/three additional failure probes](../../artifacts/app2-cloud-deployment/bounded-postdata-independent-review.json). The hard job limit is 900 seconds; work stays capped at eight minutes/1000 entries with one restore connection, short transactions, health-paced pauses and an admission fence. The exact reviewed packet has been uploaded and job `thatcampus-dt-bounded-postdata` created with a 900-second timeout; it has never been executed. Fresh exact-job/catalogue/target/health and terminal-controller checks remain required. Every bounded invocation or partial failure requires a new reviewed remaining-only plan; an ambiguous fence acknowledgement requires its separate inspected recovery. Retain private archives/worlds; no DDL retry or full hosted Simulation readiness is implied.
 
-Ordinary attachment upload/download remains open after the bounded file probe. Build 3's Personal Team profile expires `2026-11-07T04:18:20Z`; cloud hosting does not extend signing, and no Expo Updates delivery is configured. Apple Support shows a case confirmation, but paid enrollment/App Store Connect/TestFlight remain unconfirmed. The approved provider window ends `2026-11-08T00:00:00Z` without cloud inference acceptance. Wider parity, hosted Simulation, sustained shared-capacity performance and complete physical workflows remain open.
+Ordinary attachment upload/download remains open after the bounded file probe. Build 3's Personal Team profile expired `2026-11-07T04:18:20Z`; cloud hosting does not extend signing, and no Expo Updates delivery is configured. Apple Support shows a case confirmation, but paid enrollment/App Store Connect/TestFlight remain unconfirmed. The approved provider window ended `2026-11-08T00:00:00Z` without cloud inference acceptance. Wider parity, hosted Simulation, sustained shared-capacity performance and complete physical workflows remain open.
+
+Release 215 restricts teaching-context horizon expansion to activity sources, preserves the caller transaction, adds bounded pool acquisition/lease telemetry, and returns a canonical read-versus-unconfirmed-action 503 for exact acquisition failures, including Fastify's pre-controller rate-limit hook. [Real pool tests](../../artifacts/app2-cloud-deployment/pool-telemetry-validation.json), [source/safety review](../../artifacts/app2-cloud-deployment/215-independent-source-and-seal-review.json), the retained red regression and CI cover these changes. Pool size remains four. The earlier 214 failures below remain evidence; the latest passes do not identify their historical cause.
+
+The [8 November functional audit](../../artifacts/core-functionality-audit/review.json) freshly confirms this exact serving release. Director, student and faculty [ordinary native-API tours](../../artifacts/core-functionality-audit/cloud-personas.json) pass with five/four/four concurrent map reads in 3154/2768/3165ms, expected management refusals and owned-session revocation. Main-pool metrics show zero held/waiting clients at both observations and zero recorded acquisition failures; these counters do not cover every Simulation pool or establish uninterrupted availability. The [readiness probe](../../artifacts/core-functionality-audit/cloud-readiness.json) returns onboarding/profile successfully, optional SMS unavailable and Assistant `ready=false`. [Current flags](../../artifacts/core-functionality-audit/provider-config.json) show transactional email disabled and the Vertex allowance expired at `2026-11-08T00:00:00Z`. No email, SMS, inference or domain command was dispatched. Distribution is deferred by the owner while core closure is prioritized.
+
+## Core functionality closure
+
+Owner direction, 8 November: defer TestFlight and focus on functional completeness.
+The [current audit](../../artifacts/core-functionality-audit/review.json) compares
+3756 published source files with zero local drift before documentation edits,
+three independent source reviews, fresh cloud reads and 102 focused local tests
+(48 recovery, 36 grading/offering contracts, 18 mocked coordination boundaries;
+zero failures/skips, no PostgreSQL suites rerun). No production domain data changed.
+The Mac was locked and no CUA browser/app was available, so no new rendered tour is
+claimed. Existing component, database and historical UI evidence retains its scope.
+
+Do not equate implementation, integration, setup and acceptance gaps. The current
+mobile inventory has **129 routes, 29 implemented-unverified groups and 80
+capabilities**. Its **53 source-review findings** are fingerprint/dependency
+mismatches, not compiler errors or 53 missing features; the earlier 49 count is a
+historical checkpoint. Core safety conformance 215 is ready with no blockers, while
+**80 capability-evidence slots across 24 modules** remain unverified. These are a
+different inventory and are not 80 reproduced defects. Do not refresh hashes or
+promote statuses without exact review and journey evidence.
+
+| Order | Person and outcome | Confirmed gap and bounded next delivery |
+| --- | --- | --- |
+| 1 | Administrator safely finishes setup after a lost response | Legacy `inspect_only` catalogue/membership writes retain an unconfirmed journal and block later People writes. Start with one academic catalogue create: atomic command identity, exact receipt/status and safe relaunch recovery. Preserve the fail-closed guard; matching current rows never proves acceptance. |
+| 2 | New user verifies email, accepts an invitation or recovers access | Cloud transactional email is disabled; ordinary production verification/reset cannot complete by email. Configure an approved sender and prove owned-mailbox roundtrips, single-use/expiry/wrong-account and web/native continuation. Optional SMS is deliberately disconnected; it does not block ordinary email sign-in. |
+| 3 | Learner gets a pending assignment reviewed after staff changes | The source projects `needs_reassignment`, but published reviewer identity cannot be transferred through an owning endpoint. Add revision-bound successor acceptance/reissued work while retaining original signatures and refusing revoked actors. |
+| 4 | Exam officer changes a scheduled room/time | Arrangements edits require draft/planning. Add an explicit stable-exam amendment with conflict/impact preview, immutable prior schedule and only affected work reissued; cancellation is not amendment acceptance. |
+| 5 | College learner follows parallel courses through the whole teaching cycle | Person-based offerings/enrollment exist; assessment/report/schedule/attendance owners are not integrated with that roster. Complete one offering → teaching/schedule → attendance → assessment → configured report loop, then elective-change impact/acceptance with an explicit Finance outcome. |
+| 6 | Transport coordinator enables colleague cover at a newly onboarded campus | Exact colleague/decision routes are installed only by the guarded development seed; ordinary setup lacks the configuration writer. Add reviewed institution-owned routing and an independently durable refused-attempt recovery handoff. Existing administrator collector assignment remains the bounded fallback. |
+| Alongside each | Every actor can finish, correct and recover the same workflow in the selected world | Close the existing source ledger and ordinary multi-account acceptance per journey; hosted historical Simulation restoration, authenticated attachment roundtrips and sustained shared-capacity testing remain open. Do not call a GET tour a completed mutation workflow. |
+
+For each slice, define the person's starting point and natural finished outcome,
+then verify normal operation, current authority/revocation, correction, lost response
+before/after commit, relaunch, exact history/next-owner handoff and meaningful real
+COW mutation with unchanged Live/sibling. Keep optional modelling out of required
+onboarding. Use the existing parity/conformance owners; this audit is raw evidence,
+not a competing completeness ledger or a percentage-complete claim.
+
+The next backlog includes legacy QR result recovery, general gate observation
+supersession, older resource receipt paging/exact reads, and HTTPS native associated
+links. Admissions, group graded submissions, graduation clearance/document issue,
+scoped payer sharing, mentoring, aid, placement and general staff takeover are
+separate unbuilt lifecycle owners/integrations, not prerequisites for starting a
+bounded capability. Configurable percentage/grade/GPA, report/result correction,
+parallel offering enrollment, individual assignments/session materials and resource
+loans already exist and must not be reimplemented from stale checkpoint-57 lists.
+Mapped resource faults/repairs genuinely drive DT visuals; moving figures currently
+use expected schedules, with observed evidence rendered as separate anonymous
+pulses rather than confirmed-person trajectories.
 
 ## Product and architecture invariants
 
@@ -155,7 +208,7 @@ Read the owning contract before extending a workflow and inspect its exact recei
 | Restricted Care | Exact case/handler authority, privacy-minimized discovery and continuity/recovery evidence | No general staff case feed; real safeguarding/institutional outcomes require their own acceptance. |
 | Campus visualization | Reviewed map/floor-plan drafts, canonical place links, publications and authored interiors; native Skia v2 retained scenery, UI-thread camera/people atlases and exact resource-condition overlays. Installed iPad rendering and an isolated resource report→map change with unchanged Live are verified. Physical iPhone checks show campus/floor/room/resource exploration, recorded availability and improved floor sizing/local focus. The final installed Release shows building/floor actions above the dock. | Image inference is a proposal, not surveyed topology. Planned motion/sparse observations never establish continuous actual location. Fullscreen destination/report handoff, low-end frame pacing, sustained heat/battery and all-platform interaction remain open. See [rendering verification](../VERIFICATION.md#campus-rendering). |
 | Assistant and messaging | Authorized domain tools, deterministic reviewed writes/recovery, provider abstraction, source visibility and scoped channel/bridge contracts | Provider credentials/readiness are deployment state, not permanent availability. Inbound Matrix/E2EE/real calling and unsupported side effects remain explicit gaps. |
-| Universal app migration | React Native/Expo is the sole active frontend for browser, iPhone, iPad and Android. New features/fixes are not duplicated into the frozen React/Vite reference. The final physical iPhone15 Release passed signing/ABI and unchanged682-source checks, installed/launched with session retained. Native login, bounded campus exploration, Areas/sheet dock clearance and email-login/recovery keyboard layout have bounded hardware evidence. See [device evidence](../VERIFICATION.md). | [Native parity](../../mobile/PARITY.md) retains broader workflow/platform gaps. Registration lower-field keyboard layout is not accepted from its redacted capture; reset has mounted tests only. Fullscreen destination/report and physical mutations/performance remain open. Local signing expires7November2026. Apple enrollment remains unresolved; the Support tab now shows a case confirmation and no TestFlight upload is confirmed. |
+| Universal app migration | React Native/Expo is the sole active frontend for browser, iPhone, iPad and Android. New features/fixes are not duplicated into the frozen React/Vite reference. The final physical iPhone15 Release passed signing/ABI and unchanged682-source checks, installed/launched with session retained. Native login, bounded campus exploration, Areas/sheet dock clearance and email-login/recovery keyboard layout have bounded hardware evidence. See [device evidence](../VERIFICATION.md). | [Native parity](../../mobile/PARITY.md) retains broader workflow/platform gaps. Registration lower-field keyboard layout is not accepted from its redacted capture; reset has mounted tests only. Fullscreen destination/report and physical mutations/performance remain open. Local signing expired 7 November 2026; distribution is deferred. Apple enrollment remains unresolved; the Support tab now shows a case confirmation and no TestFlight upload is confirmed. |
 | Simulation | Institution-neutral capture/run, same-app amber context, virtual workers, isolated effects, owner capacity/retention, unified Saved/History/Compare and guarded draft discard | Safety readiness is not exhaustive capability evidence. Cold large-campus first-open reads still took14–38seconds; universal performance remains under review. Physical iPhone Simulation mutations remain unverified; hardware checks are not an old-web retirement prerequisite. |
 | Cambridge Campus Lab | Retained synthetic development/sales reference and guarded normal-domain actor harness | Local-only conformance tooling, not a separate product route or production authority. Hosted enablement requires reviewed isolation/credentials. |
 
@@ -381,28 +434,26 @@ from historical screenshots.
 
 ## Work order and open acceptance
 
-1. Finish predictable Back acceptance across active universal workflows: native
-   gestures/hardware, dirty exits, deep links, retained view state, access changes,
-   keyboard/accessibility and isolated Simulation. Audit older forms and complete
-   active web parity before retiring the retained React web application.
-2. Reduce measured large-campus Simulation cold-open latency without increasing
-   connection pressure, weakening COW locks or inventing readiness. Preserve the
-   successful control/uncertain-result/retention paths and compare actual workloads.
-3. Verify active workflows in the browser, iPhone/iPad simulators and Android
-   emulator, including empty/loading/failure/recovery, keyboard, focus, theme and
-   real data links/history. Record unavailable hardware behavior as untested;
-   physical-device checks are not an old-web retirement prerequisite.
-4. Complete the next real campus journey outside-in with the minimum user burden,
-   genuine institution authority adoption and evidence-backed handoffs. The
-   [22-story target](END_TO_END_CAMPUS_WORKFLOWS.md) is a backlog, not delivery proof.
-5. Extend Calendar only through complete authorized owning feeds; do not fabricate
-   personal obligations from general dates. Keep Calendar and Timetable purposes clear.
-6. Close explicit domain/provider/Core capability-evidence gaps as those workflows
-   are implemented. General integration replacement, hosted fixture actors,
-   physical outcomes and production scale are independently gated.
-7. Run risk-proportionate checks from [Verification](../VERIFICATION.md#tests),
-   preserve exact authority/tenant/world/retry/artifact evidence and update current
-   status in place. Re-run broad/native suites only when the change warrants them.
+Follow the ordered **Core functionality closure** slices above; complete one natural
+journey before expanding another module. Distribution is deferred, not accepted.
+For every slice preserve predictable Back/dirty-exit/deep-link state, accessibility,
+keyboard behavior and failure/recovery; verify the current browser and available
+simulators/emulator without making unavailable physical devices an old-web
+retirement prerequisite. Complete the owning parity review before retiring the
+frozen React source.
+
+In parallel with risk-proportionate verification, keep historical Simulation
+restoration and cold-open latency explicit, within the unchanged shared server and
+pool limits. Preserve COW locks, uncertain-result/retention protections and protected
+worlds. Extend Calendar only through complete authorized owning feeds, and do not
+fabricate obligations from general dates. General connectors, provider readiness,
+real institutional authority adoption, physical outcomes and production scale have
+independent gates. The [22-story target](END_TO_END_CAMPUS_WORKFLOWS.md) is a backlog,
+not current delivery proof.
+
+Run the checks in [Verification](../VERIFICATION.md#tests), preserve exact
+actor/tenant/world/retry/artifact evidence and update this plan in place. Repeat
+broad/native suites when changed code or unresolved risk warrants it.
 
 ## Documentation maintenance
 
