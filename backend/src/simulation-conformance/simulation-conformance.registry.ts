@@ -5,7 +5,7 @@ import type { EXECUTION_EFFECT_KINDS } from "../campus-model-core/execution-effe
  * rewrite a stale lock unless this number is increased first, so accepting
  * platform drift always leaves a reviewed Simulation change in the diff.
  */
-export const SIMULATION_CONFORMANCE_REVISION = 218 as const;
+export const SIMULATION_CONFORMANCE_REVISION = 219 as const;
 
 export const SIMULATION_DATA_PLANE_CAPABILITIES = Object.freeze([
   "snapshot",
@@ -457,6 +457,8 @@ export const SIMULATION_CONFORMANCE_EVIDENCE = Object.freeze([
  * upgrade a domain module to feature parity by association.
  */
 export const SIMULATION_SAFETY_EVIDENCE = Object.freeze([
+  { id: "safety:native-institution-browser-journal", kind: "unit_boundary", test_file: "mobile/test/setup-command-browser-storage.test.ts",
+    proves: "The actual institution setup hook hydrates and retains its exact SHA256-scoped institution-commands journal through the encrypted browser adapter. Live and isolated Simulation scope identities remain separate across actor, campus and selected world. Only the existing manifest/chunk grammar is admitted; credentials, unscoped keys, unsupported native options and unverifiable retained evidence remain refused. Encryption, exact recovery, unknown-outcome retention and backend authority are unchanged. This is client storage and mounted-hook evidence, not a real domain command, rendered device journey, email/provider delivery or broad capability acceptance." },
   { id: "safety:native-setup-tool-entry", kind: "unit_boundary", test_file: "mobile/test/more-tool-boundary-mounted.test.ts",
     proves: "The actual shared native MoreToolBoundary mounts a currently contributed setup child only through its exact authorized setup launcher. Live and Simulation use the same normalized manifest and actor/campus/world context assertion; unavailable/pending/error, stale actor/institution/namespace and missing launcher refuse. Ordinary grouped tools remain unchanged. The resolver and unchanged internal-href policy are protected shared client material. No backend permission, writer, store, event, clock or connector changes; this is mounted component/context evidence, not a rendered cloud/native journey or broad capability acceptance." },
   { id: "safety:account-email-readiness", kind: "unit_boundary", test_file: "backend/test/account-email-readiness.test.ts",
@@ -1272,6 +1274,8 @@ export const SIMULATION_FRONTEND_ENVIRONMENT_FILES = Object.freeze([
 
 /** Shared adapters are outside Nest domain roots but still cross material boundaries. */
 export const SIMULATION_SHARED_MATERIAL_FILES = Object.freeze([
+  "mobile/src/lib/device-storage-browser.ts",
+  "mobile/src/features/SetupCommand.tsx",
   "mobile/src/features/more/MoreToolBoundary.tsx",
   "mobile/src/lib/more-tool-access.ts",
   "mobile/src/lib/api-policy.ts",

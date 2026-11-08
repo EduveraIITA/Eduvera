@@ -35,9 +35,10 @@
 !mobile/app/**
 !mobile/src/
 !mobile/src/**
-# Only the registered client safety proof is needed by backend-build.
+# Only registered client safety proofs are needed by backend-build.
 !mobile/test/
 !mobile/test/more-tool-boundary-mounted.test.ts
+!mobile/test/setup-command-browser-storage.test.ts
 !mobile/assets/
 !mobile/assets/**
 !mobile/public/

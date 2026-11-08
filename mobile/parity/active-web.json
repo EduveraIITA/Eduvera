@@ -3743,7 +3743,7 @@
     "mobile/src/lib/company-policy.ts": "aaf2f68663bf057816ceddf5c18bdc183470ba671f5f9b716bc35b0f409d59fa",
     "mobile/src/lib/departure-operations.ts": "05dffd6e34cd0abbc679b042450dd26dea024752558a5cba27509b205bd1988d",
     "mobile/src/lib/departure-pickup.ts": "ffbd60e9749c38853e8aa257884ee74270b0fef519585dcf8280920b8e71152b",
-    "mobile/src/lib/device-storage-browser.ts": "b10ec35126c285850d0ca2218b3ddfa44219b8b0fd80dc6a7f73af0799bca304",
+    "mobile/src/lib/device-storage-browser.ts": "a3000e2627e7acd49edc90ab1de6668e6d26f00edc1534dbf4758051a94429a7",
     "mobile/src/lib/device-storage.ts": "7822aa03b45ed3bbbb48dd8867df321f745809a3a2d584f3a620cbbc4119bef5",
     "mobile/src/lib/device-storage.web.ts": "10896a8acfbcf15143c8b9bff7e4f883099033bd9363978f0f99507429e52c0b",
     "mobile/src/lib/dining-operations.ts": "4ca6f409561cffdd3ecd5476c7a5bc76234140553aa900ccfb4a47d1c21e1464",
