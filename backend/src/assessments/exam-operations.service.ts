@@ -236,18 +236,28 @@ export class ExamOperationsService {
     `.execute(db)).rows.map(row=>row.user_id);
   }
 
-  private async emit(db:Db,schoolId:string,sittingId:string,assessmentId:string,action:string,revision:number,eventIdentity=action,additionalAudienceUserIds:string[]=[]){
-    const candidates=action==='schedule'?(await sql<{user_id:string}>`SELECT student.user_id FROM assessment_sitting_candidates candidate
+  private async scheduledLearnerAudience(db:Transaction<Database>,schoolId:string,sittingId:string){
+    const classAccounts=(await sql<{user_id:string}>`SELECT student.user_id FROM assessment_sitting_candidates candidate
       JOIN students student ON student.id=candidate.student_id AND student.school_id=candidate.school_id
       WHERE candidate.school_id=${schoolId}::uuid AND candidate.sitting_id=${sittingId}::uuid AND student.user_id IS NOT NULL
       UNION SELECT parent.user_id FROM assessment_sitting_candidates candidate JOIN guardian_relationships relationship
         ON relationship.school_id=candidate.school_id AND relationship.student_id=candidate.student_id
       JOIN parents parent ON parent.id=relationship.guardian_id WHERE candidate.school_id=${schoolId}::uuid
-        AND candidate.sitting_id=${sittingId}::uuid AND parent.user_id IS NOT NULL
-      UNION SELECT endpoint.user_id FROM assessment_sitting_candidates candidate
-      JOIN campus_model_current_account_endpoints(${schoolId}::uuid,NULL,${executionNow()}::timestamptz) endpoint
-        ON endpoint.school_id=candidate.school_id AND endpoint.person_id=candidate.person_id
-      WHERE candidate.school_id=${schoolId}::uuid AND candidate.sitting_id=${sittingId}::uuid`.execute(db)).rows.map(row=>row.user_id):[];
+        AND candidate.sitting_id=${sittingId}::uuid AND parent.user_id IS NOT NULL`.execute(db)).rows;
+    const coursePeople=await db.selectFrom('assessment_sitting_candidates').select('person_id')
+      .where('school_id','=',schoolId).where('sitting_id','=',sittingId).where('person_id','is not',null)
+      .$narrowType<{person_id:string}>().orderBy('person_id').execute();
+    const accounts=classAccounts.map(row=>row.user_id), at=executionNow().toISOString();
+    for(let start=0;start<coursePeople.length;start+=1000){
+      const personIds=coursePeople.slice(start,start+1000).map(row=>row.person_id);
+      const endpoints=await this.identities.listCurrentAccountEndpoints(db,{school_id:schoolId,at,person_ids:personIds});
+      accounts.push(...endpoints.map(endpoint=>endpoint.user_id));
+    }
+    return accounts;
+  }
+
+  private async emit(db:Transaction<Database>,schoolId:string,sittingId:string,assessmentId:string,action:string,revision:number,eventIdentity=action,additionalAudienceUserIds:string[]=[]){
+    const candidates=action==='schedule'?await this.scheduledLearnerAudience(db,schoolId,sittingId):[];
     const audienceUserIds=[...new Set([...await this.audience(db,schoolId,sittingId),...additionalAudienceUserIds,...candidates])];
     await this.events.enqueueUserEvent(db,{schoolId,eventType:"assessment.updated",aggregateType:"assessment_sitting",aggregateId:sittingId,audienceUserIds,payload:{assessment_id:assessmentId,sitting_id:sittingId,action,state_action:action,revision,refresh:["assessments","teacher.home","principal.home","requests","notifications","attention","calendar","campus-view","activities","attendance","workspace","today"]},idempotencyKey:`assessment-sitting:${sittingId}:${eventIdentity}:${revision}`});
     return (await sql<{id:string}>`SELECT id FROM event_outbox WHERE school_id=${schoolId}::uuid AND idempotency_key=${`assessment-sitting:${sittingId}:${eventIdentity}:${revision}`}`.execute(db)).rows[0]!.id;
@@ -295,7 +305,7 @@ export class ExamOperationsService {
     };
   }
 
-  async createForAssessment(db:Db,user:AuthUser,assessment:AssessmentRecord,input:{space_id:string;invigilator_user_ids:string[]}){
+  async createForAssessment(db:Transaction<Database>,user:AuthUser,assessment:AssessmentRecord,input:{space_id:string;invigilator_user_ids:string[]}){
     if(!isPhysicalAssessment(assessment.assessment_kind)) throw new BadRequestException("A physical sitting is available only for an exam, practical or viva.");
     if(!assessment.scheduled_at||!assessment.duration_minutes) throw new BadRequestException("Choose the examination date, start time and duration before placing it in a campus space.");
     const invigilators=[...new Set(input.invigilator_user_ids)];
