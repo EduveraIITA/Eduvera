@@ -414,11 +414,12 @@ college does not implement course/credit administration beyond existing owners.
 
 Company first/replacement-admin and supported campus invitations enqueue mail in
 the invitation transaction; the configured server worker sends after commit.
-Trusted canonical HTTPS `PUBLIC_URL` builds
-the join link; code prefill uses its fragment, never a query string. Branded HTML
-and plain text include recipient, code and expiry. The join button neither redeems
-a code nor
-proves acceptance. Provider acceptance, unconfirmed send and recipient joining are
+Trusted canonical HTTPS `PUBLIC_URL` builds the join link with the invitation
+proof in its fragment. The app captures the proof in memory and removes it from
+the browser address and route state. A valid link shows the invited address and
+a **Continue** action. Branded HTML and plain text include the details for manual
+entry and the expiry. A new recipient completes the separate mailbox code before
+accepting. Provider acceptance, unconfirmed send and recipient joining are
 separate states; manual sharing is only the explicitly permitted original invite,
 never the independent mailbox-proof code.
 

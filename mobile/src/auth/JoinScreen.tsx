@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { AppState, Platform } from 'react-native';
-import { Stack, useIsFocused, useLocalSearchParams, useRouter } from 'expo-router';
+import { Stack, useIsFocused, useLocalSearchParams, useNavigation, useRouter } from 'expo-router';
 import { useSession } from './SessionProvider';
 import { apiFetch, captureApiContext } from '../lib/api';
 import { ApiError } from '../lib/api-client';
@@ -8,7 +8,7 @@ import { Button, Empty, Field, Loading, Notice, Page, Section } from '../ui/comp
 import { ControlButton, Facts } from '../ui/DomainControls';
 import { useScreenExitGuard } from '../ui/BackNavigation';
 import { useTheme } from '../ui/theme';
-import { checkedAcceptedInvitation, checkedInvitationProof, invitationFromFragment, invitationContinuationPath, invitationToken, invitationUuid, validateInvitationContinuation, type AcceptedInvitation, type InvitationProof } from './invitation-entry';
+import { checkedAcceptedInvitation, checkedInvitationProof, invitationFromFragment, invitationContinuationPath, invitationToken, invitationUuid, scrubBrowserInvitation, validateInvitationContinuation, type AcceptedInvitation, type InvitationProof } from './invitation-entry';
 import { createPublicFormLease, PublicFormContextChanged, publicFormRequest } from './public-form-operation';
 
 const message = (cause: unknown) => cause instanceof Error ? cause.message : 'The invitation could not be confirmed.';
@@ -36,19 +36,30 @@ async function currentInvitationDestination(actor: string, campus: string, invit
 
 export function JoinScreen() {
   const session = useSession(), router = useRouter(), { colors } = useTheme();
-  const params = useLocalSearchParams<{ campus?: string; invitation?: string; '#': string }>(), fragment = typeof params['#'] === 'string' ? params['#'] : '';
+  const params = useLocalSearchParams<{ campus?: string; invitation?: string; '#'?: string }>();
+  const navigation = useNavigation<{ replaceParams(next: typeof params): void }>();
+  const focused = useIsFocused();
+  const browser = Platform.OS === 'web' && typeof window !== 'undefined' ? window : null;
+  const nativeFragment = typeof params['#'] === 'string' ? params['#'] : '';
+  const browserFragment = browser?.location.pathname === '/join' ? browser.location.hash : '';
+  const fragment = !focused ? '' : browser ? browserFragment : nativeFragment;
   const [entry, setEntry] = useState(() => ({ fragment, serial: 0 }));
-  // Capture the secret once, then remove it from the address bar without a new
-  // history entry. A later invitation gets a fresh form before it is scrubbed.
-  if (fragment && entry.fragment !== fragment) setEntry(old => ({ fragment, serial: old.serial + 1 }));
-  useEffect(() => { if (fragment) router.setParams({ '#': undefined }); }, [fragment, router]);
   const campus = typeof params.campus === 'string' ? params.campus : undefined, invitation = typeof params.invitation === 'string' ? params.invitation : undefined;
-  const invalid = campus && !invitationUuid.test(campus) || invitation && (!campus || !invitationUuid.test(invitation));
+  const invalid = (params.campus !== undefined && !invitationUuid.test(campus ?? '')) || (params.invitation !== undefined && (!campus || !invitationUuid.test(invitation ?? '')));
+  useEffect(() => {
+    if (!fragment || browser && (browser.location.pathname !== '/join' || browser.location.hash !== fragment)) return;
+    setEntry(previous => previous.fragment === fragment ? previous : { fragment, serial: previous.serial + 1 });
+    const clean = invalid ? { campus: 'invalid' } : { ...(campus ? { campus } : {}), ...(invitation ? { invitation } : {}) };
+    if (browser) scrubBrowserInvitation(browser, fragment, clean);
+    // Expo also retains the original URL in its route snapshot.
+    navigation.replaceParams(clean);
+  }, [browser, campus, fragment, invalid, invitation, navigation]);
   return <><Stack.Screen options={{ headerShown: true, title: 'Campus invitation', headerTintColor: colors.link, headerShadowVisible: false, contentStyle: { backgroundColor: colors.canvas } }} />{session.environment.mode !== 'live' ? <Page title="Joining is managed in Live"><Notice message="Return to Live before changing app access or requesting an email verification code." /><ControlButton title="Simulation controls" onPress={() => router.replace('/more/simulation' as never)} /></Page> : invalid ? <Page title="Check your invitation"><Empty title="This invitation link is incomplete" message="Open the original invitation or ask your campus contact to check it." /><ControlButton title="Sign in" onPress={() => router.replace('/login')} /></Page> : campus ? <CampusContinuation campus={campus} invitation={invitation} /> : <InvitationForm key={`${session.scopeKey}:${entry.serial}`} fragment={entry.fragment} />}</>;
 }
 
 function InvitationForm({ fragment }: { fragment: string }) {
   const session = useSession(), router = useRouter(), initial = invitationFromFragment(fragment);
+  const fromLink = !!initial.token;
   const [email, setEmail] = useState(initial.email), [token, setToken] = useState(initial.token), [name, setName] = useState(''), [password, setPassword] = useState(''), [proof, setProof] = useState('');
   const [details, setDetails] = useState<InvitationProof | null>(null), [accepted, setAccepted] = useState<AcceptedInvitation | null>(null), [confirmRequired, setConfirmRequired] = useState(false), [confirmed, setConfirmed] = useState(false);
   const [busy, setBusy] = useState(false), [error, setError] = useState(''), [unknown, setUnknown] = useState(false), [retryAt, setRetryAt] = useState(0), [now, setNow] = useState(Date.now());
@@ -98,9 +109,17 @@ function InvitationForm({ fragment }: { fragment: string }) {
     } catch (cause) { if (mounted.current) setError(message(cause)); }
     finally { running.current = false; if (mounted.current) setBusy(false); }
   }
-  return <Page title={accepted ? 'You’re connected' : details ? `Join ${details.campus.name}` : 'Join your campus'} subtitle={accepted ? 'Your invitation has been accepted.' : 'Use the email and code from your campus invitation.'} maxWidth={560}>
+  return <Page title={accepted ? 'You’re connected' : details ? `Join ${details.campus.name}` : 'Join your campus'} subtitle={accepted ? 'Your invitation has been accepted.' : fromLink ? 'Continue with the address on your invitation.' : 'Use the email and code from your campus invitation.'} maxWidth={560}>
     {error ? <Notice tone="danger" message={error} /> : null}
-    {accepted ? <><Notice tone="success" message={accepted.role === 'member' ? 'Your account is linked to your campus person. Campus work is available when assigned.' : 'Your campus membership is active.'} />{session.status === 'authenticated' && !sameAccount ? <Notice message={`You are still signed in as ${session.user?.email}. Continue with the invited account.`} /> : null}<Button title={sameAccount ? accepted.continuation?.label ?? 'Open campus' : session.status === 'authenticated' ? 'Sign in with invited account' : 'Sign in'} busy={busy} onPress={() => { void continueAfterJoining(); }} /></> : !details ? <Section title="Invitation details"><Field label="Email" value={email} onChangeText={setEmail} keyboardType="email-address" autoComplete="email" maxLength={254} editable={!busy} /><Field label="Invitation code" value={token} onChangeText={setToken} autoCapitalize="none" autoComplete="one-time-code" maxLength={100} editable={!busy} /><Button title="Continue" busy={busy} disabled={!email.trim() || !invitationToken.test(token.trim())} onPress={() => { void inspect(); }} /><ControlButton title="Sign in" disabled={busy} onPress={() => router.push('/login')} /></Section> : <>
+    {accepted ? <><Notice tone="success" message={accepted.role === 'member' ? 'Your account is linked to your campus person. Campus work is available when assigned.' : 'Your campus membership is active.'} />{session.status === 'authenticated' && !sameAccount ? <Notice message={`You are still signed in as ${session.user?.email}. Continue with the invited account.`} /> : null}<Button title={sameAccount ? accepted.continuation?.label ?? 'Open campus' : session.status === 'authenticated' ? 'Sign in with invited account' : 'Sign in'} busy={busy} onPress={() => { void continueAfterJoining(); }} /></> : !details ? <Section title="Invitation details">
+      {fromLink ? <Facts items={[{ label: 'Invited email', value: email }]} /> : <>
+        {fragment ? <Notice tone="warning" message="This invitation link is incomplete. Open the original email, or enter the invitation details below." /> : null}
+        <Field label="Email" value={email} onChangeText={setEmail} keyboardType="email-address" autoComplete="email" maxLength={254} editable={!busy} />
+        <Field label="Invitation code" value={token} onChangeText={setToken} autoCapitalize="none" autoComplete="one-time-code" maxLength={100} editable={!busy} />
+      </>}
+      <Button title="Continue" busy={busy} disabled={!email.trim() || !invitationToken.test(token.trim())} onPress={() => { void inspect(); }} />
+      <ControlButton title="Sign in" disabled={busy} onPress={() => router.push('/login')} />
+    </Section> : <>
       <Facts items={[{ label: 'Invited email', value: email }, { label: 'Campus', value: details.campus.name }]} />
       {session.status === 'authenticated' && session.user?.email.toLowerCase() !== email.trim().toLowerCase() ? <Notice message={`Signed in as ${session.user?.email}. Accepting this invitation keeps that account signed in.`} /> : null}
       <Field label="Name" value={name} onChangeText={setName} maxLength={150} autoComplete="name" editable={!busy && !unknown} />

@@ -50,6 +50,7 @@
 !mobile/test/account-mail-link.test.ts
 !mobile/test/account-security-mail-entry.test.ts
 !mobile/test/auth-port-completion.test.ts
+!mobile/test/invitation-entry.test.ts
 !mobile/test/academic-offering-reports.test.ts
 !mobile/test/calendar-offering-read.test.ts
 !mobile/test/learning-offering-access.test.ts
