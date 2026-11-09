@@ -7,6 +7,7 @@ import { apiFetch, getApiOrigin } from '../lib/api';
 import { useApi } from '../lib/query';
 import { useNativePendingAction } from '../lib/native-pending-action';
 import { useOperationContext } from '../lib/use-operation-context';
+import { formatCampusDateTime } from '../lib/browser-temporal';
 import { assertExamScheduleAccepted, definitiveExamScheduleRefusal, examScheduleAmendmentInput, examScheduleConfirmationInput,
   examScheduleDraftChanged, examSchedulePreviewPayload, examScheduleRefreshPath, mayAmendExamSchedule, readExamSchedulePreview, type ExamScheduleDraft, type ExamSchedulePreview } from '../lib/assessment-schedule-amendments';
 import { Button, Empty, Field, Loading, Notice, Page, Row, Section } from '../ui/components';
@@ -50,7 +51,8 @@ function ScheduleForm({href,schoolId,detail,workspace,confirm,refresh}:Props&{de
   async function preview(){if(locked)return;setReading(true);setError('');try{const payload=examSchedulePreviewPayload(source,workspace,draft,now),assertCurrent=captureOperation();
     const result=await apiFetch<ExamSchedulePreview>(base+'sitting/schedule-amendments/preview/',{method:'POST',body:JSON.stringify(payload)});assertCurrent();setReview({preview:readExamSchedulePreview(result,source,payload),payload});
   }catch(cause){setError(message(cause));}finally{setReading(false);}}
-  const when=(value:string)=>new Date(value).toLocaleString();
+  const timeZone = op.time_zone ?? workspace.time_zone ?? 'UTC';
+  const when = (value: string) => formatCampusDateTime(value, timeZone);
   return <Page title={confirm?'Confirm revised schedule':'Change examination schedule'} subtitle={source.assessment.title}>
     <ScreenBack fallbackHref={owner(href)} title="Assessment" disabled={writer.busy||reading}/>
     {error||writer.error?<Notice tone="danger" message={error||writer.error}/>:null}
@@ -61,7 +63,7 @@ function ScheduleForm({href,schoolId,detail,workspace,confirm,refresh}:Props&{de
     {!mayAmendExamSchedule(source,now)?<Notice tone="warning" message="Only a future examination with no started sitting, candidate observations or incidents can be revised."/>:null}
     <Section title={confirm?'Revised arrangements':'Current arrangements'}><Facts items={[{label:'When',value:`${when(op.sitting.starts_at)} – ${when(op.sitting.ends_at)}`},
       {label:'Place',value:op.space.name},{label:'Candidates',value:`${op.candidates.length} · Frozen roster retained`},
-      {label:'Readiness',value:op.schedule_state==='awaiting_confirmation'?'Awaiting current invigilator confirmation':op.sitting.state.replaceAll('_',' ')}]}/></Section>
+      {label:'Readiness',value:op.schedule_state==='awaiting_confirmation' ? op.readiness?.can_schedule ? 'Ready for officer confirmation' : 'Waiting for invigilation and schedule checks' : op.sitting.state.replaceAll('_',' ')}]}/></Section>
     {confirm?<Section title="Readiness check">{op.readiness?.blockers.map((item,index)=><Notice key={`${item.code}:${index}`} tone="warning" message={item.message}/>)}
       <Notice message="Confirmation rechecks current staff acceptances and all schedule conflicts. The frozen candidate roster and earlier schedule history stay unchanged."/>
       <Button title="Confirm revised schedule" disabled={locked||!op.readiness?.can_schedule} busy={writer.busy}
@@ -73,7 +75,7 @@ function ScheduleForm({href,schoolId,detail,workspace,confirm,refresh}:Props&{de
         <Notice tone="warning" message={review.preview.confirmation_message}/><Button title="Publish revised arrangements" busy={writer.busy} disabled={locked||!review.preview.can_publish}
           onPress={()=>{setError('');try{void writer.run(examScheduleAmendmentInput(source,schoolId,review.payload,review.preview));}catch(cause){setError(message(cause));}}}/>
         <ControlButton title="Keep editing" disabled={writer.locked} onPress={()=>setReview(null)}/></Section>
-      :<Section title="Revised arrangements"><TemporalField label="New date and time" mode="datetime" value={draft.scheduled} onChange={scheduled=>change({scheduled})} disabled={locked} minimumDate={new Date(now)}/>
+      :<Section title="Revised arrangements"><TemporalField label={`New date and time · ${timeZone}`} mode="datetime" timeZone={timeZone} value={draft.scheduled} onChange={scheduled=>change({scheduled})} disabled={locked} minimumDate={new Date(now)}/>
         <Field label="Duration in minutes" value={draft.duration} onChangeText={duration=>change({duration})} keyboardType="number-pad" maxLength={4} editable={!locked}/>
         <ChoiceMenu label="Room or hall" value={draft.space} options={(workspace.references?.spaces??[]).map(row=>({value:row.id,label:`${row.name} · ${row.capacity??'Unknown'} seats`}))} onChange={space=>change({space})} disabled={locked}/>
         <Disclosure title={`Invigilators · ${draft.invigilators.length}`}><Notice message="Changing the time or room asks each affected invigilator to confirm again."/>

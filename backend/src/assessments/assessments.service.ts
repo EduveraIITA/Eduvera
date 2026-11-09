@@ -12,7 +12,7 @@ import type { Database } from "../database/types.js";
 import { assertActiveSchoolStaffMember, hasScopedSchoolPermission, schoolPermission } from "../roles/authorization.js";
 import { SchoolEventService } from "../school/school-event.service.js";
 import { assessmentResultsHref } from "../workspace/canonical-application-links.js";
-import { ExamOperationsService, isPhysicalAssessment } from "./exam-operations.service.js";
+import { ExamOperationsService, assertFutureExamStart, isPhysicalAssessment } from "./exam-operations.service.js";
 import { activityOccurrenceId } from '../schedule-planning/activity-occurrence.engine.js';
 import { lockSchedule } from '../day-plans/schedule.js';
 import { DOMAIN_COMMAND_GATEWAY_PORT, type DomainCommandGatewayPort, type PreparedDomainCommand } from "../campus-model-core/domain-command-gateway.port.js";
@@ -35,8 +35,11 @@ const offeringAssessmentInput = classAssessmentInput.omit({ class_section_id: tr
   context_kind: z.literal("learning_offering"), offering_id: uuid, class_section_id: z.null().optional(), subject_id: uuid.optional(), idempotency_key: uuid,
 });
 const assessmentInput = z.union([classAssessmentInput.extend({ context_kind: z.literal("class_term").optional(), offering_id: z.null().optional() }), offeringAssessmentInput]);
+const offeringSittingReceipt = z.object({
+  id: uuid, assessment_id: uuid, school_id: uuid, space_id: uuid, revision: z.number().int().positive(), starts_at: z.iso.datetime(),
+});
 const offeringAssessmentReceipt = offeringAssessmentInput.extend({ id: uuid, revision: z.number().int().positive(), command_id: uuid,
-  action: z.literal("assessment.create"), status: z.literal("draft"), school_id: uuid, class_section_id: z.null(), subject_id: uuid }).strict();
+  action: z.literal("assessment.create"), status: z.literal("draft"), school_id: uuid, class_section_id: z.null(), subject_id: uuid, sitting: offeringSittingReceipt.optional() }).strict();
 const resultInput = z.object({ result_id: uuid, outcome: z.enum(["scored","absent","exempt","withheld","not_evaluated"]), marks: z.number().finite().min(0).multipleOf(0.01).nullable().default(null), grade: z.string().trim().max(24).default(""), feedback: z.string().trim().max(1000).default(""), expected_revision: z.coerce.number().int().positive(), reason: z.string().trim().min(3).max(500) });
 const resultsInput = z.object({ expected_assessment_revision: z.coerce.number().int().positive(), results: z.array(resultInput).min(1).max(500) });
 const actionInput = z.object({ expected_revision: z.coerce.number().int().positive(), note: z.string().trim().max(1000).default(""), idempotency_key:uuid.optional() });
@@ -277,9 +280,11 @@ export class AssessmentsService {
     if (course?.context_kind === "learning_offering" && course.offering_id) {
       if (!this.identities) throw new ConflictException("Current course recipient identity is unavailable.");
       const people = (await sql<{ person_id: string }>`SELECT person_id FROM assessment_results WHERE school_id=${schoolId}::uuid AND assessment_id=${assessmentId}::uuid
+        UNION SELECT person_id FROM assessment_sitting_candidates WHERE school_id=${schoolId}::uuid AND assessment_id=${assessmentId}::uuid
         UNION SELECT enrollment.person_id FROM assessments assessment JOIN schools school ON school.id=assessment.school_id
         JOIN learning_offering_enrollments enrollment ON enrollment.school_id=assessment.school_id AND enrollment.offering_id=assessment.offering_id
         WHERE assessment.school_id=${schoolId}::uuid AND assessment.id=${assessmentId}::uuid
+          AND assessment.assessment_kind NOT IN ('exam','practical','viva')
           AND enrollment.starts_on<=(assessment.scheduled_at AT TIME ZONE school.timezone)::date
           AND(enrollment.ends_on IS NULL OR enrollment.ends_on>(assessment.scheduled_at AT TIME ZONE school.timezone)::date)`.execute(db)).rows;
       const expected = new Set(people.map(row => row.person_id));
@@ -364,8 +369,7 @@ export class AssessmentsService {
             OR EXISTS (SELECT 1 FROM assessment_sitting_invigilators assignment JOIN assessment_sittings sitting ON sitting.id=assignment.sitting_id
               JOIN assessments assessment ON assessment.id=sitting.assessment_id AND assessment.school_id=sitting.school_id
               WHERE assignment.school_id=membership.school_id AND sitting.school_id=membership.school_id
-                AND assignment.user_id=membership.user_id AND assignment.status IN ('offered','accepted')
-                AND (assessment.context_kind='class_term' OR staff_has_resource_permission(membership.school_id,membership.user_id,'assessments.view','assessment',assessment.id)))
+                AND assignment.user_id=membership.user_id AND assignment.status IN ('offered','accepted'))
           )
       ) AS has_assigned`.execute(db);
       const assigned = result.rows[0]?.has_assigned === true;
@@ -391,10 +395,12 @@ export class AssessmentsService {
 
   async workspace(user: AuthUser, schoolId: string, academicContext?: string) {
     const includeOfferings = z.literal("offering_v1").optional().parse(academicContext) === "offering_v1";
-    const membership = await this.db.selectFrom("school_memberships").select("role")
-      .where("school_id","=",schoolId).where("user_id","=",user.id)
-      .where("is_active","=",true).where("role","in",["admin","staff"])
-      .orderBy(sql`role='admin'`,"desc").executeTakeFirst();
+    const membership = await this.db.selectFrom("school_memberships")
+      .innerJoin("schools","schools.id","school_memberships.school_id")
+      .select(["school_memberships.role","schools.timezone as time_zone"])
+      .where("school_memberships.school_id","=",schoolId).where("school_memberships.user_id","=",user.id)
+      .where("school_memberships.is_active","=",true).where("school_memberships.role","in",["admin","staff"])
+      .orderBy(sql`school_memberships.role='admin'`,"desc").executeTakeFirst();
     if (!membership) throw new ForbiddenException("Active school staff access is required.");
     const admin = membership.role === "admin";
     let offerings = includeOfferings ? await offeringAcademicReferences(this.db, schoolId, true) : [];
@@ -432,8 +438,12 @@ export class AssessmentsService {
       LEFT JOIN assessment_results result ON result.assessment_id=assessment.id
       LEFT JOIN assessment_sittings sitting ON sitting.assessment_id=assessment.id LEFT JOIN campus_spaces space ON space.id=sitting.space_id
       WHERE assessment.school_id=${schoolId}::uuid AND (${includeOfferings} OR assessment.context_kind='class_term')
-        AND(assessment.context_kind='class_term' OR ${admin} OR staff_has_resource_permission(${schoolId}::uuid,${user.id}::uuid,'assessments.view','assessment',assessment.id)) AND (${admin} OR EXISTS(SELECT 1 FROM assessment_staff_assignments mine WHERE mine.assessment_id=assessment.id AND mine.user_id=${user.id}::uuid) OR EXISTS(SELECT 1 FROM assessment_sitting_invigilators mine JOIN assessment_sittings mine_sitting ON mine_sitting.id=mine.sitting_id WHERE mine_sitting.assessment_id=assessment.id AND mine.user_id=${user.id}::uuid AND mine.status IN ('offered','accepted')))
-      GROUP BY assessment.id,space.name,cycle.name,subject.name,subject.color,subject.icon,section.grade,section.section,offering.name,examiner.user_id,examiner_user.first_name,examiner_user.last_name,moderator.user_id,moderator_user.first_name,moderator_user.last_name
+        AND (${admin}
+          OR EXISTS(SELECT 1 FROM assessment_staff_assignments mine WHERE mine.assessment_id=assessment.id AND mine.user_id=${user.id}::uuid
+            AND (assessment.context_kind='class_term' OR staff_has_resource_permission(${schoolId}::uuid,${user.id}::uuid,'assessments.view','assessment',assessment.id)))
+          OR EXISTS(SELECT 1 FROM assessment_sitting_invigilators mine WHERE mine.school_id=assessment.school_id AND mine.sitting_id=sitting.id
+            AND mine.user_id=${user.id}::uuid AND mine.status IN ('offered','accepted')))
+      GROUP BY assessment.id,sitting.id,space.name,cycle.name,subject.name,subject.color,subject.icon,section.grade,section.section,offering.name,examiner.user_id,examiner_user.first_name,examiner_user.last_name,moderator.user_id,moderator_user.first_name,moderator_user.last_name
       ORDER BY assessment.scheduled_at NULLS LAST,assessment.created_at DESC`.execute(this.db);
     if (!admin) {
       const classes = (await sql<{ id:string; name:string; academic_year:string }>`
@@ -449,7 +459,7 @@ export class AssessmentsService {
           AND current_date BETWEEN binding.starts_on AND COALESCE(binding.ends_on,'infinity'::date)
         ORDER BY section.academic_year DESC,name,section.id
       `.execute(this.db)).rows;
-      if (!classes.length && !offerings.length) return { mode: "staff", can_plan_class_test: false, planner_user_id: user.id, cycles: cycles.rows, assessments: assessments.rows };
+      if (!classes.length && !offerings.length) return { mode: "staff", time_zone: membership.time_zone, can_plan_class_test: false, planner_user_id: user.id, cycles: cycles.rows, assessments: assessments.rows };
       const subjects = (await sql<{ id:string; name:string; color:string; icon:string; class_section_ids:string[] }>`
         SELECT subject.id,subject.name,subject.color,subject.icon,
           array_agg(DISTINCT binding.scope_id ORDER BY binding.scope_id) AS class_section_ids
@@ -481,7 +491,7 @@ export class AssessmentsService {
         ORDER BY first_name,last_name,account.id
       `.execute(this.db)).rows;
       return {
-        mode: "staff", can_plan_class_test: Boolean((subjects.length || offerings.length) && reviewers.length), planner_user_id: user.id,
+        mode: "staff", time_zone: membership.time_zone, can_plan_class_test: Boolean((subjects.length || offerings.length) && reviewers.length), planner_user_id: user.id,
         cycles: cycles.rows, assessments: assessments.rows,
         references: { classes, subjects, ...(includeOfferings ? { offerings } : {}), staff: reviewers, grading_policies: gradingPolicies },
       };
@@ -497,7 +507,7 @@ export class AssessmentsService {
       WHERE membership.school_id=${schoolId}::uuid AND membership.role IN ('staff','admin') AND membership.is_active AND u.is_active
       ORDER BY first_name,last_name`.execute(this.db);
     const spaces=await sql`SELECT space.id,space.name,space.code,space.kind,space.capacity,campus.name AS campus_name FROM campus_spaces space JOIN institution_campuses campus ON campus.id=space.campus_id WHERE space.school_id=${schoolId}::uuid AND space.status='active' AND space.is_bookable ORDER BY campus.name,space.name,space.id`.execute(this.db);
-    return { mode: "admin", cycles: cycles.rows, assessments: assessments.rows, references: { ...(includeOfferings ? { offerings } : {}), terms: terms.rows, classes: classes.rows, subjects: subjects.rows, staff: staff.rows, spaces:spaces.rows, grading_policies: gradingPolicies } };
+    return { mode: "admin", time_zone: membership.time_zone, cycles: cycles.rows, assessments: assessments.rows, references: { ...(includeOfferings ? { offerings } : {}), terms: terms.rows, classes: classes.rows, subjects: subjects.rows, staff: staff.rows, spaces:spaces.rows, grading_policies: gradingPolicies } };
   }
 
   async calendar(user:AuthUser,schoolId:string,from:string,to:string,studentId?:string,academicContext?:string,personId?:string):Promise<{items:AssessmentCalendarDate[]}> {
@@ -557,9 +567,11 @@ export class AssessmentsService {
       WHERE assessment.school_id=${schoolId}::uuid AND assessment.context_kind='learning_offering' AND assessment.status NOT IN('draft','cancelled')
         AND(assessment.scheduled_at AT TIME ZONE school.timezone)::date BETWEEN ${from}::date AND ${to}::date
         AND(${admin} OR(${staff} AND staff_has_resource_permission(${schoolId}::uuid,${user.id}::uuid,'assessments.view','assessment',assessment.id))
-          OR EXISTS(SELECT 1 FROM learning_offering_enrollments enrollment WHERE enrollment.school_id=assessment.school_id AND enrollment.offering_id=assessment.offering_id
+          OR EXISTS(SELECT 1 FROM assessment_sitting_candidates candidate WHERE candidate.school_id=assessment.school_id
+            AND candidate.assessment_id=assessment.id AND candidate.person_id=${ownPerson}::uuid)
+          OR (assessment.assessment_kind NOT IN ('exam','practical','viva') AND EXISTS(SELECT 1 FROM learning_offering_enrollments enrollment WHERE enrollment.school_id=assessment.school_id AND enrollment.offering_id=assessment.offering_id
             AND enrollment.person_id=${ownPerson}::uuid AND enrollment.starts_on<=(assessment.scheduled_at AT TIME ZONE school.timezone)::date
-            AND(enrollment.ends_on IS NULL OR enrollment.ends_on>(assessment.scheduled_at AT TIME ZONE school.timezone)::date)))
+            AND(enrollment.ends_on IS NULL OR enrollment.ends_on>(assessment.scheduled_at AT TIME ZONE school.timezone)::date))))
       ORDER BY assessment.scheduled_at,assessment.title`.execute(this.db)).rows;
     return{items:[...legacy.items,...courses].sort((left,right)=>new Date(left.scheduled_at).getTime()-new Date(right.scheduled_at).getTime()||left.title.localeCompare(right.title))};
   }
@@ -568,10 +580,11 @@ export class AssessmentsService {
     const access = await this.assigned(user,schoolId,assessmentId);
     const canReadResults = await this.canReadResults(user, schoolId, assessmentId);
     if (!canReadResults && access.role !== "invigilator") throw new ForbiddenException("You cannot view this assessment's private results.");
-    const assessment = (await sql<Record<string, unknown>>`SELECT assessment.*,COALESCE(space.name,assessment.venue) AS venue,cycle.name AS cycle_name,cycle.term_id,subject.name AS subject_name,subject.color,subject.icon,COALESCE(offering.name,'Class '||section.grade||section.section) AS class_name,
+    const assessment = (await sql<Record<string, unknown>>`SELECT assessment.*,school.timezone AS time_zone,COALESCE(space.name,assessment.venue) AS venue,cycle.name AS cycle_name,cycle.term_id,subject.name AS subject_name,subject.color,subject.icon,COALESCE(offering.name,'Class '||section.grade||section.section) AS class_name,
       examiner.user_id AS examiner_user_id,examiner_user.first_name||' '||examiner_user.last_name AS examiner_name,
       moderator.user_id AS moderator_user_id,moderator_user.first_name||' '||moderator_user.last_name AS moderator_name
-      FROM assessments assessment JOIN assessment_cycles cycle ON cycle.id=assessment.cycle_id JOIN subjects subject ON subject.id=assessment.subject_id LEFT JOIN class_sections section ON section.id=assessment.class_section_id LEFT JOIN learning_offerings offering ON offering.school_id=assessment.school_id AND offering.id=assessment.offering_id
+      FROM assessments assessment JOIN schools school ON school.id=assessment.school_id
+      JOIN assessment_cycles cycle ON cycle.id=assessment.cycle_id JOIN subjects subject ON subject.id=assessment.subject_id LEFT JOIN class_sections section ON section.id=assessment.class_section_id LEFT JOIN learning_offerings offering ON offering.school_id=assessment.school_id AND offering.id=assessment.offering_id
       LEFT JOIN assessment_staff_assignments examiner ON examiner.assessment_id=assessment.id AND examiner.role='examiner' LEFT JOIN users examiner_user ON examiner_user.id=examiner.user_id
       LEFT JOIN assessment_staff_assignments moderator ON moderator.assessment_id=assessment.id AND moderator.role='moderator' LEFT JOIN users moderator_user ON moderator_user.id=moderator.user_id
       LEFT JOIN assessment_sittings sitting ON sitting.assessment_id=assessment.id LEFT JOIN campus_spaces space ON space.id=sitting.space_id
@@ -588,7 +601,7 @@ export class AssessmentsService {
     const canModerate=await hasScopedSchoolPermission(this.db,user.id,schoolId,"assessments.moderate","assessment",assessmentId);
     const examOperation=this.examOperations?await this.examOperations.projection(schoolId,assessmentId,undefined,user.id):null;
     let rosterPreview: { count: number; as_of: string; source: "dated_enrollment" | "learning_offering"; frozen: boolean } | undefined;
-    if (canReadResults && assessment.offering_id && typeof assessment.offering_id === "string") {
+    if (canReadResults && assessment.offering_id && typeof assessment.offering_id === "string" && !examOperation) {
       const context = (await sql<{ date: string; term_id: string }>`SELECT (assessment.scheduled_at AT TIME ZONE school.timezone)::date::text AS date,cycle.term_id
         FROM assessments assessment JOIN schools school ON school.id=assessment.school_id JOIN assessment_cycles cycle ON cycle.school_id=assessment.school_id AND cycle.id=assessment.cycle_id
         WHERE assessment.school_id=${schoolId}::uuid AND assessment.id=${assessmentId}::uuid`.execute(this.db)).rows[0];
@@ -652,7 +665,9 @@ export class AssessmentsService {
       await this.requireResultActor(db, user, schoolId);
       const actor = await this.identities!.resolveAccountEndpoint(db, { school_id: schoolId, user_id: user.id, at: executionNow().toISOString() });
       if (!actor.acting) throw new ForbiddenException("Your current campus person is unavailable.");
+      const physical = isPhysicalAssessment(data.assessment_kind);
       if (membership.role !== "admin") {
+        if (physical) throw new ForbiddenException("Only an institution administrator can plan a physical examination.");
         await schoolPermission(db, user, schoolId, "assessments.mark", true);
         if (data.examiner_user_id !== user.id) throw new ForbiddenException("An instructor-planned course assessment must keep that instructor as examiner.");
         const appointment = (await sql`SELECT appointment.id FROM learning_offering_teaching_assignments appointment JOIN schools school ON school.id=appointment.school_id
@@ -667,9 +682,19 @@ export class AssessmentsService {
       const prior = (await sql<{ request_hash: string; result: Record<string, unknown> }>`SELECT request_hash,result FROM day_plan_commands
         WHERE school_id=${schoolId}::uuid AND actor_id=${user.id}::uuid AND command_key=${key}::uuid`.execute(db)).rows[0];
       if (prior) { if (prior.request_hash !== hash) throw new ConflictException("This request key belongs to different assessment work."); return { ...offeringAssessmentReceipt.parse(prior.result), replayed: true }; }
-      if (isPhysicalAssessment(data.assessment_kind)) throw new BadRequestException("Physical course sittings need their offering candidate integration. Use a quiz, class test, assignment or project for this course assessment.");
-      if (data.space_id || data.invigilator_user_ids.length) throw new BadRequestException("A nonphysical course assessment does not create a physical examination sitting.");
-      if (!data.scheduled_at) throw new BadRequestException("Choose the dated assessment before creating it. Its dated course roster will be reviewed before marking.");
+      if (!physical && (data.space_id || data.invigilator_user_ids.length))
+        throw new BadRequestException("A campus space and invigilators can be assigned only to an exam, practical or viva.");
+      if (!data.scheduled_at) throw new BadRequestException("Choose the dated assessment before creating it.");
+      let venue = data.venue;
+      if (physical) {
+        if (!data.space_id || !data.invigilator_user_ids.length || !data.duration_minutes)
+          throw new BadRequestException("Choose a campus space, duration and at least one invigilator.");
+        assertFutureExamStart(data.scheduled_at);
+        const room = await db.selectFrom("campus_spaces").select("name").where("school_id", "=", schoolId)
+          .where("id", "=", data.space_id).where("status", "=", "active").where("is_bookable", "=", true).forShare().executeTakeFirst();
+        if (!room) throw new BadRequestException("Choose an active bookable campus space.");
+        venue = room.name;
+      }
       if (data.examiner_user_id === data.moderator_user_id) throw new BadRequestException("Examiner and moderator must be different people.");
       const offering = await db.selectFrom("learning_offerings").select(["id", "revision"]).where("school_id", "=", schoolId).where("id", "=", data.offering_id).where("state", "=", "active").forShare().executeTakeFirst();
       const binding = await offeringAcademicContext(db, schoolId, data.offering_id);
@@ -702,15 +727,25 @@ export class AssessmentsService {
         class_section_id: null, subject_id: binding.subject_id, cycle_id: cycle.id, title: data.title, assessment_kind: data.assessment_kind,
         maximum_marks: String(data.maximum_marks), grading_policy_id: data.grading_policy_id, result_policy: resultPolicy,
         weight_percent: data.weight_percent === null ? null : String(data.weight_percent), scheduled_at: new Date(data.scheduled_at), duration_minutes: data.duration_minutes,
-        venue: data.venue, instructions: data.instructions, evidence_requirement: data.evidence_requirement, created_by: user.id, updated_by: user.id }).returningAll().executeTakeFirstOrThrow();
+        venue, instructions: data.instructions, evidence_requirement: data.evidence_requirement, created_by: user.id, updated_by: user.id }).returningAll().executeTakeFirstOrThrow();
       await db.insertInto("assessment_staff_assignments").values([{ school_id: schoolId, assessment_id: id, user_id: data.examiner_user_id, role: "examiner", assigned_by: user.id },
         { school_id: schoolId, assessment_id: id, user_id: data.moderator_user_id, role: "moderator", assigned_by: user.id }]).execute();
       await this.audit(db, user, schoolId, id, "assessment.created", null, "draft", { context_kind: "learning_offering", offering_id: offering.id });
+      let sittingReceipt: z.infer<typeof offeringSittingReceipt> | undefined;
+      if (physical) {
+        if (!this.examOperations) throw new ConflictException("Physical examination operations are unavailable.");
+        const sitting = await this.examOperations.createForAssessment(db, user, created, {
+          space_id: data.space_id!, invigilator_user_ids: data.invigilator_user_ids,
+        });
+        sittingReceipt = { id: sitting.id, assessment_id: id, school_id: schoolId, space_id: sitting.space_id,
+          revision: sitting.revision, starts_at: new Date(sitting.starts_at).toISOString() };
+      }
       const event = await this.emitUpdated(db, created, "created");
-      const receipt = { ...data, id, revision: created.revision, command_id: key, action: "assessment.create" as const, status: "draft" as const, school_id: schoolId,
+      const receipt = { ...data, venue, ...(sittingReceipt ? { sitting: sittingReceipt } : {}), id, revision: created.revision, command_id: key, action: "assessment.create" as const, status: "draft" as const, school_id: schoolId,
         context_kind: "learning_offering" as const, class_section_id: null, offering_id: offering.id, subject_id: binding.subject_id, cycle_id: cycle.id };
       await this.commands.completeDomainCommand(db, { school_id: schoolId, command_id: prepared.command_id, terminal_state: "accepted", code: "assessment_offering_created",
-        explanation: "The configured course assessment was created; its dated roster is not frozen until marking opens.", resulting_revision: created.revision,
+        explanation: physical ? "The course examination draft and invigilation offers were created. Scheduling freezes the dated candidate roster."
+          : "The course assessment was created. Opening marking freezes the dated roster.", resulting_revision: created.revision,
         domain_event_id: event, metadata: { assessment_id: id, revision: created.revision, offering_id: offering.id, request_hash: hash }, completed_at: executionNow().toISOString() });
       await sql`INSERT INTO day_plan_commands(school_id,actor_id,command_key,request_hash,result) VALUES(${schoolId}::uuid,${user.id}::uuid,${key}::uuid,${hash},${JSON.stringify(receipt)}::jsonb)`.execute(db);
       return { ...receipt, replayed: false };
@@ -816,11 +851,11 @@ export class AssessmentsService {
         if(assignments.find(item=>item.role==="examiner")?.user_id===user.id||current.submitted_by===user.id) throw new ForbiddenException("The examiner cannot moderate their own result register, including as an administrator.");
         if(assignments.find(item=>item.role==="moderator")?.user_id!==user.id)throw new ForbiddenException("Only the assigned independent moderator can approve or return this result register.");
       }
-      const resultsLifecycle=current.context_kind === "learning_offering" || ["submit","approve","return","publish"].includes(action);
-      // A retained domain receipt proves an earlier outcome, not current acting
-      // identity. Recheck the selected world and current endpoint before replay.
-      if(resultsLifecycle)await this.requireResultActor(db,user,schoolId);
-      const durable=resultsLifecycle||['schedule','cancel'].includes(action)&&isPhysicalAssessment(current.assessment_kind);
+      const sittingLifecycle=isPhysicalAssessment(current.assessment_kind)&&["schedule","cancel"].includes(action);
+      const resultsLifecycle=(!sittingLifecycle&&current.context_kind==="learning_offering")||["submit","approve","return","publish"].includes(action);
+      // A retained result is historical. Recheck acting identity before replay.
+      if(resultsLifecycle||current.context_kind==="learning_offering")await this.requireResultActor(db,user,schoolId);
+      const durable=resultsLifecycle||sittingLifecycle;
       if(durable){
         const prior=(await sql<{request_hash:string;result:Record<string,unknown>}>`SELECT request_hash,result FROM day_plan_commands
           WHERE school_id=${schoolId}::uuid AND actor_id=${user.id}::uuid AND command_key=${key}::uuid`.execute(db)).rows[0];
@@ -863,18 +898,7 @@ export class AssessmentsService {
         }
         const cycle=await db.selectFrom("assessment_cycles").select("term_id").where("id","=",current.cycle_id).executeTakeFirstOrThrow();
         if(isPhysicalAssessment(current.assessment_kind)){
-          await sql`INSERT INTO assessment_results(school_id,assessment_id,student_id,academic_roster_source)
-            SELECT candidate.school_id,candidate.assessment_id,candidate.student_id,jsonb_build_object('schema_version',1,'kind','physical_candidate',
-              'enrollment_id',candidate.enrollment_id,'enrollment_revision',enrollment.revision,'roll_number',candidate.roll_number_snapshot,
-              'as_of',(sitting.starts_at AT TIME ZONE school.timezone)::date::text,'candidate_id',candidate.id,'sitting_id',sitting.id)
-            FROM assessment_sitting_candidates candidate
-            JOIN assessment_sittings sitting ON sitting.id=candidate.sitting_id
-              AND sitting.school_id=candidate.school_id AND sitting.assessment_id=candidate.assessment_id
-            JOIN enrollments enrollment ON enrollment.id=candidate.enrollment_id AND enrollment.student_id=candidate.student_id
-            JOIN schools school ON school.id=candidate.school_id
-            WHERE candidate.school_id=${schoolId}::uuid AND candidate.assessment_id=${assessmentId}::uuid
-              AND sitting.state='completed'
-            ON CONFLICT(assessment_id,student_id) DO NOTHING`.execute(db);
+          await this.examOperations!.openFrozenResults(db,schoolId,assessmentId);
         }else{
           const context=(await sql<{ as_of:string }>`SELECT (${current.scheduled_at}::timestamptz AT TIME ZONE timezone)::date::text AS as_of
             FROM schools WHERE id=${schoolId}::uuid`.execute(db)).rows[0];

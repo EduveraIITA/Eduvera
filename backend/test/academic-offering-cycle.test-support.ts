@@ -2,23 +2,51 @@ import { randomUUID } from "node:crypto";
 import { sql } from "kysely";
 import type { AuthenticatedRequest, AuthUser } from "../src/common/request.js";
 import type { DatabaseService } from "../src/database/database.service.js";
-import { AssessmentsService } from "../src/assessments/assessments.service.js";
 import { AcademicReportsService } from "../src/academic-reports/academic-reports.service.js";
 import { ActivityAttendanceService } from "../src/attendance/activity-attendance.service.js";
 import { teachingSessionServices } from "./teaching-sessions.test-support.js";
 import { createLiveExecutionEnvironment } from "../src/campus-model-core/execution-environment.runtime.js";
 import { executionEnvironmentStorage } from "../src/campus-model-core/execution-time.runtime.js";
 import { createElectiveFixture, electiveServices } from "./learning-elective-change.test-support.js";
+import { examAmendmentServices } from "./exam-amendments.test-support.js";
+import { CoordinationConfigurationService } from "../src/campus-model-core/coordination-configuration.service.js";
+import { InvigilationInvitationPolicyService } from "../src/assessments/invigilation-invitation-policy.service.js";
 
 export const academicRequest = (user: AuthUser) => ({ authUser: user, requestId: randomUUID(), headers: { "idempotency-key": randomUUID() }, ip: "127.0.0.1" }) as unknown as AuthenticatedRequest;
 export const academicOfferingPassword = "F0rest!Lamps-And-Rivers2026";
 
 export function academicOfferingServices(db: DatabaseService) {
-  const base = electiveServices(db), teaching=teachingSessionServices(db,base.core);
-  return { ...base, assessments: new AssessmentsService(db, base.events, undefined, base.core, base.core),
+  const base = electiveServices(db), teaching=teachingSessionServices(db,base.core), examination=examAmendmentServices(db);
+  return { ...base, assessments: examination.assessments,
+    exam: examination.operations, examScope: examination.scope,
     reports: new AcademicReportsService(db, base.events, base.core, base.core, base.core),
     attendance: new ActivityAttendanceService(db, base.core, base.core, base.core, base.core, base.core),
     teaching: teaching.context, teachingSessions:teaching.sessions };
+}
+
+export async function prepareOfferingExam(db: DatabaseService, fixture: Awaited<ReturnType<typeof createAcademicOfferingFixture>>,
+  marking: "manual" | "automatic", kind: "exam" | "practical" | "viva" = "exam", invigilator=fixture.instructor) {
+  const {schoolId,owner,instructor,core}=fixture;
+  const campus=await db.insertInto("institution_campuses").values({school_id:schoolId,name:"Academic campus",code:"ACADEMIC",campus_type:"main",is_primary:true,
+    created_by:owner.id,updated_by:owner.id}).returning("id").executeTakeFirstOrThrow();
+  const room=async(name:string,capacity:number)=>db.insertInto("campus_spaces").values({school_id:schoolId,campus_id:campus.id,name,code:name.toUpperCase().replaceAll(" ","-"),kind:"classroom",
+    capacity,is_bookable:true,created_by:owner.id,updated_by:owner.id}).returning("id").executeTakeFirstOrThrow();
+  const original=await room("Exam Hall",25),replacement=await room("Computing Lab",25),tooSmall=await room("Tutorial Room",1);
+  const invitations=new InvigilationInvitationPolicyService(db,core,new CoordinationConfigurationService(core),core,core);
+  const eligible=await invitations.workspace(owner,schoolId);
+  if (!eligible.eligible_recipients.some(person=>person.user_id===invigilator.actor.id&&person.person_id===invigilator.id)) {
+    throw new Error("The course fixture requires a current, canonical invigilator.");
+  }
+  await invitations.approve(academicRequest(owner),schoolId,{expected_revision:0,enabled:true,recipient_person_ids:[invigilator.id],
+    response_due_minutes:10080,expires_after_minutes:43200,approval_note:"Approve the exact isolated fixture invigilator.",idempotency_key:randomUUID()});
+  const policy=await fixture.exam.policy(owner,schoolId);
+  await fixture.exam.savePolicy(owner,schoolId,{expected_revision:policy.revision,readiness_minutes_before:10080,attendance_close_after_minutes:60,
+    minimum_invigilators:1,require_all_candidate_attendance:true,post_completion_marking_mode:marking});
+  const input={context_kind:"learning_offering",offering_id:fixture.source.id,cycle_id:fixture.cycle.id,
+    title:"Distributed systems physical examination",assessment_kind:kind,maximum_marks:100,
+    scheduled_at:`${fixture.date(2)}T09:00:00.000Z`,duration_minutes:60,space_id:original.id,invigilator_user_ids:[invigilator.actor.id],
+    evidence_requirement:"none",examiner_user_id:instructor.actor.id,moderator_user_id:owner.id,idempotency_key:randomUUID()};
+  return {input,original,replacement,tooSmall};
 }
 
 /** Real canonical People invitation and current responsibilities. No compatibility

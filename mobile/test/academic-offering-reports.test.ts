@@ -12,6 +12,7 @@ import * as context from '../src/lib/academic-report-context';
 import * as commands from '../src/lib/academic-report-command';
 import * as presentation from '../../packages/contracts/src/result-presentation';
 import * as attention from '../src/lib/report-attention';
+import * as temporal from '../src/lib/browser-temporal';
 import { createChunkedNativePendingStorage } from '../src/lib/native-pending-action';
 
 const require=createRequire(import.meta.url),id=(value:number)=>`00000000-0000-4000-8000-${String(value).padStart(12,'0')}`;
@@ -40,7 +41,7 @@ async function mounted(file:string,name:string,initial:Record<string,unknown>,de
   const Row=({title,detail,onPress}: {title:string;detail?:string;onPress?():void})=>onPress?React.createElement(Control,{title,onPress}):React.createElement('p',null,title,' ',detail);
   const ui={Field,Notice:({message}:{message:string})=>React.createElement('p',null,message),Row,Section:Box,Page:Box,Empty:({title,message}:{title:string;message?:string})=>React.createElement('p',null,title,' ',message),Loading:()=>React.createElement('p',null,'Loading'),SearchField:Field};
   const controls={ChoiceMenu:Choice,SegmentedControl:Choice,ControlButton:Control,Disclosure:Box,InfoDisclosure:Box,Facts:({items}:{items:Array<{label:string;value:unknown}>})=>React.createElement('div',null,items.map((item,index)=>React.createElement('p',{key:index},`${item.label}: ${String(item.value)}`)))};
-  const deps={react:React,'react/jsx-runtime':require('react/jsx-runtime'),'react-native':{View:Box,Text:Box,Switch:()=>null},'../../lib/academic-report-policy':policy,'../../lib/academic-report-context':context,'../../ui/components':ui,'../../ui/DomainControls':controls,'../ui/components':ui,'../ui/DomainControls':controls,...dependencies};
+  const deps={react:React,'react/jsx-runtime':require('react/jsx-runtime'),'react-native':{View:Box,Text:Box,Switch:()=>null},'../../lib/academic-report-policy':policy,'../../lib/academic-report-context':context,'../../ui/components':ui,'../../ui/DomainControls':controls,'../ui/components':ui,'../ui/DomainControls':controls,'../lib/browser-temporal':temporal,...dependencies};
   const Component=override??load(file,deps,internal)[name] as React.ComponentType<Record<string,unknown>>,{createRoot}=require('react-dom/client'),root=createRoot(dom.window.document.getElementById('root'));let props=initial;
   const render=async(patch:Record<string,unknown>)=>{props={...props,...patch};await act(async()=>root.render(React.createElement(Component,props)));};
   const present=(attribute:string,label:string)=>[...dom.window.document.querySelectorAll(`[${attribute}]`)].some((node:any)=>node.getAttribute(attribute)===label);

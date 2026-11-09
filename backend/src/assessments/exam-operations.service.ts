@@ -17,7 +17,7 @@ import { DOMAIN_COMMAND_GATEWAY_PORT, type DomainCommandGatewayPort } from '../c
 import { HUMAN_AGENT_IDENTITY_PORT, type HumanAgentIdentityPort } from '../campus-model-core/human-agent-identity.port.js';
 import { OwnedPlanFootprintBridge, type OwnedPlanPerson } from '../schedule-planning/owned-plan-footprint.bridge.js';
 import { ActivityPlanningService } from '../schedule-planning/activity-planning.service.js';
-import { datedAcademicRoster } from '../academic-reports/academic-record-context.js';
+import { datedAcademicRoster, datedOfferingRoster } from '../academic-reports/academic-record-context.js';
 import { lockSchedule } from '../day-plans/schedule.js';
 
 type Db = Kysely<Database> | Transaction<Database>;
@@ -25,7 +25,7 @@ type PhysicalKind = "exam" | "practical" | "viva";
 type AssessmentKind = PhysicalKind|"class_test"|"quiz"|"assignment"|"project"|"other";
 type AssessmentStatus = "draft"|"scheduled"|"marking"|"submitted"|"moderated"|"published"|"cancelled";
 type AssessmentRecord = {
-  id:string; school_id:string; cycle_id:string; class_section_id:string|null; subject_id:string;
+  id:string; school_id:string; cycle_id:string; class_section_id:string|null; offering_id:string|null; subject_id:string;
   assessment_kind:AssessmentKind; scheduled_at:Date|string|null;
   duration_minutes:number|null; status:AssessmentStatus; revision:number;
 };
@@ -80,27 +80,31 @@ export const attendanceInput=z.object({
   expected_revision:z.coerce.number().int().positive(),
   reason:z.string().trim().min(3).max(500).optional(),
   records:z.array(z.object({
-    student_id:uuid,
+    student_id:uuid.optional(),
+    candidate_id:uuid.optional(),
     status:z.enum(["present","late","absent","left_early"]),
     observed_at:z.iso.datetime().optional(),
     note:z.string().trim().max(500).default(""),
     expected_revision:z.coerce.number().int().positive(),
-  })).min(1).max(500),
+  }).refine(record=>Boolean(record.student_id)!==Boolean(record.candidate_id), "Choose exactly one examination candidate.")).min(1).max(500),
 }).superRefine((value,context)=>{
   const ids=new Set<string>();
   for(const [index,record] of value.records.entries()){
-    if(ids.has(record.student_id)) context.addIssue({code:"custom",path:["records",index,"student_id"],message:"A candidate can appear only once."});
-    ids.add(record.student_id);
+    const id=record.candidate_id??record.student_id;
+    if(!id)continue;
+    if(ids.has(id)) context.addIssue({code:"custom",path:["records",index,"student_id"],message:"A candidate can appear only once."});
+    ids.add(id);
   }
 });
 export const incidentInput=z.object({
   expected_revision:z.coerce.number().int().positive(),
   student_id:uuid.nullable().optional().default(null),
+  candidate_id:uuid.nullable().optional(),
   category:z.enum(["conduct","health","materials","timing","other"]),
   severity:z.enum(["info","minor","major"]),
   summary:z.string().trim().min(3).max(1000),
   observed_at:z.iso.datetime().optional(),
-});
+}).refine(record=>!(record.student_id&&record.candidate_id), "Choose one examination candidate.");
 export const incidentResolveInput=z.object({expected_revision:z.coerce.number().int().positive(),resolution:z.string().trim().min(3).max(1000)});
 
 export function isPhysicalAssessment(kind:string):kind is PhysicalKind { return ["exam","practical","viva"].includes(kind); }
@@ -155,11 +159,11 @@ export class ExamOperationsService {
     const policy=sitting.policy_snapshot as ReturnType<ExamOperationsService['policyProjection']>;
     const people=(await sql<OwnedParticipationPerson>`SELECT candidate.student_id,person.id AS person_id,
         concat_ws(' ',person.first_name,person.last_name) AS label,person.revision AS person_revision,
-        candidate.id::text AS source_ref,COALESCE(enrollment.revision,1) AS source_revision,
+        candidate.id::text AS source_ref,COALESCE(candidate.offering_enrollment_revision,enrollment.revision,1) AS source_revision,
         ${policy.require_all_candidate_attendance}::boolean AS required
-      FROM assessment_sitting_candidates candidate JOIN students student ON student.id=candidate.student_id AND student.school_id=candidate.school_id
-      JOIN school_people person ON person.id=student.person_id AND person.school_id=student.school_id
-      JOIN enrollments enrollment ON enrollment.id=candidate.enrollment_id
+      FROM assessment_sitting_candidates candidate LEFT JOIN students student ON student.id=candidate.student_id AND student.school_id=candidate.school_id
+      JOIN school_people person ON person.id=COALESCE(candidate.person_id,student.person_id) AND person.school_id=candidate.school_id
+      LEFT JOIN enrollments enrollment ON enrollment.id=candidate.enrollment_id
       WHERE candidate.school_id=${schoolId}::uuid AND candidate.sitting_id=${sittingId}::uuid ORDER BY candidate.id`.execute(tx)).rows;
     const context:OwnedParticipationContext={school_id:schoolId,source:'examination',source_id:sitting.id,context_ref:sitting.assessment_id,
       title:sitting.title,...local,starts_at:sitting.starts_at,ends_at:sitting.ends_at,space_id:sitting.space_id,
@@ -239,7 +243,11 @@ export class ExamOperationsService {
       UNION SELECT parent.user_id FROM assessment_sitting_candidates candidate JOIN guardian_relationships relationship
         ON relationship.school_id=candidate.school_id AND relationship.student_id=candidate.student_id
       JOIN parents parent ON parent.id=relationship.guardian_id WHERE candidate.school_id=${schoolId}::uuid
-        AND candidate.sitting_id=${sittingId}::uuid AND parent.user_id IS NOT NULL`.execute(db)).rows.map(row=>row.user_id):[];
+        AND candidate.sitting_id=${sittingId}::uuid AND parent.user_id IS NOT NULL
+      UNION SELECT endpoint.user_id FROM assessment_sitting_candidates candidate
+      JOIN campus_model_current_account_endpoints(${schoolId}::uuid,NULL,${executionNow()}::timestamptz) endpoint
+        ON endpoint.school_id=candidate.school_id AND endpoint.person_id=candidate.person_id
+      WHERE candidate.school_id=${schoolId}::uuid AND candidate.sitting_id=${sittingId}::uuid`.execute(db)).rows.map(row=>row.user_id):[];
     const audienceUserIds=[...new Set([...await this.audience(db,schoolId,sittingId),...additionalAudienceUserIds,...candidates])];
     await this.events.enqueueUserEvent(db,{schoolId,eventType:"assessment.updated",aggregateType:"assessment_sitting",aggregateId:sittingId,audienceUserIds,payload:{assessment_id:assessmentId,sitting_id:sittingId,action,state_action:action,revision,refresh:["assessments","teacher.home","principal.home","requests","notifications","attention","calendar","campus-view","activities","attendance","workspace","today"]},idempotencyKey:`assessment-sitting:${sittingId}:${eventIdentity}:${revision}`});
     return (await sql<{id:string}>`SELECT id FROM event_outbox WHERE school_id=${schoolId}::uuid AND idempotency_key=${`assessment-sitting:${sittingId}:${eventIdentity}:${revision}`}`.execute(db)).rows[0]!.id;
@@ -255,14 +263,15 @@ export class ExamOperationsService {
       school_id:string; title:string; class_label:string; subject_label:string;
       space_id:string; space_name:string; space_kind:string; space_revision:number; expected_count:number;
     }>`SELECT assessment.school_id,assessment.title,
-        'Class '||section.grade||section.section AS class_label,
+        COALESCE(offering.name,'Class '||section.grade||section.section) AS class_label,
         subject.name AS subject_label,space.id AS space_id,space.name AS space_name,
         space.kind AS space_kind,
         space.revision AS space_revision,
         (SELECT count(*)::int FROM assessment_sitting_candidates candidate
           WHERE candidate.sitting_id=${sitting.id}::uuid) AS expected_count
       FROM assessments assessment
-      JOIN class_sections section ON section.id=assessment.class_section_id
+      LEFT JOIN class_sections section ON section.id=assessment.class_section_id
+      LEFT JOIN learning_offerings offering ON offering.school_id=assessment.school_id AND offering.id=assessment.offering_id
       JOIN subjects subject ON subject.id=assessment.subject_id
       JOIN campus_spaces space ON space.id=${sitting.space_id}::uuid
         AND space.school_id=assessment.school_id
@@ -288,7 +297,6 @@ export class ExamOperationsService {
 
   async createForAssessment(db:Db,user:AuthUser,assessment:AssessmentRecord,input:{space_id:string;invigilator_user_ids:string[]}){
     if(!isPhysicalAssessment(assessment.assessment_kind)) throw new BadRequestException("A physical sitting is available only for an exam, practical or viva.");
-    if(!assessment.class_section_id) throw new BadRequestException("Physical course sittings require their offering candidate integration.");
     if(!assessment.scheduled_at||!assessment.duration_minutes) throw new BadRequestException("Choose the examination date, start time and duration before placing it in a campus space.");
     const invigilators=[...new Set(input.invigilator_user_ids)];
     if(!invigilators.length) throw new BadRequestException("Assign at least one invigilator.");
@@ -587,6 +595,19 @@ export class ExamOperationsService {
     return result;
   }
 
+  private async datedCandidates(db:Db,current:AssessmentRecord,termId:string,asOf:string){
+    if(current.offering_id){
+      const roster=await datedOfferingRoster(db,current.school_id,current.offering_id,termId,asOf);
+      return roster.map(row=>({student_id:null,enrollment_id:null,roll_number_snapshot:null,person_id:row.person_id,
+        offering_id:current.offering_id,offering_enrollment_id:row.academic_roster_source.enrollment_id,
+        offering_enrollment_revision:row.academic_roster_source.enrollment_revision,roster_on:asOf}));
+    }
+    if(!current.class_section_id)return [];
+    const roster=await datedAcademicRoster(db,current.school_id,current.class_section_id,termId,asOf);
+    return roster.map(row=>({student_id:row.student_id,enrollment_id:row.enrollment_id,roll_number_snapshot:row.roll_number,
+      person_id:null,offering_id:null,offering_enrollment_id:null,offering_enrollment_revision:null,roster_on:null}));
+  }
+
   private async readinessSnapshot(db:Db,current:AssessmentRecord,sitting:Selectable<AssessmentSittingTable>,options?:{invigilatorIds:string[];resetAcceptances:boolean}):Promise<ExamReadiness>{
     const startsAt=new Date(current.scheduled_at??sitting.starts_at);
     const endsAt=new Date(startsAt.getTime()+(current.duration_minutes??0)*60_000);
@@ -598,9 +619,9 @@ export class ExamOperationsService {
       JOIN assessment_cycles cycle ON cycle.school_id=school.id AND cycle.id=${current.cycle_id}::uuid
       WHERE school.id=${current.school_id}::uuid
     `.execute(db)).rows[0];
-    const candidateCount=current.status==='scheduled'&&sitting.roster_frozen_at
+    const candidateCount=sitting.roster_frozen_at
       ?Number((await db.selectFrom('assessment_sitting_candidates').select(({fn})=>fn.countAll<number>().as('count')).where('school_id','=',current.school_id).where('sitting_id','=',sitting.id).executeTakeFirstOrThrow()).count)
-      :context&&current.class_section_id?(await datedAcademicRoster(db,current.school_id,current.class_section_id,context.term_id,context.exam_date)).length:0;
+      :context?(await this.datedCandidates(db,current,context.term_id,context.exam_date)).length:0;
     const space=await db.selectFrom("campus_spaces").select(["name","capacity","status","is_bookable"]).where("school_id","=",current.school_id).where("id","=",sitting.space_id).executeTakeFirst();
     const acceptedInvigilators=(await sql<{user_id:string;name:string;status:string}>`
       SELECT assignment.user_id,assignment.status,concat_ws(' ',account.first_name,account.last_name) AS name
@@ -672,7 +693,7 @@ export class ExamOperationsService {
     if(!context||context.exam_date<context.cycle_start||context.exam_date>context.cycle_end) add({code:"exam_window",message:"Choose a date inside this examination cycle.",source:"assessment",source_id:current.id});
     if(endsAt<=startsAt||!Number.isFinite(endsAt.getTime())) add({code:"exam_window",message:"Add a valid examination start time and duration.",source:"assessment",source_id:current.id});
     if(startsAt.getTime()<=executionNow().getTime()) add({code:"exam_window",message:"Choose a future examination time before scheduling.",source:"assessment",source_id:current.id});
-    if(!candidateCount) add({code:"roster",message:"No learners are enrolled in this class on the examination date.",source:"assessment",source_id:current.class_section_id});
+    if(!candidateCount) add({code:"roster",message:"No learners are enrolled in the selected group on the examination date.",source:"assessment",source_id:current.offering_id??current.class_section_id});
     if(!space||space.status!=="active"||!space.is_bookable) add({code:"space",message:"The selected examination space is not currently bookable.",source:"exam_sitting",source_id:sitting.space_id});
     else if(space.capacity===null) add({code:"capacity",message:`Add a capacity for ${space.name} before scheduling.`,source:"exam_sitting",source_id:sitting.space_id});
     else if(space.capacity<candidateCount) add({code:"capacity",message:`${space.name} holds ${space.capacity} people, but ${candidateCount} candidates are enrolled.`,source:"exam_sitting",source_id:sitting.space_id});
@@ -821,10 +842,9 @@ export class ExamOperationsService {
         ? first!.message
         : `Resolve ${readiness.blockers.length} readiness issues before scheduling. ${first!.message}`);
     }
-    if (!current.class_section_id) throw new BadRequestException("Physical offering sittings require their reviewed candidate integration.");
-    const roster=await datedAcademicRoster(db,current.school_id,current.class_section_id,context.term_id,context.exam_date);
+    const roster=await this.datedCandidates(db,current,context.term_id,context.exam_date);
     const frozenAt=executionNow();
-    await db.insertInto("assessment_sitting_candidates").values(roster.map(row=>({school_id:current.school_id,sitting_id:sitting.id,assessment_id:current.id,student_id:row.student_id,enrollment_id:row.enrollment_id,roll_number_snapshot:row.roll_number,frozen_at:frozenAt}))).execute();
+    await db.insertInto("assessment_sitting_candidates").values(roster.map(row=>({school_id:current.school_id,sitting_id:sitting.id,assessment_id:current.id,...row,frozen_at:frozenAt}))).execute();
     const updated=await db.updateTable("assessment_sittings").set({state:"ready",starts_at:startsAt,ends_at:endsAt,roster_frozen_at:frozenAt,revision:sitting.revision+1,updated_by:user.id,updated_at:frozenAt}).where("id","=",sitting.id).returningAll().executeTakeFirstOrThrow();
     const temporal=await this.projectPlan(db,user,updated,identity.correlation_id,'expected');
     await this.audit(db,user,current.school_id,current.id,sitting.id,"assessment.sitting.ready","planning","ready",{candidate_count:roster.length,accepted_invigilator_count:readiness.accepted_invigilator_count,space_id:sitting.space_id,timetable_contract:readiness.timetable_contract,readiness_checked_at:readiness.checked_at});
@@ -864,7 +884,7 @@ export class ExamOperationsService {
   async projection(schoolId:string,assessmentId:string,knownSitting?:Selectable<AssessmentSittingTable>,viewerUserId?:string){
     const sitting=knownSitting??await this.db.selectFrom("assessment_sittings").selectAll().where("school_id","=",schoolId).where("assessment_id","=",assessmentId).executeTakeFirst();
     if(!sitting) return null;
-    const assessment=(await sql<AssessmentRecord&{subject_name:string;class_name:string}>`SELECT assessment.*,subject.name AS subject_name,'Class '||section.grade||section.section AS class_name FROM assessments assessment JOIN subjects subject ON subject.id=assessment.subject_id JOIN class_sections section ON section.id=assessment.class_section_id WHERE assessment.school_id=${schoolId}::uuid AND assessment.id=${assessmentId}::uuid`.execute(this.db)).rows[0];
+    const assessment=(await sql<AssessmentRecord&{subject_name:string;class_name:string;time_zone:string}>`SELECT assessment.*,school.timezone AS time_zone,subject.name AS subject_name,COALESCE(offering.name,'Class '||section.grade||section.section) AS class_name FROM assessments assessment JOIN schools school ON school.id=assessment.school_id JOIN subjects subject ON subject.id=assessment.subject_id LEFT JOIN class_sections section ON section.id=assessment.class_section_id LEFT JOIN learning_offerings offering ON offering.school_id=assessment.school_id AND offering.id=assessment.offering_id WHERE assessment.school_id=${schoolId}::uuid AND assessment.id=${assessmentId}::uuid`.execute(this.db)).rows[0];
     if(!assessment) throw new NotFoundException("Assessment not found.");
     const space=await this.db.selectFrom("campus_spaces").innerJoin("institution_campuses","institution_campuses.id","campus_spaces.campus_id").select(["campus_spaces.id","campus_spaces.name","campus_spaces.code","campus_spaces.kind","campus_spaces.capacity","institution_campuses.name as campus_name"]).where("campus_spaces.school_id","=",schoolId).where("campus_spaces.id","=",sitting.space_id).executeTakeFirstOrThrow();
     const invitationRows=(await sql<Selectable<AssessmentSittingInvigilatorTable>&{username:string;name:string;avatar_url:string|null}>`SELECT assignment.*,account.username,
@@ -877,7 +897,7 @@ export class ExamOperationsService {
       ...assignment,...(assignment.status==='offered'?{invitation_status:await this.invigilationOffers.invitationStatus(tx,{
         school_id:schoolId,assignment_id:assignment.id,assignment_revision:assignment.revision,user_id:assignment.user_id})}:{})}))));
     const viewerAssignment=viewerUserId?invigilators.find(row=>(row as {user_id:string}).user_id===viewerUserId)??null:null;
-    const candidates=(await sql`SELECT candidate.*,concat_ws(' ',person.first_name,person.last_name) AS name,student.admission_number,person.avatar_url,attendance.id AS attendance_id,attendance.status AS attendance_status,attendance.observed_at,attendance.note AS attendance_note,attendance.revision AS attendance_revision FROM assessment_sitting_candidates candidate JOIN students student ON student.id=candidate.student_id JOIN school_people person ON person.id=student.person_id JOIN assessment_candidate_attendance attendance ON attendance.candidate_id=candidate.id WHERE candidate.sitting_id=${sitting.id}::uuid ORDER BY candidate.roll_number_snapshot NULLS LAST,candidate.student_id`.execute(this.db)).rows;
+    const candidates=(await sql`SELECT candidate.*,candidate.id AS candidate_id,concat_ws(' ',person.first_name,person.last_name) AS name,student.admission_number,person.avatar_url,attendance.id AS attendance_id,attendance.status AS attendance_status,attendance.observed_at,attendance.note AS attendance_note,attendance.revision AS attendance_revision FROM assessment_sitting_candidates candidate LEFT JOIN students student ON student.id=candidate.student_id AND student.school_id=candidate.school_id JOIN school_people person ON person.id=COALESCE(candidate.person_id,student.person_id) AND person.school_id=candidate.school_id JOIN assessment_candidate_attendance attendance ON attendance.candidate_id=candidate.id WHERE candidate.sitting_id=${sitting.id}::uuid ORDER BY candidate.roll_number_snapshot NULLS LAST,person.first_name,person.last_name,candidate.id`.execute(this.db)).rows;
     const incidents=await this.db.selectFrom("assessment_sitting_incidents").selectAll().where("sitting_id","=",sitting.id).orderBy("observed_at","desc").orderBy("id").execute();
     const counts=(await sql<{total:number;unrecorded:number;present:number;late:number;absent:number;left_early:number}>`SELECT count(*)::int AS total,count(*) FILTER(WHERE status='unrecorded')::int AS unrecorded,count(*) FILTER(WHERE status='present')::int AS present,count(*) FILTER(WHERE status='late')::int AS late,count(*) FILTER(WHERE status='absent')::int AS absent,count(*) FILTER(WHERE status='left_early')::int AS left_early FROM assessment_candidate_attendance WHERE sitting_id=${sitting.id}::uuid`.execute(this.db)).rows[0]!;
     const readiness=sitting.state==="planning"
@@ -886,7 +906,7 @@ export class ExamOperationsService {
     const history=(await sql<{revision:number;action:string;reason:string;previous_snapshot:Record<string,unknown>;snapshot:Record<string,unknown>;recorded_at:Date}>`
       SELECT revision,action,reason,command_key,previous_snapshot,snapshot,recorded_at FROM assessment_schedule_revisions
       WHERE school_id=${schoolId}::uuid AND assessment_id=${assessmentId}::uuid ORDER BY revision DESC LIMIT 50`.execute(this.db)).rows;
-    return {assessment,sitting,space,invigilators,viewer_assignment:viewerAssignment,candidates,incidents,attendance_counts:counts,policy:sitting.policy_snapshot,readiness,
+    return {assessment,sitting,space,time_zone:assessment.time_zone,invigilators,viewer_assignment:viewerAssignment,candidates,incidents,attendance_counts:counts,policy:sitting.policy_snapshot,readiness,
       schedule_state:assessment.status==='scheduled'&&sitting.state==='planning'&&history.length?'awaiting_confirmation':sitting.state,
       schedule_history:history};
   }
@@ -932,13 +952,7 @@ export class ExamOperationsService {
       if(action==="complete"&&policy.post_completion_marking_mode==="automatic"){
         const assessment=await db.selectFrom("assessments").select(["status","revision"]).where("school_id","=",schoolId).where("id","=",assessmentId).forUpdate().executeTakeFirstOrThrow();
         if(assessment.status==="scheduled"){
-          await sql`INSERT INTO assessment_results(school_id,assessment_id,student_id,academic_roster_source)
-            SELECT candidate.school_id,candidate.assessment_id,candidate.student_id,jsonb_build_object('schema_version',1,'kind','physical_candidate',
-              'enrollment_id',candidate.enrollment_id,'enrollment_revision',enrollment.revision,'roll_number',candidate.roll_number_snapshot,
-              'as_of',(${sitting.starts_at}::timestamptz AT TIME ZONE school.timezone)::date::text,'candidate_id',candidate.id,'sitting_id',candidate.sitting_id)
-            FROM assessment_sitting_candidates candidate JOIN enrollments enrollment ON enrollment.id=candidate.enrollment_id AND enrollment.student_id=candidate.student_id
-            JOIN schools school ON school.id=candidate.school_id WHERE candidate.sitting_id=${sitting.id}::uuid
-            ON CONFLICT(assessment_id,student_id) DO NOTHING`.execute(db);
+          await this.openFrozenResults(db,schoolId,assessmentId);
           await db.updateTable("assessments").set({status:"marking",revision:assessment.revision+1,updated_by:user.id,updated_at:now}).where("id","=",assessmentId).execute();
           assessmentStatus="marking";
         }
@@ -958,6 +972,25 @@ export class ExamOperationsService {
     });
   }
 
+  async openFrozenResults(db:Db,schoolId:string,assessmentId:string){
+    await sql`INSERT INTO assessment_results(school_id,assessment_id,student_id,learner_id,person_id,academic_roster_source)
+      SELECT candidate.school_id,candidate.assessment_id,NULL,candidate.person_id,candidate.person_id,offering_exam_roster_source(candidate)
+      FROM assessment_sitting_candidates candidate
+      JOIN assessment_sittings sitting ON sitting.school_id=candidate.school_id AND sitting.id=candidate.sitting_id
+      WHERE candidate.school_id=${schoolId}::uuid AND candidate.assessment_id=${assessmentId}::uuid
+        AND sitting.state='completed' AND candidate.offering_id IS NOT NULL
+      ON CONFLICT(assessment_id,learner_id) DO NOTHING`.execute(db);
+    await sql`INSERT INTO assessment_results(school_id,assessment_id,student_id,academic_roster_source)
+      SELECT candidate.school_id,candidate.assessment_id,candidate.student_id,jsonb_build_object('schema_version',1,'kind','physical_candidate',
+        'enrollment_id',candidate.enrollment_id,'enrollment_revision',enrollment.revision,'roll_number',candidate.roll_number_snapshot,
+        'as_of',(sitting.starts_at AT TIME ZONE school.timezone)::date::text,'candidate_id',candidate.id,'sitting_id',candidate.sitting_id)
+      FROM assessment_sitting_candidates candidate JOIN enrollments enrollment ON enrollment.id=candidate.enrollment_id AND enrollment.student_id=candidate.student_id
+      JOIN schools school ON school.id=candidate.school_id
+      JOIN assessment_sittings sitting ON sitting.school_id=candidate.school_id AND sitting.id=candidate.sitting_id
+      WHERE candidate.school_id=${schoolId}::uuid AND candidate.assessment_id=${assessmentId}::uuid AND sitting.state='completed'
+      ON CONFLICT(assessment_id,student_id) DO NOTHING`.execute(db);
+  }
+
   async recordAttendance(user:AuthUser,schoolId:string,assessmentId:string,body:unknown){
     const data=attendanceInput.parse(body);
     return this.db.transaction().execute(async db=>{
@@ -970,12 +1003,17 @@ export class ExamOperationsService {
       if(executionNow().getTime()>new Date(sitting.ends_at).getTime()+policy.attendance_close_after_minutes*60_000) throw new BadRequestException("The configured attendance recording window has closed.");
       const participation=await this.participationContext(db,schoolId,sitting.id);
       await this.participation.prepare(db,user,participation.context,participation.people);
-      const canonical:Array<{student_id:string;status:ParticipationStatus;remarks:string}>=[];
+      const canonical:Array<({student_id:string}|{person_id:string})&{status:ParticipationStatus;remarks:string}>=[];
+      const seenCandidates=new Set<string>();
       const captures:Record<string,ParticipationCaptureSources[string]>={};
-      const personByStudent=new Map(participation.people.map(person=>[person.student_id,person.person_id]));
+      const personByCandidate=new Map(participation.people.map(person=>[person.source_ref,person.person_id]));
       for(const record of data.records){
-        const current=await db.selectFrom("assessment_candidate_attendance").selectAll().where("school_id","=",schoolId).where("sitting_id","=",sitting.id).where("student_id","=",record.student_id).executeTakeFirst();
+        const current=await db.selectFrom("assessment_candidate_attendance").selectAll().where("school_id","=",schoolId).where("sitting_id","=",sitting.id).where(record.candidate_id?"candidate_id":"student_id","=",record.candidate_id??record.student_id!).executeTakeFirst();
         if(!current) throw new BadRequestException("A selected learner is not in the frozen examination roster.");
+        if(seenCandidates.has(current.candidate_id))throw new BadRequestException("A candidate can appear only once.");
+        seenCandidates.add(current.candidate_id);
+        const personId=personByCandidate.get(current.candidate_id);
+        if(!personId)throw new ConflictException("The candidate is outside this participation roster.");
         if(current.revision!==record.expected_revision) throw new ConflictException("A candidate attendance record changed. Refresh before saving.");
         if(current.status!=='unrecorded'&&!data.reason&&record.note.trim().length<3)
           throw new BadRequestException('Add a reason or explanatory note when correcting examination attendance.');
@@ -983,10 +1021,10 @@ export class ExamOperationsService {
         if(observedAt>executionNow()||observedAt.getTime()<new Date(sitting.starts_at).getTime()-policy.readiness_minutes_before*60000
           ||observedAt.getTime()>new Date(sitting.ends_at).getTime()+policy.attendance_close_after_minutes*60000)
           throw new BadRequestException('Choose an actual observation time within this examination recording window.');
-        canonical.push({student_id:record.student_id,status:record.status,remarks:record.note});
-        captures[personByStudent.get(record.student_id)!]={capture_channel:'human_roll_call',observed_at:observedAt,
+        canonical.push({...(current.student_id?{student_id:current.student_id}:{person_id:personId}),status:record.status,remarks:record.note});
+        captures[personId]={capture_channel:'human_roll_call',observed_at:observedAt,
           evidence_refs:[`examination_sitting:${sitting.id}`,`examination_policy:${sitting.policy_revision}`]};
-        await this.audit(db,user,schoolId,assessmentId,sitting.id,"assessment.candidate_attendance.recorded",current.status,record.status,{student_id:record.student_id,attendance_id:current.id,note:record.note});
+        await this.audit(db,user,schoolId,assessmentId,sitting.id,"assessment.candidate_attendance.recorded",current.status,record.status,{student_id:current.student_id,candidate_id:current.candidate_id,attendance_id:current.id,note:record.note});
       }
       const key=`exam-attendance:${sitting.id}:${sitting.revision}:${createHash('sha256').update(JSON.stringify(data)).digest('hex').slice(0,24)}`;
       const request={authUser:user,requestId:randomUUID(),headers:{'idempotency-key':key}} as unknown as AuthenticatedRequest;
@@ -995,7 +1033,7 @@ export class ExamOperationsService {
       const revised=await db.updateTable("assessment_sittings").set({revision:sitting.revision+1,updated_by:user.id,updated_at:executionNow()}).where("id","=",sitting.id).returningAll().executeTakeFirstOrThrow();
       await this.emit(db,schoolId,sitting.id,assessmentId,"attendance.recorded",revised.revision);
       const updated=await db.selectFrom('assessment_candidate_attendance').selectAll().where('school_id','=',schoolId)
-        .where('sitting_id','=',sitting.id).where('student_id','in',data.records.map(record=>record.student_id)).execute();
+        .where('sitting_id','=',sitting.id).where('candidate_id','in',[...seenCandidates]).execute();
       return {sitting_revision:revised.revision,records:updated};
     });
   }
@@ -1008,11 +1046,15 @@ export class ExamOperationsService {
       await this.access(user,schoolId,sitting.id,db,true);
       if(sitting.revision!==data.expected_revision) throw new ConflictException("This examination sitting changed. Refresh before recording the incident.");
       if(sitting.state!=="in_progress") throw new ConflictException("Incidents can be recorded only while the sitting is in progress.");
-      let candidate:{id:string;student_id:string}|undefined;
-      if(data.student_id){ candidate=await db.selectFrom("assessment_sitting_candidates").select(["id","student_id"]).where("sitting_id","=",sitting.id).where("student_id","=",data.student_id).executeTakeFirst(); if(!candidate) throw new BadRequestException("The selected learner is not in the frozen examination roster."); }
+      let candidate:{id:string;student_id:string|null}|undefined;
+      if(data.candidate_id||data.student_id){
+        candidate=await db.selectFrom("assessment_sitting_candidates").select(["id","student_id"]).where("school_id","=",schoolId)
+          .where("sitting_id","=",sitting.id).where(data.candidate_id?"id":"student_id","=",data.candidate_id??data.student_id!).executeTakeFirst();
+        if(!candidate)throw new BadRequestException("The selected learner is not in the frozen examination roster.");
+      }
       const incident=await db.insertInto("assessment_sitting_incidents").values({school_id:schoolId,sitting_id:sitting.id,candidate_id:candidate?.id??null,student_id:candidate?.student_id??null,category:data.category,severity:data.severity,summary:data.summary,observed_at:data.observed_at?new Date(data.observed_at):executionNow(),recorded_by:user.id}).returningAll().executeTakeFirstOrThrow();
       const revised=await db.updateTable("assessment_sittings").set({revision:sitting.revision+1,updated_by:user.id,updated_at:executionNow()}).where("id","=",sitting.id).returningAll().executeTakeFirstOrThrow();
-      await this.audit(db,user,schoolId,assessmentId,sitting.id,"assessment.incident.recorded",null,"open",{incident_id:incident.id,student_id:incident.student_id,category:incident.category,severity:incident.severity});
+      await this.audit(db,user,schoolId,assessmentId,sitting.id,"assessment.incident.recorded",null,"open",{incident_id:incident.id,candidate_id:incident.candidate_id,student_id:incident.student_id,category:incident.category,severity:incident.severity});
       await this.emit(db,schoolId,sitting.id,assessmentId,"incident.recorded",revised.revision,`incident.recorded:${incident.id}`);
       await this.modelBridge.recordIncident(db,await this.modelSnapshot(db,user.id,assessmentId,revised),{
           idempotencyKey:`exam-incident:${incident.id}:report:${incident.revision}`,

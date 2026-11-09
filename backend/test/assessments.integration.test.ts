@@ -101,11 +101,13 @@ suite("offline assessment and result lifecycle",()=>{
     await examOperations.respondInvigilator(examiner,schoolId,assessmentId,offer.id,{command_id:randomUUID(),expected_revision:offer.revision,decision:"accepted",note:"Duty accepted"});
     let state=await service.action(admin,schoolId,assessmentId,"schedule",{expected_revision:assessment.revision,note:"Schedule confirmed"});
     const operation=await examOperations.detail(examiner,schoolId,assessmentId);
+    expect(operation.candidates).toEqual([expect.objectContaining({student_id:studentId,offering_id:null})]);
     const started=await examOperations.start(examiner,schoolId,assessmentId,{expected_revision:operation.sitting!.revision});
     const attendance=await examOperations.recordAttendance(examiner,schoolId,assessmentId,{expected_revision:started.sitting.revision,records:[{student_id:studentId,status:"present",note:"Identity checked",expected_revision:1}]});
+    expect(attendance.records).toEqual([expect.objectContaining({student_id:studentId,status:"present"})]);
     await examOperations.complete(examiner,schoolId,assessmentId,{expected_revision:attendance.sitting_revision});
     state=await service.action(admin,schoolId,assessmentId,"open-marking",{expected_revision:state.revision,note:"Paper completed"});
-    let detail=await service.detail(examiner,schoolId,assessmentId);expect(detail.results).toHaveLength(1);expect(detail.results[0]).toMatchObject({outcome:"unrecorded",first_name:"Learner"});
+    let detail=await service.detail(examiner,schoolId,assessmentId);expect(detail.results).toHaveLength(1);expect(detail.results[0]).toMatchObject({student_id:studentId,outcome:"unrecorded",first_name:"Learner",academic_roster_source:{kind:"physical_candidate"}});
     state=await service.recordResults(examiner,schoolId,assessmentId,{expected_assessment_revision:state.revision,results:[{result_id:(detail.results[0] as any).id,outcome:"scored",marks:64,grade:"A",feedback:"Clear written work",expected_revision:(detail.results[0] as any).revision,reason:"Initial marks entry"}]});
     state=await service.action(examiner,schoolId,assessmentId,"submit",{expected_revision:state.revision,note:"Register complete"});
     await expect(service.action(examiner,schoolId,assessmentId,"approve",{expected_revision:state.revision,note:"Trying self approval"})).rejects.toThrow(/moderator|assessments\.moderate/i);

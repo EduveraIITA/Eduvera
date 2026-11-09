@@ -1,0 +1,103 @@
+{
+  "schema": {
+    "database": "disposable local PostgreSQL 17.11",
+    "migrations": 287,
+    "head": "288_offering_exam_candidates.sql",
+    "sha256": "27430c03e3d43c86161df03626651a35a4eedec68bb6324f75c0630fb9259bf1"
+  },
+  "passed": 15,
+  "skipped": 0,
+  "failed": 0,
+  "suites": [
+    {
+      "suite": "academic-offering-cycle.integration.test.ts",
+      "status": "passed",
+      "tests": [
+        {
+          "title": "carries nonzero parallel/elective enrollments through teaching, attendance, moderated results and all configured report formats",
+          "status": "passed"
+        },
+        {
+          "title": "retains exact accepted assessment intent, dated frozen membership and current authority after a lost response",
+          "status": "passed"
+        },
+        {
+          "title": "freezes current term enrollment eligibility, makes a late elective's missing whole publication incomplete and excludes an early withdrawn course without marks",
+          "status": "passed"
+        },
+        {
+          "title": "keeps two selected offerings of one subject distinct and calculates GPA using their actual different credits",
+          "status": "passed"
+        }
+      ]
+    },
+    {
+      "suite": "academic-offering-worlds.integration.test.ts",
+      "status": "passed",
+      "tests": [
+        {
+          "title": "completes a course viva and publishes multi-course reports only in the selected world, preserving Live and sibling authority/history",
+          "status": "passed"
+        }
+      ]
+    },
+    {
+      "suite": "assessments.integration.test.ts",
+      "status": "passed",
+      "tests": [
+        {
+          "title": "rejects a class from another academic year before creating an assessment",
+          "status": "passed"
+        },
+        {
+          "title": "keeps teacher-planned class tests inside assigned assessment scope and principal review",
+          "status": "passed"
+        },
+        {
+          "title": "keeps marking, moderation, publication and correction as separate states",
+          "status": "passed"
+        },
+        {
+          "title": "does not expose another institution's learner",
+          "status": "passed"
+        }
+      ]
+    },
+    {
+      "suite": "exam-schedule-amendments.integration.test.ts",
+      "status": "passed",
+      "tests": [
+        {
+          "title": "replaces same-day arrangements explicitly, preserves frozen candidates and exact history, replays a lost response and confirms only after new acceptances",
+          "status": "passed"
+        },
+        {
+          "title": "rejects stale preview, timetable conflicts, wrong actor and started evidence without rewriting source history",
+          "status": "passed"
+        },
+        {
+          "title": "authorizes frozen-cohort refresh only for the current canonical student and linked guardian endpoints",
+          "status": "passed"
+        },
+        {
+          "title": "changes one actual captured COW schedule/context and leaves Live plus sibling unchanged, including cross-day canonical dates",
+          "status": "passed"
+        }
+      ]
+    },
+    {
+      "suite": "academic-offering-http.integration.test.ts",
+      "status": "passed",
+      "tests": [
+        {
+          "title": "plans, amends and completes a course practical through the ordinary exam API using frozen canonical learners",
+          "status": "passed"
+        },
+        {
+          "title": "publishes nonempty course rosters and a multi-course GPA report with current authority, legacy opt-in compatibility and own-person privacy",
+          "status": "passed"
+        }
+      ]
+    }
+  ]
+}

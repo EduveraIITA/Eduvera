@@ -44,6 +44,29 @@ test('creation success verifies direct school/source receipt before binding the 
   for(const patch of [{school_id:id(99)},{class_section_id:otherClass},{revision:2},{maximum_marks:'99'},{sitting:{...receipt.sitting,space_id:id(98)}}])assert.throws(()=>assessmentAuthoringRefreshPath({...receipt,...patch},value));
   assert.throws(()=>assessmentAuthoringRefreshPath(receipt,{...value,replayPolicy:'same_request'}));
 });
+test('physical course creation retains the exact offered duties and verifies the sitting before continuing', () => {
+  const offering = id(24);
+  const courseWorkspace = { ...workspace, references: { ...workspace.references, offerings: [{ id: offering, academic_context: { term_id: term, subject_id: subject, starts_on: '2026-01-01', ends_on: '2026-12-31' } }] } } as AssessmentWorkspace;
+  const payload = assessmentPlanPayload(courseWorkspace,{ ...plan, offering, classId: '' },actor!,now,'Asia/Kolkata');
+  const values = { ...payload, idempotency_key: command };
+  const original = { ...action('assessment_creation',`${root}/`,values), replayPolicy: 'same_request' as const };
+  assert.equal(assessmentAuthoringActionAllowed(original,scope),true);
+  assert.equal(validateNativePendingAction(original,scope,'assessments'),true);
+  for (const patch of [{ space_id:null }, { invigilator_user_ids:[] }, { invigilator_user_ids:[invigilator,invigilator] }, { class_section_id:classId }]) {
+    assert.equal(assessmentAuthoringActionAllowed({ ...original, payload:{ kind:'json', body:JSON.stringify({ ...values, ...patch }) } },scope),false);
+  }
+  const receipt = { ...creationReceipt(), ...payload, command_id:command, action:'assessment.create', sitting:{ ...creationReceipt().sitting, starts_at:plan.scheduled } };
+  const refreshPath = assessmentAuthoringRefreshPath(receipt,original);
+  assert.equal(refreshPath,`${root}/${assessment}/`);
+  for (const sitting of [undefined, { ...receipt.sitting, space_id:otherClass }, { ...receipt.sitting, starts_at:now }]) {
+    assert.throws(() => assessmentAuthoringRefreshPath({ ...receipt, sitting },original));
+  }
+  const accepted = { ...original, phase:'accepted' as const, refreshPath };
+  const exam = { assessment:receipt, viewer_role:'admin', results:[], publications:[], exam_operation:{ sitting:receipt.sitting, invigilators:[{ user_id:invigilator, status:'offered' }] } };
+  assert.doesNotThrow(() => assessmentAuthoringAccepted(exam,accepted));
+  assert.throws(() => assessmentAuthoringAccepted({ ...exam, exam_operation:null },accepted));
+  assert.throws(() => assessmentAuthoringAccepted({ ...exam, exam_operation:{ ...exam.exam_operation, invigilators:[] } },accepted));
+});
 test('cycle success retains its server ID in the owning workspace read',()=>{
   const values=assessmentCyclePayload(workspace,cycleInput), value=action('assessment_cycle',`${root}/cycles/`,values), receipt={id:cycle,school_id:school,revision:1,...values};
   assert.equal(assessmentAuthoringRefreshPath(receipt,value),`${root}/workspace/?cycle_id=${cycle}`);

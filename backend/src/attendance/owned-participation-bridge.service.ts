@@ -12,7 +12,7 @@ import { PREPARED_DOMAIN_COMMAND_VERIFICATION_PORT, type PreparedDomainCommandVe
 
 type Tx = Transaction<Database>;
 export interface OwnedParticipationPerson {
-  student_id: string; person_id: string; label: string; person_revision: number;
+  student_id: string | null; person_id: string; label: string; person_revision: number;
   source_ref: string; source_revision: number; required: boolean;
 }
 export interface OwnedParticipationContext {
@@ -63,7 +63,7 @@ export class OwnedParticipationBridge {
         AND occurrence.space_id IS NOT DISTINCT FROM ${context.space_id}::uuid
       FOR UPDATE OF register,occurrence,sitting`.execute(tx)).rows[0];
     if(!current||current.has_evidence)throw new ConflictException('Recorded participation cannot be moved to a revised examination schedule.');
-    const roster=(await sql<{student_id:string;person_id:string}>`SELECT academic_student_id AS student_id,person_id
+    const roster=(await sql<{student_id:string|null;person_id:string}>`SELECT academic_student_id AS student_id,person_id
       FROM activity_attendance_roster WHERE school_id=${context.school_id}::uuid AND register_id=${current.id}::uuid ORDER BY person_id`.execute(tx)).rows;
     if(JSON.stringify(roster)!==JSON.stringify(people.map(person=>({student_id:person.student_id,person_id:person.person_id})).sort((a,b)=>a.person_id.localeCompare(b.person_id))))
       throw new ConflictException('The frozen examination participation roster changed.');
@@ -133,7 +133,7 @@ export class OwnedParticipationBridge {
           ${context.source},${person.source_ref},${person.source_revision},${person.person_revision},${requirement}) ON CONFLICT DO NOTHING`.execute(tx);
       await sql`INSERT INTO activity_attendance_roster(school_id,register_id,person_id,label,participation_role,requirement,
         source_kind,source_ref,source_revision,academic_student_id,academic_source_revision) VALUES(${context.school_id}::uuid,${id}::uuid,${person.person_id}::uuid,
-          ${person.label},'participant',${requirement},${context.source},${person.source_ref},${person.source_revision},${person.student_id}::uuid,${person.source_revision})`.execute(tx);
+          ${person.label},'participant',${requirement},${context.source},${person.source_ref},${person.source_revision},${person.student_id}::uuid,${person.student_id ? person.source_revision : null})`.execute(tx);
     }
     for (const entry of entries) {
       const status = entry.status === 'unrecorded' || entry.status === 'not_recorded' ? null : entry.status;
@@ -159,23 +159,24 @@ export class OwnedParticipationBridge {
   }
 
   async save(tx: Tx, user: AuthUser, context: OwnedParticipationContext, people: OwnedParticipationPerson[],
-    records: Array<{ student_id: string; status: ParticipationStatus | null; remarks: string; details?: Record<string, unknown> }>,
+    records: Array<({ student_id: string } | { person_id: string }) & { status: ParticipationStatus | null; remarks: string; details?: Record<string, unknown> }>,
     request: AuthenticatedRequest, reason?: string, capture: ParticipationCaptureSources = {}) {
     const prepared = await this.prepare(tx, user, context, people);
     if (!records.length) return prepared;
     const map = new Map(people.map(person => [person.student_id, person.person_id]));
+    const personIds = new Set(people.map(person => person.person_id));
     const recordsByPerson = records.map(record => {
-      const personId = map.get(record.student_id);
-      if (!personId) throw new ConflictException('A participation decision is outside the owning context roster.');
+      const personId = 'person_id' in record ? record.person_id : map.get(record.student_id);
+      if (!personId || !personIds.has(personId)) throw new ConflictException('A participation decision is outside the owning context roster.');
       return { person_id: personId, status: record.status, remarks: record.remarks };
     });
     await this.attendance.marksInTransaction(tx, user, context.school_id, prepared.register_id,
       { expected_revision: prepared.revision, ...(reason ? { reason } : {}), records: recordsByPerson }, request, capture,
       { owning_adapter: context.source, context_fingerprint: createHash('sha256').update(JSON.stringify(records)).digest('hex'), force_revisions: true });
-    for (const record of records) if (record.details) {
+    for (const [index, record] of records.entries()) if (record.details) {
       const revision = (await sql<{ id: string }>`SELECT id FROM activity_attendance_entry_revisions
         WHERE school_id=${context.school_id}::uuid AND register_id=${prepared.register_id}::uuid
-          AND person_id=${map.get(record.student_id)!}::uuid AND request_id=${request.requestId}::uuid
+          AND person_id=${recordsByPerson[index]!.person_id}::uuid AND request_id=${request.requestId}::uuid
         ORDER BY id DESC LIMIT 1`.execute(tx)).rows[0];
       if (!revision) throw new ConflictException('The context evidence must refer to its accepted participation revision.');
       await sql`INSERT INTO activity_attendance_context_details(entry_revision_id,school_id,register_id,source_kind,details)

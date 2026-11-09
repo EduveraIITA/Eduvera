@@ -79,7 +79,7 @@ export class AssessmentInvigilationOfferBridgeService {
         assignment.user_id AS selected_user_id,assignment.revision AS assignment_revision,
         assignment.status AS assignment_status,assignment.assigned_at,
         assessment.title AS assessment_title,subject.name AS subject_name,
-        concat('Class ',section.grade,section.section) AS class_name,
+        COALESCE(offering.name,'Class '||section.grade||section.section) AS class_name,
         sitting.starts_at,sitting.ends_at,space.name AS space_name
       FROM assessment_sitting_invigilators assignment
       JOIN assessment_sittings sitting ON sitting.school_id=assignment.school_id
@@ -88,8 +88,10 @@ export class AssessmentInvigilationOfferBridgeService {
         AND assessment.id=assignment.assessment_id
       JOIN subjects subject ON subject.school_id=assessment.school_id
         AND subject.id=assessment.subject_id
-      JOIN class_sections section ON section.school_id=assessment.school_id
+      LEFT JOIN class_sections section ON section.school_id=assessment.school_id
         AND section.id=assessment.class_section_id
+      LEFT JOIN learning_offerings offering ON offering.school_id=assessment.school_id
+        AND offering.id=assessment.offering_id
       JOIN campus_spaces space ON space.school_id=sitting.school_id AND space.id=sitting.space_id
       WHERE assignment.school_id=${schoolId}::uuid AND assignment.id=${assignmentId}::uuid
       FOR UPDATE OF assignment`.execute(transaction)).rows[0];

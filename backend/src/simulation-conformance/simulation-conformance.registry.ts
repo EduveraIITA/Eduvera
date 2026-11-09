@@ -5,7 +5,7 @@ import type { EXECUTION_EFFECT_KINDS } from "../campus-model-core/execution-effe
  * rewrite a stale lock unless this number is increased first, so accepting
  * platform drift always leaves a reviewed Simulation change in the diff.
  */
-export const SIMULATION_CONFORMANCE_REVISION = 225 as const;
+export const SIMULATION_CONFORMANCE_REVISION = 230 as const;
 
 export const SIMULATION_DATA_PLANE_CAPABILITIES = Object.freeze([
   "snapshot",
@@ -56,9 +56,9 @@ export interface SimulationModuleRegistration {
 }
 
 export const SIMULATION_CONFORMANCE_EVIDENCE = Object.freeze([
-  {"id": "world:academic-offering-cycle", "kind": "real_postgres", "test_file": "backend/test/academic-offering-worlds.integration.test.ts", "proves": "A captured canonical-person course context drives actual nonempty assessment creation, marking, moderation, publication, safe own Calendar dates and multi-course report generation/publication in one real COW branch. Exact report replay and foreign-person refusal are exercised; accepted Core commands remain branch-qualified and Live plus a sibling retain original assessment/result/publication/report/outbox/command state. Canonical publication/report learner references remain person-bound with null legacy student IDs. This row proves course result/report and Calendar composition, not COW teaching/attendance, physical sittings, network realtime, hosted Simulation or rendered-device acceptance.", "module_classes": ["AssessmentsModule", "AcademicReportsModule"], "capabilities": ["snapshot", "queries", "commands", "events"]},
+  {"id": "world:academic-offering-cycle", "kind": "real_postgres", "test_file": "backend/test/academic-offering-worlds.integration.test.ts", "proves": "A captured canonical-person course context drives actual nonempty assessment creation, marking, moderation, publication, safe own Calendar dates and multi-course report generation/publication in one real COW branch. Exact report replay and foreign-person refusal are exercised; accepted Core commands remain branch-qualified and Live plus a sibling retain original assessment/result/publication/report/outbox/command state. Canonical publication/report learner references remain person-bound with null legacy student IDs. It also exercises the canonical-person physical viva through the ordinary exam and attendance owners. This scope excludes network realtime, hosted Simulation and rendered-device acceptance.", "module_classes": ["AssessmentsModule", "AcademicReportsModule"], "capabilities": ["snapshot", "queries", "commands", "events"]},
   {"id": "world:reviewed-elective-change", "kind": "real_postgres", "test_file": "backend/test/learning-elective-change-worlds.integration.test.ts", "proves": "A real capture retains all four populated immutable elective proposal/action/Finance/refusal tables. The same owners preserve an exact refused command, resolve the current named Finance task source and remove its source link after exact classification only in one branch, then apply the reviewed future-effective canonical enrollment transfer with exact Core/native binding. Live/sibling responsibility, source resolution and financial review rows remain unchanged. The Finance decision is explicit and introduces no automatic charge/refund. This COW file does not claim future Activity-plan successor publication, authenticated Workspace HTTP or rendered task navigation; those require their separate companions.", "module_classes": ["LearningAssignmentsModule", "FinanceArrangementsModule"], "capabilities": ["snapshot", "queries", "commands", "events"]},
-  {"id": "http:academic-offering-cycle", "kind": "http_journey", "test_file": "backend/test/academic-offering-http.integration.test.ts", "proves": "An explicitly isolated compiled AppModule with ordinary cookies and CSRF exposes scheduled safe course dates before marking, refuses draft/foreign/default-legacy misuse, then runs faculty marking, independent moderation and configured multi-course GPA publication for actual canonical people. Genuine null legacy identities remain null, omitted electives stay excluded, current source authority and logout are rechecked, and unversioned assessment/report workspace data remains legacy class-only. The harness disables background hooks; this is authenticated Live HTTP, not full onboarding, Simulation HTTP, rendering, real provider delivery or physical attendance.", "module_classes": ["AssessmentsModule", "AcademicReportsModule"], "capabilities": ["queries", "commands", "events"]},
+  {"id": "http:academic-offering-cycle", "kind": "http_journey", "test_file": "backend/test/academic-offering-http.integration.test.ts", "proves": "An explicitly isolated compiled AppModule with ordinary cookies and CSRF exposes scheduled safe course dates before marking, refuses draft/foreign/default-legacy misuse, then runs faculty marking, independent moderation and configured multi-course GPA publication for actual canonical people. Genuine null legacy identities remain null, omitted electives stay excluded, current source authority and logout are rechecked, and unversioned assessment/report workspace data remains legacy class-only. A second fixture exercises physical course practical scheduling, revised invigilation, recorded attendance and published results using ordinary authenticated HTTP. Background hooks are disabled. Rendering, real provider delivery and independently observed physical attendance have separate acceptance.", "module_classes": ["AssessmentsModule", "AcademicReportsModule"], "capabilities": ["queries", "commands", "events"]},
   {"id": "http:canonical-course-discovery", "kind": "http_journey", "test_file": "backend/test/academic-offering-http.integration.test.ts", "proves": "The compiled authenticated workspace contributes exact canonical-person results/progress launchers and person scope, without a student alias or a school-wide management grant. The same user can follow its own safe course readers while a foreign person selector refuses. This is narrow Live workspace query/discovery evidence; it does not assert selected-world HTTP or Workspace command/event capabilities.", "module_classes": ["WorkspaceModule"], "capabilities": ["queries"]},
 
   { id: "world:academic-catalogue-recovery", kind: "real_postgres", test_file: "backend/test/academic-catalogue-recovery.integration.test.ts",
@@ -887,6 +887,8 @@ export const SIMULATION_FRONTEND_ENVIRONMENT_FILES = Object.freeze([
   "mobile/src/features/PeopleAcademicSetup.tsx",
   "mobile/src/features/SchedulePlanning.tsx",
   "mobile/src/features/AssessmentAuthoringScreen.tsx",
+  "mobile/src/features/AssessmentExamDayScreen.tsx",
+  "mobile/src/features/AssessmentScheduleAmendmentScreen.tsx",
   "mobile/src/features/AssessmentsScreen.tsx",
   "mobile/src/features/ReportsScreen.tsx",
   "mobile/src/lib/learning-academic-context.ts",
@@ -899,6 +901,11 @@ export const SIMULATION_FRONTEND_ENVIRONMENT_FILES = Object.freeze([
   "mobile/src/lib/native-authoring-policy.ts",
   "mobile/src/lib/schedule-planning-policy.ts",
   "mobile/src/lib/assessment-authoring.ts",
+  "mobile/src/lib/assessment-operations.ts",
+  "mobile/src/lib/browser-temporal.ts",
+  "mobile/src/ui/TemporalField.types.ts",
+  "mobile/src/ui/TemporalField.tsx",
+  "mobile/src/ui/TemporalField.web.tsx",
   "mobile/src/lib/academic-report-context.ts",
   "mobile/src/lib/academic-report-policy.ts",
   "mobile/src/lib/academic-report-command.ts",

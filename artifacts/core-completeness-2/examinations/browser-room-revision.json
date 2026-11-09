@@ -1,0 +1,16 @@
+{
+  "status": "passed",
+  "sitting": "ready",
+  "revisedRoom": "Computing Lab",
+  "unchangedFrozenCandidates": 2,
+  "learnerSittingDenied": 403,
+  "surface": "Isolated React Native Web preview",
+  "initial_room": "Exam Hall",
+  "officer_review": true,
+  "start_blocked_while_reconfirmation_pending": true,
+  "invigilator_accepted_reissued_duty": true,
+  "officer_confirmed": true,
+  "learner_calendar_updated": true,
+  "learner_calendar_time": "09:00 UTC",
+  "initial_time_display_defect": "Officer and invigilator used device local 14:30 while campus Calendar displayed 09:00 UTC."
+}

@@ -1,0 +1,26 @@
+{
+  "status": "passed",
+  "surface": "Isolated React Native Web preview",
+  "device_time_zone": "Asia/Kolkata",
+  "institution_time_zone": "UTC",
+  "initial_officer_and_exam_day_start": "09:00 UTC",
+  "initial_editor_wall_time": "2026-11-11T09:00",
+  "edited_by_browser_picker_keyboard": true,
+  "reviewed_start": "10:00 UTC",
+  "published_start": "10:00 UTC",
+  "invigilator_reaccepted": true,
+  "ready_for_officer_confirmation_after_acceptance": true,
+  "officer_confirmed": true,
+  "ready_sitting_frozen_candidates": 2,
+  "learner_calendar_display": "11 Nov 2026 10:00 am \u2013 11:00 am \u00b7 UTC",
+  "database_readback": {
+    "time_zone": "UTC",
+    "starts_at_utc": "10:00",
+    "ends_at_utc": "11:00",
+    "room": "Exam Hall",
+    "state": "ready",
+    "candidates": 2,
+    "accepted_invigilators": 1
+  },
+  "disposable_fixture_cleaned": true
+}

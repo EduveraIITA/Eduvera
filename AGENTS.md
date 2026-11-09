@@ -178,6 +178,12 @@ a competing local agent policy or copy the blueprint into session-only instructi
   existing sources, stable arrangements, bulk actions and exceptions. Do not make
   per-person/per-occurrence tracking or extra configuration the default merely
   because the model supports it. Preserve explicit authority and honest unknowns.
+- Owner compatibility direction, 9 November: design and test features across
+  relevant school and college configurations. Drive behavior from configured
+  capabilities, data and current authority. For academic changes, exercise a
+  class-led school, a course-led
+  college and coexistence when the workflow supports both. Cover relevant
+  optional data and report which configurations actually passed.
 - Follow explicit user decisions where they clarify or supersede the blueprint;
   record material deviations and ask before resolving consequential ambiguity.
 - Owner visual direction, 20 October: keep a calm, readable, minimal product with

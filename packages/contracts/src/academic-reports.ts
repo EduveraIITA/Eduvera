@@ -116,7 +116,7 @@ export interface ReportBatchDetail {
 
 export interface FamilyReportCards {
   student: { id: string; first_name: string; last_name: string; admission_number: string; class_name: string | null };
-  reports: Array<ReportCalculation & { report_student_id: string; batch_id: string; sequence: number; published_at: string; correction_reason: string; scheme_id: string; scheme_name: string; term_name: string; academic_year: string; class_name?: string | null; outcome: "complete" | "incomplete" | "withheld"; overall_percentage: string | null; overall_grade: string; class_teacher_comment: string; principal_comment: string; subjects: Array<{ id: string; subject_name: string; color: string; icon: string; outcome: string; percentage: string | null; grade: string; passed: boolean | null; assessment_ids?: string[]; grade_points?: string | null; credits?: string | null; course_code?: string | null }> }>;
+  reports: Array<ReportCalculation & { report_student_id: string; batch_id: string; sequence: number; published_at: string; correction_reason: string; scheme_id: string; scheme_name: string; term_name: string; academic_year: string; class_name?: string | null; class_section_id?: string | null; term_index?: number | null; outcome: "complete" | "incomplete" | "withheld"; overall_percentage: string | null; overall_grade: string; class_teacher_comment: string; principal_comment: string; subjects: Array<{ id: string; subject_name: string; color: string; icon: string; outcome: string; percentage: string | null; grade: string; passed: boolean | null; assessment_ids?: string[]; grade_points?: string | null; credits?: string | null; course_code?: string | null }> }>;
 }
 
 export interface ReportCommentUpdate {

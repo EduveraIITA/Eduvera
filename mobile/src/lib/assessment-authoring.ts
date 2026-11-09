@@ -7,6 +7,9 @@ const uuid = (value: unknown): value is string => typeof value === 'string' && /
 const day = (value: string) => /^\d{4}-\d{2}-\d{2}$/.test(value) && Number.isFinite(Date.parse(value + 'T12:00:00Z')) && new Date(value + 'T12:00:00Z').toISOString().slice(0,10) === value;
 const sameInstant = (a: unknown, b: unknown) => typeof a === 'string' && typeof b === 'string' && Number.isFinite(Date.parse(a)) && Date.parse(a) === Date.parse(b);
 export const physicalAssessmentKind = (kind: string) => ['exam','practical','viva'].includes(kind);
+const assessmentKinds = ['exam','class_test','practical','viva','project','assignment','quiz','other'] as const;
+export const assessmentKindOptions = assessmentKinds.map(value => ({ value, label: value[0].toUpperCase() + value.slice(1).replaceAll('_',' ') }));
+const validInvigilators = (value: unknown): value is string[] => Array.isArray(value) && value.length >= 1 && value.length <= 20 && value.every(uuid) && new Set(value).size === value.length;
 export const assessmentAuthoringRoot = (school: string) => `/api/v1/schools/${encodeURIComponent(school)}/assessments`;
 /** Older installed clients retain the class-only response by default. */
 export const assessmentWorkspacePath = (school: string) => `${assessmentAuthoringRoot(school)}/workspace/?academic_context=offering_v1`;
@@ -33,8 +36,10 @@ export function assessmentPlanPayload(workspace: AssessmentWorkspace, input: Ass
   if (!references || workspace.mode === 'staff' && (!workspace.can_plan_class_test || workspace.planner_user_id !== actorId)) throw new Error('Your current assessment planning responsibility is unavailable.');
   const offering = input.offering ? options.offerings.find(value => value.id === input.offering) : undefined;
   if (!options.cycle || (input.offering ? !offering?.academic_context || offering.academic_context.subject_id !== input.subject : !options.classes.some(value => value.id === input.classId) || !options.subjects.some(value => value.id === input.subject))) throw new Error('Choose the exact current cycle and course, or class and subject.');
-  if (input.offering && (input.classId || physicalAssessmentKind(input.kind) || input.space || input.invigilators.length)) throw new Error('For a course, choose a quiz, class test, assignment or project. Physical course examination sittings are not connected yet.');
-  if (!['exam','class_test','quiz','assignment','practical','viva','project','other'].includes(input.kind) || workspace.mode === 'staff' && (input.kind !== 'class_test' || input.examiner !== actorId)) throw new Error('A teacher-planned class test must keep the assigned teacher as examiner.');
+  if (input.offering && input.classId) throw new Error('Choose either a course or a class and subject.');
+  if (!assessmentKindOptions.some(value => value.value === input.kind) || workspace.mode === 'staff' && (input.kind !== 'class_test' || input.examiner !== actorId)) throw new Error('A teacher-planned class test must keep the assigned teacher as examiner.');
+  const physical = physicalAssessmentKind(input.kind);
+  if (offering && !physical && (input.space || input.invigilators.length)) throw new Error('Choose a physical assessment type to assign a room and invigilators.');
   if (input.title.trim().length < 2 || input.title.length > 160 || input.instructions.length > 2000 || input.venue.length > 160 || !['none','optional','required'].includes(input.evidence)) throw new Error('Review the assessment title, instructions and evidence choice.');
   if (input.examiner === input.moderator || !references.staff.some(value => value.id === input.moderator) || workspace.mode === 'admin' && !references.staff.some(value => value.id === input.examiner)) throw new Error('Choose different current people as examiner and independent moderator.');
   if (input.policy && !options.policies.some(value => value.id === input.policy)) throw new Error('The selected active grading policy is no longer available.');
@@ -43,9 +48,10 @@ export function assessmentPlanPayload(workspace: AssessmentWorkspace, input: Ass
     const parts = new Intl.DateTimeFormat('en-CA',{timeZone,year:'numeric',month:'2-digit',day:'2-digit'}).formatToParts(new Date(input.scheduled));
     const part = (kind: string) => parts.find(value => value.type === kind)?.value;
     const date = `${part('year')}-${part('month')}-${part('day')}`;
-    if (date < options.cycle.starts_on || date > options.cycle.ends_on) throw new Error('Choose a class-test date inside the selected cycle in campus time.');
+    if (date < options.cycle.starts_on || date > options.cycle.ends_on) throw new Error('Choose an assessment date inside the selected cycle in campus time.');
+    if (offering?.academic_context && (date < offering.academic_context.starts_on || date > offering.academic_context.ends_on)) throw new Error('Choose a date inside the configured course term in campus time.');
   }
-  const physical = physicalAssessmentKind(input.kind), arrangements = physical ? timing(input,references,now) : null;
+  const arrangements = physical ? timing(input,references,now) : null;
   if (!/^\d+$/.test(input.duration) || Number(input.duration) < 1 || Number(input.duration) > 1440) throw new Error('Choose an assessment duration from 1 to 1440 minutes.');
   return { cycle_id: input.cycle, class_section_id: input.offering ? null : input.classId, subject_id: input.subject, ...(input.offering ? { context_kind: 'learning_offering', offering_id: input.offering } : {}), title: input.title.trim(), assessment_kind: input.kind, maximum_marks: decimal(input.maximum,100000,'maximum marks'), grading_policy_id: input.policy || null, weight_percent: input.weight ? decimal(input.weight,100,'the weight percentage') : null, scheduled_at: new Date(input.scheduled).toISOString(), duration_minutes: Number(input.duration), venue: physical ? options.spaces.find(value => value.id === input.space)!.name : input.venue.trim(), space_id: arrangements?.space_id ?? null, invigilator_user_ids: arrangements?.invigilator_user_ids ?? [], instructions: input.instructions.trim(), evidence_requirement: input.evidence, examiner_user_id: input.examiner, moderator_user_id: input.moderator };
 }
@@ -68,6 +74,10 @@ export function assessmentAuthoringRefreshPath(value: unknown, action: NativePen
   const root = assessmentAuthoringRoot(action.scope.schoolId);
   if (source?.kind === 'assessment_creation' && body?.context_kind === 'learning_offering') {
     if (!receipt || action.replayPolicy !== 'same_request' || body.idempotency_key !== action.clientId || receipt.command_id !== action.clientId || receipt.action !== 'assessment.create' || !uuid(receipt.id) || receipt.school_id !== action.scope.schoolId || receipt.revision !== 1 || receipt.class_section_id !== null || ['context_kind','offering_id','cycle_id','subject_id','title','assessment_kind','grading_policy_id','duration_minutes','instructions','evidence_requirement','examiner_user_id','moderator_user_id','venue'].some(key => receipt[key] !== body[key]) || Number(receipt.maximum_marks) !== body.maximum_marks || (receipt.weight_percent == null ? null : Number(receipt.weight_percent)) !== body.weight_percent || !sameInstant(receipt.scheduled_at, body.scheduled_at)) throw new Error('The course assessment receipt did not confirm the exact reviewed command.');
+    if (physicalAssessmentKind(String(body.assessment_kind))) {
+      const sitting = object(receipt.sitting);
+      if (!sitting || !uuid(sitting.id) || sitting.assessment_id !== receipt.id || sitting.school_id !== action.scope.schoolId || sitting.space_id !== body.space_id || sitting.revision !== 1 || !sameInstant(sitting.starts_at, body.scheduled_at)) throw new Error('The course examination receipt did not confirm the reviewed room and start time.');
+    }
     return `${root}/${receipt.id}/`;
   }
   if (!receipt || !source || !body || action.replayPolicy !== 'inspect_only') throw new Error('The assessment authoring result could not be confirmed.');
@@ -100,6 +110,11 @@ export function assessmentAuthoringAccepted(value: unknown, action: NativePendin
   if (!uuid(id) || read.pathname !== `${root}/${id}/` || item?.id !== id || !Number.isSafeInteger(item.revision) || Number(item.revision) < 1 || !Array.isArray(latest.results) || !Array.isArray(latest.publications) || !['admin','examiner'].includes(String(latest.viewer_role))) throw new Error('The current assessment did not match the accepted source and authority.');
   if (source.kind === 'assessment_creation') {
     if (['cycle_id','class_section_id','subject_id','title','assessment_kind','examiner_user_id','moderator_user_id', ...(body.context_kind === 'learning_offering' ? ['context_kind','offering_id'] : [])].some(key => item[key] !== body[key]) || Number(item.maximum_marks) !== body.maximum_marks) throw new Error('The accepted assessment differs from the original reviewed plan.');
+    if (body.context_kind === 'learning_offering' && physicalAssessmentKind(String(body.assessment_kind))) {
+      const operation = object(latest.exam_operation), sitting = object(operation?.sitting);
+      const offered = Array.isArray(operation?.invigilators) ? operation.invigilators.map(object).filter(value => value && value.status !== 'revoked').map(value => value!.user_id) : [];
+      if (!sitting || !uuid(sitting.id) || !Number.isSafeInteger(sitting.revision) || Number(sitting.revision) < 1 || (item.revision === 1 && sitting.revision === 1 && (sitting.space_id !== body.space_id || !sameInstant(sitting.starts_at, body.scheduled_at) || !validInvigilators(body.invigilator_user_ids) || offered.length !== body.invigilator_user_ids.length || body.invigilator_user_ids.some(id => !offered.includes(id))))) throw new Error('The saved course examination did not confirm the reviewed sitting and invigilators.');
+    }
   } else if (source.kind === 'assessment_arrangements') {
     const operation = object(latest.exam_operation), sitting = object(operation?.sitting), invigilators = Array.isArray(operation?.invigilators) ? operation.invigilators.map(object).filter(value => value && value.status !== 'revoked').map(value => value!.user_id) : [];
     if (id !== source.sourceId || Number(item.revision) < source.revision+1 || !sitting || sitting.id !== source.fingerprint || Number(sitting.revision) < Number(body.expected_sitting_revision)+1) throw new Error('The current arrangements do not confirm the acknowledged assessment and sitting.');
@@ -115,7 +130,10 @@ export function assessmentAuthoringActionAllowed(record: NativePendingAction, sc
       const body = object(JSON.parse(record.payload.body));
       if (body?.context_kind === 'learning_offering') {
         const root = assessmentAuthoringRoot(scope.schoolId), read = new URL(record.refreshPath,'https://thatcampus.invalid');
-        return record.domain === 'assessments' && record.method === 'POST' && record.endpoint === root + '/' && record.replayPolicy === 'same_request' && body.idempotency_key === record.clientId && record.source.sourceId === scope.schoolId && record.source.revision === 0 && body.class_section_id === null && ['offering_id','cycle_id','subject_id','examiner_user_id','moderator_user_id'].every(key => uuid(body[key])) && !physicalAssessmentKind(String(body.assessment_kind)) && body.space_id === null && Array.isArray(body.invigilator_user_ids) && body.invigilator_user_ids.length === 0 && Object.keys(body).every(key => ['context_kind','offering_id','idempotency_key','cycle_id','class_section_id','subject_id','title','assessment_kind','maximum_marks','grading_policy_id','weight_percent','scheduled_at','duration_minutes','venue','instructions','evidence_requirement','examiner_user_id','moderator_user_id','space_id','invigilator_user_ids'].includes(key)) && read.origin === 'https://thatcampus.invalid' && !read.search && (record.phase !== 'accepted' && read.pathname === root + '/workspace/' || new RegExp(`^${root}/[0-9a-f-]{36}/$`,'i').test(read.pathname));
+        const validArrangements = physicalAssessmentKind(String(body.assessment_kind))
+          ? uuid(body.space_id) && validInvigilators(body.invigilator_user_ids) && typeof body.scheduled_at === 'string' && Number.isFinite(Date.parse(body.scheduled_at)) && Number.isInteger(body.duration_minutes) && Number(body.duration_minutes) >= 1 && Number(body.duration_minutes) <= 1440
+          : body.space_id === null && Array.isArray(body.invigilator_user_ids) && body.invigilator_user_ids.length === 0;
+        return record.domain === 'assessments' && record.method === 'POST' && record.endpoint === root + '/' && record.replayPolicy === 'same_request' && body.idempotency_key === record.clientId && record.source.sourceId === scope.schoolId && record.source.revision === 0 && body.class_section_id === null && ['offering_id','cycle_id','subject_id','examiner_user_id','moderator_user_id'].every(key => uuid(body[key])) && assessmentKindOptions.some(value => value.value === body.assessment_kind) && validArrangements && Object.keys(body).every(key => ['context_kind','offering_id','idempotency_key','cycle_id','class_section_id','subject_id','title','assessment_kind','maximum_marks','grading_policy_id','weight_percent','scheduled_at','duration_minutes','venue','instructions','evidence_requirement','examiner_user_id','moderator_user_id','space_id','invigilator_user_ids'].includes(key)) && read.origin === 'https://thatcampus.invalid' && !read.search && (record.phase !== 'accepted' && read.pathname === root + '/workspace/' || read.pathname.startsWith(root + '/') && uuid(read.pathname.slice(root.length + 1, -1)) && read.pathname.endsWith('/'));
       }
     }
     if (record.domain !== 'assessments' || record.method !== 'POST' || record.payload.kind !== 'json' || record.replayPolicy !== 'inspect_only' || !record.source) return false;

@@ -6,6 +6,7 @@ import test from 'node:test';
 import React, { act } from 'react';
 import ts from 'typescript';
 import * as policy from '../src/lib/assessment-schedule-amendments';
+import * as temporal from '../src/lib/browser-temporal';
 const require=createRequire(import.meta.url),{JSDOM}=require('jsdom'),{createRoot}=require('react-dom/client');
 const source=readFileSync(new URL('../src/features/AssessmentScheduleAmendmentScreen.tsx',import.meta.url),'utf8');
 const id=(n:number)=>`00000000-0000-4000-8000-${String(n).padStart(12,'0')}`;
@@ -34,6 +35,7 @@ async function harness(run:(h:any)=>Promise<void>){
   '../lib/native-pending-action':{useNativePendingAction:()=>writer},
   '../lib/use-operation-context':{useOperationContext:()=>()=>{const captured=epoch;return()=>{if(captured!==epoch)throw new Error('Account or world changed.');};}},
   '../lib/assessment-schedule-amendments':policy,
+  '../lib/browser-temporal':temporal,
   '../ui/BackNavigation':{ScreenBack:()=>null,useCampusNavigation:()=>({onNavigate(){},complete(){}}),useScreenExitGuard:(value:any)=>{dirty=value.dirty;}},
   '../ui/components':{Button,Page:({title,children}:any)=>React.createElement('main',null,title,children),Section:({title,children}:any)=>React.createElement('section',null,title,children),Field:input,
    Notice:({message}:any)=>React.createElement('p',null,message),Empty:({title}:any)=>React.createElement('p',null,title),Loading:()=>null,Row:({title,detail}:any)=>React.createElement('p',null,title,detail)},
@@ -53,9 +55,9 @@ async function harness(run:(h:any)=>Promise<void>){
  };
  try{await render();await run(h);}finally{await act(async()=>renderer.unmount());Object.assign(globalThis,{...previous,IS_REACT_ACT_ENVIRONMENT:false});dom.window.close();}
 }
-async function edit(h:any){await h.input('New date and time','2026-11-10T11:00:00.000Z');await h.input('Duration in minutes','90');await h.input('Room or hall',secondRoom);await h.input('Reason for changing the published schedule','Original hall closed for repairs.');}
+async function edit(h:any){await h.input('New date and time · UTC','2026-11-10T11:00:00.000Z');await h.input('Duration in minutes','90');await h.input('Room or hall',secondRoom);await h.input('Reason for changing the published schedule','Original hall closed for repairs.');}
 test('mounted schedule editor requires an impact review before dispatching the exact revised time and room',async()=>harness(async h=>{
- await edit(h);assert.equal(h.dirty(),true);assert.equal(h.sent.length,0);await h.click('Review schedule impact');
+ assert.match(h.text(), /9:00.*UTC/i);await edit(h);assert.equal(h.dirty(),true);assert.equal(h.sent.length,0);await h.click('Review schedule impact');
  assert.match(h.text(),/Review the schedule revision.*Candidates retained: 1.*Duties needing confirmation: 1/s);assert.equal(h.sent.length,0);
  await h.click('Publish revised arrangements');assert.equal(h.sent.length,1);assert.equal(h.sent[0].body.scheduled_at,'2026-11-10T11:00:00.000Z');assert.equal(h.sent[0].body.space_id,secondRoom);assert.equal(h.sent[0].body.preview_hash,'a'.repeat(64));
 }));

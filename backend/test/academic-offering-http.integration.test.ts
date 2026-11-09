@@ -6,7 +6,7 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { hashPassword } from '../src/auth/password.js';
 import type { DatabaseService } from '../src/database/database.service.js';
 import type { Database } from '../src/database/types.js';
-import { createAcademicOfferingFixture } from './academic-offering-cycle.test-support.js';
+import { createAcademicOfferingFixture, prepareOfferingExam } from './academic-offering-cycle.test-support.js';
 import { IsolatedAppHttp, type IsolatedHttpSession } from './isolated-app-http.test-support.js';
 import { requireIsolatedTestDatabaseUrl } from './test-database.js';
 
@@ -17,8 +17,11 @@ const db=new Kysely<Database>({dialect:new PostgresDialect({pool:new Pool({conne
 const app=new IsolatedAppHttp();
 type State={id:string;revision:number;status:string};
 // Assertion-only wire subsets; no frontend runtime or alternate domain writer.
-type AssessmentWorkspace={can_plan_class_test?:boolean;assessments:Array<{class_section_id:string|null;context_kind?:string;offering_id?:string|null}>;references?:{offerings?:unknown}};
+type AssessmentWorkspace={can_plan_class_test?:boolean;assessments:Array<{id:string;class_section_id:string|null;context_kind?:string;offering_id?:string|null}>;references?:{offerings?:unknown}};
 type AssessmentDetail={results:Array<{id:string;student_id:string|null;learner_id?:string;person_id?:string;revision:number}>};
+type CourseExamCandidate={id:string;student_id:null;person_id:string;offering_id:string;offering_enrollment_id:string;offering_enrollment_revision:number;attendance_revision:number};
+type CourseExamSitting=State&{state:string;space_id:string};
+type CourseExamDetail={assessment:State;sitting:CourseExamSitting;candidates:CourseExamCandidate[];viewer_assignment:{id:string;revision:number};schedule_state:string};
 type AdminReports={mode:'admin';schemes:Array<{class_section_id:string|null;context_kind?:string}>;batches:Array<{id:string}>;references:{offerings?:Array<{id:string;academic_context:{programme_key:string|null}|null}>;assessments:Array<{class_section_id:string|null}>}};
 type AcademicReportWorkspace=AdminReports|{mode:'staff';schemes:AdminReports['schemes'];batches:AdminReports['batches']};
 type GradingSchemeDetail={subjects:Array<{offering_id?:string|null}>};
@@ -47,6 +50,131 @@ describe.runIf(enabled)('canonical offering academic cycle through the isolated 
     await app.start(source,{compiledRoot,publicUrl:'https://academic-http.example.test'});
   },30000);
   afterAll(async()=>{await app.stop();await db.destroy();},10000);
+  it('plans, amends and completes a course practical through the ordinary exam API using frozen canonical learners',async()=>{
+    const password=`Academic-Exam-${randomUUID()}!`,passwordHash=await hashPassword(password);
+    const f=await createAcademicOfferingFixture(db as DatabaseService,{passwordHash});
+    const campusTimeZone='Asia/Kathmandu';
+    await db.updateTable('schools').set({timezone:campusTimeZone}).where('id','=',f.schoolId).execute();
+    const duty=await f.member('Practical invigilator');
+    await db.insertInto('school_memberships').values({school_id:f.schoolId,user_id:duty.actor.id,role:'staff',is_active:true}).execute();
+    await db.updateTable('users').set({password_hash:passwordHash}).where('id','=',duty.actor.id).execute();
+    const exam=await prepareOfferingExam(db as DatabaseService,f,'manual','practical',duty);
+    const owner=app.session(),examiner=app.session(),invigilator=app.session(),learner=app.session();
+    for(const [session,actor] of [[owner,f.owner],[examiner,f.instructor.actor],[invigilator,duty.actor],[learner,f.learner.actor]] as const) {
+      await session.login(actor.email,password,f.schoolId);
+    }
+    const root=`/api/v1/schools/${f.schoolId}/assessments`;
+    expect((await learner.request(`${root}/`,'POST',exam.input)).status).toBe(403);
+    const initial=await owner.json<State&{sitting:{id:string;space_id:string;revision:number}}>(`${root}/`,'POST',exam.input);
+    expect(initial).toMatchObject({context_kind:'learning_offering',offering_id:f.source.id,class_section_id:null,sitting:{space_id:exam.original.id,revision:1}});
+    expect(await owner.json(`${root}/`,'POST',exam.input)).toMatchObject({id:initial.id,sitting:{id:initial.sitting.id}});
+    const assessmentPath=`${root}/${initial.id}`,sittingPath=`${assessmentPath}/sitting`;
+    expect((await learner.request(`${sittingPath}/`)).status).toBe(403);
+    expect(await owner.json(`${root}/workspace/?academic_context=offering_v1`)).toMatchObject({time_zone:campusTimeZone});
+    expect(await invigilator.json(`${root}/workspace/`)).toMatchObject({time_zone:campusTimeZone,assessments:[]});
+    expect(await invigilator.json(`${root}/workspace/?academic_context=offering_v1`)).toMatchObject({time_zone:campusTimeZone,assessments:[
+      expect.objectContaining({id:initial.id,offering_id:f.source.id,viewer_invigilation_assignment:expect.objectContaining({status:'offered'})}),
+    ]});
+    const launcher=await invigilator.json<WorkspaceManifest>('/api/v1/workspace');
+    expect(launcher.areas.find(row=>row.key==='assessments')?.surfaces).toContainEqual(expect.objectContaining({key:'assigned',href:'/areas/assessments/assigned'}));
+    const acceptDuty=async()=>{
+      const {viewer_assignment:offer}=await invigilator.json<CourseExamDetail>(`${sittingPath}/`);
+      await invigilator.json(`${sittingPath}/invigilators/${offer.id}/response/`,'POST',{command_id:randomUUID(),expected_revision:offer.revision,decision:'accepted'});
+    };
+    const action=(session:IsolatedHttpSession,state:State,name:string)=>session.json<State>(`${assessmentPath}/actions/${name}/`,'POST',
+      {expected_revision:state.revision,idempotency_key:randomUUID(),note:'Reviewed this exact course assessment stage.'});
+    await acceptDuty();
+    const scheduled=await action(owner,initial,'schedule');
+    const ready=await invigilator.json<CourseExamDetail>(`${sittingPath}/`);
+    expect(ready.sitting.state).toBe('ready');
+    expect(ready.candidates).toHaveLength(2);
+    const frozen=ready.candidates.map(({id,person_id,student_id,offering_id,offering_enrollment_id,offering_enrollment_revision})=>
+      ({id,person_id,student_id,offering_id,offering_enrollment_id,offering_enrollment_revision}));
+    expect(frozen.map(row=>row.person_id).sort()).toEqual([f.learner.id,f.secondLearner.id].sort());
+    expect(frozen.every(row=>row.student_id===null&&row.offering_id===f.source.id&&row.offering_enrollment_id&&row.offering_enrollment_revision>0)).toBe(true);
+
+    const originalEnrollment=frozen.find(candidate=>candidate.person_id===f.learner.id)!;
+    const enrollmentsPath=`/api/v1/learning/offerings/${f.source.id}/enrollments`;
+    const directEnd=await owner.request(`${enrollmentsPath}/${originalEnrollment.offering_enrollment_id}/end/`,'POST',{
+      command_id:randomUUID(),expected_revision:originalEnrollment.offering_enrollment_revision,reason:'Move to the reviewed alternate elective.'});
+    expect(directEnd.status).toBe(400);
+    expect(await directEnd.json()).toMatchObject({error:{code:'learning.course_review_required'}});
+    // Commit an actual reviewed elective transfer effective on the original exam
+    // date. Re-resolving current enrollment now would omit the frozen candidate.
+    const electivePath='/api/v1/learning/elective-changes',selection={...f.selection,effective_on:f.date(2)};
+    const electivePreview=await owner.json<{fingerprint:string}>(`${electivePath}/preview`,'POST',{selection});
+    const elective={...f.input(),selection,preview_fingerprint:electivePreview.fingerprint};
+    await owner.json(electivePath,'POST',elective);
+    const financePath=`/api/v1/schools/${f.schoolId}/fees/elective-reviews/${elective.change_id}`;
+    const finance=await owner.json<{revision:number;ledger_basis_hash:string}>(financePath);
+    const decision=await owner.json<{revision:number}>(`${financePath}/decision`,'POST',{command_id:randomUUID(),expected_revision:finance.revision,
+      expected_ledger_basis_hash:finance.ledger_basis_hash,outcome:'no_financial_change',reason:'Reviewed the exact ledger; this elective change has no financial adjustment.'});
+    const applied=await owner.json(`${electivePath}/${elective.change_id}/apply`,'POST',{command_id:randomUUID(),expected_revision:decision.revision});
+    expect(applied).toMatchObject({state:'applied'});
+    const ended=await db.selectFrom('learning_offering_enrollments').select([sql<string>`ends_on::text`.as('ends_on'),'revision'])
+      .where('id','=',originalEnrollment.offering_enrollment_id).executeTakeFirstOrThrow();
+    expect(ended.ends_on).toBe(f.date(2));
+    expect(ended.revision).toBeGreaterThan(originalEnrollment.offering_enrollment_revision);
+
+    // The amended instant is still on day two in UTC, but day three at campus.
+    const changes={expected_assessment_revision:scheduled.revision,expected_sitting_revision:ready.sitting.revision,
+      scheduled_at:`${f.date(2)}T21:15:00.000Z`,duration_minutes:60,space_id:exam.replacement.id,invigilator_user_ids:[duty.actor.id],
+      reason:'Move the lab practical to the following day.'};
+    const amendmentPath=`${sittingPath}/schedule-amendments`;
+    expect(await owner.json(`${amendmentPath}/preview/`,'POST',{...changes,space_id:exam.tooSmall.id})).toMatchObject({
+      can_publish:false,candidate_count:2,blockers:expect.arrayContaining([expect.objectContaining({code:'capacity'})])});
+    const preview=await owner.json<{preview_hash:string}>(`${amendmentPath}/preview/`,'POST',changes);
+    expect(preview).toMatchObject({can_publish:true,candidate_count:2});
+    const command={...changes,command_id:randomUUID(),preview_hash:preview.preview_hash};
+    const changed=await owner.json<CourseExamDetail>(`${amendmentPath}/`,'POST',command);
+    expect(changed).toMatchObject({schedule_state:'awaiting_confirmation',sitting:{id:ready.sitting.id,space_id:exam.replacement.id}});
+    expect(await owner.json(`${amendmentPath}/`,'POST',command)).toEqual(changed);
+    const confirmation={expected_assessment_revision:changed.assessment.revision,expected_sitting_revision:changed.sitting.revision,reason:'Confirm the accepted revised practical.'};
+    expect((await owner.request(`${amendmentPath}/confirm/`,'POST',{...confirmation,command_id:randomUUID()})).status).toBe(409);
+    await acceptDuty();
+    const confirmed=await owner.json<CourseExamDetail>(`${amendmentPath}/confirm/`,'POST',{...confirmation,command_id:randomUUID()});
+    const current=await invigilator.json<CourseExamDetail>(`${sittingPath}/`);
+    expect(current).toMatchObject({time_zone:campusTimeZone,assessment:{time_zone:campusTimeZone,scheduled_at:changes.scheduled_at},sitting:{starts_at:changes.scheduled_at}});
+    expect(await examiner.json(`${assessmentPath}/`)).toMatchObject({assessment:{time_zone:campusTimeZone,scheduled_at:changes.scheduled_at},
+      exam_operation:{time_zone:campusTimeZone,sitting:{starts_at:changes.scheduled_at}}});
+    expect(current.candidates).toEqual(expect.arrayContaining(frozen.map(candidate=>expect.objectContaining(candidate))));
+    const calendar=await learner.json<CalendarDates>(`${root}/calendar/?from=${f.date(3)}&to=${f.date(3)}&academic_context=offering_v1`);
+    expect(calendar.items).toEqual([expect.objectContaining({id:initial.id,date:f.date(3),offering_id:f.source.id,scheduled_at:changes.scheduled_at})]);
+    expect((await learner.json<CalendarDates>(`${root}/calendar/?from=${f.date(2)}&to=${f.date(2)}&academic_context=offering_v1`)).items).toEqual([]);
+    const started=await invigilator.json<{sitting:CourseExamSitting}>(`${sittingPath}/actions/start/`,'POST',{expected_revision:confirmed.sitting.revision});
+    expect((await invigilator.request(`${sittingPath}/actions/complete/`,'POST',{expected_revision:started.sitting.revision})).status).toBe(400);
+    const candidates=current.candidates.map(candidate=>({candidate_id:candidate.id,expected_revision:candidate.attendance_revision,status:'present',note:'Checked during roll call.'}));
+    expect((await invigilator.request(`${sittingPath}/attendance/`,'POST',{expected_revision:started.sitting.revision,records:[{...candidates[0],candidate_id:randomUUID()}]})).status).toBe(400);
+    expect((await invigilator.request(`${sittingPath}/attendance/`,'POST',{expected_revision:started.sitting.revision,
+      records:[{student_id:f.learner.id,status:'present',expected_revision:1}]})).status).toBe(400);
+    const attendance=await invigilator.json<{sitting_revision:number;records:Array<{candidate_id:string;student_id:null;status:string}>}>(`${sittingPath}/attendance/`,'POST',
+      {expected_revision:started.sitting.revision,records:candidates});
+    expect(attendance.records).toEqual(expect.arrayContaining(candidates.map(candidate=>expect.objectContaining({candidate_id:candidate.candidate_id,student_id:null,status:'present'}))));
+    const incident=await invigilator.json<{sitting_revision:number;incident:{id:string;revision:number}}>(`${sittingPath}/incidents/`,'POST',
+      {expected_revision:attendance.sitting_revision,candidate_id:candidates[0]!.candidate_id,category:'materials',severity:'minor',summary:'Replacement answer sheet supplied.'});
+    expect(incident.incident).toMatchObject({candidate_id:candidates[0]!.candidate_id,student_id:null,state:'open'});
+    await invigilator.json(`${sittingPath}/incidents/${incident.incident.id}/resolve/`,'POST',{expected_revision:incident.incident.revision,resolution:'Recorded both answer sheet references.'});
+    const completion=await invigilator.json<{sitting:CourseExamSitting}>(`${sittingPath}/actions/complete/`,'POST',{expected_revision:incident.sitting_revision});
+    expect(completion.sitting.state).toBe('completed');
+
+    let state=await action(owner,confirmed.assessment,'open-marking');
+    const marks=await examiner.json<AssessmentDetail>(`${assessmentPath}/`);
+    expect(marks.results.map(row=>row.person_id).sort()).toEqual([f.learner.id,f.secondLearner.id].sort());
+    expect(marks.results).toEqual(expect.arrayContaining(frozen.map(candidate=>expect.objectContaining({student_id:null,learner_id:candidate.person_id,
+      person_id:candidate.person_id,academic_roster_source:expect.objectContaining({kind:'physical_offering_candidate',candidate_id:candidate.id,
+        enrollment_id:candidate.offering_enrollment_id,enrollment_revision:candidate.offering_enrollment_revision,as_of:f.date(2)})}))));
+    expect(await invigilator.json(`${assessmentPath}/`)).toMatchObject({viewer_role:'invigilator',results:[],publications:[]});
+    const marksInput={expected_assessment_revision:state.revision,
+      results:marks.results.map(row=>({result_id:row.id,expected_revision:row.revision,outcome:'scored',marks:84,reason:'Reviewed practical evidence.'}))};
+    expect((await invigilator.request(`${assessmentPath}/results/`,'POST',marksInput)).status).toBe(403);
+    state=await examiner.json(`${assessmentPath}/results/`,'POST',marksInput);
+    state=await action(examiner,state,'submit');state=await action(owner,state,'approve');await action(owner,state,'publish');
+    const own=await learner.json<OwnAssessmentResults>(`${root}/mine/?person_id=${f.learner.id}`);
+    expect(own.results).toEqual([expect.objectContaining({id:initial.id,marks:'84.00',academic_roster_source:expect.objectContaining({kind:'physical_offering_candidate'})})]);
+    expect((await learner.request(`${root}/mine/?person_id=${f.secondLearner.id}`)).status).toBe(403);
+    expect(await db.selectFrom('students').select('id').where('school_id','=',f.schoolId).execute()).toEqual([]);
+  },120000);
+
   it('publishes nonempty course rosters and a multi-course GPA report with current authority, legacy opt-in compatibility and own-person privacy',async()=>{
     const password=`Academic-HTTP-${randomUUID()}!`,f=await createAcademicOfferingFixture(db as DatabaseService,{passwordHash:await hashPassword(password)});
     const owner=app.session(),instructor=app.session(),learner=app.session(),second=app.session(),sessions=[owner,instructor,learner,second];

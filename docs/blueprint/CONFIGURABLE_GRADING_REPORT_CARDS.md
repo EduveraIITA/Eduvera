@@ -122,6 +122,21 @@ The interface uses the existing portal shell, page title, navigation, typography
 16 px mobile gutter. It exposes operational state and required actions without
 promotional or implementation copy.
 
+The shared A4 print view uses the institution name as issuer, followed by learner
+and term details, tabular results and the publication reference. Individual
+assessments use a Statement of Marks with maximum and obtained marks. Term
+reports use the published class or course context and the configured percentage,
+letter grade or GPA columns. Semester totals retain the published scale and
+precision. A withheld report suppresses learner grades, pass flags and cumulative
+calculation details. Simulation copies retain their run label and print a
+Simulation watermark on each page. The app refetches the exact learner and
+release before rendering the document.
+
+The layout follows common elements visible in [Khallikote Unitary University's grade sheet](https://kuu.ac.in/results/)
+and the credit and term reporting described in [IIIT Allahabad's M.Tech. ordinance](https://examcell.iiita.ac.in/pdf/10.05%20Ordinance%20for%20M%20Tech.pdf).
+The institution name, grades and release evidence come from ThatCampus records.
+Formal certification and signed issuance have their own workflow.
+
 ## Acceptance and remaining gates
 
 Automated acceptance covers calculation, independent-review denial, family isolation,

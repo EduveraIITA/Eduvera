@@ -442,6 +442,61 @@ and [TanStack's configurable read retry contract](https://tanstack.com/query/lat
 Existing source behavior, rather than these general references, establishes each
 finding. A successful read is not proof an earlier ambiguous write committed.
 
+### Course and class examinations
+
+The local physical-examination path uses the same room, policy, Offer, revision,
+attendance, marks and publication owners for a class or configured course.
+Migration 288 preserves legacy identifiers and freezes canonical person/enrollment
+evidence for course candidates. The PostgreSQL class regression retains Student
+selectors and class result provenance. The compiled HTTP course practical
+exercises a distinct invigilator, room/date amendment, renewed acceptance,
+attendance, incident, examiner, moderation and private learner results. The
+isolated COW viva exercises automatic marking, multi-course report publication,
+and unchanged Live and sibling state. A reviewed elective transfer after freeze
+retains the original candidate and enrollment revision through amended Calendar
+and published marks. Fifteen targeted PostgreSQL/API tests pass against a fresh
+17 database migrated through the final migration 288. [Backend receipt](../artifacts/core-completeness-2/examinations/backend.json)
+· [COW acceptance](../backend/test/academic-offering-worlds.integration.test.ts).
+
+The rendered officer changed the room, the invigilator accepted the replacement
+duty and the officer confirmed readiness. The learner saw the revised room and
+received 403 from the private sitting endpoint. A second rendered run used a UTC
+institution and an Asia/Kolkata device. The officer changed 09:00 to 10:00 UTC
+using the date/time control, the invigilator accepted again, and the learner's
+Calendar showed 10:00–11:00 UTC. The compiled API regression also checks a
+Kathmandu schedule whose institution date differs from UTC. [Room read-back](../artifacts/core-completeness-2/examinations/browser-room-revision.json)
+· [Time-zone read-back](../artifacts/core-completeness-2/examinations/browser-time-zone.json)
+· [Time-zone HTTP receipt](../artifacts/core-completeness-2/examinations/backend-time-zone.json).
+
+The mounted mobile test switches class and course in one workspace and exercises
+exam, practical and viva in both. It checks exact selector identity and review
+before dispatch. Mobile type checking, all 2,001 mobile tests, 45 release guards
+and strict Simulation conformance revision 229 pass. The app's course
+marksheet HTML rendered as a one-page WebKit fixture and was visually reviewed.
+The authenticated print dialog and native sharing require separate checks.
+[Mounted authoring test](../mobile/test/assessment-authoring-mounted.test.ts)
+· [Rendered fixture PDF](../artifacts/core-completeness-2/examinations/marksheet-webkit-fixture.pdf).
+
+The subsequent marksheet redesign uses the same authenticated print path.
+Chrome printed the shared template as A4 for a one-course exam, a semester GPA
+card with a separate cumulative appendix, and a class percentage report.
+A long Simulation fixture checked continued table headers, row completeness and
+the per-page watermark. Focused tests cover grades-only and withheld records
+alongside percentage and GPA. [Marksheet tests](../mobile/test/published-marksheet.test.ts).
+
+Separate local reliability checks reproduced four-client pool saturation,
+queued timeout and recovery on PostgreSQL 17.11. A retained compiled revision
+224 Facilities path served 72 signed-in reads across 12 six-request waves
+with p50 27 ms, p95 89 ms and max 109 ms. An authenticated 393,916-byte photo
+upload, identical-command replay and SHA-256-checked private download passed.
+Anonymous download returned 401. The final pool had four idle clients and zero
+acquisition failures. This used temporary disk, one warm fixture and disabled
+workers. Hosted storage, sustained capacity and old/new revision overlap remain
+open. Mid-write failure at the final attachment path is a source-derived
+recovery gap and needs a separate test and repair.
+[Pool test](../backend/test/database-pool-telemetry.integration.test.ts)
+· [File finalization](../backend/src/facilities/facilities-artifacts.ts).
+
 ## Isolated app2 deployment
 
 `https://app2.thatcampus.com` serves the isolated DT backend and sole Expo web app through dedicated edge/Cloud Run resources, identities, separate Live/Simulation databases on shared PostgreSQL 17 and private persistent files. The owner chose to retain the shared server and existing limits: no new server, resize or pool/concurrency increase. Old ERP and maintained Mac development remain separate targets. Operations and code-versus-data rollback belong to the [DT runbook](../deploy/dt/README.md).

@@ -36,22 +36,40 @@ instructor still needs current scoped assessment authority. Workspace, detail an
 refresh disclosure use that current permission floor; an old assignment alone must
 not expose private instructions after authority ends.
 
-Opening marking freezes enrollment applicable on the assessment's campus-local
-date, with exact enrollment identity/revision. Parallel courses keep separate
-registers. Later elective changes cannot rewrite that frozen audience. Examiner,
-independent moderator and administrator publication retain their existing checks.
-Zero remains a real mark, while absent, exempt, withheld and not evaluated stay
-explicit. Corrections append a new reviewed publication and retain earlier releases.
-Current canonical learners receive only their own published result; existing family
-selectors retain their class-history floor and recheck current identity for added
-course records.
+For a nonphysical assessment, opening marking freezes enrollment applicable on the
+assessment's campus-local date. For an exam, practical or viva, scheduling freezes
+the dated roster before Exam Day. Each course candidate retains the exact
+canonical person, offering, enrollment identity, enrollment revision and original
+roster date. Time or room amendments preserve those candidates and reissue
+changed invigilation duties. Exam-day attendance and incidents use the exact
+candidate. Opening marking uses the frozen candidates only after completion.
+Class-based schools retain their existing dated class roster and student selectors.
+The institution can use either roster type or both in the same workspace.
 
-Current offering delivery is bounded to nonphysical quiz, class-test, assignment
-and project assessment records. Physical offering exams, practicals and vivas are
-explicitly unavailable until the existing examination owner captures their canonical
-offering candidates. The physical-examination product target and existing class
-examination path below remain in force; this limit does not substitute an online
-test engine or guessed candidates. Workspace clients opt into offering shapes with
+Parallel courses keep separate registers. Later elective changes cannot rewrite
+the frozen audience. Examiner, independent moderator and administrator
+publication retain their existing checks. Zero remains a real mark. Absent,
+exempt, withheld and not evaluated stay explicit. Corrections append a reviewed
+publication. Canonical learners receive their own published result. Existing
+family selectors retain their class-history floor and recheck current identity
+for course records.
+
+[Oracle Campus Solutions examination scheduling](https://docs.oracle.com/en/applications/peoplesoft/campus-solutions/9.2.039/student-records/scheduling-examinations.html)
+uses enrollment context and facilities. The [Cambridge exam-day guide](https://www.cambridgeinternational.org/exam-administration/cambridge-exams-officers-guide/phase-5-exam-day/running-exams/)
+distinguishes advance preparation and examination-day conduct. ThatCampus uses
+one existing sitting editor and register for both academic contexts. The
+institution's existing invigilation policy remains the authority. This slice
+covers the existing one-sitting workflow, with multi-room allocation and
+candidate-specific accommodations remaining separate work.
+
+Assessments, Exam Day and Calendar use the institution's academic time zone.
+The web date/time control takes a wall time, and the shared civil-time resolver
+converts it to an exact instant. During daylight-saving changes, choose a local
+time that occurs once. Native uses the existing date and time pickers with explicit
+time-zone settings. [HTML date/time input](https://html.spec.whatwg.org/dev/input.html#local-date-and-time-state-(type=datetime-local))
+· [Native picker time-zone API](https://github.com/react-native-datetimepicker/datetimepicker#timezonename-optional-ios-and-android-only).
+
+Workspace clients opt into offering shapes with
 `academic_context=offering_v1`; absent opt-in preserves class-only rows and counts.
 The same opt-in adds scheduled course dates to Calendar for the current canonical
 learner, real family relationship or scoped assigned staff. It exposes dates and
