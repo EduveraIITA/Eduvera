@@ -1,0 +1,22 @@
+[
+  {
+    "name": "current_chat_authority",
+    "visible": true,
+    "ms": 85
+  },
+  {
+    "name": "legacy_visibility",
+    "visible": true,
+    "ms": 1065
+  },
+  {
+    "name": "current_chat_authority",
+    "visible": true,
+    "ms": 64
+  },
+  {
+    "name": "legacy_visibility",
+    "visible": true,
+    "ms": 991
+  }
+]

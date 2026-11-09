@@ -526,10 +526,18 @@ export class AssessmentsService {
     // Calendar projection intentionally excludes results, marks, private notes,
     // drafts and cancelled assessments. It does not cancel normal teaching.
     const items=await sql<{id:string;title:string;scheduled_at:string;date:string;venue:string;subject_name:string;class_name:string;duration_minutes:number|null}>`
-      SELECT a.id,a.title,a.scheduled_at,(a.scheduled_at AT TIME ZONE school.timezone)::date::text AS date,COALESCE(space.name,a.venue) AS venue,s.name AS subject_name,'Class '||c.grade||c.section AS class_name,a.duration_minutes
+      SELECT a.id,a.title,a.scheduled_at,(a.scheduled_at AT TIME ZONE school.timezone)::date::text AS date,
+        COALESCE(assigned_space.name,CASE WHEN split.present THEN a.venue ELSE COALESCE(space.name,a.venue) END) AS venue,s.name AS subject_name,'Class '||c.grade||c.section AS class_name,a.duration_minutes
       FROM assessments a JOIN schools school ON school.id=a.school_id JOIN subjects s ON s.id=a.subject_id JOIN class_sections c ON c.id=a.class_section_id JOIN assessment_cycles cycle ON cycle.id=a.cycle_id LEFT JOIN assessment_sittings sitting ON sitting.assessment_id=a.id LEFT JOIN campus_spaces space ON space.id=sitting.space_id
+      LEFT JOIN LATERAL (SELECT true AS present FROM assessment_sitting_rooms room WHERE room.school_id=a.school_id AND room.sitting_id=sitting.id AND room.active LIMIT 1) split ON true
+      LEFT JOIN assessment_sitting_candidates frozen ON frozen.school_id=a.school_id AND frozen.sitting_id=sitting.id AND frozen.student_id=${studentId??null}::uuid
+      LEFT JOIN assessment_sitting_invigilators duty ON duty.school_id=a.school_id AND duty.sitting_id=sitting.id AND duty.user_id=${user.id}::uuid
+        AND ${studentId==null} AND duty.status IN('offered','accepted')
+      LEFT JOIN assessment_sitting_rooms assigned_room ON assigned_room.school_id=a.school_id AND assigned_room.sitting_id=sitting.id
+        AND assigned_room.id=COALESCE(frozen.room_id,duty.room_id) AND assigned_room.active
+      LEFT JOIN campus_spaces assigned_space ON assigned_space.school_id=a.school_id AND assigned_space.id=assigned_room.space_id
       WHERE a.school_id=${schoolId}::uuid AND a.status NOT IN ('draft','cancelled') AND (a.scheduled_at AT TIME ZONE school.timezone)::date BETWEEN ${from}::date AND ${to}::date
-      AND (${admin} OR (${studentId??null}::uuid IS NOT NULL AND EXISTS(SELECT 1 FROM enrollments e WHERE e.student_id=${studentId??null}::uuid AND e.class_section_id=a.class_section_id AND e.term_id=cycle.term_id AND e.is_active AND e.enrolled_on<=(a.scheduled_at AT TIME ZONE school.timezone)::date)) OR (${studentId??null}::uuid IS NULL AND (staff_has_resource_permission(${schoolId}::uuid,${user.id}::uuid,'assessments.view','assessment',a.id) OR EXISTS(SELECT 1 FROM assessment_sitting_invigilators invigilator JOIN assessment_sittings invigilator_sitting ON invigilator_sitting.id=invigilator.sitting_id WHERE invigilator_sitting.assessment_id=a.id AND invigilator.user_id=${user.id}::uuid AND invigilator.status IN ('offered','accepted')))))
+      AND (${admin} OR (${studentId??null}::uuid IS NOT NULL AND ((split.present AND frozen.id IS NOT NULL) OR (NOT COALESCE(split.present,false) AND EXISTS(SELECT 1 FROM enrollments e WHERE e.student_id=${studentId??null}::uuid AND e.class_section_id=a.class_section_id AND e.term_id=cycle.term_id AND e.is_active AND e.enrolled_on<=(a.scheduled_at AT TIME ZONE school.timezone)::date)))) OR (${studentId??null}::uuid IS NULL AND (staff_has_resource_permission(${schoolId}::uuid,${user.id}::uuid,'assessments.view','assessment',a.id) OR EXISTS(SELECT 1 FROM assessment_sitting_invigilators invigilator JOIN assessment_sittings invigilator_sitting ON invigilator_sitting.id=invigilator.sitting_id WHERE invigilator_sitting.assessment_id=a.id AND invigilator.user_id=${user.id}::uuid AND invigilator.status IN ('offered','accepted')))))
       ORDER BY a.scheduled_at,a.title`.execute(this.db);
     return {items:items.rows};
   }
@@ -559,14 +567,21 @@ export class AssessmentsService {
     }
     const admin=!personId&&!studentId&&membership?.role==='admin',staff=!personId&&!studentId&&membership?.role==='staff';
     const courses=(await sql<{id:string;title:string;scheduled_at:string;date:string;venue:string;subject_name:string;class_name:string;duration_minutes:number|null;context_kind:'learning_offering';offering_id:string;subject_id:string}>`
-      SELECT assessment.id,assessment.title,assessment.scheduled_at,(assessment.scheduled_at AT TIME ZONE school.timezone)::date::text AS date,assessment.venue,
+      SELECT assessment.id,assessment.title,assessment.scheduled_at,(assessment.scheduled_at AT TIME ZONE school.timezone)::date::text AS date,COALESCE(assigned_space.name,assessment.venue) AS venue,
         subject.name AS subject_name,offering.name AS class_name,assessment.duration_minutes,assessment.context_kind,assessment.offering_id,assessment.subject_id
       FROM assessments assessment JOIN schools school ON school.id=assessment.school_id
       JOIN subjects subject ON subject.school_id=assessment.school_id AND subject.id=assessment.subject_id
       JOIN learning_offerings offering ON offering.school_id=assessment.school_id AND offering.id=assessment.offering_id
+      LEFT JOIN assessment_sittings sitting ON sitting.school_id=assessment.school_id AND sitting.assessment_id=assessment.id
+      LEFT JOIN assessment_sitting_candidates frozen ON frozen.school_id=assessment.school_id AND frozen.sitting_id=sitting.id AND frozen.person_id=${ownPerson}::uuid
+      LEFT JOIN assessment_sitting_invigilators duty ON duty.school_id=assessment.school_id AND duty.sitting_id=sitting.id AND duty.user_id=${user.id}::uuid
+        AND ${!personId&&!studentId} AND duty.status IN('offered','accepted')
+      LEFT JOIN assessment_sitting_rooms assigned_room ON assigned_room.school_id=assessment.school_id AND assigned_room.sitting_id=sitting.id
+        AND assigned_room.id=COALESCE(frozen.room_id,duty.room_id) AND assigned_room.active
+      LEFT JOIN campus_spaces assigned_space ON assigned_space.school_id=assessment.school_id AND assigned_space.id=assigned_room.space_id
       WHERE assessment.school_id=${schoolId}::uuid AND assessment.context_kind='learning_offering' AND assessment.status NOT IN('draft','cancelled')
         AND(assessment.scheduled_at AT TIME ZONE school.timezone)::date BETWEEN ${from}::date AND ${to}::date
-        AND(${admin} OR(${staff} AND staff_has_resource_permission(${schoolId}::uuid,${user.id}::uuid,'assessments.view','assessment',assessment.id))
+        AND(${admin} OR(${staff} AND (duty.id IS NOT NULL OR staff_has_resource_permission(${schoolId}::uuid,${user.id}::uuid,'assessments.view','assessment',assessment.id)))
           OR EXISTS(SELECT 1 FROM assessment_sitting_candidates candidate WHERE candidate.school_id=assessment.school_id
             AND candidate.assessment_id=assessment.id AND candidate.person_id=${ownPerson}::uuid)
           OR (assessment.assessment_kind NOT IN ('exam','practical','viva') AND EXISTS(SELECT 1 FROM learning_offering_enrollments enrollment WHERE enrollment.school_id=assessment.school_id AND enrollment.offering_id=assessment.offering_id
@@ -608,6 +623,8 @@ export class AssessmentsService {
       if (context?.date) rosterPreview = { count: results.rows.length || (await datedOfferingRoster(this.db, schoolId, assessment.offering_id, context.term_id, context.date)).length,
         as_of: context.date, source: "learning_offering", frozen: results.rows.length > 0 };
     }
+    if(examOperation&&'split_room_count' in examOperation)
+      assessment.venue=examOperation.viewer_room_id?examOperation.space.name:`${examOperation.split_room_count} examination rooms`;
     return { assessment, results: results.rows, publications: publications.rows, ...(rosterPreview ? { roster_preview: rosterPreview } : {}), exam_operation:examOperation, viewer_role: access.role === "admin" ? "admin" : access.role === "examiner" && canMark ? "examiner" : access.role === "moderator" && canModerate ? "moderator" : access.role === "invigilator" ? "invigilator" : "viewer" };
   }
 

@@ -1,0 +1,53 @@
+{
+  "source": "faculty unread eligibility by source kind, current production read-only, per statement bounded",
+  "results": [
+    {
+      "kind": "campus_event.updated",
+      "rows": 6,
+      "visible": 6,
+      "ms": 301
+    },
+    {
+      "kind": "attention:timetable_publication",
+      "rows": 3,
+      "visible": 3,
+      "ms": 129
+    },
+    {
+      "kind": "legacy",
+      "rows": 2,
+      "visible": 2,
+      "ms": 2230
+    },
+    {
+      "kind": "attention:policy_publication",
+      "rows": 2,
+      "visible": 1,
+      "ms": 75
+    },
+    {
+      "kind": "attention:day_plan_publication",
+      "rows": 2,
+      "visible": 1,
+      "ms": 85
+    },
+    {
+      "kind": "attention:event_cancellation",
+      "rows": 1,
+      "visible": 1,
+      "ms": 53
+    },
+    {
+      "kind": "gate.visitor.updated",
+      "rows": 1,
+      "visible": 0,
+      "ms": 56
+    },
+    {
+      "kind": "attention:staff_leave_decision",
+      "rows": 1,
+      "visible": 1,
+      "ms": 63
+    }
+  ]
+}

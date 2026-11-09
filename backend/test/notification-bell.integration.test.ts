@@ -188,6 +188,35 @@ describe.skipIf(!enabled)('Notification bell real PostgreSQL list/count parity',
     const learner = await parity(f.learner); expect(learner.results.map(row => row.id)).toEqual([learnerHistory.id]); expect(learner.unread_count).toBe(0);
   });
 
+  it('preserves exact legacy chat visibility and higher-priority source checks', async () => {
+    const f = await fixture();
+    const chat = await db.insertInto('chat_conversations').values({ school_id: f.schoolId, kind: 'direct', title: 'Learner support',
+      context_student_id: f.childId, created_by: f.learner.id }).returning('id').executeTakeFirstOrThrow();
+    await db.insertInto('chat_participants').values({ conversation_id: chat.id, user_id: f.guardian.id }).execute();
+    const metadata = { conversation_id: chat.id, student_id: f.childId };
+    const current = await notification(f.guardian, { metadata });
+    const malformed = await notification(f.guardian, { metadata: { ...metadata, conversation_id: 'bad-uuid' } });
+    const wrongRecipient = await notification(f.learner, { metadata });
+    const notice = await notification(f.guardian, { metadata: { ...metadata, notice_recipient_id: randomUUID() } });
+    const review = await notification(f.guardian, { metadata: { ...metadata, notification_scope: 'chat_report_review', report_id: randomUUID() } });
+    async function visibility(id: string, actor: AuthUser) {
+      return (await sql<{ actual: boolean; prior: boolean }>`SELECT
+        notification_is_currently_visible(${id}::uuid,${actor.id}::uuid) AS actual,
+        notification_is_currently_visible_before_event_optimization(${id}::uuid,${actor.id}::uuid) AS prior`.execute(db)).rows[0];
+    }
+    expect(await visibility(current.id, f.guardian)).toEqual({ actual: true, prior: true });
+    for (const row of [malformed, notice, review]) {
+      expect(await visibility(row.id, f.guardian)).toEqual({ actual: false, prior: false });
+    }
+    expect(await visibility(wrongRecipient.id, f.learner)).toEqual({ actual: false, prior: false });
+    const page = await school.notifications(f.guardian, { limit: '1' });
+    expect(page.results.map(row => row.id)).toEqual([current.id]);
+    expect(page.unread_count).toBe(1);
+    await db.deleteFrom('guardian_relationships').where('id', '=', f.relationshipId).execute();
+    expect(await visibility(current.id, f.guardian)).toEqual({ actual: false, prior: false });
+    expect(await school.notifications(f.guardian, { limit: '1' })).toEqual({ results: [], unread_count: 0, next_cursor: null });
+  });
+
   it('uses the durable current revision before read filtering, so a read replacement never restores an older unread alert', async () => {
     const f = await fixture(), sourceId = await calendarTopic(f.schoolId), first = await calendarNotification(f.guardian, f.schoolId, sourceId);
     expect((await parity(f.guardian)).results.map(row => row.id)).toEqual([first.id]);

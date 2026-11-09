@@ -271,10 +271,19 @@ assignment-revision/message bindings and replay-safe response command receipts. 
 first Offer/message/response binding is implemented; persistent reminder rounds,
 expiry execution and configured escalation/fallback workers remain open.
 
-Remaining release gates are explicit. The current model supports one room and one
-frozen cohort per physical assessment; split rooms and multi-sitting papers need a
-later data model. The current accepted/declined duty and realtime refresh path must
-not be represented as reminder, expiry or escalation automation.
+A physical paper can use one room or split the same examination window across
+rooms on the same campus. The officer selects room capacities, planned headcounts
+and distinct invigilators and reviews the plan before scheduling. The system
+checks each room and its duties against the timetable and freezes candidates in
+stable roster order. Each room has its own location, duty acceptance, attendance
+and incident records. Starting and completing the assessment remain officer
+actions. One marking register serves the combined frozen roster. Scheduled split
+plans can be cancelled and recreated. In-place changes to an already scheduled
+split plan, staggered sittings, seating charts and individual accommodations have
+separate requirements. Accepted/declined duties and realtime refresh are separate
+from reminder, expiry and escalation automation.
+[Cambridge exam-day checklist](https://www.cambridgeinternational.org/Images/86454-exam-day-checklist.pdf)
+· [JCQ exam room and invigilation guidance](https://www.jcq.org.uk/knowledge-hub/intructions-for-conducting-examinations/).
 
 ### Institution-approved invitations — 20 October 2026 (local product implementation)
 
@@ -327,9 +336,17 @@ Use the existing theme and concise source/release context; verify meaningful
 correction/moderation/republication in Live and isolated COW with unchanged Live
 and sibling records.
 
-Student result-query cases, group submissions and automatic reminders remain
-separate gaps. Scheduled physical examination amendments use the distinct
-reviewed contract below; the result correction action never changes a sitting.
+A learner can request a private review from their exact published assessment
+release and track the assigned reviewer and decision. The current eligible
+independent moderator receives the request. An authorized coordinator can move a
+pending review to another eligible reviewer. The reviewer records an explanation
+or refers a correction through ordinary marking, independent moderation and a new
+publication. A later release is shown as a correction only when that learner’s
+result changed. Requests and decisions retain exact release and actor identity,
+and retries reuse the original scoped command. Group submissions, board-specific
+fees and deadlines and automatic reminders are separate work. A result correction
+leaves the sitting history intact.
+[University of Delhi post-result workflow](https://exam.du.ac.in/exam/revaluation).
 
 ### Future scheduled examination amendments
 

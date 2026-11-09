@@ -991,10 +991,20 @@ export interface AssessmentResultRevisionTable { learner_id: Generated<string>; 
 export interface AssessmentEvidenceTable { learner_id: Generated<string>; person_id: Generated<string>; sha256: Generated<string|null>; id: Generated<string>; school_id: string; assessment_id: string; result_id: string; student_id: string|null; storage_key: string; original_name: string; content_type: string; size_bytes: number; uploaded_by: string; uploaded_at: Timestamp }
 export interface AssessmentPublicationTable { academic_context: Generated<Json>; id: Generated<string>; school_id: string; assessment_id: string; sequence: number; source_revision: number; reason: string; published_by: string; published_at: Timestamp; result_policy: Json }
 export interface AssessmentPublicationResultTable { learner_id: Generated<string>; person_id: Generated<string>; academic_roster_source: Generated<Json>; school_id: string; publication_id: string; assessment_id: string; student_id: string|null; source_result_id: string; source_result_revision: number; outcome: "scored"|"absent"|"exempt"|"withheld"|"not_evaluated"; marks: string|null; grade: Generated<string>; feedback: Generated<string>; percentage: Generated<string|null>; grade_points: Generated<string|null> }
+export interface AssessmentResultReviewTable {
+  id: string; school_id: string; assessment_id: string; publication_id: string; learner_id: string;
+  person_id: string; requested_by: string; reviewer_user_id: string; request_note: string; response_note: string | null;
+  state: "submitted" | "resolved" | "correction_requested"; revision: number; requested_at: Timestamp; updated_at: Timestamp;
+}
+export interface AssessmentResultReviewActionTable {
+  school_id: string; review_id: string; revision: number; actor_user_id: string; reviewer_user_id: string;
+  client_key: string; request_hash: string; command_id: string; action: "submit" | "reassign" | "resolve" | "refer_correction"; accepted_at: Timestamp;
+}
 export interface AssessmentAuditTable { id: Generated<number>; school_id: string; assessment_id: string|null; actor_id: string; action: string; from_status: string|null; to_status: string|null; metadata: Json; created_at: Timestamp }
 export interface AssessmentOperationPolicyTable { school_id:string; readiness_minutes_before:Generated<number>; attendance_close_after_minutes:Generated<number>; minimum_invigilators:Generated<number>; require_all_candidate_attendance:Generated<boolean>; post_completion_marking_mode:Generated<"manual"|"automatic">; revision:Generated<number>; updated_by:string|null; updated_at:Timestamp }
 export interface AssessmentSittingTable { id:Generated<string>; school_id:string; assessment_id:string; campus_id:string; space_id:string; starts_at:Timestamp; ends_at:Timestamp; state:Generated<"planning"|"ready"|"in_progress"|"completed"|"cancelled">; policy_revision:number; policy_snapshot:Json; roster_frozen_at:NullableTimestamp; started_by:string|null; started_at:NullableTimestamp; completed_by:string|null; completed_at:NullableTimestamp; cancelled_by:string|null; cancelled_at:NullableTimestamp; cancellation_reason:Generated<string>; revision:Generated<number>; created_by:string; updated_by:string; created_at:Timestamp; updated_at:Timestamp }
-export interface AssessmentSittingInvigilatorTable { id:Generated<string>; school_id:string; sitting_id:string; assessment_id:string; user_id:string; status:Generated<"offered"|"accepted"|"declined"|"revoked">; response_note:Generated<string>; revision:Generated<number>; assigned_by:string; assigned_at:Timestamp; responded_at:NullableTimestamp; updated_at:Timestamp }
+export interface AssessmentSittingRoomTable { id:Generated<string>; school_id:string; sitting_id:string; space_id:string; campus_id:string; position:number; planned_candidates:number; active:Generated<boolean> }
+export interface AssessmentSittingInvigilatorTable { room_id:string|null; id:Generated<string>; school_id:string; sitting_id:string; assessment_id:string; user_id:string; status:Generated<"offered"|"accepted"|"declined"|"revoked">; response_note:Generated<string>; revision:Generated<number>; assigned_by:string; assigned_at:Timestamp; responded_at:NullableTimestamp; updated_at:Timestamp }
 export interface AssessmentInvigilationOfferBindingTable {
   id:Generated<string>; school_id:string; assignment_id:string; sitting_id:string; assessment_id:string;
   route_round:number; status:"offered"|"accepted"|"declined"|"expired"|"cancelled";
@@ -1011,9 +1021,9 @@ export interface AssessmentInvigilationCommandTable {
   source_assignment_revision:number; resulting_assignment_revision:number; result:Json;
   response_outbox_event_id:string; message_id:string; correlation_id:string; created_at:Timestamp;
 }
-export interface AssessmentSittingCandidateTable { id:Generated<string>; school_id:string; sitting_id:string; assessment_id:string; student_id:string|null; enrollment_id:string|null; person_id:string|null; offering_id:string|null; offering_enrollment_id:string|null; offering_enrollment_revision:number|null; roster_on:string|null; roll_number_snapshot:number|null; frozen_at:Timestamp }
+export interface AssessmentSittingCandidateTable { room_id:string|null; id:Generated<string>; school_id:string; sitting_id:string; assessment_id:string; student_id:string|null; enrollment_id:string|null; person_id:string|null; offering_id:string|null; offering_enrollment_id:string|null; offering_enrollment_revision:number|null; roster_on:string|null; roll_number_snapshot:number|null; frozen_at:Timestamp }
 export interface AssessmentCandidateAttendanceTable { id:Generated<string>; school_id:string; sitting_id:string; candidate_id:string; student_id:string|null; status:Generated<"unrecorded"|"present"|"late"|"absent"|"left_early">; observed_at:NullableTimestamp; note:Generated<string>; revision:Generated<number>; recorded_by:string|null; updated_at:Timestamp }
-export interface AssessmentSittingIncidentTable { id:Generated<string>; school_id:string; sitting_id:string; candidate_id:string|null; student_id:string|null; category:"conduct"|"health"|"materials"|"timing"|"other"; severity:"info"|"minor"|"major"; summary:string; observed_at:Timestamp; state:Generated<"open"|"resolved">; resolution:Generated<string>; recorded_by:string; resolved_by:string|null; resolved_at:NullableTimestamp; revision:Generated<number>; created_at:Timestamp; updated_at:Timestamp }
+export interface AssessmentSittingIncidentTable { room_id:string|null; id:Generated<string>; school_id:string; sitting_id:string; candidate_id:string|null; student_id:string|null; category:"conduct"|"health"|"materials"|"timing"|"other"; severity:"info"|"minor"|"major"; summary:string; observed_at:Timestamp; state:Generated<"open"|"resolved">; resolution:Generated<string>; recorded_by:string; resolved_by:string|null; resolved_at:NullableTimestamp; revision:Generated<number>; created_at:Timestamp; updated_at:Timestamp }
 export interface AssessmentOperationAuditTable { id:Generated<number>; school_id:string; assessment_id:string|null; sitting_id:string|null; actor_id:string; action:string; from_state:string|null; to_state:string|null; metadata:Json; created_at:Timestamp }
 export interface AcademicGradingPolicyTable { id: Generated<string>; school_id: string; code: string; version: number; name: string; status: Generated<"draft"|"active">; revision: Generated<number>; configuration: Json; created_by: string; created_at: Timestamp; activated_by: string|null; activated_at: NullableTimestamp }
 export interface GradingSchemeTable { context_kind: Generated<"class_term"|"learning_offering">; grading_policy_id: string|null; result_policy: Json|null; programme_key: string|null; term_index: number|null; id: Generated<string>; school_id: string; term_id: string; class_section_id: string|null; name: string; code: string; status: Generated<"draft"|"active"|"archived">; absence_treatment: Generated<"incomplete"|"zero">; review_mode: Generated<"owner_review"|"independent">; revision: Generated<number>; created_by: string; updated_by: string; activated_by: string|null; activated_at: NullableTimestamp; created_at: Timestamp; updated_at: Timestamp }
@@ -1279,8 +1289,11 @@ export interface Database extends LearningAssignmentTables, TeachingSessionTable
   assessment_publications: AssessmentPublicationTable;
   assessment_publication_results: AssessmentPublicationResultTable;
   assessment_audits: AssessmentAuditTable;
+  assessment_result_reviews: AssessmentResultReviewTable;
+  assessment_result_review_actions: AssessmentResultReviewActionTable;
   assessment_operation_policies: AssessmentOperationPolicyTable;
   assessment_sittings: AssessmentSittingTable;
+  assessment_sitting_rooms: AssessmentSittingRoomTable;
   assessment_sitting_invigilators: AssessmentSittingInvigilatorTable;
   assessment_invigilation_offer_bindings: AssessmentInvigilationOfferBindingTable;
   assessment_invigilation_commands: AssessmentInvigilationCommandTable;

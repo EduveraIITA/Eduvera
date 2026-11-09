@@ -35,7 +35,8 @@ export class CampusPersonalService {
     private readonly scenes: CampusScenesService,
   ) {}
 
-  async mine(user: AuthUser, schoolId: string, rawQuery: unknown = {}): Promise<CampusPersonalProjection> {
+  /** The shared gate runs even when a map caller requests only campus-owned layers. */
+  async authorizedContext(user: AuthUser, schoolId: string, rawQuery: unknown) {
     const parsed = querySchema.safeParse(rawQuery);
     if (!z.string().uuid().safeParse(schoolId).success || !parsed.success) {
       throw new BadRequestException("Choose a valid campus. Personal campus context does not accept a person or clock override.");
@@ -57,6 +58,11 @@ export class CampusPersonalService {
     if (!snapshot.acting_agent_id || snapshot.acting_agent_id !== account.actor.agent_id) {
       throw new ForbiddenException("Your current campus identity is unavailable.");
     }
+    return { account, campus, reading, snapshot: { ...snapshot, acting_agent_id: snapshot.acting_agent_id } };
+  }
+
+  async mine(user: AuthUser, schoolId: string, rawQuery: unknown = {}): Promise<CampusPersonalProjection> {
+    const { account, campus, reading, snapshot } = await this.authorizedContext(user, schoolId, rawQuery);
     const placeRows = campus ? await this.repository.spaces(schoolId, campus.id) : [];
     const places: CampusPersonalPlace[] = placeRows.map(place => ({ id: place.id, parent_space_id: place.parent_space_id,
       name: place.name, code: place.code, kind: place.kind, capacity: place.capacity }));

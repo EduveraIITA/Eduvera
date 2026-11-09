@@ -106,3 +106,23 @@ test('accepted creation whose source read failed resumes reads only with the ori
   const second=new NativePendingActionJournal({scope,domain:'assessments',storage,randomId:()=>command!,send:async()=>{throw new Error('Accepted means read only');},read:async()=>{reads++;return {assessment:{...creationReceipt(),examiner_user_id:actor,moderator_user_id:moderator},viewer_role:'admin',results:[],publications:[]};}});
   await second.hydrate();assert.equal(await second.recover({...context,accepted:(value,_assert,action)=>{assessmentAuthoringAccepted(value,action);}}),true);assert.equal(sends,1);assert.equal(reads,2);assert.equal(raw,null);
 });
+
+test('split arrangements retain reviewed counts and duties and reject over-capacity or duplicate plans',()=>{
+  const secondRoom=id(25);
+  const campus={...workspace,references:{...workspace.references,spaces:[...workspace.references!.spaces!,{id:secondRoom,name:'Computing Lab',capacity:12}]}} as AssessmentWorkspace;
+  const roomAllocations=[{space:space!,candidates:'38',invigilators:[invigilator!]},{space:secondRoom,candidates:'11',invigilators:[moderator!]}];
+  const value=assessmentArrangementsPayload(campus,details,{...plan,roomAllocations},now);
+  assert.deepEqual(value.room_allocations,[
+    {space_id:space,candidate_count:38,invigilator_user_ids:[invigilator]},
+    {space_id:secondRoom,candidate_count:11,invigilator_user_ids:[moderator]},
+  ]);
+  const retained={...action('assessment_arrangements',`${root}/${assessment}/sitting/arrangements/`,value,3,assessment),refreshPath:`${root}/${assessment}/`};
+  assert.equal(assessmentAuthoringActionAllowed(retained,scope),true);
+  const receipt={assessment:{id:assessment,school_id:school,revision:4,duration_minutes:90},
+    sitting:{id:sitting,school_id:school,assessment_id:assessment,revision:5,space_id:space,starts_at:plan.scheduled},room_allocations:value.room_allocations};
+  assert.equal(assessmentAuthoringRefreshPath(receipt,retained),retained.refreshPath);
+  assert.throws(()=>assessmentAuthoringRefreshPath({...receipt,room_allocations:[]},retained));
+  for(const patch of [{candidates:'13'},{candidates:'0'},{space:space!},{invigilators:[invigilator!]}]){
+    assert.throws(()=>assessmentArrangementsPayload(campus,details,{...plan,roomAllocations:[roomAllocations[0]!,{...roomAllocations[1]!,...patch}]},now));
+  }
+});

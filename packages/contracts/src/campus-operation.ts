@@ -21,4 +21,6 @@ export interface CampusOperationalProjection {
   environment: { kind: "live" | "simulation"; namespace_id: string | null };
   publication: { id: string; version: number } | null;
   assets: CampusMapAsset[]; activities: CampusMapActivity[]; limitations: string[];
+  personal_activities?: "separate";
+  bounds?: { activities_per_layer: 20 };
 }

@@ -57,7 +57,7 @@ describe.runIf(enabled)("canonical academic offerings in captured COW worlds",()
           .where("assessment_id","=",first.id).execute();
         expect(frozen.map(row=>row.person_id).sort()).toEqual([f.learner.id,f.secondLearner.id].sort());
         expect(frozen.every(row=>row.student_id===null&&row.offering_id===f.source.id&&row.offering_enrollment_id&&Number(row.offering_enrollment_revision)>0)).toBe(true);
-        const started=await branch.exam.start(f.instructor.actor,f.schoolId,first.id,{expected_revision:ready.sitting!.revision});
+        const started=await branch.exam.start(f.instructor.actor,f.schoolId,first.id,{expected_revision:ready.sitting.revision});
         const checked=await branch.exam.recordAttendance(f.instructor.actor,f.schoolId,first.id,{expected_revision:started.sitting.revision,
           records:frozen.map(row=>({candidate_id:row.id,expected_revision:1,status:"present",note:"Present for the branch viva."}))});
         expect(checked.records).toHaveLength(2);

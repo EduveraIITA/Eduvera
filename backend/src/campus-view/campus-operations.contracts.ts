@@ -32,6 +32,7 @@ export interface CampusOperationsProjection {
   campus_id: string;
   as_of: string;
   environment: { kind: 'live' | 'simulation'; namespace_id: string | null };
+  personal_activities?: 'separate';
   publication: { id:string;version:number } | null;
   assets: CampusOperationalAsset[];
   activities: CampusOperationalActivity[];

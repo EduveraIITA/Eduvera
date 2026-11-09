@@ -1,0 +1,92 @@
+{
+  "date": "2026-11-09T06:33:36.906Z",
+  "database": "thatcampus_dt",
+  "user": "thatcampus_dt_runtime",
+  "scope": "one runtime connection at a time, read-only; exact faculty limit=1; 4-second statement cap",
+  "variants": [
+    {
+      "jit": "off",
+      "binding": {
+        "database": "thatcampus_dt",
+        "role": "thatcampus_dt_runtime",
+        "read_only": "on",
+        "jit": "off",
+        "jit_above_cost": "100000"
+      },
+      "source_kinds": [
+        {
+          "kind": "campus_event.updated",
+          "rows": 6,
+          "unread": 6
+        },
+        {
+          "kind": "attention:timetable_publication",
+          "rows": 3,
+          "unread": 3
+        },
+        {
+          "kind": "legacy",
+          "rows": 2,
+          "unread": 2
+        },
+        {
+          "kind": "attention:policy_publication",
+          "rows": 2,
+          "unread": 2
+        },
+        {
+          "kind": "attention:day_plan_publication",
+          "rows": 2,
+          "unread": 2
+        },
+        {
+          "kind": "attention:event_cancellation",
+          "rows": 1,
+          "unread": 1
+        },
+        {
+          "kind": "gate.visitor.updated",
+          "rows": 1,
+          "unread": 1
+        },
+        {
+          "kind": "attention:staff_leave_decision",
+          "rows": 1,
+          "unread": 1
+        }
+      ],
+      "plan": {
+        "total_cost": 70.85,
+        "plan_rows": 2,
+        "jit": null
+      },
+      "timing": {
+        "ms": 2897,
+        "rows": 2,
+        "unread": 15,
+        "fingerprint": "bd5d78d67990717f422d1545561f614d63e783df912743253cb3471d4de698cd"
+      }
+    },
+    {
+      "jit": "on",
+      "binding": {
+        "database": "thatcampus_dt",
+        "role": "thatcampus_dt_runtime",
+        "read_only": "on",
+        "jit": "on",
+        "jit_above_cost": "100000"
+      },
+      "plan": {
+        "total_cost": 70.85,
+        "plan_rows": 2,
+        "jit": null
+      },
+      "timing": {
+        "ms": 3140,
+        "rows": 2,
+        "unread": 15,
+        "fingerprint": "bd5d78d67990717f422d1545561f614d63e783df912743253cb3471d4de698cd"
+      }
+    }
+  ]
+}

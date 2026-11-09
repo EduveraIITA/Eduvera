@@ -46,7 +46,7 @@ describe.runIf(enabled)('future scheduled examination amendments with actual sou
    expect(after[0]).toMatchObject({occurrence_id:before[0]!.occurrence_id,space_id:f.secondRoom.id,state:'cancelled',roster_fingerprint:before[0]!.roster_fingerprint});
    expect(new Date(after[0]!.starts_at).toISOString()).toBe(p.input.scheduled_at);
    expect((after[0]!.context_snapshot as {context:{date:string;revision:number;space_id:string}}).context).toMatchObject({revision:oldSitting.revision+1,space_id:f.secondRoom.id});
-   const fail={command_id:randomUUID(),expected_assessment_revision:pending.assessment!.revision,expected_sitting_revision:pending.sitting!.revision,reason:'Confirm revision readiness.'};
+   const fail={command_id:randomUUID(),expected_assessment_revision:pending.assessment.revision,expected_sitting_revision:pending.sitting.revision,reason:'Confirm revision readiness.'};
    await expect(f.operations.confirmScheduleAmendment(f.owner,f.schoolId,f.assessment.id,fail)).rejects.toThrow('acceptance');
    const offer=await db.selectFrom('assessment_sitting_invigilators').selectAll().where('assessment_id','=',f.assessment.id).where('user_id','=',f.invigilator.id).executeTakeFirstOrThrow();
    expect(offer.status).toBe('offered');await f.operations.respondInvigilator(f.invigilator,f.schoolId,f.assessment.id,offer.id,{command_id:randomUUID(),expected_revision:offer.revision,decision:'accepted',note:''});

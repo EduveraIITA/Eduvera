@@ -97,7 +97,7 @@ suite("physical examination-day operations",()=>{
     expect(scheduled.status).toBe("scheduled");
     const operation=await operations.detail(invigilator,schoolId,created.id);
     expect(operation).toMatchObject({sitting:{state:"ready"},space:{name:"Examination hall"},attendance_counts:{total:1,unrecorded:1},viewer_assignment:{status:"accepted"}});
-    const started=await operations.start(invigilator,schoolId,created.id,{expected_revision:operation.sitting!.revision});
+    const started=await operations.start(invigilator,schoolId,created.id,{expected_revision:operation.sitting.revision});
     const attendance=await operations.recordAttendance(invigilator,schoolId,created.id,{expected_revision:started.sitting.revision,records:[{student_id:studentId,status:"present",note:"Identity checked",expected_revision:1}]});
     const incident=await operations.createIncident(invigilator,schoolId,created.id,{expected_revision:attendance.sitting_revision,student_id:studentId,category:"materials",severity:"minor",summary:"Replacement answer booklet issued"});
     await operations.resolveIncident(invigilator,schoolId,created.id,incident.incident.id,{expected_revision:incident.incident.revision,resolution:"Original damaged booklet retained"});
@@ -126,11 +126,11 @@ suite("physical examination-day operations",()=>{
       JOIN activity_attendance_registers register ON register.id=command.register_id
       JOIN schedule_activity_occurrences occurrence ON occurrence.id=register.occurrence_id
       WHERE command.school_id=$1 AND occurrence.source='examination' AND occurrence.source_ref=$2
-        AND command.operation='marks'`,[schoolId,operation.sitting!.id])).rows)
+        AND command.operation='marks'`,[schoolId,operation.sitting.id])).rows)
       .toEqual([{operation:'marks',actor_id:invigilator.id}]);
 
     const second=await assessments.createAssessment(admin,schoolId,{cycle_id:cycle.id,class_section_id:classId,subject_id:subjectId,title:"Mathematics practical",assessment_kind:"practical",maximum_marks:20,weight_percent:10,scheduled_at:startsAt,duration_minutes:45,venue:"Legacy hall label",instructions:"Practical",evidence_requirement:"optional",examiner_user_id:examiner.id,moderator_user_id:moderator.id,space_id:spaceId,invigilator_user_ids:[invigilator.id]});
-    const firstCandidate=(await pool.query("SELECT id FROM assessment_sitting_candidates WHERE sitting_id=$1",[operation.sitting!.id])).rows[0].id;
+    const firstCandidate=(await pool.query("SELECT id FROM assessment_sitting_candidates WHERE sitting_id=$1",[operation.sitting.id])).rows[0].id;
     const secondSitting=(await pool.query("SELECT id FROM assessment_sittings WHERE assessment_id=$1",[second.id])).rows[0].id;
     await expect(pool.query(`INSERT INTO assessment_sitting_incidents(school_id,sitting_id,candidate_id,student_id,category,severity,summary,observed_at,recorded_by)
       VALUES($1,$2,$3,$4,'other','info','Cross-sitting candidate must fail',now(),$5)`,[schoolId,secondSitting,firstCandidate,studentId,invigilator.id])).rejects.toMatchObject({code:"23503"});

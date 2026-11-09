@@ -256,18 +256,18 @@ test('one maintained workflow verifies only active applications, uses pinned OID
   await assert.rejects(access(new URL('../../.github/workflows/digital-twin.yml', import.meta.url)), /ENOENT/u);
 });
 
-test('the owned PostgreSQL gate retains all43 files, explicit temporary HTTP build and bounded existing database targets', async () => {
+test('the owned PostgreSQL gate retains all46 files, explicit temporary HTTP build and bounded existing database targets', async () => {
   const require = createRequire(new URL('../../mobile/package.json', import.meta.url)), yaml = require('js-yaml');
   const workflow = yaml.load(await readFile(new URL('../../.github/workflows/digital-twin-deploy.yml', import.meta.url), 'utf8'));
   const step = workflow.jobs.verify.steps.find(row => row.name === 'Native identity, role revocation and real isolated-world regressions');
   const declaration = step.run.match(/const files = (\[[\s\S]*?\])\.map\(name => `test\/\$\{name\}\.integration\.test\.ts`\);/u);
   assert.ok(declaration, 'Regression inventory must remain explicit');
   const names = Array.from(runInNewContext(declaration[1]));
-  assert.equal(names.length, 43); assert.equal(new Set(names).size, 43);
-  for (const name of ['native-auth-session', 'academic-catalogue-recovery', 'academic-catalogue-recovery-http', 'learning-assignment-handover', 'learning-assignment-handover-worlds', 'domain-message-supersession', 'learning-assignments', 'learning-assignment-files-worlds', 'exam-schedule-amendments', 'exam-operations', 'simulation-branch-concurrency', 'account-mail-delivery', 'account-mail-http', 'invitation-queue', 'native-google-locks', 'learning-elective-change', 'learning-elective-change-worlds', 'academic-offering-cycle', 'academic-offering-worlds', 'academic-offering-http', 'assessments', 'academic-reports', 'academic-history-integrity', 'grading-policy-worlds', 'assessment-evidence-integrity', 'assessment-result-worlds', 'assessment-correction-worlds'])
+  assert.equal(names.length, 46); assert.equal(new Set(names).size, 46);
+  for (const name of ['native-auth-session', 'academic-catalogue-recovery', 'academic-catalogue-recovery-http', 'learning-assignment-handover', 'learning-assignment-handover-worlds', 'domain-message-supersession', 'learning-assignments', 'learning-assignment-files-worlds', 'exam-schedule-amendments', 'exam-operations', 'exam-room-allocations', 'assessment-result-reviews', 'campus-operations-worlds', 'simulation-branch-concurrency', 'account-mail-delivery', 'account-mail-http', 'invitation-queue', 'native-google-locks', 'learning-elective-change', 'learning-elective-change-worlds', 'academic-offering-cycle', 'academic-offering-worlds', 'academic-offering-http', 'assessments', 'academic-reports', 'academic-history-integrity', 'grading-policy-worlds', 'assessment-evidence-integrity', 'assessment-result-worlds', 'assessment-correction-worlds'])
     assert.ok(names.includes(name), name);
   for (const name of names) await access(new URL(`../../backend/test/${name}.integration.test.ts`, import.meta.url));
-  for (const name of ['LEARNING_ASSIGNMENTS_SIMULATION_TEST_TARGET_URL', 'ASSESSMENTS_SIMULATION_TEST_TARGET_URL', 'ACADEMIC_CATALOGUE_SIMULATION_TEST_TARGET_URL', 'ACADEMIC_OFFERING_SIMULATION_TEST_TARGET_URL', 'ACADEMIC_HISTORY_SIMULATION_TEST_TARGET_URL', 'GRADING_POLICY_SIMULATION_TEST_TARGET_URL', 'ASSESSMENT_EVIDENCE_SIMULATION_TEST_TARGET_URL', 'SIMULATION_MARKS_TEST_TARGET_URL', 'SIMULATION_CORRECTION_TEST_TARGET_URL'])
+  for (const name of ['LEARNING_ASSIGNMENTS_SIMULATION_TEST_TARGET_URL', 'CAMPUS_OPERATIONS_SIMULATION_TEST_TARGET_URL', 'ASSESSMENTS_SIMULATION_TEST_TARGET_URL', 'ACADEMIC_CATALOGUE_SIMULATION_TEST_TARGET_URL', 'ACADEMIC_OFFERING_SIMULATION_TEST_TARGET_URL', 'ACADEMIC_HISTORY_SIMULATION_TEST_TARGET_URL', 'GRADING_POLICY_SIMULATION_TEST_TARGET_URL', 'ASSESSMENT_EVIDENCE_SIMULATION_TEST_TARGET_URL', 'SIMULATION_MARKS_TEST_TARGET_URL', 'SIMULATION_CORRECTION_TEST_TARGET_URL'])
     assert.equal(step.env[name], step.env.CAMPUS_SIMULATION_DATABASE_URL, name);
   assert.equal(new URL(step.env.CAMPUS_SIMULATION_DATABASE_URL).pathname, '/thatcampus_dt_simulation_test');
   assert.equal(new URL(step.env.CAMPUS_SIMULATION_DATABASE_URL).hostname, '127.0.0.1');

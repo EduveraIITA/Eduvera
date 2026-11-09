@@ -1,7 +1,7 @@
 import { randomUUID } from 'node:crypto';
 import { Kysely, PostgresDialect, sql } from 'kysely';
 import { Pool, types } from 'pg';
-import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 import type { Database } from '../src/database/types.js';
 import type { DatabaseService } from '../src/database/database.service.js';
 import { SimulationSnapshotStore } from '../src/database/simulation-snapshot-store.js';
@@ -84,8 +84,20 @@ describe.skipIf(!enabled || !target)('Published asset operations in actual isola
         const publish = { school_id: f.schoolId, expected_revision: event.revision, idempotency_key: randomUUID() };
         event = await world.events.publish(resourceLoanRequest(f.user), eventId, publish) as CampusEventDto;
         expect(await world.events.publish(resourceLoanRequest(f.user), eventId, publish)).toMatchObject({ status: 'published' });
-        expect((await world.operations.view(f.user, f.schoolId, { campus_id: f.campusId })).activities).toContainEqual(
+        const defaultMap = await world.operations.view(f.user, f.schoolId, { campus_id: f.campusId });
+        expect(defaultMap.activities).toContainEqual(
           expect.objectContaining({ layer: 'events', space_id: f.otherPlaceId, dimension: 'expected' }));
+        expect(defaultMap.personal_activities).toBeUndefined();
+        const projectPersonal = vi.spyOn(world.personal, 'mine').mockRejectedValue(new Error('personal schedule read unavailable'));
+        try {
+          const lean = await world.operations.view(f.user, f.schoolId, { campus_id: f.campusId, activity_scope: 'campus_only' });
+          expect(projectPersonal).not.toHaveBeenCalled();
+          expect(lean).toMatchObject({ personal_activities: 'separate', environment: defaultMap.environment,
+            publication: defaultMap.publication, assets: defaultMap.assets, activities: defaultMap.activities });
+          await expect(world.operations.view(f.user, f.schoolId, { campus_id: f.campusId })).rejects.toThrow('personal schedule read unavailable');
+        } finally {
+          projectPersonal.mockRestore();
+        }
         const footprint = (await sql<{space_id:string|null}>`SELECT space_id FROM schedule_activity_occurrences WHERE school_id=${f.schoolId}::uuid AND source='event'`.execute(world.database)).rows;
         expect(footprint).toEqual([{ space_id: f.otherPlaceId }]);
         const accepted = await world.database.selectFrom('campus_model_commands').select(['state', 'environment_namespace_id'])
@@ -102,11 +114,14 @@ describe.skipIf(!enabled || !target)('Published asset operations in actual isola
         await expect(world.operations.view(f.borrower, f.schoolId, { campus_id: f.campusId, namespace_id: sibling.namespace })).rejects.toThrow('do not accept');
         await world.database.updateTable('school_memberships').set({ is_active: false }).where('school_id', '=', f.schoolId).where('user_id', '=', f.borrower.id).execute();
         await expect(world.operations.view(f.borrower, f.schoolId, { campus_id: f.campusId })).rejects.toThrow();
+        await expect(world.operations.view(f.borrower, f.schoolId, { campus_id: f.campusId, activity_scope: 'campus_only' })).rejects.toThrow();
       });
       const unchanged = async (services: ReturnType<typeof campusOperationsServices>, database: DatabaseService) => {
         expect(await services.facilities.detail(f.user, f.schoolId, repairId)).toMatchObject({ state: 'reported', revision: 1, asset_impact: 'not_working' });
         expect(await services.events.detail(f.user, eventId, f.schoolId)).toMatchObject({ status: 'draft', revision: 1, space_id: f.placeId });
-        expect((await services.operations.view(f.borrower, f.schoolId, { campus_id: f.campusId })).assets[0]?.signal).toMatchObject({ state: 'reported_fault', open_reports: 1 });
+        const map = await services.operations.view(f.borrower, f.schoolId, { campus_id: f.campusId, activity_scope: 'campus_only' });
+        expect(map.personal_activities).toBe('separate');
+        expect(map.assets[0]?.signal).toMatchObject({ state: 'reported_fault', open_reports: 1 });
         expect((await services.facilities.work(f.user,f.schoolId,{campus_id:f.campusId})).needs_me.map(item=>item.repair_id)).toEqual([repairId]);
         expect((await sql`SELECT id FROM schedule_activity_occurrences WHERE school_id=${f.schoolId}::uuid AND source='event'`.execute(database)).rows).toEqual([]);
       };

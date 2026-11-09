@@ -1,0 +1,39 @@
+{
+  "revision": "thatcampus-dt-r-182b012b2ea1-42558280411-1",
+  "source": "Google Cloud Run request logs and backend error logs scoped to the DT service, exact revision and probe window",
+  "full_notification_list": {
+    "route": "/api/v1/notifications/",
+    "request_at": "2026-11-09T06:25:54.068737Z",
+    "application_request_id": "612623c7-cbea-4916-b75f-ede73dd47957",
+    "trace_id": "89fa9116543544d8edc17cbdf0eed523",
+    "origin_status": 500,
+    "origin_latency_ms": 60284.613,
+    "client_timeout_ms": 32002,
+    "postgres_code": "57014",
+    "postgres_routine": "ProcessInterrupts",
+    "postgres_message": "canceling statement due to statement timeout",
+    "stack_owner": "SchoolService.notifications"
+  },
+  "exact_app_bell": {
+    "route": "/api/v1/notifications/?limit=1",
+    "request_at": "2026-11-09T06:29:04.162722Z",
+    "application_request_id": "bbd4fd5e-30f8-4eae-9130-305b3aabe29d",
+    "trace_id": "e16764d35169dcf0966b01cf332dc81d",
+    "origin_status": 500,
+    "origin_latency_ms": 60210.084,
+    "client_timeout_ms": 32002,
+    "postgres_code": "57014",
+    "postgres_routine": "ProcessInterrupts",
+    "concurrent_probe_application_reads": 1
+  },
+  "other_late_successes": [
+    { "route": "/api/v1/schools/{id}/campus-view/mine/", "trace_id": "fa54a8c455287332f1af523892cf8310", "origin_status": 200, "origin_latency_ms": 35149.686 },
+    { "route": "/api/v1/schools/{id}/campus-view/operations/", "trace_id": "b158b76ece2fb8d6f1af523892cf83f6", "origin_status": 200, "origin_latency_ms": 72647.718 },
+    { "route": "/api/v1/workspace", "trace_id": "1fb640aff79da3d67a983d7505d3147b", "origin_status": 200, "origin_latency_ms": 46178.332 }
+  ],
+  "limits": [
+    "The exact faculty notification statement timed out; its plan, blocking relationship and shared database contribution were not captured by these HTTP and pool samples.",
+    "Pool metrics are global observations and include background work. The metrics endpoint may itself read outbox aggregates on cache misses.",
+    "The origin eventually served both map endpoints and a fresh director workspace request after the client deadline. The duplicate personal projection is source-confirmed; its share of wall time is not measured."
+  ]
+}

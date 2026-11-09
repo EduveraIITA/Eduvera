@@ -18,6 +18,7 @@ import { HUMAN_AGENT_IDENTITY_PORT, type HumanAgentIdentityPort } from '../campu
 import { OwnedPlanFootprintBridge, type OwnedPlanPerson } from '../schedule-planning/owned-plan-footprint.bridge.js';
 import { ActivityPlanningService } from '../schedule-planning/activity-planning.service.js';
 import { datedAcademicRoster, datedOfferingRoster } from '../academic-reports/academic-record-context.js';
+import { examRoomAllocationsInput, examRooms, frozenExamRoomIds, saveExamRooms } from "./exam-room-allocation.js";
 import { lockSchedule } from '../day-plans/schedule.js';
 
 type Db = Kysely<Database> | Transaction<Database>;
@@ -44,6 +45,8 @@ export type ExamReadiness = {
   accepted_invigilator_count:number;
   required_invigilator_count:number;
   timetable_contract:"effective_school_schedule_v4";
+  room_allocations?:Array<{room_id:string;space_id:string;name:string;candidate_count:number;capacity:number|null;
+    accepted_invigilator_count:number;required_invigilator_count:number}>;
 };
 
 const uuid=z.string().uuid();
@@ -63,10 +66,14 @@ export const sittingArrangementInput=z.object({
   duration_minutes:z.coerce.number().int().positive().max(1440),
   space_id:uuid,
   invigilator_user_ids:z.array(uuid).min(1).max(20),
+  room_allocations:examRoomAllocationsInput.optional(),
 }).superRefine((value,context)=>{
   if(new Set(value.invigilator_user_ids).size!==value.invigilator_user_ids.length){
     context.addIssue({code:"custom",path:["invigilator_user_ids"],message:"Each invigilator can be assigned only once."});
   }
+  const primary=value.room_allocations?.[0];
+  if(primary&&(primary.space_id!==value.space_id||JSON.stringify(primary.invigilator_user_ids)!==JSON.stringify(value.invigilator_user_ids)))
+    context.addIssue({code:"custom",path:["room_allocations"],message:"The first room must match the main room and its invigilators."});
 });
 export const scheduleAmendmentInput=z.object({
   command_id:uuid,expected_assessment_revision:z.number().int().positive(),expected_sitting_revision:z.number().int().positive(),
@@ -132,14 +139,16 @@ export class ExamOperationsService {
     private readonly planning:ActivityPlanningService,
   ){
     authorities.register('examination',async(tx,user,context)=>{
-      const role=await this.access(user,context.school_id,context.source_ref,tx,true);
+      const room=await tx.selectFrom('assessment_sitting_rooms').select(['id','sitting_id']).where('school_id','=',context.school_id)
+        .where('id','=',context.source_ref).where('active','=',true).executeTakeFirst();
       const sitting=await tx.selectFrom('assessment_sittings').selectAll().where('school_id','=',context.school_id)
-        .where('id','=',context.source_ref).executeTakeFirstOrThrow();
+        .where('id','=',room?.sitting_id??context.source_ref).executeTakeFirstOrThrow();
+      const role=await this.access(user,context.school_id,sitting.id,tx,true,room?.id);
       const policy=sitting.policy_snapshot as ReturnType<ExamOperationsService['policyProjection']>;
       const active=sitting.state==='in_progress'&&executionNow().getTime()<=new Date(sitting.ends_at).getTime()+policy.attendance_close_after_minutes*60000;
       return {can_view:true,can_record:active,can_review:sitting.state==='in_progress'||sitting.state==='completed',
         source_refs:[{kind:'current_examination_responsibility',sitting_id:sitting.id,assessment_id:sitting.assessment_id,
-          sitting_revision:sitting.revision,policy_revision:sitting.policy_revision,accepted_invigilator_or_administrator:true}],
+          sitting_revision:sitting.revision,policy_revision:sitting.policy_revision,room_id:room?.id??null,accepted_invigilator_or_administrator:true}],
         allowed_statuses:['present','late','absent','left_early'],
         record_not_before:new Date(new Date(sitting.starts_at).getTime()-policy.readiness_minutes_before*60000),
         capture_window:{from:new Date(new Date(sitting.starts_at).getTime()-policy.readiness_minutes_before*60000),
@@ -148,7 +157,7 @@ export class ExamOperationsService {
     });
   }
 
-  private async participationContext(tx:Transaction<Database>,schoolId:string,sittingId:string){
+  private async participationContext(tx:Transaction<Database>,schoolId:string,sittingId:string,room?:{id:string;space_id:string}){
     const sitting=await tx.selectFrom('assessment_sittings').innerJoin('assessments','assessments.id','assessment_sittings.assessment_id')
       .select(['assessment_sittings.id','assessment_sittings.assessment_id','assessment_sittings.starts_at','assessment_sittings.ends_at',
         'assessment_sittings.revision','assessment_sittings.state','assessment_sittings.space_id','assessment_sittings.completed_by',
@@ -164,9 +173,10 @@ export class ExamOperationsService {
       FROM assessment_sitting_candidates candidate LEFT JOIN students student ON student.id=candidate.student_id AND student.school_id=candidate.school_id
       JOIN school_people person ON person.id=COALESCE(candidate.person_id,student.person_id) AND person.school_id=candidate.school_id
       LEFT JOIN enrollments enrollment ON enrollment.id=candidate.enrollment_id
-      WHERE candidate.school_id=${schoolId}::uuid AND candidate.sitting_id=${sittingId}::uuid ORDER BY candidate.id`.execute(tx)).rows;
-    const context:OwnedParticipationContext={school_id:schoolId,source:'examination',source_id:sitting.id,context_ref:sitting.assessment_id,
-      title:sitting.title,...local,starts_at:sitting.starts_at,ends_at:sitting.ends_at,space_id:sitting.space_id,
+      WHERE candidate.school_id=${schoolId}::uuid AND candidate.sitting_id=${sittingId}::uuid
+        AND candidate.room_id IS NOT DISTINCT FROM ${room?.id??null}::uuid ORDER BY candidate.id`.execute(tx)).rows;
+    const context:OwnedParticipationContext={school_id:schoolId,source:'examination',source_id:room?.id??sitting.id,context_ref:sitting.assessment_id,
+      title:sitting.title,...local,starts_at:sitting.starts_at,ends_at:sitting.ends_at,space_id:room?.space_id??sitting.space_id,
       revision:sitting.revision,locked:sitting.state==='completed',locked_by:sitting.completed_by,locked_at:sitting.completed_at};
     return {context,people};
   }
@@ -180,13 +190,14 @@ export class ExamOperationsService {
     if(!membership) throw new ForbiddenException("Institution administrator access is required.");
   }
 
-  private async access(user:AuthUser,schoolId:string,sittingId:string,db:Db=this.db,acceptedOnly=true){
+  private async access(user:AuthUser,schoolId:string,sittingId:string,db:Db=this.db,acceptedOnly=true,roomId?:string){
     if(user.active_school_id&&user.active_school_id!==schoolId)throw new ForbiddenException('Choose this institution before opening its examination.');
     const active=await db.selectFrom('users').select('id').where('id','=',user.id).where('is_active','=',true).executeTakeFirst();
     if(!active)throw new ForbiddenException('An active account is required.');
     const admin=await db.selectFrom("school_memberships").select("id").where("school_id","=",schoolId).where("user_id","=",user.id).where("role","=","admin").where("is_active","=",true).executeTakeFirst();
     if(admin) return "admin" as const;
     let query=db.selectFrom("assessment_sitting_invigilators").innerJoin("school_memberships",join=>join.onRef("school_memberships.school_id","=","assessment_sitting_invigilators.school_id").onRef("school_memberships.user_id","=","assessment_sitting_invigilators.user_id")).select("assessment_sitting_invigilators.status").where("assessment_sitting_invigilators.school_id","=",schoolId).where("assessment_sitting_invigilators.sitting_id","=",sittingId).where("assessment_sitting_invigilators.user_id","=",user.id).where("school_memberships.is_active","=",true).where("school_memberships.role","in",["staff","admin"]);
+    if(roomId) query=query.where("assessment_sitting_invigilators.room_id","=",roomId);
     if(acceptedOnly) query=query.where("assessment_sitting_invigilators.status","=","accepted");
     else query=query.where("assessment_sitting_invigilators.status","in",["offered","accepted"]);
     const assignment=await query.executeTakeFirst();
@@ -287,6 +298,7 @@ export class ExamOperationsService {
         AND space.school_id=assessment.school_id
       WHERE assessment.id=${assessmentId}::uuid`.execute(db)).rows[0];
     if(!context) throw new NotFoundException("The examination sitting context could not be projected.");
+    const rooms=await examRooms(db,context.school_id,sitting.id);
     return {
       schoolId:context.school_id,
       actorUserId,
@@ -302,6 +314,7 @@ export class ExamOperationsService {
       sittingRevision:sitting.revision,
       policyRevision:sitting.policy_revision,
       space:{id:context.space_id,name:context.space_name,kind:context.space_kind,revision:context.space_revision},
+      ...(rooms.length?{roomSpaceIds:rooms.map(room=>room.space_id)}:{}),
     };
   }
 
@@ -361,13 +374,19 @@ export class ExamOperationsService {
       if(assessment.revision!==data.expected_assessment_revision||sitting.revision!==data.expected_sitting_revision) throw new ConflictException("These exam arrangements changed. Refresh before saving.");
 
       if(amendment)await this.assertAmendable(db,assessment,sitting);
+      const previousRooms=await examRooms(db,schoolId,sitting.id);
+      if(previousRooms.length&&data.room_allocations===undefined)
+        throw new ConflictException('Open the current split-room editor before changing these arrangements.');
+      const invigilatorIds=data.room_allocations?.length
+        ? data.room_allocations.flatMap(room=>room.invigilator_user_ids)
+        : data.invigilator_user_ids;
       const space=await db.selectFrom("campus_spaces").select(["id","campus_id","name","status","is_bookable"]).where("school_id","=",schoolId).where("id","=",data.space_id).executeTakeFirst();
       if(!space||space.status!=="active"||!space.is_bookable) throw new BadRequestException("Choose an active bookable campus space.");
       const eligible=(await sql<{count:number}>`SELECT count(DISTINCT membership.user_id)::int AS count
         FROM school_memberships membership JOIN users account ON account.id=membership.user_id AND account.is_active
-        WHERE membership.school_id=${schoolId}::uuid AND membership.user_id=ANY(${data.invigilator_user_ids}::uuid[])
+        WHERE membership.school_id=${schoolId}::uuid AND membership.user_id=ANY(${invigilatorIds}::uuid[])
           AND membership.role IN ('staff','admin') AND membership.is_active`.execute(db)).rows[0]?.count??0;
-      if(eligible!==data.invigilator_user_ids.length) throw new BadRequestException("Every invigilator must have active staff access to this institution.");
+      if(eligible!==invigilatorIds.length) throw new BadRequestException("Every invigilator must have active staff access to this institution.");
 
       const startsAt=assertFutureExamStart(data.scheduled_at);
       const endsAt=new Date(startsAt.getTime()+data.duration_minutes*60_000);
@@ -375,7 +394,10 @@ export class ExamOperationsService {
         || new Date(sitting.ends_at).getTime()!==endsAt.getTime()
         || sitting.space_id!==space.id;
       const existing=await db.selectFrom("assessment_sitting_invigilators").selectAll().where("sitting_id","=",sitting.id).forUpdate().execute();
-      const selected=new Set(data.invigilator_user_ids);
+      const configured=data.room_allocations ? await saveExamRooms(db,schoolId,sitting.id,space.campus_id,data.room_allocations) : [];
+      const roomIds=new Map(configured.map(room=>[room.space_id,room.id]));
+      const byInvigilator=new Map(data.room_allocations?.flatMap(room=>room.invigilator_user_ids.map(id=>[id,roomIds.get(room.space_id)!] as const)));
+      const selected=new Set(invigilatorIds);
       const now=executionNow();
       const offersToPublish:Selectable<AssessmentSittingInvigilatorTable>[]=[];
       for(const assignment of existing){
@@ -394,7 +416,8 @@ export class ExamOperationsService {
         }
         const invitationChanged=assignment.status==='offered'&&(await this.invigilationOffers.invitationStatus(db,{
           school_id:schoolId,assignment_id:assignment.id,assignment_revision:assignment.revision,user_id:assignment.user_id})).state!=='current';
-        if(timingOrSpaceChanged||assignment.status==="declined"||assignment.status==="revoked"||invitationChanged){
+        const roomId=byInvigilator.get(assignment.user_id)??null;
+        if(timingOrSpaceChanged||assignment.room_id!==roomId||assignment.status==="declined"||assignment.status==="revoked"||invitationChanged){
           if(assignment.status==="offered") await this.invigilationOffers.cancelOpenOffer(db,{
             school_id:schoolId,
             assignment_id:assignment.id,
@@ -402,15 +425,15 @@ export class ExamOperationsService {
             occurred_at:now.toISOString(),
             reason:invitationChanged?'The invitation policy or response window changed, so the administrator explicitly reissued this duty.':"The examination time or room changed, so the previous invigilation Offer was replaced.",
           });
-          const reset=await db.updateTable("assessment_sitting_invigilators").set({status:"offered",response_note:"",responded_at:null,assigned_by:user.id,assigned_at:now,revision:assignment.revision+1,updated_at:now}).where("id","=",assignment.id).returningAll().executeTakeFirstOrThrow();
+          const reset=await db.updateTable("assessment_sitting_invigilators").set({room_id:roomId,status:"offered",response_note:"",responded_at:null,assigned_by:user.id,assigned_at:now,revision:assignment.revision+1,updated_at:now}).where("id","=",assignment.id).returningAll().executeTakeFirstOrThrow();
           offersToPublish.push(reset);
         }
       }
       const existingIds=new Set(existing.map(item=>item.user_id));
-      const added=data.invigilator_user_ids.filter(id=>!existingIds.has(id));
-      if(added.length) offersToPublish.push(...await db.insertInto("assessment_sitting_invigilators").values(added.map(userId=>({school_id:schoolId,sitting_id:sitting.id,assessment_id:assessmentId,user_id:userId,assigned_by:user.id}))).returningAll().execute());
+      const added=invigilatorIds.filter(id=>!existingIds.has(id));
+      if(added.length) offersToPublish.push(...await db.insertInto("assessment_sitting_invigilators").values(added.map(userId=>({school_id:schoolId,sitting_id:sitting.id,assessment_id:assessmentId,user_id:userId,room_id:byInvigilator.get(userId)??null,assigned_by:user.id}))).returningAll().execute());
 
-      const updatedAssessment=await db.updateTable("assessments").set({scheduled_at:startsAt,duration_minutes:data.duration_minutes,venue:space.name,revision:assessment.revision+1,updated_by:user.id,updated_at:now}).where("id","=",assessment.id).where("revision","=",assessment.revision).returningAll().executeTakeFirst();
+      const updatedAssessment=await db.updateTable("assessments").set({scheduled_at:startsAt,duration_minutes:data.duration_minutes,venue:configured.length?`${configured.length} examination rooms`:space.name,revision:assessment.revision+1,updated_by:user.id,updated_at:now}).where("id","=",assessment.id).where("revision","=",assessment.revision).returningAll().executeTakeFirst();
       const updatedSitting=await db.updateTable("assessment_sittings").set({...(amendment?{state:"planning" as const}:{}),campus_id:space.campus_id,space_id:space.id,starts_at:startsAt,ends_at:endsAt,revision:sitting.revision+1,updated_by:user.id,updated_at:now}).where("id","=",sitting.id).where("revision","=",sitting.revision).returningAll().executeTakeFirst();
       if(!updatedAssessment||!updatedSitting) throw new ConflictException("These exam arrangements changed. Refresh before saving.");
       for(const assignment of offersToPublish) await this.invigilationOffers.publishOffer(db,{
@@ -421,7 +444,7 @@ export class ExamOperationsService {
       });
       await this.audit(db,user,schoolId,assessmentId,sitting.id,amendment?"assessment.sitting.schedule_amended":"assessment.sitting.arrangements_updated",sitting.state,updatedSitting.state,{
         previous:{scheduled_at:new Date(sitting.starts_at).toISOString(),ends_at:new Date(sitting.ends_at).toISOString(),space_id:sitting.space_id,invigilator_user_ids:existing.filter(item=>item.status!=="revoked").map(item=>item.user_id)},
-        current:{scheduled_at:startsAt.toISOString(),ends_at:endsAt.toISOString(),space_id:space.id,invigilator_user_ids:data.invigilator_user_ids},
+        current:{scheduled_at:startsAt.toISOString(),ends_at:endsAt.toISOString(),space_id:space.id,invigilator_user_ids:invigilatorIds,room_allocations:data.room_allocations??[]},
         confirmations_reset:timingOrSpaceChanged,...(amendment?{reason:amendment.reason,command_id:amendment.commandId}:{}),
       });
       if(amendment){
@@ -434,10 +457,12 @@ export class ExamOperationsService {
       }
       const eventId=await this.emit(db,schoolId,sitting.id,assessmentId,amendment?'schedule':"sitting.arrangements_updated",updatedSitting.revision,
         amendment?'schedule.amended':"sitting.arrangements_updated",existing.filter(item=>item.status!=="revoked").map(item=>item.user_id));
-      return {assessment:updatedAssessment,sitting:updatedSitting,...(amendment?{command_id:amendment.commandKey,event_id:eventId,schedule_state:"awaiting_confirmation"}:{} )};
+      return {assessment:updatedAssessment,sitting:updatedSitting,...(data.room_allocations?{room_allocations:data.room_allocations}:{}),...(amendment?{command_id:amendment.commandKey,event_id:eventId,schedule_state:"awaiting_confirmation"}:{} )};
   }
 
   private async assertAmendable(db:Db,current:AssessmentRecord,sitting:Selectable<AssessmentSittingTable>){
+    if((await examRooms(db,current.school_id,sitting.id)).length)
+      throw new ConflictException('Scheduled split-room arrangements are retained. Cancel the unstarted examination to prepare a new plan.');
     if(current.status!=='scheduled'||!['ready','planning'].includes(sitting.state)||!sitting.roster_frozen_at||sitting.started_at||sitting.completed_at
       ||new Date(sitting.starts_at).getTime()<=executionNow().getTime())throw new ConflictException('Only a future, never-started scheduled examination can have its arrangements revised.');
     const evidence=(await sql<{recorded:boolean}>`SELECT
@@ -632,9 +657,11 @@ export class ExamOperationsService {
     const candidateCount=sitting.roster_frozen_at
       ?Number((await db.selectFrom('assessment_sitting_candidates').select(({fn})=>fn.countAll<number>().as('count')).where('school_id','=',current.school_id).where('sitting_id','=',sitting.id).executeTakeFirstOrThrow()).count)
       :context?(await this.datedCandidates(db,current,context.term_id,context.exam_date)).length:0;
+    const splitRooms=await examRooms(db,current.school_id,sitting.id);
     const space=await db.selectFrom("campus_spaces").select(["name","capacity","status","is_bookable"]).where("school_id","=",current.school_id).where("id","=",sitting.space_id).executeTakeFirst();
-    const acceptedInvigilators=(await sql<{user_id:string;name:string;status:string}>`
-      SELECT assignment.user_id,assignment.status,concat_ws(' ',account.first_name,account.last_name) AS name
+    const roomIds=splitRooms.length?splitRooms.map(room=>room.space_id):[sitting.space_id];
+    const acceptedInvigilators=(await sql<{user_id:string;status:string;room_id:string|null}>`
+      SELECT DISTINCT assignment.user_id,assignment.status,assignment.room_id
       FROM assessment_sitting_invigilators assignment
       JOIN users account ON account.id=assignment.user_id AND account.is_active
       JOIN school_memberships membership ON membership.school_id=assignment.school_id
@@ -642,21 +669,23 @@ export class ExamOperationsService {
         AND membership.role IN ('staff','admin')
       WHERE assignment.school_id=${current.school_id}::uuid
         AND assignment.sitting_id=${sitting.id}::uuid AND ((${options?.invigilatorIds??null}::uuid[] IS NULL AND assignment.status='accepted') OR assignment.user_id=ANY(${options?.invigilatorIds??[]}::uuid[]))
-      ORDER BY lower(concat_ws(' ',account.first_name,account.last_name)),assignment.user_id
+      ORDER BY assignment.user_id
     `.execute(db)).rows;
     const otherExams=(await sql<{id:string;title:string;room_conflict:boolean;class_conflict:boolean}>`
-      SELECT other.id,other_assessment.title,
-        other.space_id=${sitting.space_id}::uuid AS room_conflict,
-        other_assessment.class_section_id=${current.class_section_id}::uuid AS class_conflict
-      FROM assessment_sittings other
-      JOIN assessments other_assessment ON other_assessment.id=other.assessment_id
-        AND other_assessment.school_id=other.school_id
-      WHERE other.school_id=${current.school_id}::uuid AND other.id<>${sitting.id}::uuid
-        AND other.state IN ('ready','in_progress')
-        AND (other.space_id=${sitting.space_id}::uuid
-          OR other_assessment.class_section_id=${current.class_section_id}::uuid)
-        AND other.starts_at<${endsAt}::timestamptz AND other.ends_at>${startsAt}::timestamptz
-      ORDER BY other.starts_at,other.id
+      SELECT * FROM (
+        SELECT other.id,other_assessment.title,other.starts_at,
+          (other.space_id=ANY(${roomIds}::uuid[]) OR EXISTS(
+            SELECT 1 FROM assessment_sitting_rooms other_room WHERE other_room.school_id=other.school_id
+              AND other_room.sitting_id=other.id AND other_room.active AND other_room.space_id=ANY(${roomIds}::uuid[])
+          )) AS room_conflict,
+          (COALESCE(other_assessment.class_section_id=${current.class_section_id}::uuid,false)
+            OR COALESCE(other_assessment.offering_id=${current.offering_id}::uuid,false)) AS class_conflict
+        FROM assessment_sittings other
+        JOIN assessments other_assessment ON other_assessment.id=other.assessment_id AND other_assessment.school_id=other.school_id
+        WHERE other.school_id=${current.school_id}::uuid AND other.id<>${sitting.id}::uuid
+          AND other.state IN ('ready','in_progress')
+          AND other.starts_at<${endsAt}::timestamptz AND other.ends_at>${startsAt}::timestamptz
+      ) overlapping WHERE room_conflict OR class_conflict ORDER BY starts_at,id
     `.execute(db)).rows;
     const checkedStaff=options?.invigilatorIds??acceptedInvigilators.map(row=>row.user_id);
     const otherInvigilation=(await sql<{id:string;title:string;user_id:string;name:string}>`
@@ -692,7 +721,7 @@ export class ExamOperationsService {
         AND ((school_day::date+schedule.starts_at) AT TIME ZONE school.timezone)<${endsAt}::timestamptz
         AND ((school_day::date+schedule.ends_at) AT TIME ZONE school.timezone)>${startsAt}::timestamptz
         AND (schedule.class_section_id=${current.class_section_id}::uuid
-          OR schedule.space_id=${sitting.space_id}::uuid
+          OR schedule.space_id=ANY(${roomIds}::uuid[])
           OR schedule.teacher_user_id=ANY(${acceptedIds}::uuid[]))
       ORDER BY school_day,schedule.starts_at,schedule.class_section_id,schedule.id
     `.execute(db)).rows;
@@ -704,22 +733,40 @@ export class ExamOperationsService {
     if(endsAt<=startsAt||!Number.isFinite(endsAt.getTime())) add({code:"exam_window",message:"Add a valid examination start time and duration.",source:"assessment",source_id:current.id});
     if(startsAt.getTime()<=executionNow().getTime()) add({code:"exam_window",message:"Choose a future examination time before scheduling.",source:"assessment",source_id:current.id});
     if(!candidateCount) add({code:"roster",message:"No learners are enrolled in the selected group on the examination date.",source:"assessment",source_id:current.offering_id??current.class_section_id});
-    if(!space||space.status!=="active"||!space.is_bookable) add({code:"space",message:"The selected examination space is not currently bookable.",source:"exam_sitting",source_id:sitting.space_id});
-    else if(space.capacity===null) add({code:"capacity",message:`Add a capacity for ${space.name} before scheduling.`,source:"exam_sitting",source_id:sitting.space_id});
-    else if(space.capacity<candidateCount) add({code:"capacity",message:`${space.name} holds ${space.capacity} people, but ${candidateCount} candidates are enrolled.`,source:"exam_sitting",source_id:sitting.space_id});
-    if(acceptedCount<policy.minimum_invigilators) add({code:"invigilators",message:`${policy.minimum_invigilators-acceptedCount} more invigilator acceptance${policy.minimum_invigilators-acceptedCount===1?" is":"s are"} needed.`,source:"exam_sitting",source_id:sitting.id});
+    const allocated=splitRooms.reduce((total,room)=>total+room.planned_candidates,0);
+    if(splitRooms.length&&allocated!==candidateCount)
+      add({code:"roster",message:`Allocate exactly ${candidateCount} candidates across the rooms. The current plan has ${allocated} places.`,source:"exam_sitting",source_id:sitting.id});
+    const readinessRooms=splitRooms.length?splitRooms.map(room=>({...room,candidate_count:room.planned_candidates,
+      accepted:options?.resetAcceptances?0:acceptedInvigilators.filter(assignment=>assignment.room_id===room.id&&assignment.status==='accepted').length}))
+      :[{id:sitting.id,space_id:sitting.space_id,name:space?.name??"The examination room",capacity:space?.capacity??null,status:space?.status,
+        is_bookable:space?.is_bookable,candidate_count:candidateCount,accepted:acceptedCount}];
+    for(const room of readinessRooms){
+      if(room.status!=="active"||!room.is_bookable) add({code:"space",message:`${room.name} is not currently bookable.`,source:"exam_sitting",source_id:room.space_id});
+      else if(room.capacity===null) add({code:"capacity",message:`Add a capacity for ${room.name} before scheduling.`,source:"exam_sitting",source_id:room.space_id});
+      else if(room.capacity<room.candidate_count) add({code:"capacity",message:`${room.name} holds ${room.capacity} people, but ${room.candidate_count} candidates are assigned.`,source:"exam_sitting",source_id:room.space_id});
+      if(room.accepted<policy.minimum_invigilators) {
+        const missing=policy.minimum_invigilators-room.accepted;
+        add({code:"invigilators",message:`${room.name} needs ${missing} more invigilator acceptance${missing===1?"":"s"}.`,source:"exam_sitting",source_id:room.id});
+      }
+    }
     for(const conflict of otherExams){
-      const scope=conflict.room_conflict&&conflict.class_conflict?"room and class":conflict.room_conflict?"room":"class";
+      const group=current.offering_id?"course":"class";
+      const scope=conflict.room_conflict&&conflict.class_conflict?`room and ${group}`:conflict.room_conflict?"room":group;
       add({code:"other_exam",message:`${conflict.title} already uses this ${scope} during the examination.`,source:"exam_sitting",source_id:conflict.id});
     }
     for(const conflict of otherInvigilation) add({code:"other_exam",message:`${conflict.name} is already accepted for ${conflict.title} at this time.`,source:"exam_sitting",source_id:`${conflict.id}:${conflict.user_id}`});
     for(const conflict of timetableConflicts){
       const period=`${conflict.starts_at.slice(0,5)}–${conflict.ends_at.slice(0,5)}`;
       if(conflict.class_section_id===current.class_section_id) add({code:"class_timetable",message:`${conflict.class_name} already has ${conflict.title} (${period}).`,source:"effective_timetable",source_id:`class:${conflict.occurrence_key}`});
-      if(conflict.space_id===sitting.space_id) add({code:"room_timetable",message:`${space?.name??"The room"} is already used by ${conflict.class_name} for ${conflict.title} (${period}).`,source:"effective_timetable",source_id:`room:${conflict.occurrence_key}`});
+      if(conflict.space_id&&roomIds.includes(conflict.space_id)) add({code:"room_timetable",message:`${readinessRooms.find(room=>room.space_id===conflict.space_id)?.name??"The room"} is already used by ${conflict.class_name} for ${conflict.title} (${period}).`,source:"effective_timetable",source_id:`room:${conflict.occurrence_key}`});
       if(conflict.teacher_user_id&&acceptedIds.includes(conflict.teacher_user_id)) add({code:"invigilator_timetable",message:`${conflict.teacher_name||"An accepted invigilator"} is teaching ${conflict.class_name} (${period}).`,source:"effective_timetable",source_id:`teacher:${conflict.teacher_user_id}:${conflict.occurrence_key}`});
     }
-    return {checked_at:executionNow().toISOString(),can_schedule:blockers.length===0,blockers,candidate_count:candidateCount,room_capacity:space?.capacity??null,accepted_invigilator_count:acceptedCount,required_invigilator_count:policy.minimum_invigilators,timetable_contract:"effective_school_schedule_v4"};
+    return {checked_at:executionNow().toISOString(),can_schedule:blockers.length===0,blockers,candidate_count:candidateCount,
+      room_capacity:splitRooms.length?null:space?.capacity??null,accepted_invigilator_count:acceptedCount,
+      required_invigilator_count:policy.minimum_invigilators*readinessRooms.length,timetable_contract:"effective_school_schedule_v4",
+      ...(splitRooms.length?{room_allocations:readinessRooms.map(room=>({room_id:room.id,space_id:room.space_id,name:room.name,
+        capacity:room.capacity,candidate_count:room.candidate_count,accepted_invigilator_count:room.accepted,
+        required_invigilator_count:policy.minimum_invigilators}))}:{})};
   }
 
   async readiness(user:AuthUser,schoolId:string,assessmentId:string){
@@ -786,34 +833,40 @@ export class ExamOperationsService {
   }
 
   private async projectPlan(db:Transaction<Database>,user:AuthUser,sitting:Selectable<AssessmentSittingTable>,correlationId:string,state:'expected'|'cancelled',reschedule?:{commandId:string;expectedRevision:number}){
-    const {context,people}=await this.participationContext(db,sitting.school_id,sitting.id);
-    const planned:OwnedPlanPerson[]=people.map(person=>({...person,role:'participant',attendance_expected:true}));
-    if(state==='expected'){
-      const accepted=await db.selectFrom('assessment_sitting_invigilators').select(['id','user_id','revision'])
-        .where('school_id','=',sitting.school_id).where('sitting_id','=',sitting.id).where('status','=','accepted').execute();
-      for(const assignment of accepted){
+    const rooms=await examRooms(db,sitting.school_id,sitting.id);
+    const participation=await Promise.all((rooms.length?rooms:[undefined]).map(room=>this.participationContext(db,sitting.school_id,sitting.id,room)));
+    const {context}=participation[0]!;
+    const candidates=new Set(participation.flatMap(entry=>entry.people.map(person=>person.person_id)));
+    const accepted=state==='expected'?await db.selectFrom('assessment_sitting_invigilators').select(['id','user_id','revision','room_id'])
+      .where('school_id','=',sitting.school_id).where('sitting_id','=',sitting.id).where('status','=','accepted').execute():[];
+    const occurrences=[];
+    for(const entry of participation){
+      const planned:OwnedPlanPerson[]=entry.people.map(person=>({...person,role:'participant',attendance_expected:true}));
+      for(const assignment of accepted.filter(assignment=>assignment.room_id===(rooms.length?entry.context.source_id:null))){
         const identity=await this.identities.resolveAccountEndpoint(db,{school_id:sitting.school_id,user_id:assignment.user_id,at:new Date(sitting.starts_at).toISOString()});
         if(!identity.acting)throw new ConflictException('Every accepted invigilator needs an active, linked campus person account covering the examination.');
-        if(people.some(person=>person.person_id===identity.person_id))throw new ConflictException('An examination candidate cannot invigilate the same sitting. Choose an independent invigilator.');
+        if(candidates.has(identity.person_id))throw new ConflictException('An examination candidate cannot invigilate the same sitting. Choose an independent invigilator.');
         const person=await db.selectFrom('school_people').select(['revision','first_name','last_name']).where('id','=',identity.person_id)
           .where('school_id','=',sitting.school_id).where(sql<boolean>`retired_at IS NULL`).executeTakeFirst();
         if(!person)throw new ConflictException('An accepted invigilator no longer has an active campus person profile.');
         planned.push({person_id:identity.person_id,label:`${person.first_name} ${person.last_name}`.trim(),person_revision:person.revision,
           role:'lead',required:true,attendance_expected:false,source_ref:`assessment_invigilator:${assignment.id}`,source_revision:assignment.revision});
       }
+      occurrences.push({source_id:entry.context.source_id,source_revision:sitting.revision,title:entry.context.title,
+        local_date:entry.context.date,starts_at:new Date(sitting.starts_at).toISOString(),ends_at:new Date(sitting.ends_at).toISOString(),
+        timezone:entry.context.timezone,attendance_mode:'roll_call' as const,space_id:entry.context.space_id,people:planned});
     }
     const footprint={school_id:sitting.school_id,actor_user_id:user.id,source:'examination' as const,plan_id:sitting.id,
       context_id:sitting.assessment_id,context_entity_id:sitting.id,title:context.title,revision:sitting.revision,state,
-      occurred_at:executionNow().toISOString(),correlation_id:correlationId,occurrences:[{source_id:sitting.id,source_revision:sitting.revision,
-        title:context.title,local_date:context.date,starts_at:new Date(sitting.starts_at).toISOString(),ends_at:new Date(sitting.ends_at).toISOString(),
-        timezone:context.timezone,attendance_mode:'roll_call' as const,space_id:sitting.space_id,people:planned}]};
+      occurred_at:executionNow().toISOString(),correlation_id:correlationId,occurrences};
     const projection=reschedule?await this.footprints.rescheduleExamination(db,footprint,reschedule.commandId,reschedule.expectedRevision)
       :await this.footprints.record(db,footprint);
-    if(reschedule)await this.participation.rescheduleExamination(db,user,context,people,{command_id:reschedule.commandId,correlation_id:correlationId,expected_revision:reschedule.expectedRevision});
+    if(reschedule)await this.participation.rescheduleExamination(db,user,context,participation[0]!.people,
+      {command_id:reschedule.commandId,correlation_id:correlationId,expected_revision:reschedule.expectedRevision});
     if(state==='expected'){
       const end=(await sql<{date:string}>`SELECT (${sitting.ends_at}::timestamptz AT TIME ZONE ${context.timezone})::date::text AS date`.execute(db)).rows[0]!.date;
       await this.planning.validateOwnedPublication(db,sitting.school_id,'examination',sitting.assessment_id,context.date,end);
-      await this.participation.prepare(db,user,context,people);
+      for(const entry of participation)await this.participation.prepare(db,user,entry.context,entry.people);
     }
     return projection;
   }
@@ -853,11 +906,18 @@ export class ExamOperationsService {
         : `Resolve ${readiness.blockers.length} readiness issues before scheduling. ${first!.message}`);
     }
     const roster=await this.datedCandidates(db,current,context.term_id,context.exam_date);
+    const rooms=await examRooms(db,current.school_id,sitting.id);
+    const roomIds=frozenExamRoomIds(rooms,roster.length);
     const frozenAt=executionNow();
-    await db.insertInto("assessment_sitting_candidates").values(roster.map(row=>({school_id:current.school_id,sitting_id:sitting.id,assessment_id:current.id,...row,frozen_at:frozenAt}))).execute();
+    const frozenRows=roster.map((row,index)=>({school_id:current.school_id,sitting_id:sitting.id,
+      assessment_id:current.id,room_id:roomIds[index]??null,...row,frozen_at:frozenAt}));
+    // Keep large concurrent room allocations below the PostgreSQL bind limit.
+    for(let start=0;start<frozenRows.length;start+=1000)
+      await db.insertInto("assessment_sitting_candidates").values(frozenRows.slice(start,start+1000)).execute();
     const updated=await db.updateTable("assessment_sittings").set({state:"ready",starts_at:startsAt,ends_at:endsAt,roster_frozen_at:frozenAt,revision:sitting.revision+1,updated_by:user.id,updated_at:frozenAt}).where("id","=",sitting.id).returningAll().executeTakeFirstOrThrow();
     const temporal=await this.projectPlan(db,user,updated,identity.correlation_id,'expected');
-    await this.audit(db,user,current.school_id,current.id,sitting.id,"assessment.sitting.ready","planning","ready",{candidate_count:roster.length,accepted_invigilator_count:readiness.accepted_invigilator_count,space_id:sitting.space_id,timetable_contract:readiness.timetable_contract,readiness_checked_at:readiness.checked_at});
+    await this.audit(db,user,current.school_id,current.id,sitting.id,"assessment.sitting.ready","planning","ready",{candidate_count:roster.length,accepted_invigilator_count:readiness.accepted_invigilator_count,
+      space_id:rooms.length?null:sitting.space_id,room_allocations:readiness.room_allocations??[],timetable_contract:readiness.timetable_contract,readiness_checked_at:readiness.checked_at});
     const domainEventId=await this.emit(db,current.school_id,sitting.id,current.id,"sitting.ready",updated.revision);
     await this.commands.completeDomainCommand(db,{school_id:current.school_id,command_id:command.command_id,terminal_state:'accepted',code:'exam_sitting_ready',
       explanation:'The examination is ready with frozen candidates, accepted invigilators and conflict-checked campus commitments.',
@@ -888,7 +948,9 @@ export class ExamOperationsService {
     const sitting=await this.db.selectFrom("assessment_sittings").selectAll().where("school_id","=",schoolId).where("assessment_id","=",assessmentId).executeTakeFirst();
     if(!sitting) throw new NotFoundException("This assessment does not have a physical sitting.");
     const viewerRole=await this.access(user,schoolId,sitting.id,this.db,false);
-    return {...await this.projection(schoolId,assessmentId,sitting,user.id),viewer_role:viewerRole};
+    const operation=await this.projection(schoolId,assessmentId,sitting,user.id);
+    if(!operation)throw new NotFoundException("The examination sitting could not be loaded.");
+    return {...operation,viewer_role:viewerRole};
   }
 
   async projection(schoolId:string,assessmentId:string,knownSitting?:Selectable<AssessmentSittingTable>,viewerUserId?:string){
@@ -906,17 +968,47 @@ export class ExamOperationsService {
     const invigilators=await this.db.transaction().execute(async tx=>Promise.all(invitationRows.map(async assignment=>({
       ...assignment,...(assignment.status==='offered'?{invitation_status:await this.invigilationOffers.invitationStatus(tx,{
         school_id:schoolId,assignment_id:assignment.id,assignment_revision:assignment.revision,user_id:assignment.user_id})}:{})}))));
-    const viewerAssignment=viewerUserId?invigilators.find(row=>(row as {user_id:string}).user_id===viewerUserId)??null:null;
-    const candidates=(await sql`SELECT candidate.*,candidate.id AS candidate_id,concat_ws(' ',person.first_name,person.last_name) AS name,student.admission_number,person.avatar_url,attendance.id AS attendance_id,attendance.status AS attendance_status,attendance.observed_at,attendance.note AS attendance_note,attendance.revision AS attendance_revision FROM assessment_sitting_candidates candidate LEFT JOIN students student ON student.id=candidate.student_id AND student.school_id=candidate.school_id JOIN school_people person ON person.id=COALESCE(candidate.person_id,student.person_id) AND person.school_id=candidate.school_id JOIN assessment_candidate_attendance attendance ON attendance.candidate_id=candidate.id WHERE candidate.sitting_id=${sitting.id}::uuid ORDER BY candidate.roll_number_snapshot NULLS LAST,person.first_name,person.last_name,candidate.id`.execute(this.db)).rows;
-    const incidents=await this.db.selectFrom("assessment_sitting_incidents").selectAll().where("sitting_id","=",sitting.id).orderBy("observed_at","desc").orderBy("id").execute();
-    const counts=(await sql<{total:number;unrecorded:number;present:number;late:number;absent:number;left_early:number}>`SELECT count(*)::int AS total,count(*) FILTER(WHERE status='unrecorded')::int AS unrecorded,count(*) FILTER(WHERE status='present')::int AS present,count(*) FILTER(WHERE status='late')::int AS late,count(*) FILTER(WHERE status='absent')::int AS absent,count(*) FILTER(WHERE status='left_early')::int AS left_early FROM assessment_candidate_attendance WHERE sitting_id=${sitting.id}::uuid`.execute(this.db)).rows[0]!;
-    const readiness=sitting.state==="planning"
+    const viewerAssignment=viewerUserId?invigilators.find(row=>row.user_id===viewerUserId&&['offered','accepted'].includes(row.status))??null:null;
+    const rooms=await examRooms(this.db,schoolId,sitting.id);
+    const viewerAdmin=viewerUserId&&rooms.length?await this.db.selectFrom('school_memberships').select('id')
+      .where('school_id','=',schoolId).where('user_id','=',viewerUserId).where('role','=','admin').where('is_active','=',true).executeTakeFirst():null;
+    const restricted=Boolean(viewerAssignment&&rooms.length&&!viewerAdmin);
+    const viewerRoom=restricted?rooms.find(room=>room.id===viewerAssignment?.room_id):undefined;
+    const roomScope=restricted?viewerRoom?.id??null:null;
+    const candidates=(await sql`SELECT candidate.*,candidate.id AS candidate_id,concat_ws(' ',person.first_name,person.last_name) AS name,student.admission_number,person.avatar_url,attendance.id AS attendance_id,attendance.status AS attendance_status,attendance.observed_at,attendance.note AS attendance_note,attendance.revision AS attendance_revision FROM assessment_sitting_candidates candidate LEFT JOIN students student ON student.id=candidate.student_id AND student.school_id=candidate.school_id JOIN school_people person ON person.id=COALESCE(candidate.person_id,student.person_id) AND person.school_id=candidate.school_id JOIN assessment_candidate_attendance attendance ON attendance.candidate_id=candidate.id WHERE candidate.sitting_id=${sitting.id}::uuid
+      AND (NOT ${restricted} OR (candidate.room_id=${roomScope}::uuid AND ${viewerAssignment?.status==='accepted'}))
+      ORDER BY candidate.roll_number_snapshot NULLS LAST,person.first_name,person.last_name,candidate.id`.execute(this.db)).rows;
+    const scopedIncidents=this.db.selectFrom("assessment_sitting_incidents").selectAll().where("sitting_id","=",sitting.id)
+      .orderBy("observed_at","desc").orderBy("id");
+    const incidents=!restricted?await scopedIncidents.execute():roomScope&&viewerAssignment?.status==='accepted'
+      ?await scopedIncidents.where('room_id','=',roomScope).execute():[];
+    const counts={total:candidates.length,unrecorded:0,present:0,late:0,absent:0,left_early:0};
+    const perRoom=new Map<string,{recorded:number;total:number}>();
+    for(const candidate of candidates as Array<{room_id:string|null;attendance_status:'unrecorded'|'present'|'late'|'absent'|'left_early'}>){
+      counts[candidate.attendance_status]++;
+      if(candidate.room_id){
+        const room=perRoom.get(candidate.room_id)??{recorded:0,total:0};
+        room.total++;
+        if(candidate.attendance_status!=='unrecorded')room.recorded++;
+        perRoom.set(candidate.room_id,room);
+      }
+    }
+    const readiness=sitting.state==="planning"&&!restricted
       ? await this.readinessSnapshot(this.db,assessment,sitting)
       : null;
+    const roomAllocations=(restricted?rooms.filter(room=>room.id===roomScope):rooms).map(room=>({
+      room_id:room.id,space_id:room.space_id,name:room.name,capacity:room.capacity,candidate_count:room.planned_candidates,
+      attendance_recorded:perRoom.get(room.id)?.recorded??0,
+      accepted_invigilator_count:invigilators.filter(person=>person.room_id===room.id&&person.status==='accepted').length,
+      required_invigilator_count:(sitting.policy_snapshot as ReturnType<ExamOperationsService['policyProjection']>).minimum_invigilators,
+    }));
     const history=(await sql<{revision:number;action:string;reason:string;previous_snapshot:Record<string,unknown>;snapshot:Record<string,unknown>;recorded_at:Date}>`
       SELECT revision,action,reason,command_key,previous_snapshot,snapshot,recorded_at FROM assessment_schedule_revisions
       WHERE school_id=${schoolId}::uuid AND assessment_id=${assessmentId}::uuid ORDER BY revision DESC LIMIT 50`.execute(this.db)).rows;
-    return {assessment,sitting,space,time_zone:assessment.time_zone,invigilators,viewer_assignment:viewerAssignment,candidates,incidents,attendance_counts:counts,policy:sitting.policy_snapshot,readiness,
+    return {assessment,sitting,space:viewerRoom?{...viewerRoom,id:viewerRoom.space_id}:space,time_zone:assessment.time_zone,
+      invigilators:restricted?invigilators.filter(person=>person.room_id===roomScope):invigilators,
+      viewer_assignment:viewerAssignment,candidates,incidents,attendance_counts:counts,policy:sitting.policy_snapshot,readiness,
+      ...(rooms.length?{room_allocations:roomAllocations,viewer_room_id:roomScope,split_room_count:rooms.length}:{}),
       schedule_state:assessment.status==='scheduled'&&sitting.state==='planning'&&history.length?'awaiting_confirmation':sitting.state,
       schedule_history:history};
   }
@@ -935,7 +1027,9 @@ export class ExamOperationsService {
     return this.db.transaction().execute(async db=>{
       const sitting=await db.selectFrom("assessment_sittings").selectAll().where("school_id","=",schoolId).where("assessment_id","=",assessmentId).forUpdate().executeTakeFirst();
       if(!sitting) throw new NotFoundException("Examination sitting not found.");
-      await this.access(user,schoolId,sitting.id,db,true);
+      const role=await this.access(user,schoolId,sitting.id,db,true);
+      const rooms=await examRooms(db,schoolId,sitting.id);
+      if(rooms.length&&role!=='admin')throw new ForbiddenException('An examination administrator starts and completes a split-room sitting.');
       if(sitting.revision!==expectedRevision) throw new ConflictException("This examination sitting changed. Refresh before continuing.");
       const expected=action==="start"?"ready":"in_progress";
       if(sitting.state!==expected) throw new ConflictException(`This examination sitting cannot ${action} while it is ${sitting.state}.`);
@@ -946,15 +1040,30 @@ export class ExamOperationsService {
         const latest=new Date(new Date(sitting.ends_at).getTime()+policy.attendance_close_after_minutes*60_000);
         if(now<earliest) throw new BadRequestException(`This sitting can start ${policy.readiness_minutes_before} minutes before its scheduled time.`);
         if(now>latest) throw new BadRequestException("The attendance recording window has closed.");
+        if(rooms.length){
+          const count=(await sql<{room_id:string;count:number}>`
+            SELECT assignment.room_id,count(DISTINCT assignment.user_id)::int AS count
+            FROM assessment_sitting_invigilators assignment
+            JOIN users account ON account.id=assignment.user_id AND account.is_active
+            JOIN school_memberships membership ON membership.school_id=assignment.school_id AND membership.user_id=assignment.user_id
+              AND membership.is_active AND membership.role IN ('staff','admin')
+            WHERE assignment.school_id=${schoolId}::uuid AND assignment.sitting_id=${sitting.id}::uuid AND assignment.status='accepted'
+            GROUP BY assignment.room_id`.execute(db)).rows;
+          const byRoom=new Map(count.map(row=>[row.room_id,row.count]));
+          const missing=rooms.find(room=>(byRoom.get(room.id)??0)<policy.minimum_invigilators);
+          if(missing)throw new ConflictException(`${missing.name} no longer has enough current accepted invigilators.`);
+        }
       }
       if(action==="complete"&&policy.require_all_candidate_attendance){
         const unrecorded=Number((await db.selectFrom("assessment_candidate_attendance").select(({fn})=>fn.countAll<number>().as("count")).where("sitting_id","=",sitting.id).where("status","=","unrecorded").executeTakeFirst())?.count??0);
         if(unrecorded) throw new BadRequestException(`Record attendance for all candidates before completing (${unrecorded} remaining).`);
       }
       if(action==='complete'){
-        const participation=await this.participationContext(db,schoolId,sitting.id);
-        const request={authUser:user,requestId:randomUUID(),headers:{'idempotency-key':`exam-complete:${sitting.id}:${sitting.revision}`}} as unknown as AuthenticatedRequest;
-        await this.participation.lifecycle(db,user,participation.context,participation.people,'finalize',request,'Completed the authoritative examination sitting.');
+        for(const room of rooms.length?rooms:[undefined]){
+          const participation=await this.participationContext(db,schoolId,sitting.id,room);
+          const request={authUser:user,requestId:randomUUID(),headers:{'idempotency-key':`exam-complete:${participation.context.source_id}:${sitting.revision}`}} as unknown as AuthenticatedRequest;
+          await this.participation.lifecycle(db,user,participation.context,participation.people,'finalize',request,'Completed the authoritative examination sitting.');
+        }
       }
       const next=action==="start"?"in_progress":"completed";
       const updated=await db.updateTable("assessment_sittings").set({state:next,revision:sitting.revision+1,updated_by:user.id,updated_at:now,...(action==="start"?{started_by:user.id,started_at:now}:{completed_by:user.id,completed_at:now})}).where("id","=",sitting.id).returningAll().executeTakeFirstOrThrow();
@@ -1011,18 +1120,31 @@ export class ExamOperationsService {
       if(sitting.state!=="in_progress") throw new ConflictException("Candidate attendance can be recorded only while the sitting is in progress.");
       const policy=sitting.policy_snapshot as ReturnType<ExamOperationsService["policyProjection"]>;
       if(executionNow().getTime()>new Date(sitting.ends_at).getTime()+policy.attendance_close_after_minutes*60_000) throw new BadRequestException("The configured attendance recording window has closed.");
-      const participation=await this.participationContext(db,schoolId,sitting.id);
-      await this.participation.prepare(db,user,participation.context,participation.people);
-      const canonical:Array<({student_id:string}|{person_id:string})&{status:ParticipationStatus;remarks:string}>=[];
+      const rooms=await examRooms(db,schoolId,sitting.id);
+      const roomById=new Map(rooms.map(room=>[room.id,room]));
+      const groups=new Map<string|null,{participation:Awaited<ReturnType<ExamOperationsService['participationContext']>>;
+        canonical:Array<({student_id:string}|{person_id:string})&{status:ParticipationStatus;remarks:string}>;
+        captures:Record<string,ParticipationCaptureSources[string]>;personByCandidate:Map<string,string>}>();
       const seenCandidates=new Set<string>();
-      const captures:Record<string,ParticipationCaptureSources[string]>={};
-      const personByCandidate=new Map(participation.people.map(person=>[person.source_ref,person.person_id]));
       for(const record of data.records){
-        const current=await db.selectFrom("assessment_candidate_attendance").selectAll().where("school_id","=",schoolId).where("sitting_id","=",sitting.id).where(record.candidate_id?"candidate_id":"student_id","=",record.candidate_id??record.student_id!).executeTakeFirst();
+        const current=await db.selectFrom("assessment_candidate_attendance as attendance").innerJoin("assessment_sitting_candidates as candidate",
+          join=>join.onRef("candidate.school_id","=","attendance.school_id").onRef("candidate.id","=","attendance.candidate_id"))
+          .selectAll('attendance').select('candidate.room_id').where("attendance.school_id","=",schoolId).where("attendance.sitting_id","=",sitting.id)
+          .where(record.candidate_id?"attendance.candidate_id":"attendance.student_id","=",record.candidate_id??record.student_id!).executeTakeFirst();
         if(!current) throw new BadRequestException("A selected learner is not in the frozen examination roster.");
         if(seenCandidates.has(current.candidate_id))throw new BadRequestException("A candidate can appear only once.");
         seenCandidates.add(current.candidate_id);
-        const personId=personByCandidate.get(current.candidate_id);
+        let group=groups.get(current.room_id);
+        if(!group){
+          const room=current.room_id?roomById.get(current.room_id):undefined;
+          if(rooms.length&&!room)throw new ConflictException('The frozen candidate room could not be verified.');
+          if(room)await this.access(user,schoolId,sitting.id,db,true,room.id);
+          const participation=await this.participationContext(db,schoolId,sitting.id,room);
+          group={participation,canonical:[],captures:{},
+            personByCandidate:new Map(participation.people.map(person=>[person.source_ref,person.person_id]))};
+          groups.set(current.room_id,group);
+        }
+        const personId=group.personByCandidate.get(current.candidate_id);
         if(!personId)throw new ConflictException("The candidate is outside this participation roster.");
         if(current.revision!==record.expected_revision) throw new ConflictException("A candidate attendance record changed. Refresh before saving.");
         if(current.status!=='unrecorded'&&!data.reason&&record.note.trim().length<3)
@@ -1031,15 +1153,19 @@ export class ExamOperationsService {
         if(observedAt>executionNow()||observedAt.getTime()<new Date(sitting.starts_at).getTime()-policy.readiness_minutes_before*60000
           ||observedAt.getTime()>new Date(sitting.ends_at).getTime()+policy.attendance_close_after_minutes*60000)
           throw new BadRequestException('Choose an actual observation time within this examination recording window.');
-        canonical.push({...(current.student_id?{student_id:current.student_id}:{person_id:personId}),status:record.status,remarks:record.note});
-        captures[personId]={capture_channel:'human_roll_call',observed_at:observedAt,
-          evidence_refs:[`examination_sitting:${sitting.id}`,`examination_policy:${sitting.policy_revision}`]};
-        await this.audit(db,user,schoolId,assessmentId,sitting.id,"assessment.candidate_attendance.recorded",current.status,record.status,{student_id:current.student_id,candidate_id:current.candidate_id,attendance_id:current.id,note:record.note});
+        group.canonical.push({...(current.student_id?{student_id:current.student_id}:{person_id:personId}),status:record.status,remarks:record.note});
+        group.captures[personId]={capture_channel:'human_roll_call',observed_at:observedAt,
+          evidence_refs:[`examination_sitting:${sitting.id}`,`examination_policy:${sitting.policy_revision}`,
+            ...(current.room_id?[`examination_room:${current.room_id}`]:[])]};
+        await this.audit(db,user,schoolId,assessmentId,sitting.id,"assessment.candidate_attendance.recorded",current.status,record.status,
+          {student_id:current.student_id,candidate_id:current.candidate_id,room_id:current.room_id,attendance_id:current.id,note:record.note});
       }
-      const key=`exam-attendance:${sitting.id}:${sitting.revision}:${createHash('sha256').update(JSON.stringify(data)).digest('hex').slice(0,24)}`;
-      const request={authUser:user,requestId:randomUUID(),headers:{'idempotency-key':key}} as unknown as AuthenticatedRequest;
-      await this.participation.save(db,user,participation.context,participation.people,canonical,request,
-        data.reason??(data.records.some(record=>record.note)?data.records.map(record=>record.note).filter(Boolean).join('; ').slice(0,500):'Recorded an examination attendance observation.'),captures);
+      const hash=createHash('sha256').update(JSON.stringify(data)).digest('hex').slice(0,24);
+      const reason=data.reason??(data.records.some(record=>record.note)?data.records.map(record=>record.note).filter(Boolean).join('; ').slice(0,500):'Recorded an examination attendance observation.');
+      for(const {participation,canonical,captures} of groups.values()){
+        const request={authUser:user,requestId:randomUUID(),headers:{'idempotency-key':`exam-attendance:${participation.context.source_id}:${sitting.revision}:${hash}`}} as unknown as AuthenticatedRequest;
+        await this.participation.save(db,user,participation.context,participation.people,canonical,request,reason,captures);
+      }
       const revised=await db.updateTable("assessment_sittings").set({revision:sitting.revision+1,updated_by:user.id,updated_at:executionNow()}).where("id","=",sitting.id).returningAll().executeTakeFirstOrThrow();
       await this.emit(db,schoolId,sitting.id,assessmentId,"attendance.recorded",revised.revision);
       const updated=await db.selectFrom('assessment_candidate_attendance').selectAll().where('school_id','=',schoolId)
@@ -1053,16 +1179,20 @@ export class ExamOperationsService {
     return this.db.transaction().execute(async db=>{
       const sitting=await db.selectFrom("assessment_sittings").selectAll().where("school_id","=",schoolId).where("assessment_id","=",assessmentId).forUpdate().executeTakeFirst();
       if(!sitting) throw new NotFoundException("Examination sitting not found.");
-      await this.access(user,schoolId,sitting.id,db,true);
+      const role=await this.access(user,schoolId,sitting.id,db,true);
+      const assignment=role==='invigilator'?await db.selectFrom('assessment_sitting_invigilators').select('room_id')
+        .where('school_id','=',schoolId).where('sitting_id','=',sitting.id).where('user_id','=',user.id)
+        .where('status','=','accepted').executeTakeFirstOrThrow():null;
       if(sitting.revision!==data.expected_revision) throw new ConflictException("This examination sitting changed. Refresh before recording the incident.");
       if(sitting.state!=="in_progress") throw new ConflictException("Incidents can be recorded only while the sitting is in progress.");
-      let candidate:{id:string;student_id:string|null}|undefined;
+      let candidate:{id:string;student_id:string|null;room_id:string|null}|undefined;
       if(data.candidate_id||data.student_id){
-        candidate=await db.selectFrom("assessment_sitting_candidates").select(["id","student_id"]).where("school_id","=",schoolId)
+        candidate=await db.selectFrom("assessment_sitting_candidates").select(["id","student_id","room_id"]).where("school_id","=",schoolId)
           .where("sitting_id","=",sitting.id).where(data.candidate_id?"id":"student_id","=",data.candidate_id??data.student_id!).executeTakeFirst();
         if(!candidate)throw new BadRequestException("The selected learner is not in the frozen examination roster.");
+        if(assignment&&assignment.room_id!==candidate.room_id)throw new ForbiddenException('The candidate belongs to a different examination room.');
       }
-      const incident=await db.insertInto("assessment_sitting_incidents").values({school_id:schoolId,sitting_id:sitting.id,candidate_id:candidate?.id??null,student_id:candidate?.student_id??null,category:data.category,severity:data.severity,summary:data.summary,observed_at:data.observed_at?new Date(data.observed_at):executionNow(),recorded_by:user.id}).returningAll().executeTakeFirstOrThrow();
+      const incident=await db.insertInto("assessment_sitting_incidents").values({school_id:schoolId,sitting_id:sitting.id,room_id:candidate?.room_id??assignment?.room_id??null,candidate_id:candidate?.id??null,student_id:candidate?.student_id??null,category:data.category,severity:data.severity,summary:data.summary,observed_at:data.observed_at?new Date(data.observed_at):executionNow(),recorded_by:user.id}).returningAll().executeTakeFirstOrThrow();
       const revised=await db.updateTable("assessment_sittings").set({revision:sitting.revision+1,updated_by:user.id,updated_at:executionNow()}).where("id","=",sitting.id).returningAll().executeTakeFirstOrThrow();
       await this.audit(db,user,schoolId,assessmentId,sitting.id,"assessment.incident.recorded",null,"open",{incident_id:incident.id,candidate_id:incident.candidate_id,student_id:incident.student_id,category:incident.category,severity:incident.severity});
       await this.emit(db,schoolId,sitting.id,assessmentId,"incident.recorded",revised.revision,`incident.recorded:${incident.id}`);
@@ -1087,7 +1217,9 @@ export class ExamOperationsService {
       if(!incident) throw new NotFoundException("Examination incident not found.");
       const sitting=await db.selectFrom("assessment_sittings").selectAll().where("id","=",incident.sitting_id).where("assessment_id","=",assessmentId).executeTakeFirst();
       if(!sitting) throw new NotFoundException("Examination incident not found.");
-      await this.access(user,schoolId,sitting.id,db,true);
+      const role=await this.access(user,schoolId,sitting.id,db,true,incident.room_id??undefined);
+      if(role==='invigilator'&&!incident.room_id&&(await examRooms(db,schoolId,sitting.id)).length)
+        throw new ForbiddenException('An administrator reviews incidents that apply to every examination room.');
       if(incident.revision!==data.expected_revision) throw new ConflictException("This incident changed. Refresh before resolving it.");
       if(incident.state!=="open") throw new ConflictException("This incident is already resolved.");
       const updated=await db.updateTable("assessment_sitting_incidents").set({state:"resolved",resolution:data.resolution,resolved_by:user.id,resolved_at:executionNow(),revision:incident.revision+1,updated_at:executionNow()}).where("id","=",incident.id).returningAll().executeTakeFirstOrThrow();
@@ -1123,7 +1255,7 @@ export class ExamOperationsService {
     if(command.status!=='ready')throw new ConflictException('This examination cancellation command has already completed. Refresh the assessment.');
     const updated=await db.updateTable("assessment_sittings").set({state:"cancelled",cancelled_by:user.id,cancelled_at:executionNow(),cancellation_reason:reason,revision:sitting.revision+1,updated_by:user.id,updated_at:executionNow()}).where("id","=",sitting.id).returningAll().executeTakeFirstOrThrow();
     const retained=(await sql<{id:string}>`SELECT id FROM schedule_activity_occurrences WHERE school_id=${schoolId}::uuid
-      AND source='examination' AND source_ref=${sitting.id}`.execute(db)).rows[0];
+      AND source='examination' AND context_ref=${assessmentId}::uuid LIMIT 1`.execute(db)).rows[0];
     const temporal=retained?await this.projectPlan(db,user,updated,identity.correlation_id,'cancelled'):null;
     await this.audit(db,user,schoolId,assessmentId,sitting.id,"assessment.sitting.cancelled",sitting.state,"cancelled",{reason});
     const domainEventId=await this.emit(db,schoolId,sitting.id,assessmentId,"sitting.cancelled",updated.revision);

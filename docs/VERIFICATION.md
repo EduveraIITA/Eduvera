@@ -497,6 +497,39 @@ recovery gap and needs a separate test and repair.
 [Pool test](../backend/test/database-pool-telemetry.integration.test.ts)
 · [File finalization](../backend/src/facilities/facilities-artifacts.ts).
 
+### Split exam rooms and private result review
+
+The split-room suite uses class, course and mixed fixtures to test the room plan,
+capacity and timetable conflicts, candidate freeze, exact room Calendar venue,
+invigilator authority, attendance and combined marking. The selected Simulation
+run changes independently of Live and a sibling. The private review suite
+exercises exact-release and actor-bound retries, current reviewer assignment,
+private decisions, correction publication, and the real compiled HTTP path from
+learner request to reviewer decision and learner readback. Browser and physical
+interaction remain separate acceptance steps. The integrated run passed 25 PostgreSQL
+checks. Its compiled HTTP case initially exceeded the local cold startup allowance
+and passed on the same compiled app when the test harness allowed startup to
+finish. All 2,009 mobile tests and 45 release guard tests passed.
+[Room tests](../backend/test/exam-room-allocations.integration.test.ts)
+· [Result review tests](../backend/test/assessment-result-reviews.integration.test.ts).
+
+### App2 loading investigation
+
+The release 225 signed-in tour reproduced delayed map reads and PostgreSQL
+statement timeout on the exact `limit=1` notification badge call, including a
+solo faculty request. Bounded read-only checks on the same account produced
+matching bell results with JIT enabled or disabled. Two sampled legacy chat
+alerts spent about a second each in the compatibility wrapper. The direct
+current chat authorization took 64–85 ms. The follow-up migration preserves
+higher-priority sources and current chat authority while avoiding unrelated
+legacy checks for conversation alerts. The map client opts into a narrower
+operations layer request and combines it with the separately validated personal
+projection. Older map clients keep their response shape. No capacity change is
+required for these fixes. Hosted before/after validation remains separate.
+[Origin correlation](../artifacts/app2-loading-investigation/app2-225-origin-correlation.json)
+· [Bell parity](../backend/test/notification-bell.integration.test.ts)
+· [Map isolation](../backend/test/campus-operations-worlds.integration.test.ts).
+
 ## Isolated app2 deployment
 
 `https://app2.thatcampus.com` serves the isolated DT backend and sole Expo web app through dedicated edge/Cloud Run resources, identities, separate Live/Simulation databases on shared PostgreSQL 17 and private persistent files. The owner chose to retain the shared server and existing limits: no new server, resize or pool/concurrency increase. Old ERP and maintained Mac development remain separate targets. Operations and code-versus-data rollback belong to the [DT runbook](../deploy/dt/README.md).

@@ -152,6 +152,13 @@ uses the same invigilation and attendance workflow, and opens marking from the
 completed sitting. The verified scope and remaining release gates are in
 [course examination verification](../VERIFICATION.md#course-and-class-examinations).
 
+The follow-up branch adds simultaneous split-room exams and private result
+review, plus the two measured loading mitigations. The room flow freezes one
+roster, uses room-specific staff and registers, and opens one marking register.
+Result review attaches to the learner’s exact release and refers any correction to
+ordinary moderation and publication. See [verification](../VERIFICATION.md#split-exam-rooms-and-private-result-review)
+and [App2 loading diagnosis](../VERIFICATION.md#app2-loading-investigation).
+
 Pure operating-course withdrawal without a replacement has no reviewed owner
 yet. One report scheme
 accepts one offering per course code; complex overlapping future replacements use

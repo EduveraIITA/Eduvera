@@ -14,9 +14,10 @@ export const assessmentAuthoringRoot = (school: string) => `/api/v1/schools/${en
 /** Older installed clients retain the class-only response by default. */
 export const assessmentWorkspacePath = (school: string) => `${assessmentAuthoringRoot(school)}/workspace/?academic_context=offering_v1`;
 export type AssessmentAuthoringMode = 'assessment' | 'cycle' | 'arrangements';
-export type AssessmentPlanDraft = { cycle: string; classId: string; subject: string; offering?: string; kind: string; title: string; maximum: string; policy: string; weight: string; scheduled: string; duration: string; venue: string; instructions: string; evidence: string; examiner: string; moderator: string; space: string; invigilators: string[] };
+export type ExamRoomAllocationDraft = { space: string; candidates: string; invigilators: string[] };
+export type AssessmentPlanDraft = { roomAllocations?: ExamRoomAllocationDraft[] | undefined; cycle: string; classId: string; subject: string; offering?: string; kind: string; title: string; maximum: string; policy: string; weight: string; scheduled: string; duration: string; venue: string; instructions: string; evidence: string; examiner: string; moderator: string; space: string; invigilators: string[] };
 export type AssessmentCycleDraft = { term: string; name: string; code: string; label: string; start: string; end: string };
-export type AssessmentArrangementsDraft = Pick<AssessmentPlanDraft,'scheduled'|'duration'|'space'|'invigilators'>;
+export type AssessmentArrangementsDraft = Pick<AssessmentPlanDraft,'scheduled'|'duration'|'space'|'invigilators'|'roomAllocations'>;
 export function assessmentAuthoringChoices(workspace: AssessmentWorkspace, cycleId: string, classId: string) {
   const references = workspace.references;
   const cycle = workspace.cycles.find(value => value.id === cycleId);
@@ -62,9 +63,49 @@ export function assessmentCyclePayload(workspace: AssessmentWorkspace, input: As
   if (input.name.trim().length < 2 || input.name.length > 120 || input.code.trim().length < 2 || input.code.length > 32 || input.label.trim().length < 2 || input.label.length > 80) throw new Error('Review the cycle name, short code and result label.');
   return { term_id: input.term, name: input.name.trim(), code: input.code.trim().toUpperCase(), starts_on: input.start, ends_on: input.end, result_label: input.label.trim() };
 }
+function validRoomAllocations(value: unknown): value is Array<{space_id:string;candidate_count:number;invigilator_user_ids:string[]}> {
+  if (!Array.isArray(value) || value.length === 1 || value.length > 12) return false;
+  const rooms = value.map(object);
+  if (rooms.some(room => !room || Object.keys(room).length !== 3 || !uuid(room.space_id) || !validInvigilators(room.invigilator_user_ids)
+    || !Number.isSafeInteger(room.candidate_count) || Number(room.candidate_count) < 1 || Number(room.candidate_count) > 10000)) return false;
+  const ids = rooms.flatMap(room => room?.invigilator_user_ids as string[]);
+  return new Set(rooms.map(room => room?.space_id)).size === rooms.length && new Set(ids).size === ids.length;
+}
+function sameRoomAllocations(actual: unknown, reviewed: unknown) {
+  if (!validRoomAllocations(actual) || !validRoomAllocations(reviewed) || actual.length !== reviewed.length) return false;
+  return reviewed.every((room,index) => {
+    const saved = actual[index]!;
+    return saved.space_id === room.space_id && saved.candidate_count === room.candidate_count
+      && saved.invigilator_user_ids.length === room.invigilator_user_ids.length
+      && saved.invigilator_user_ids.every(id => room.invigilator_user_ids.includes(id));
+  });
+}
+export function arrangementRoomDraft(detail?: AssessmentDetail | null): ExamRoomAllocationDraft[] | undefined {
+  const operation = detail?.exam_operation;
+  return operation?.room_allocations?.map(room => ({space:room.space_id,candidates:String(room.candidate_count),
+    invigilators:operation.invigilators.filter(item => item.room_id === room.room_id && item.status !== 'revoked').map(item => item.user_id)}));
+}
+export function arrangementRoomDraftFromRequest(value: unknown): ExamRoomAllocationDraft[] | undefined {
+  return validRoomAllocations(value) ? value.map(room => ({space:room.space_id,candidates:String(room.candidate_count),invigilators:room.invigilator_user_ids})) : undefined;
+}
 export function assessmentArrangementsPayload(workspace: AssessmentWorkspace, detail: AssessmentDetail, input: AssessmentArrangementsDraft, now: string) {
   if (workspace.mode !== 'admin' || detail.viewer_role !== 'admin' || detail.assessment.status !== 'draft' || detail.exam_operation?.sitting.state !== 'planning') throw new Error('Only the current administrator may change arrangements before scheduling.');
-  return { expected_assessment_revision: detail.assessment.revision, expected_sitting_revision: detail.exam_operation.sitting.revision, ...timing(input,workspace.references,now) };
+  const timingPayload = timing(input,workspace.references,now);
+  const rooms = input.roomAllocations?.map(room => ({
+    space_id:room.space,candidate_count:/^\d+$/.test(room.candidates)?Number(room.candidates):NaN,invigilator_user_ids:room.invigilators,
+  }));
+  if (rooms) {
+    if (!validRoomAllocations(rooms) || rooms.some(room => {
+      const space = workspace.references.spaces?.find(item => item.id === room.space_id);
+      return !space?.capacity || space.capacity < room.candidate_count
+        || room.invigilator_user_ids.some(id => !workspace.references.staff.some(person => person.id === id));
+    })) throw new Error('Choose different rooms, a candidate count within each capacity, and distinct current invigilators for each room.');
+    const primary = rooms[0];
+    if (primary && (primary.space_id !== timingPayload.space_id || JSON.stringify(primary.invigilator_user_ids) !== JSON.stringify(timingPayload.invigilator_user_ids)))
+      throw new Error('Check the first room and its invigilation assignments.');
+  }
+  return { expected_assessment_revision: detail.assessment.revision, expected_sitting_revision: detail.exam_operation.sitting.revision,
+    ...timingPayload,...(rooms?{room_allocations:rooms}:{}) };
 }
 
 /** These three mounted legacy handlers do not consume command IDs. A lost
@@ -93,6 +134,8 @@ export function assessmentAuthoringRefreshPath(value: unknown, action: NativePen
   if (source.kind === 'assessment_arrangements' && action.endpoint === `${root}/${encodeURIComponent(source.sourceId)}/sitting/arrangements/`) {
     const assessment = object(receipt.assessment), sitting = object(receipt.sitting);
     if (!assessment || !sitting || !uuid(source.fingerprint) || sitting.id !== source.fingerprint || assessment.id !== source.sourceId || assessment.school_id !== action.scope.schoolId || sitting.school_id !== action.scope.schoolId || sitting.assessment_id !== source.sourceId || assessment.revision !== source.revision + 1 || body.expected_assessment_revision !== source.revision || sitting.revision !== Number(body.expected_sitting_revision)+1 || sitting.space_id !== body.space_id || !sameInstant(sitting.starts_at,body.scheduled_at) || assessment.duration_minutes !== body.duration_minutes) throw new Error('The arrangements result did not match the exact assessment and sitting revisions.');
+    if (body.room_allocations !== undefined && !sameRoomAllocations(receipt.room_allocations,body.room_allocations))
+      throw new Error('The saved arrangements did not confirm the reviewed room allocations.');
     return `${root}/${encodeURIComponent(source.sourceId)}/`;
   }
   throw new Error('This assessment action needs its owning result verifier.');
@@ -116,8 +159,15 @@ export function assessmentAuthoringAccepted(value: unknown, action: NativePendin
       if (!sitting || !uuid(sitting.id) || !Number.isSafeInteger(sitting.revision) || Number(sitting.revision) < 1 || (item.revision === 1 && sitting.revision === 1 && (sitting.space_id !== body.space_id || !sameInstant(sitting.starts_at, body.scheduled_at) || !validInvigilators(body.invigilator_user_ids) || offered.length !== body.invigilator_user_ids.length || body.invigilator_user_ids.some(id => !offered.includes(id))))) throw new Error('The saved course examination did not confirm the reviewed sitting and invigilators.');
     }
   } else if (source.kind === 'assessment_arrangements') {
-    const operation = object(latest.exam_operation), sitting = object(operation?.sitting), invigilators = Array.isArray(operation?.invigilators) ? operation.invigilators.map(object).filter(value => value && value.status !== 'revoked').map(value => value!.user_id) : [];
+    const operation = object(latest.exam_operation), sitting = object(operation?.sitting);
+    const active = Array.isArray(operation?.invigilators) ? operation.invigilators.map(object).filter(value => value && value.status !== 'revoked') : [];
+    const roomAllocations = Array.isArray(operation?.room_allocations) ? operation.room_allocations.map(object).map(room => ({
+      space_id:room?.space_id,candidate_count:room?.candidate_count,invigilator_user_ids:active.filter(item => item?.room_id===room?.room_id).map(item => item?.user_id),
+    })) : [];
+    const invigilators = active.filter(item => !roomAllocations.length || item?.room_id === object((operation?.room_allocations as unknown[])[0])?.room_id).map(value => value?.user_id);
     if (id !== source.sourceId || Number(item.revision) < source.revision+1 || !sitting || sitting.id !== source.fingerprint || Number(sitting.revision) < Number(body.expected_sitting_revision)+1) throw new Error('The current arrangements do not confirm the acknowledged assessment and sitting.');
+    if (item.revision === source.revision+1 && body.room_allocations !== undefined && !sameRoomAllocations(roomAllocations,body.room_allocations))
+      throw new Error('The current arrangements do not confirm the reviewed room allocations.');
     if (item.revision === source.revision+1 && (sitting.space_id !== body.space_id || !sameInstant(sitting.starts_at,body.scheduled_at) || !Array.isArray(body.invigilator_user_ids) || invigilators.length !== body.invigilator_user_ids.length || body.invigilator_user_ids.some(id => !invigilators.includes(id)))) throw new Error('The current arrangements do not confirm the accepted time, space and invigilator set.');
   } else throw new Error('This assessment source needs its owning read verifier.');
   return { kind: 'assessment', id, title: String(item.title) };
@@ -142,6 +192,6 @@ export function assessmentAuthoringActionAllowed(record: NativePendingAction, sc
     if (record.endpoint === `${root}/cycles/`) return source.kind === 'assessment_cycle' && source.sourceId === scope.schoolId && source.revision === 0 && Object.keys(body).every(key => ['term_id','name','code','starts_on','ends_on','result_label'].includes(key)) && uuid(body.term_id) && read.pathname === `${root}/workspace/` && [...read.searchParams.keys()].every(key => key === 'cycle_id') && read.searchParams.getAll('cycle_id').length <= 1 && (record.phase === 'accepted' ? uuid(read.searchParams.get('cycle_id')) : !read.search || uuid(read.searchParams.get('cycle_id')));
     if (record.endpoint === `${root}/`) return source.kind === 'assessment_creation' && source.sourceId === scope.schoolId && source.revision === 0 && Object.keys(body).every(key => ['cycle_id','class_section_id','subject_id','title','assessment_kind','maximum_marks','grading_policy_id','weight_percent','scheduled_at','duration_minutes','venue','instructions','evidence_requirement','examiner_user_id','moderator_user_id','space_id','invigilator_user_ids'].includes(key)) && ['cycle_id','class_section_id','subject_id','examiner_user_id','moderator_user_id'].every(key => uuid(body[key])) && !read.search && (record.phase !== 'accepted' && read.pathname === `${root}/workspace/` || read.pathname.startsWith(root+'/') && uuid(read.pathname.slice(root.length+1).replace(/\/$/,'')) && read.pathname.endsWith('/'));
     const match = new RegExp(`^${root}/([0-9a-f-]{36})/sitting/arrangements/$`,'i').exec(record.endpoint);
-    return !!match && uuid(match[1]) && source.kind === 'assessment_arrangements' && source.sourceId === match[1] && uuid(source.fingerprint) && Number.isSafeInteger(source.revision) && source.revision > 0 && body.expected_assessment_revision === source.revision && Number.isSafeInteger(body.expected_sitting_revision) && Number(body.expected_sitting_revision) > 0 && uuid(body.space_id) && Array.isArray(body.invigilator_user_ids) && body.invigilator_user_ids.length >= 1 && body.invigilator_user_ids.length <= 20 && new Set(body.invigilator_user_ids).size === body.invigilator_user_ids.length && body.invigilator_user_ids.every(uuid) && Object.keys(body).every(key => ['expected_assessment_revision','expected_sitting_revision','scheduled_at','duration_minutes','space_id','invigilator_user_ids'].includes(key)) && read.pathname === `${root}/${match[1]}/` && !read.search;
+    return !!match && uuid(match[1]) && source.kind === 'assessment_arrangements' && source.sourceId === match[1] && uuid(source.fingerprint) && Number.isSafeInteger(source.revision) && source.revision > 0 && body.expected_assessment_revision === source.revision && Number.isSafeInteger(body.expected_sitting_revision) && Number(body.expected_sitting_revision) > 0 && uuid(body.space_id) && Array.isArray(body.invigilator_user_ids) && body.invigilator_user_ids.length >= 1 && body.invigilator_user_ids.length <= 20 && new Set(body.invigilator_user_ids).size === body.invigilator_user_ids.length && body.invigilator_user_ids.every(uuid) && (body.room_allocations === undefined || validRoomAllocations(body.room_allocations)) && Object.keys(body).every(key => ['expected_assessment_revision','expected_sitting_revision','scheduled_at','duration_minutes','space_id','invigilator_user_ids','room_allocations'].includes(key)) && read.pathname === `${root}/${match[1]}/` && !read.search;
   } catch { return false; }
 }

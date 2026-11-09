@@ -4,6 +4,7 @@ import { nativeAuthoringActionAllowed } from './native-authoring-policy';
 import { pendingFileUriAllowed } from './private-file-policy';
 import { privateUploadForm } from './upload-form';
 import { academicCatalogueCommandObsolete, nativePeopleAcademicCatalogueAllowed } from './people-academic-catalogue';
+import { definitiveResultReviewRefusal } from './assessment-result-review';
 import { definitiveExamScheduleRefusal } from './assessment-schedule-amendments';
 import { assignmentHandoverObsolete } from './assignment-handover-policy';
 import { nativePeopleAcademicImportAllowed } from './people-academic-import';
@@ -128,7 +129,7 @@ export function validateNativePendingAction(value: unknown, scope: NativePending
 function nativePendingObsoleteProof(error: unknown, action: NativePendingAction): boolean {
   try {
     if (action.domain === 'people') return academicCatalogueCommandObsolete(error, action);
-    if (action.domain === 'assessments') return definitiveExamScheduleRefusal(error, action);
+    if (action.domain === 'assessments') return definitiveExamScheduleRefusal(error, action) || definitiveResultReviewRefusal(error, action);
     if (action.domain === 'learning') return learningElectiveObsolete(error, action) || assignmentHandoverObsolete(error, action);
     return false;
   } catch { return false; }

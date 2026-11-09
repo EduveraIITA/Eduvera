@@ -92,7 +92,9 @@ export class AssessmentInvigilationOfferBridgeService {
         AND section.id=assessment.class_section_id
       LEFT JOIN learning_offerings offering ON offering.school_id=assessment.school_id
         AND offering.id=assessment.offering_id
-      JOIN campus_spaces space ON space.school_id=sitting.school_id AND space.id=sitting.space_id
+      LEFT JOIN assessment_sitting_rooms room ON room.school_id=assignment.school_id AND room.sitting_id=assignment.sitting_id
+        AND room.id=assignment.room_id
+      JOIN campus_spaces space ON space.school_id=sitting.school_id AND space.id=COALESCE(room.space_id,sitting.space_id)
       WHERE assignment.school_id=${schoolId}::uuid AND assignment.id=${assignmentId}::uuid
       FOR UPDATE OF assignment`.execute(transaction)).rows[0];
     if(!context) throw new ConflictException("The invigilation assignment is no longer available.");

@@ -3,7 +3,7 @@ import type { CampusSceneDocument, CampusSceneElement } from '../../../packages/
 import { sceneBuildingFloorIds, sceneElementBuilding, sceneFloorBuilding, sceneInteriorView } from '../../../packages/contracts/src/campus-scenes/sceneInterior';
 import { campusMapPresentationChanges, campusMapSearchPlaces } from '../../../packages/contracts/src/campus-scenes/sceneMapPresentation';
 import { buildingExplorerMatches, sceneBuildingExplorer, type BuildingExplorerModel, type BuildingExplorerNode } from '../../../packages/contracts/src/campus-scenes/sceneBuildingExplorer';
-import type { CampusMapAsset,CampusOperationalProjection } from '../../../packages/contracts/src/campus-operation';
+import type { CampusMapActivity,CampusMapAsset,CampusOperationalProjection } from '../../../packages/contracts/src/campus-operation';
 import type { CampusPersonalResponse } from '../../../packages/contracts/src/campus-personal';
 import { personalJourneyDestinations, personalJourneySignature } from '../../../packages/contracts/src/campus-scenes/personalJourney';
 import { readCampusMapPresentation, type CampusMapPresentation } from '../../../packages/contracts/src/campus-scenes/sceneMapPresentation';
@@ -150,6 +150,8 @@ export function nativeCampusJourneyMatches(data:CampusPersonalResponse|undefined
 export function nativeCampusLayersMatch(data:CampusOperationalProjection|undefined,schoolId:string,campusId:string,environment:Environment,publication:CampusScenePublished):data is CampusOperationalProjection{
   if(!data||data.schema_version!==1||!nativeCampusProjectionMatches(data,schoolId,campusId,environment)
     ||data.publication?.id!==publication.scene?.id||data.publication?.version!==publication.scene?.version
+    ||data.personal_activities!==undefined&&data.personal_activities!=='separate'
+    ||data.personal_activities==='separate'&&data.bounds?.activities_per_layer!==20
     ||![data.assets,data.activities,data.limitations].every(Array.isArray))return false;
   const id=(value:unknown):value is string=>typeof value==='string'&&!!value.trim();
   if(!data.assets.every(row=>!!row&&id(row.element_id)&&id(row.holding_id)&&typeof row.name==='string'
@@ -166,6 +168,31 @@ export function nativeCampusLayersMatch(data:CampusOperationalProjection|undefin
   // An ambiguous response withdraws the whole layer before details or graphics.
   if(new Set(data.assets.map(row=>row.element_id)).size!==data.assets.length||new Set(data.assets.map(row=>row.holding_id)).size!==data.assets.length)return false;
   return data.limitations.every(row=>typeof row==='string')&&data.activities.every(row=>!!row&&typeof row.id==='string'&&['classes','events','maintenance'].includes(row.layer)&&['expected','accepted'].includes(row.dimension)&&typeof row.target_path==='string');
+}
+
+/** Optional personal data cannot make current campus assets or events disappear. */
+export function nativeCampusMemberLayers(operations: CampusOperationalProjection | undefined, personal: CampusPersonalResponse | undefined,
+  schoolId: string, campusId: string, environment: Environment, publication: CampusScenePublished) {
+  if (!nativeCampusLayersMatch(operations, schoolId, campusId, environment, publication)) return { data: undefined, personalUnavailable: false };
+  if (operations.personal_activities !== 'separate') return { data: operations, personalUnavailable: false };
+  if (!nativeCampusJourneyMatches(personal, schoolId, campusId, environment)) return { data: operations, personalUnavailable: true };
+  const personalRows = personal.destinations.flatMap((item): CampusMapActivity[] => {
+    if (item.kind !== 'teaching_session' && item.kind !== 'activity') return [];
+    return [{ id: item.id, layer: item.kind === 'teaching_session' ? 'classes' : 'events',
+      title: item.title, detail: item.detail, space_id: item.space_id, holding_id: null,
+      starts_at: item.starts_at, ends_at: item.ends_at, state: item.state, target_path: item.target_path,
+      action_label: item.action_label, dimension: item.dimension, source: item.source }];
+  });
+  const rows = [...operations.activities, ...personalRows];
+  rows.sort((a, b) => (a.starts_at ?? '').localeCompare(b.starts_at ?? '') || a.id.localeCompare(b.id));
+  const activities = (['classes', 'events', 'maintenance'] as const).flatMap(layer =>
+    rows.filter(item => item.layer === layer).slice(0, operations.bounds!.activities_per_layer));
+  const limitations = new Set(operations.limitations);
+  if (activities.some(item => !item.space_id && !item.holding_id)) limitations.add('Some authorized activities have no reviewed map location yet.');
+  if (rows.length > activities.length) limitations.add('This map shows a bounded selection; open the owning area for the complete authorized list.');
+  const combined = { ...operations, activities, limitations: [...limitations] };
+  return nativeCampusLayersMatch(combined, schoolId, campusId, environment, publication)
+    ? { data: combined, personalUnavailable: false } : { data: operations, personalUnavailable: true };
 }
 export const nativeCampusPresentationKeys=['map_context','map_panel','map_full','map_mode','map_place','map_space','map_search','map_page','map_inside','map_view_floor','map_to','map_from','map_step_free','map_floor','campus_space','campus_view','campus_focus','campus_layer','campus_asset','campus_asset_context','journey','directions','walk_from','walk_context','step_free','place_id','place'] as const;
 export interface NativeCampusUrlView {selection:NativeCampusSelection;presentation:CampusMapPresentation;privatePanel:'spaces'|'timetable'|'activity'|'kpis'|null;layer:'none'|'classes'|'events'|'maintenance';assetId:string|null;journey:ReturnType<typeof personalJourneyDestinations>[number]|undefined;journeyStale:boolean;personalDirections:boolean;personalOrigin:string;personalAccessible:boolean;manualDirections:{destination:string;origin:string;accessible:boolean;floorId:string|null}|null;error:string;signature:string}

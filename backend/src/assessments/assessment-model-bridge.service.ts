@@ -17,6 +17,7 @@ export interface ExamSittingModelSnapshot {
   expectedCount: number;
   sittingRevision: number;
   policyRevision: number;
+  roomSpaceIds?:string[];
   space: { id: string; name: string; kind: string; revision: number };
 }
 
@@ -44,7 +45,8 @@ function safeMetadata(snapshot: ExamSittingModelSnapshot) {
     scheduled_end: snapshot.scheduledEnd,
     expected_count: snapshot.expectedCount,
     operation_state: snapshot.state,
-    space_id: snapshot.space.id,
+    space_id: snapshot.roomSpaceIds?.length ? null : snapshot.space.id,
+    ...(snapshot.roomSpaceIds?.length ? { space_ids:snapshot.roomSpaceIds } : {}),
   };
 }
 

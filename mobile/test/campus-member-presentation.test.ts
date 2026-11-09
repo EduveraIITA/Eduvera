@@ -3,10 +3,11 @@ import test from 'node:test';
 import type { CampusScenePublished, SceneResourceOptions } from '../../packages/contracts/src/campus-scenes/contracts';
 import type { CampusSceneDocument, CampusSceneElement } from '../../packages/contracts/src/campus-scenes/types';
 import type { CampusMapActivity, CampusMapAsset, CampusOperationalProjection } from '../../packages/contracts/src/campus-operation';
+import type { CampusPersonalDestination, CampusPersonalResponse } from '../../packages/contracts/src/campus-personal';
 import type { RawCampusViewResponse } from '../../packages/contracts/src/campus-view-normalize';
 import { campusAdministratorMarkers, campusMemberMarkers, campusPooledRoomResources } from '../src/lib/campus-member-presentation';
 import { campusPublishedSnapshot } from '../src/lib/campus-published-operations';
-import { nativeCampusLayersMatch } from '../src/lib/native-campus';
+import { nativeCampusLayersMatch, nativeCampusMemberLayers } from '../src/lib/native-campus';
 
 const pooled = { id: 'pool', name: 'Shared chairs', asset_tag: null, space_id: 'room-a', state: 'available' as const, tracking_mode: 'pooled' as const, quantity: 24, unit_label: 'chairs' };
 const resources = (): SceneResourceOptions => ({ page: 1, page_size: 20, total: 1, items: [{ ...pooled }], selected: null });
@@ -23,6 +24,39 @@ const publication: CampusScenePublished = { campus: { id: 'campus', name: 'Campu
 const activity = (id: string, space_id: string | null, changes: Partial<CampusMapActivity> = {}): CampusMapActivity => ({ id, layer: 'classes', title: 'Class of 36 learners', detail: 'Scheduled plan, not physical presence', space_id, holding_id: null, starts_at: '2026-10-29T09:00:00Z', ends_at: '2026-10-29T10:00:00Z', state: 'in_progress', target_path: `/areas/timetable?period_id=${id}`, action_label: 'Open teaching session', dimension: 'expected', source: { domain: 'schedule', record_id: id, revision: 1, label: 'Published schedule' }, ...changes });
 const asset: CampusMapAsset = { element_id: fixture.id, holding_id: fixture.holding_id!, name: 'Room lamp', asset_tag: 'LAMP-1', space_id: 'room-a', native_state: 'available', reportable: true, signal: { state: 'reported_fault', impact: 'not_working', open_reports: 1, updated_at: '2026-10-29T09:00:00Z' }, repairs: [] };
 const projection = (changes: Partial<CampusOperationalProjection> = {}): CampusOperationalProjection => ({ schema_version: 1, school_id: 'school', campus_id: 'campus', as_of: '2026-10-29T09:00:00Z', environment: { kind: 'live', namespace_id: 'live:school' }, publication: { id: 'publication', version: 2 }, assets: [], activities: [], limitations: [], ...changes });
+
+test('lean campus layers compose independently validated personal schedules without hiding assets on personal failure', () => {
+  const from = activity('private-class', 'room-a');
+  const destination: CampusPersonalDestination = { id: from.id, kind: 'teaching_session', title: from.title, detail: from.detail,
+    space_id: from.space_id, place_label: 'Room A', starts_at: from.starts_at, ends_at: from.ends_at, state: 'in_progress',
+    target_path: from.target_path, action_label: from.action_label, dimension: 'expected', spatial_claim: 'expected_context_only', source: from.source };
+  const ownEvent = { ...destination, id: 'assigned-event', kind: 'activity' as const, space_id: null };
+  const excluded = { ...destination, id: 'duplicate-repair', kind: 'repair' as const };
+  const event = activity('campus-event', 'room-b', { layer: 'events' });
+  const lean = projection({ personal_activities: 'separate', bounds: { activities_per_layer: 20 }, assets: [asset], activities: [event] });
+  const asOf = lean.as_of;
+  const personal: CampusPersonalResponse = { schema_version: 1, school_id: 'school', campus_id: 'campus', as_of: asOf,
+    local_date: '2026-10-29', timezone: 'UTC', environment: lean.environment, freshness: { status: 'current', as_of: asOf },
+    now: [destination], next: [], places: [], destinations: [destination, ownEvent, excluded], limitations: [] };
+  const combine = (layers = lean, own: CampusPersonalResponse | undefined = personal) => nativeCampusMemberLayers(layers, own, 'school', 'campus', { mode: 'live' }, publication);
+  const complete = combine();
+  assert.deepEqual(complete.data?.activities.map(row => [row.id, row.layer]), [
+    ['private-class', 'classes'], ['assigned-event', 'events'], ['campus-event', 'events'],
+  ]);
+  assert.deepEqual(complete.data?.activities[0], from);
+  assert.equal(complete.data?.assets, lean.assets);
+  assert.equal(complete.personalUnavailable, false);
+  assert.ok(complete.data?.limitations.some(message => message.includes('no reviewed map location')));
+  assert.deepEqual(nativeCampusMemberLayers(lean, undefined, 'school', 'campus', { mode: 'live' }, publication), { data: lean, personalUnavailable: true });
+  for (const wrong of [{ ...personal, campus_id: 'other' }, { ...personal, school_id: 'other' },
+    { ...personal, environment: { kind: 'simulation' as const, namespace_id: 'other' } }]) {
+    assert.deepEqual(combine(lean, wrong), { data: lean, personalUnavailable: true });
+  }
+  assert.equal(combine({ ...lean, publication: { id: 'publication', version: 1 } }).data, undefined);
+  const original = projection({ activities: [from, event] });
+  assert.equal(combine(original).data, original);
+  assert.deepEqual(lean.activities, [event]);
+});
 const privateSnapshot = () => {
   const raw: RawCampusViewResponse = { schema_version: 1, school: { id: 'school', name: 'School', timezone: 'Asia/Kolkata' }, campuses: [{ id: 'campus', name: 'Campus', code: 'MAIN', is_primary: true }], selected_campus_id: 'campus', generated_at: '2026-10-29T09:00:00Z', as_of: '2026-10-29T09:00:00Z', plan: null, operations: null,
     motion: { schema_version: 1, school_id: 'school', campus_id: 'campus', as_of: '2026-10-29T09:00:00Z', environment: { kind: 'live', namespace_id: 'live:school' }, subjects: [], points: [], limits: { subjects: 128, claims: 512, points: 64, source_limited: false }, limitations: [] },

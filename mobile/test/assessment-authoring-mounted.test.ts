@@ -15,14 +15,16 @@ const { createRoot } = require('react-dom/client');
 const source = readFileSync(new URL('../src/features/AssessmentAuthoringScreen.tsx', import.meta.url), 'utf8');
 const id = (value: number) => `00000000-0000-4000-8000-${String(value).padStart(12, '0')}`;
 const [school, term, cycle, subject, offering, examiner, moderator, room] = Array.from({ length: 8 }, (_, index) => id(index + 1));
-const classSection = id(9), classSubject = id(10);
+const classSection = id(9), classSubject = id(10), secondRoom=id(11), assessment=id(12);
 const now = '2026-11-01T10:00:00.000Z', scheduled = '2026-11-12T10:00:00.000Z';
 const dates = { starts_on: '2026-11-01', ends_on: '2026-11-30' };
+const details={viewer_role:'admin',assessment:{id:assessment,title:'Science examination',status:'draft',revision:3,scheduled_at:scheduled,duration_minutes:90},
+  exam_operation:{sitting:{id:id(13),state:'planning',revision:4},space:{id:room},invigilators:[{user_id:examiner,status:'accepted'}],readiness:{candidate_count:49}}};
 const workspace = {
   mode: 'admin', assessments: [], cycles: [{ id: cycle, term_id: term, name: 'Semester examinations', academic_year: '2026', ...dates }],
   references: {
     classes: [{ id: classSection, name: 'Year 2 A', academic_year: '2026' }], subjects: [{ id: classSubject, name: 'Mathematics' }],
-    terms: [{ id: term, ...dates }], spaces: [{ id: room, name: 'East Examination Hall', capacity: 40 }],
+    terms: [{ id: term, ...dates }], spaces: [{ id: room, name: 'East Examination Hall', capacity: 40 },{ id:secondRoom,name:'Computing Lab',capacity:20 }],
     staff: [{ id: examiner, first_name: 'Ananya', last_name: 'Sen' }, { id: moderator, first_name: 'Kabir', last_name: 'Bose' }],
     offerings: [{ id: offering, name: 'Distributed Systems', learner_count: 24, academic_context: { term_id: term, subject_id: subject, course_code: 'CS511', ...dates } }],
   },
@@ -48,17 +50,22 @@ test('mounted assessment editor independently reviews and creates physical cours
     '../../../packages/contracts/src/workspace-normalizer': { normalizeWorkspaceManifest: () => ({ context: { time_zone: 'Asia/Kolkata' } }), assertWorkspaceManifestContext() {} },
     '../auth/SessionProvider': { useSession: () => ({ user: { id: examiner }, schoolId: school, scopeKey: 'live', environment: { mode: 'live', virtual_clock: { now } } }) },
     '../lib/api': { getApiOrigin: () => 'https://campus.example' },
-    '../lib/query': { useApi: (path: string | null) => ({ data: path?.includes('/assessments/') ? workspace : path ? {} : undefined, isPending: false }) },
+    '../lib/query': { useApi: (path: string | null) => ({ data: path?.endsWith(`/assessments/${assessment}/`) ? details : path?.includes('/assessments/') ? workspace : path ? {} : undefined, isPending: false }) },
     '../lib/native-pending-action': { useNativePendingAction: () => ({ ready: true, run: async (input: NativePendingInput) => { sent.push(input); } }) },
     '../lib/use-operation-context': { useOperationContext: () => () => () => {} },
     '../lib/assessment-authoring': authoring,
     '../lib/browser-temporal': temporal,
     '../ui/BackNavigation': { ScreenBack: () => null, useCampusNavigation: () => ({}), useScreenExitGuard() {} },
-    '../ui/components': { Button, Page: TitledBox, Section: TitledBox, Field: Input, Notice: ({ message }: any) => React.createElement('p', null, message), Row: TitledBox },
+    '../ui/components': { Button, Page: TitledBox, Section: TitledBox, Field: Input, Notice: ({ message }: any) => React.createElement('p', null, message), Row: ({title,detail}:any)=>React.createElement('div',null,title,' ',detail) },
     '../ui/DomainControls': { ControlButton: Button, Disclosure: TitledBox, ChoiceMenu: Input, Facts: ({ items }: any) => React.createElement('dl', null, items.map((item: any) => React.createElement('div', { key: item.label }, item.label, ' ', item.value))) },
     '../ui/TemporalField': { TemporalField: Input },
     '../ui/theme': { useTheme: () => ({ colors: { ink: '#111' } }) },
   };
+  const roomEditor = readFileSync(new URL('../src/features/assessments/ExamRoomAllocationsEditor.tsx',import.meta.url),'utf8');
+  const roomExports: Record<string,unknown> = {};
+  runInNewContext(ts.transpileModule(roomEditor,{compilerOptions:{jsx:ts.JsxEmit.ReactJSX,module:ts.ModuleKind.CommonJS,target:ts.ScriptTarget.ES2022,esModuleInterop:true}}).outputText,
+    {exports:roomExports,require(name:string){const alias=name.replace('../../ui/','../ui/');assert.ok(alias in dependencies,name);return dependencies[alias];}});
+  dependencies['./assessments/ExamRoomAllocationsEditor']=roomExports;
   const exports: Record<string, React.ComponentType<any>> = {};
   runInNewContext(ts.transpileModule(source, { compilerOptions: { jsx: ts.JsxEmit.ReactJSX, module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022, esModuleInterop: true } }).outputText,
     { exports, Error, URLSearchParams, require(name: string) { assert.ok(name in dependencies, name); return dependencies[name]; } });
@@ -134,6 +141,23 @@ test('mounted assessment editor independently reviews and creates physical cours
         }
       }
     }
+    const editHref=`/areas/assessments/manage?assessment=${assessment}&edit=arrangements`;
+    await act(async()=>renderer.render(React.createElement(exports.AssessmentAuthoringScreen!,{key:'split-arrangements',href:editHref,schoolId:school,mode:'arrangements',assessmentId:assessment})));
+    await click('Split across rooms');
+    await enter('Candidates in room 1','38');
+    await enter('Room 2 or hall',secondRoom);
+    await enter('Candidates in room 2','11');
+    await click('Room 2 invigilator: Kabir Bose');
+    assert.match(text(),/49 of 49 candidates allocated/);
+    await click('Review arrangements');
+    assert.match(text(),/Review before saving.*East Examination Hall.*38 candidates.*Computing Lab.*11 candidates/s);
+    const beforeSplit=sent.length;
+    await click('Save arrangements');
+    assert.equal(sent.length,beforeSplit+1);
+    assert.deepEqual(JSON.parse(JSON.stringify(sent.at(-1)?.body?.room_allocations)),[
+      {space_id:room,candidate_count:38,invigilator_user_ids:[examiner]},
+      {space_id:secondRoom,candidate_count:11,invigilator_user_ids:[moderator]},
+    ]);
   } finally {
     await act(async () => renderer.unmount());
     Object.assign(globalThis, { ...previous, IS_REACT_ACT_ENVIRONMENT: false });

@@ -9,7 +9,7 @@ import { CampusPersonalService } from './campus-personal.service.js';
 import { CampusViewRepository } from './campus-view.repository.js';
 import type { CampusOperationalActivity, CampusOperationsProjection } from './campus-operations.contracts.js';
 
-const query = z.object({ campus_id: z.uuid() }).strict();
+const query = z.object({ campus_id: z.uuid(), activity_scope: z.literal('campus_only').optional() }).strict();
 /** Member composition over public geometry and exact owning-domain access.
  * This never invokes the administrator's Campus View evidence projection. */
 @Injectable()
@@ -22,9 +22,24 @@ export class CampusOperationsService {
     if (!parsed.success || !z.uuid().safeParse(school).success) {
       throw new BadRequestException('Choose a campus. Map activities do not accept a person, clock or world override.');
     }
-    const campus = parsed.data.campus_id;
+    const campus = parsed.data.campus_id, personalQuery = { campus_id: campus };
     // Resolves current canonical identity and server-selected clock/world first.
-    const own = await this.personal.mine(user, school, { campus_id: campus });
+    const separatePersonal = parsed.data.activity_scope === 'campus_only';
+    let context: Pick<CampusOperationsProjection, 'as_of' | 'environment'>;
+    let activities: CampusOperationalActivity[] = [];
+    if (separatePersonal) {
+      const { reading } = await this.personal.authorizedContext(user, school, personalQuery);
+      context = { as_of: reading.iso_instant, environment: { kind: reading.environment_kind, namespace_id: reading.namespace_id } };
+    } else {
+      const own = await this.personal.mine(user, school, personalQuery);
+      context = own;
+      activities = own.destinations.filter(item => item.kind !== 'responsibility' && item.kind !== 'repair').map(item => ({
+        id: item.id, layer: item.kind === 'teaching_session' ? 'classes' : 'events',
+        title: item.title, detail: item.detail, space_id: item.space_id, holding_id: null,
+        starts_at: item.starts_at, ends_at: item.ends_at, state: item.state, target_path: item.target_path,
+        action_label: item.action_label, dimension: item.dimension, source: item.source,
+      }));
+    }
     const states = await this.scenes.resourceStates(user, school, campus);
     const signals = await this.facilities.mapSignals(user, school, campus, states.items.map(item => item.holding_id));
     const assets = states.items.map(item => {
@@ -34,13 +49,6 @@ export class CampusOperationsService {
         signal: { state: signal?.state ?? 'unknown' as const, impact: signal?.impact ?? null,
           open_reports: signal?.open_reports ?? 0, updated_at: signal?.updated_at ?? null }, repairs: signal?.repairs ?? [] };
     });
-    const activities: CampusOperationalActivity[] = own.destinations.filter(item => item.kind !== 'responsibility' && item.kind !== 'repair').map(item => ({
-      id: item.id, layer: item.kind === 'teaching_session' ? 'classes' : 'events',
-      title: item.title, detail: item.detail, space_id: item.space_id,
-      holding_id: null,
-      starts_at: item.starts_at, ends_at: item.ends_at, state: item.state, target_path: item.target_path,
-      action_label: item.action_label, dimension: item.dimension, source: item.source,
-    }));
     // Maintenance gets its own bound; a busy teaching day must not consume all
     // destinations before a person's assigned repair work can be considered.
     const work = await this.facilities.work(user,school,{campus_id:campus});
@@ -60,8 +68,8 @@ export class CampusOperationsService {
     }
     // Existing Events owner scopes this before list/detail; copy only the minimal
     // authorized title/time/place/link, never rosters, consent, money or staff.
-    const until = new Date(Date.parse(own.as_of) + 7 * 86_400_000).toISOString();
-    const visible = await this.events.list(user, { school_id: school, campus_id:campus, from: own.as_of, to: until, status: 'published', limit: '30' });
+    const until = new Date(Date.parse(context.as_of) + 7 * 86_400_000).toISOString();
+    const visible = await this.events.list(user, { school_id: school, campus_id:campus, from: context.as_of, to: until, status: 'published', limit: '30' });
     const knownPlaces = campusPlaces;
     for (const event of visible.items) {
       if (event.status !== 'published') continue;
@@ -70,14 +78,14 @@ export class CampusOperationsService {
         ? relationshipEventHref(user.role === 'student' ? 'self' : 'dependent', family.student_id, event.id)
         : eventWorkHref(user.role === 'admin' ? 'manage' : 'assigned', event.id);
       for (const session of event.sessions) {
-        if (Date.parse(session.ends_at) <= Date.parse(own.as_of)) continue;
+        if (Date.parse(session.ends_at) <= Date.parse(context.as_of)) continue;
         const place = session.use_event_space ? event.space_id : session.space_id;
         // A canonical place in another campus is excluded, never relabelled.
         // An authorized unmapped venue remains explicitly unplaced.
         if (place && !knownPlaces.has(place)) continue;
         activities.push({ id: `event:${event.id}:${session.id}`, layer: 'events', title: session.title,
           detail: event.title, space_id: place, holding_id: null, starts_at: session.starts_at, ends_at: session.ends_at,
-          state: Date.parse(session.starts_at) <= Date.parse(own.as_of) ? 'in_progress' : 'upcoming', target_path: href,
+          state: Date.parse(session.starts_at) <= Date.parse(context.as_of) ? 'in_progress' : 'upcoming', target_path: href,
           action_label: 'Open event', dimension: 'expected', source: { domain: 'events', record_id: event.id,
             revision: event.revision, label: 'Published event' } });
       }
@@ -89,7 +97,8 @@ export class CampusOperationsService {
       'Resource availability and verified repair closure do not certify that an asset is currently working.'];
     if (bounded.some(item => !item.space_id && !item.holding_id)) limitations.push('Some authorized activities have no reviewed map location yet.');
     if (visible.next_cursor || sorted.length > bounded.length || ownedWork.length>20) limitations.push('This map shows a bounded selection; open the owning area for the complete authorized list.');
-    return { schema_version: 1, school_id: school, campus_id: campus, as_of: own.as_of, environment: own.environment,
+    return { schema_version: 1, school_id: school, campus_id: campus, as_of: context.as_of, environment: context.environment,
+      ...(separatePersonal ? { personal_activities: 'separate' as const } : {}),
       publication:states.publication,assets, activities: bounded, bounds:{activities_per_layer:20,events_source_limit:30,events_has_more:Boolean(visible.next_cursor),
         shown:{classes:bounded.filter(item=>item.layer==='classes').length,events:bounded.filter(item=>item.layer==='events').length,
           maintenance:bounded.filter(item=>item.layer==='maintenance').length}}, limitations };

@@ -124,6 +124,7 @@ jobs:
           REQUESTS_ATTENDANCE_SIMULATION_TEST_TARGET_URL: postgresql://thatcampus_dt_ci:disposable-dt-ci-only@127.0.0.1:5432/thatcampus_dt_simulation_test
           TEACHING_SESSIONS_SIMULATION_TEST_TARGET_URL: postgresql://thatcampus_dt_ci:disposable-dt-ci-only@127.0.0.1:5432/thatcampus_dt_simulation_test
           LEARNING_ASSIGNMENTS_SIMULATION_TEST_TARGET_URL: postgresql://thatcampus_dt_ci:disposable-dt-ci-only@127.0.0.1:5432/thatcampus_dt_simulation_test
+          CAMPUS_OPERATIONS_SIMULATION_TEST_TARGET_URL: postgresql://thatcampus_dt_ci:disposable-dt-ci-only@127.0.0.1:5432/thatcampus_dt_simulation_test
           ASSESSMENTS_SIMULATION_TEST_TARGET_URL: postgresql://thatcampus_dt_ci:disposable-dt-ci-only@127.0.0.1:5432/thatcampus_dt_simulation_test
           ACADEMIC_CATALOGUE_SIMULATION_TEST_TARGET_URL: postgresql://thatcampus_dt_ci:disposable-dt-ci-only@127.0.0.1:5432/thatcampus_dt_simulation_test
           ACADEMIC_OFFERING_SIMULATION_TEST_TARGET_URL: postgresql://thatcampus_dt_ci:disposable-dt-ci-only@127.0.0.1:5432/thatcampus_dt_simulation_test
@@ -157,6 +158,7 @@ jobs:
               'teaching-sessions', 'teaching-sessions-files-worlds',
               'academic-catalogue-recovery', 'academic-catalogue-recovery-http', 'learning-assignment-handover', 'learning-assignment-handover-worlds',
               'domain-message-supersession', 'learning-assignments', 'learning-assignment-files-worlds', 'exam-schedule-amendments', 'exam-operations',
+              'exam-room-allocations', 'assessment-result-reviews', 'campus-operations-worlds',
               'simulation-branch-concurrency',
               'account-mail-delivery', 'account-mail-http', 'invitation-queue', 'native-google-locks',
               'learning-elective-change', 'learning-elective-change-worlds',

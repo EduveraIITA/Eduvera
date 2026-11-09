@@ -9,6 +9,7 @@ import type { NativePendingAction, NativePendingScope } from './native-pending-a
 import { attendanceFollowupActionAllowed } from './attendance-insights';
 import { nativeScheduleAuthoringAllowed } from './schedule-planning-policy';
 import { nativeCalendarDateAuthoringAllowed } from './calendar-date-policy';
+import { resultReviewActionAllowed } from './assessment-result-review';
 import { assessmentOperationsActionAllowed } from './assessment-operations';
 import { assessmentAuthoringActionAllowed } from './assessment-authoring';
 import { attendanceReconciliationActionAllowed } from './attendance-continuity';
@@ -103,7 +104,7 @@ export function nativeAuthoringActionAllowed(record: NativePendingAction, scope:
   if(record.domain==='people' && ['campus_invitation_creation','campus_invitation'].includes(record.source?.kind??'')) return campusInvitationActionAllowed(record,scope);
   if (record.domain === 'campus') return campusSceneActionAllowed(record, scope);
   if (record.domain === 'gate') return gateVisitorActionAllowed(record, scope) || gateVisitOnboardingActionAllowed(record, scope);
-  if (record.domain === 'assessments') return assessmentOperationsActionAllowed(record, scope) || assessmentAuthoringActionAllowed(record, scope);
+  if (record.domain === 'assessments') return resultReviewActionAllowed(record, scope) || assessmentOperationsActionAllowed(record, scope) || assessmentAuthoringActionAllowed(record, scope);
   if (record.domain === 'attendance') return attendanceFollowupActionAllowed(record, scope) || attendanceReconciliationActionAllowed(record, scope) || attendancePhotoActionAllowed(record, scope);
   if (record.domain === 'schedule') return nativeScheduleAuthoringAllowed(record, scope);
   if (record.domain === 'calendar') return nativeCalendarDateAuthoringAllowed(record, scope);

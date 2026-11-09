@@ -4,6 +4,8 @@ import { CampusModelCoreModule } from "../campus-model-core/campus-model-core.mo
 import { AssessmentInvigilationOfferBridgeService } from "./assessment-invigilation-offer-bridge.service.js";
 import { AssessmentModelBridgeService } from "./assessment-model-bridge.service.js";
 import { AssessmentsController } from "./assessments.controller.js";
+import { ResultReviewsController } from "./result-reviews.controller.js";
+import { ResultReviewsService } from "./result-reviews.service.js";
 import { AssessmentsService } from "./assessments.service.js";
 import { ExamOperationsService } from "./exam-operations.service.js";
 import { ActivityAttendanceKernelModule } from "../attendance/activity-attendance-kernel.module.js";
@@ -12,8 +14,8 @@ import { InvigilationInvitationPolicyModule } from './invigilation-invitation-po
 
 @Module({
   imports: [SchoolModule, CampusModelCoreModule, ActivityAttendanceKernelModule, SchedulePlanningModule, InvigilationInvitationPolicyModule],
-  controllers: [AssessmentsController],
-  providers: [AssessmentsService, ExamOperationsService, AssessmentModelBridgeService, AssessmentInvigilationOfferBridgeService],
+  controllers: [AssessmentsController, ResultReviewsController],
+  providers: [AssessmentsService, ResultReviewsService, ExamOperationsService, AssessmentModelBridgeService, AssessmentInvigilationOfferBridgeService],
   exports: [AssessmentsService, ExamOperationsService],
 })
 export class AssessmentsModule {}

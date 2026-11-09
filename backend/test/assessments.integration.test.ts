@@ -102,7 +102,7 @@ suite("offline assessment and result lifecycle",()=>{
     let state=await service.action(admin,schoolId,assessmentId,"schedule",{expected_revision:assessment.revision,note:"Schedule confirmed"});
     const operation=await examOperations.detail(examiner,schoolId,assessmentId);
     expect(operation.candidates).toEqual([expect.objectContaining({student_id:studentId,offering_id:null})]);
-    const started=await examOperations.start(examiner,schoolId,assessmentId,{expected_revision:operation.sitting!.revision});
+    const started=await examOperations.start(examiner,schoolId,assessmentId,{expected_revision:operation.sitting.revision});
     const attendance=await examOperations.recordAttendance(examiner,schoolId,assessmentId,{expected_revision:started.sitting.revision,records:[{student_id:studentId,status:"present",note:"Identity checked",expected_revision:1}]});
     expect(attendance.records).toEqual([expect.objectContaining({student_id:studentId,status:"present"})]);
     await examOperations.complete(examiner,schoolId,assessmentId,{expected_revision:attendance.sitting_revision});

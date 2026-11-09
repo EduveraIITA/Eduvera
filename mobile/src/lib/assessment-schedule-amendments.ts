@@ -17,7 +17,7 @@ export function examScheduleDraftChanged(detail:AssessmentDetail,draft:ExamSched
     ||draft.duration!==String(detail.assessment.duration_minutes)
     ||JSON.stringify([...draft.invigilators].sort())!==JSON.stringify(op.invigilators.filter(row=>row.status!=='revoked').map(row=>row.user_id).sort());
 }
-export function mayAmendExamSchedule(detail:AssessmentDetail,now:string){return detail.viewer_role==='admin'&&detail.assessment.status==='scheduled'
+export function mayAmendExamSchedule(detail:AssessmentDetail,now:string){return !detail.exam_operation?.split_room_count&&detail.viewer_role==='admin'&&detail.assessment.status==='scheduled'
   &&!!detail.exam_operation&&['ready','planning'].includes(detail.exam_operation.sitting.state)
   &&Date.parse(detail.exam_operation.sitting.starts_at)>Date.parse(now)&&detail.exam_operation.candidates.every(row=>row.attendance_status==='unrecorded')
   &&!detail.exam_operation.incidents.length;}
