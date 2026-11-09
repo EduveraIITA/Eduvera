@@ -323,7 +323,7 @@ export class ExamOperationsService {
       sitting=await db.insertInto("assessment_sittings").values({school_id:assessment.school_id,assessment_id:assessment.id,campus_id:space.campus_id,space_id:space.id,starts_at:startsAt,ends_at:endsAt,policy_revision:policy.revision,policy_snapshot:this.policyProjection(policy),created_by:user.id,updated_by:user.id}).returningAll().executeTakeFirstOrThrow();
     }catch(error){ if((error as {code?:string}).code==="23505") throw new ConflictException("This assessment already has a physical sitting."); throw error; }
     const assignments=await db.insertInto("assessment_sitting_invigilators").values(invigilators.map(userId=>({school_id:assessment.school_id,sitting_id:sitting.id,assessment_id:assessment.id,user_id:userId,assigned_by:user.id}))).returningAll().execute();
-    for(const assignment of assignments) await this.invigilationOffers.publishOffer(db as Transaction<Database>,{
+    for(const assignment of assignments) await this.invigilationOffers.publishOffer(db,{
       school_id:assessment.school_id,
       actor_user_id:user.id,
       assignment_id:assignment.id,
