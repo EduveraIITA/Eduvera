@@ -501,6 +501,22 @@ recovery gap and needs a separate test and repair.
 
 `https://app2.thatcampus.com` serves the isolated DT backend and sole Expo web app through dedicated edge/Cloud Run resources, identities, separate Live/Simulation databases on shared PostgreSQL 17 and private persistent files. The owner chose to retain the shared server and existing limits: no new server, resize or pool/concurrency increase. Old ERP and maintained Mac development remain separate targets. Operations and code-versus-data rollback belong to the [DT runbook](../deploy/dt/README.md).
 
+Conformance **240** serves app2 from `1a8e08c7c5c05c25c895a3b02c6bb2dcf60e7e1e`
+and Cloud Run revision `thatcampus-dt-r-1a8e08c7c5c0-46049750671-1`. Candidate
+and public smoke verified the release, readiness, Expo web, deep links,
+WebAssembly and anonymous access boundaries. [Actions run 46049750671](https://github.com/EduveraIITA/Eduvera/actions/runs/46049750671).
+
+Authenticated browser QA on isolated data opened the campus creation form,
+filled the name through A2UI and reached onboarding after exactly one confirmed
+create request. Take over stopped a delayed UI action. The LuLu Mall Lucknow
+journey found the publisher's three floor plans and previewed the confirmed
+Ground Floor download with the compact Assistant still visible. Separate
+Assistant requests exercised live keyless public search and page reading
+through the A2UI source cards. Signed iPhone build **12** passed Expo ABI checks,
+was installed on the connected iPhone 15, and was observed running after
+launch. The interactive campus and public web flows were exercised in the
+browser fixture.
+
 Release 220 retains catalogue recovery, assignment handover and future examination
 amendments, and adds canonical course teaching/results/reports/Calendar, reviewed
 elective/Finance transfer, four encrypted browser journal families and durable
