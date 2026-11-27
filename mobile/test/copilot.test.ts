@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { copilotRouteContext, parseCopilotContext, readCopilotIntent } from '../src/lib/copilot';
+import { copilotRouteContext, parseCopilotContext, readCopilotPlan } from '../src/lib/copilot';
 
 const threadId = 'thread', runId = 'run', toolCallId = 'call_1';
 const event = (type: string, body: Record<string, unknown> = {}) => ({ type, ...body });
@@ -13,15 +13,15 @@ const batch = (...body: Record<string, unknown>[]) => ({ version: '1.0', events:
 
 test('only a complete tool call on the exact run can operate a registered control', () => {
   const result = batch(start, arg('{"query":'), arg('"Library"}'), end);
-  assert.deepEqual(readCopilotIntent(result,threadId,runId), { id:toolCallId, name:'campus_search_places', args:{ query:'Library' } });
-  assert.equal(readCopilotIntent(result,'other thread',runId),null);
-  assert.equal(readCopilotIntent(result,threadId,'old run'),null);
-  assert.equal(readCopilotIntent(batch(start,arg('{"query":"Library"}')),threadId,runId),null);
-  assert.equal(readCopilotIntent(batch(start,arg('{}'),end),threadId,runId),null);
-  assert.equal(readCopilotIntent(batch(start,arg('{"query":"Library","href":"/more/account"}'),end),threadId,runId),null);
-  assert.equal(readCopilotIntent(batch(start,arg('{"query":"Library"}'),end,start),threadId,runId),null);
-  assert.equal(readCopilotIntent(batch(event('TOOL_CALL_START',{toolCallId,toolCallName:'submit_form'}),arg('{}'),end),threadId,runId),null);
-  assert.equal(readCopilotIntent({version:'1.0',events:[...head,start,arg('{"query":"Library"}'),end,event('RUN_ERROR',{message:'failed'})]},threadId,runId),null);
+  assert.deepEqual(readCopilotPlan(result,threadId,runId), [{ id:toolCallId, name:'campus_search_places', args:{ query:'Library' } }]);
+  assert.equal(readCopilotPlan(result,'other thread',runId),null);
+  assert.equal(readCopilotPlan(result,threadId,'old run'),null);
+  assert.equal(readCopilotPlan(batch(start,arg('{"query":"Library"}')),threadId,runId),null);
+  assert.equal(readCopilotPlan(batch(start,arg('{}'),end),threadId,runId),null);
+  assert.equal(readCopilotPlan(batch(start,arg('{"query":"Library","href":"/more/account"}'),end),threadId,runId),null);
+  assert.equal(readCopilotPlan(batch(start,arg('{"query":"Library"}'),end,start),threadId,runId),null);
+  assert.equal(readCopilotPlan(batch(event('TOOL_CALL_START',{toolCallId,toolCallName:'submit_form'}),arg('{}'),end),threadId,runId),null);
+  assert.equal(readCopilotPlan({version:'1.0',events:[...head,start,arg('{"query":"Library"}'),end,event('RUN_ERROR',{message:'failed'})]},threadId,runId),null);
 });
 
 test('client context has a bounded route and takes no record values or URL', () => {
@@ -40,4 +40,28 @@ test('registered screen identity tracks its owning source, without carrying tran
   assert.deepEqual(copilotRouteContext('/more/virtual-campus','/more/virtual-campus?campus_id=two&map_panel=layers'),
     {screen:'virtual_campus',identity:['two']});
   assert.deepEqual(copilotRouteContext('/more/account','/more/account?campus_id=two'),{screen:'workspace',identity:[]});
+});
+
+test('campus creation uses the declared route then opens its form in order', () => {
+  const first = 'navigate', second = 'prepare';
+  const tool = (id: string, name: string, delta: string) => [
+    event('TOOL_CALL_START', { toolCallId: id, toolCallName: name }),
+    event('TOOL_CALL_ARGS', { toolCallId: id, delta }),
+    event('TOOL_CALL_END', { toolCallId: id }),
+  ];
+  const navigate = tool(first, 'open_campus_create', '{}');
+  const prepare = tool(second, 'prepare_campus_create', '{"name":"North Campus"}');
+  const finish = (pendingToolCallIds: string[]) => event('RUN_FINISHED', { threadId, runId, outcome: { type: 'success', pendingToolCallIds } });
+  const read = (...events: Record<string, unknown>[]) => readCopilotPlan({ version: '1.0', events: [...head, ...events] }, threadId, runId);
+  assert.deepEqual(read(...navigate, ...prepare, finish([first, second])), [
+    { id: first, name: 'open_campus_create', args: {} },
+    { id: second, name: 'prepare_campus_create', args: { name: 'North Campus' } },
+  ]);
+  assert.equal(read(...navigate, ...prepare, finish([second, first])), null);
+  assert.equal(read(...prepare, ...navigate, finish([second, first])), null);
+  assert.equal(read(...navigate, ...tool(second, 'campus_open_picker', '{}'), finish([first, second])), null);
+  const campus_id = '861291df-e176-47e8-8595-e48161a8e61f';
+  assert.deepEqual(parseCopilotContext({ screen: 'virtual_campus', tools: ['open_campus_interiors'], campus_id }),
+    { screen: 'virtual_campus', tools: ['open_campus_interiors'], campus_id });
+  assert.equal(parseCopilotContext({ screen: 'workspace', tools: [], campus_id }), null);
 });

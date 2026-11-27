@@ -1,4 +1,5 @@
-import { useRef, useState, type ReactNode } from 'react';
+import { useLayoutEffect, useRef, useState, type ReactNode } from 'react';
+import { View } from 'react-native';
 import * as Crypto from 'expo-crypto';
 import type { ReviewedScenePlaceRow } from '../../../../packages/contracts/src/campus-scenes/contracts';
 import type { CampusSceneDocument, CampusSceneElement, CampusScenePoint, CampusSceneSpace } from '../../../../packages/contracts/src/campus-scenes/types';
@@ -15,36 +16,52 @@ import { Button, Empty, Field, Notice, Section } from '../../ui/components';
 import { ChoiceMenu } from '../../ui/DomainControls';
 import { Alert } from '../../ui/Alert';
 import { CampusIndoorCounselor, type CampusIndoorItemReview, type CampusIndoorPin, type CampusIndoorPrompt, type CampusIndoorRoomReview } from './CampusIndoorCounselor';
-import { CampusIndoorPlanDiscovery } from './CampusIndoorPlanDiscovery';
+import { CampusIndoorPlanDiscovery, type PublicFloorPlanRequest } from './CampusIndoorPlanDiscovery';
 import { CampusMapCanvas, initialCampusCamera } from './CampusMapCanvas';
 import { CampusSetupWorkspace } from './CampusSetupWorkspace';
 import { CampusSceneResourcePicker } from './CampusSceneResourcePicker';
+import { campusInteriorBuildings, findCampusInteriorBuilding } from './campus-copilot-targets';
 
 type IndoorItem = CampusIndoorItemReview & { elementIds: string[]; individualPins?: boolean };
 type IndoorRoom = Omit<CampusIndoorRoomReview, 'items'> & { items: IndoorItem[] };
 export type CampusIndoorSave = { document: CampusSceneDocument; rows: ReviewedScenePlaceRow[] };
 type Props = {
   document: CampusSceneDocument; spaces: readonly CampusSceneSpace[]; schoolId: string; campusId: string;
-  contextKey: string; aiAvailable: boolean; initialBuildingId?: string | null; initialFloorId?: string | null; disabled: boolean; busy: boolean; feedback?: ReactNode;
+  contextKey: string; aiAvailable: boolean; autoOpenAssistant?: boolean; requestedBuilding?: string | null;
+  initialBuildingId?: string | null; initialFloorId?: string | null; disabled: boolean; busy: boolean; feedback?: ReactNode;
   onClose: () => void; onImportPlan: (buildingId: string) => void;
   onSave: (value: CampusIndoorSave) => Promise<void>;
+  onUsePublicPlan: (request: PublicFloorPlanRequest) => Promise<void>;
+  onEditingChange?: (editing: boolean) => void;
 };
 
 export function CampusIndoorMapping(props: Props) {
-  const buildings = props.document.elements.filter(element => element.kind==='building' && element.geometry.type==='polygon'
-    && element.space_id && props.spaces.some(place => place.id===element.space_id && place.status!=='inactive'));
-  const [buildingId,setBuildingId]=useState(() => buildings.find(building => building.space_id===props.initialBuildingId)?.id??buildings[0]?.id??'');
+  const buildings = campusInteriorBuildings(props.document, props.spaces);
+  const [buildingId,setBuildingId]=useState(() => {
+    if (props.requestedBuilding != null) return findCampusInteriorBuilding(buildings,props.spaces,props.requestedBuilding)?.id??'';
+    const focused = buildings.find(building => building.space_id===props.initialBuildingId);
+    return focused?.id??(props.autoOpenAssistant&&buildings.length>1?'':buildings[0]?.id??'');
+  });
   const building = buildings.find(element => element.id === buildingId);
   const floors = props.spaces.filter(place => building?.space_id && place.status!=='inactive' && campusSceneFloorBelongsToBuilding(place,building.space_id,props.spaces));
   const [floorChoice,setFloorChoice]=useState<{ buildingId:string; floorId:string|null }>();
   const floorId = floorChoice?.buildingId===buildingId ? floorChoice.floorId : floors.find(item=>item.id===props.initialFloorId)?.id??floors[0]?.id??null;
   const floor = floors.find(place => place.id===floorId);
+  const buildingPicker = <ChoiceMenu label="Building" value={buildingId} options={buildings.map(item=>({value:item.id,label:item.label}))}
+    onChange={setBuildingId} disabled={props.disabled}/>;
+  if (!building && buildings.length) return <CampusSetupWorkspace campusName={props.document.name} phase="interior"
+    map={<View style={{padding:24,gap:12}}>
+      <Empty title="Choose a building" message={props.requestedBuilding == null
+        ? 'Select a building to check for its floor plans and start mapping.'
+        : 'The requested name did not identify one mapped building. Select the building you want to use.'}/>
+      {buildingPicker}
+    </View>}
+    options={[]} onClose={props.onClose} />;
   if (!building) return <CampusSetupWorkspace campusName={props.document.name} phase="interior" map={
     <Empty title="Connect a building before mapping inside" message="Set up facilities on the campus map to choose a building."/>}
     options={[]} onClose={props.onClose} />;
   return <IndoorFloor key={`${buildingId}:${floorId??'new'}`} {...props} building={building} floor={floor}
-    selector={<><ChoiceMenu label="Building" value={buildingId} options={buildings.map(item=>({value:item.id,label:item.label}))}
-      onChange={setBuildingId} disabled={props.disabled}/>
+    selector={<>{buildingPicker}
     <ChoiceMenu label="Floor" value={floorId??''}
       options={[...floors.map(item=>({value:item.id,label:item.name})),{value:'',label:'Add a floor'}]}
       onChange={value=>setFloorChoice({buildingId,floorId:value||null})} disabled={props.disabled}/></>}
@@ -80,9 +97,16 @@ function IndoorFloor({building,floor,selector,...props}: Props & {
   const baselineIds = new Set(baseline.elements.map(element=>element.id));
   const newIds = draft.elements.filter(element=>!baselineIds.has(element.id)).map(element=>element.id);
   const dirty = draft!==baseline;
+  const editing = dirty || !!pin || !!answer.trim() || name!==(floor?.name??'Ground floor')
+    || rooms.some(room=>!room.pinned||room.items.some(item=>!item.pinned));
+  const reportEditing = props.onEditingChange;
+  useLayoutEffect(()=>{
+    reportEditing?.(editing);
+    return ()=>reportEditing?.(false);
+  },[editing,reportEditing]);
   const outline = building.geometry.points;
   const imageBounds = scenePointBounds(outline);
-  useScreenExitGuard({blocked:props.busy,dirty,title:'Leave indoor mapping?',message:'Save your pins before leaving if you want to keep them.'});
+  useScreenExitGuard({blocked:props.busy,dirty:editing,title:'Leave indoor mapping?',message:'Save your pins before leaving if you want to keep them.'});
 
   function reviseRoom(id:string,patch:Partial<IndoorRoom>) {
     setRooms(previous=>previous.map(room=>room.id===id?{...room,...patch}:room));
@@ -202,9 +226,9 @@ function IndoorFloor({building,floor,selector,...props}: Props & {
       await props.onSave({document:draft,rows:result.rows});
     } finally {saving.current=false;}
   }
-  const close=()=>{if(props.busy)return;if(!dirty){props.onClose();return;}Alert.alert('Pause indoor mapping?', 'Save the mapped changes before leaving, or discard this session’s edits.', [
+  const close=()=>{if(props.busy)return;if(!editing){props.onClose();return;}Alert.alert('Pause indoor mapping?', 'Keep mapping or discard the unsaved details on this floor.', [
     {text:'Keep mapping',style:'cancel'},{text:'Discard edits',style:'destructive',onPress:props.onClose},
-    {text:'Save and pause',onPress:()=>void save().catch(cause=>setFeedback(cause instanceof Error?cause.message:'Could not save this floor.'))},
+    ...(dirty?[{text:'Save and pause',onPress:()=>void save().catch(cause=>setFeedback(cause instanceof Error?cause.message:'Could not save this floor.'))}]:[]),
   ]);};
   const tapTarget=rooms.find(room=>room.id===pin?.roomId);
   const selectedElement=draft.elements.find(element=>element.id===selected);
@@ -217,18 +241,17 @@ function IndoorFloor({building,floor,selector,...props}: Props & {
     if (props.disabled||selectedElement?.kind!=='fixture')return;
     storeElement({...selectedElement,holding_id:id,review_state:'needs_review'});
   };
-  const importPlan=()=>{if(dirty){setFeedback('Save or discard your indoor edits before opening a source plan.');return;}props.onImportPlan(building.space_id!);};
+  const importPlan=()=>{if(editing){setFeedback('Save or discard your indoor edits before opening a source plan.');return;}props.onImportPlan(building.space_id!);};
   return <CampusSetupWorkspace campusName={`${building.label} · ${name}`} phase="interior" onClose={close}
     options={[{label:'Use a floor-plan file',run:importPlan}]} locked={props.busy} feedback={props.feedback}
+    autoOpenAssistant={props.autoOpenAssistant}
     map={<CampusMapCanvas scene={draft} contextKey={props.contextKey} draftPreview includeSurroundings={false}
       floor={floorId} mode="2d" selected={selected} camera={camera} onCameraChange={setCamera} route={null} unavailable={[]}
       onSelect={setSelected} editorInterior={{buildingId:building.space_id!,buildingElementId:building.id,floorId,elementIds:newIds,imageBounds}}
       onPoint={pin?placePoint:undefined} drawingPoints={pin&&corner?[corner]:undefined} />}
     guidance={<>
-      {!pin&&!dirty?selector:null}
+      {!editing?selector:null}
       {!pin&&!floor?<Field label="Floor name" value={name} onChangeText={setName} maxLength={160} editable={!props.disabled}/>:null}
-      <CampusIndoorPlanDiscovery {...{schoolId:props.schoolId,campusId:props.campusId,building,floor,spaces:props.spaces}}
-        hidden={!!pin||dirty} disabled={props.disabled} onImportPlan={importPlan}/>
       {feedback?<Notice tone="warning" message={feedback}/>:null}
       {warnings.map((warning,index)=><Notice key={index} message={warning}/>)}
       {pin&&!pin.itemId?<Notice message={corner?`Tap the opposite corner of ${tapTarget?.name??'the room'}.`:'Tap the first of two opposite room corners.'}/>:null}
@@ -236,7 +259,10 @@ function IndoorFloor({building,floor,selector,...props}: Props & {
       {!pin&&selectedElement?.kind==='fixture'?<CampusSceneResourcePicker schoolId={props.schoolId} campusId={props.campusId}
         holdingId={selectedElement.holding_id??null} linkedElsewhere={linksInUse} disabled={props.disabled} onChange={changeHolding}/>:null}
     </>}
-    assistantGuidance={pin?undefined:(backToMap,inAssistant)=><CampusIndoorCounselor floorName={name} answer={answer} onAnswerChange={value=>{
+    assistantGuidance={pin?undefined:(backToMap,inAssistant)=><>
+      <CampusIndoorPlanDiscovery {...{schoolId:props.schoolId,campusId:props.campusId,building,floor,spaces:props.spaces}}
+        disabled={props.disabled} hidden={editing} onImportPlan={importPlan} onUsePlan={props.onUsePublicPlan}/>
+      <CampusIndoorCounselor floorName={name} answer={answer} onAnswerChange={value=>{
           if(value && !answer)++promptRequest.current;
           setAnswer(value);
         }} onAnswer={text=>parse(text,inAssistant)}
@@ -252,5 +278,6 @@ function IndoorFloor({building,floor,selector,...props}: Props & {
           reviseRoom(roomId,{items:room.items.map(value=>value.id===itemId?{...value,...patch,...(value.elementIds.length?{quantity:value.quantity}:{})}:value)});
         }}
         activePin={pin} onPin={value=>{setPin(value);setCorner(null);setFeedback('');if(value){setSelected(value.roomId);backToMap();}}}
-        canSave={dirty} onSave={async()=>{await save();backToMap();}} onPause={()=>{backToMap();close();}} disabled={props.disabled} busy={props.busy}/>}/>;
+        canSave={dirty} onSave={async()=>{await save();backToMap();}} onPause={()=>{backToMap();close();}} disabled={props.disabled} busy={props.busy}/>
+    </>}/>;
 }

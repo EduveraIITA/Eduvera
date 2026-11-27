@@ -49,7 +49,7 @@ const neutralEvidenceScreens = new Set([
   '/areas/departure/plan', '/areas/departure/manage', '/areas/departure/operate',
   '/areas/insights', '/areas/insights/review', '/areas/insights/learning-review',
   '/areas/insights/followups', '/areas/insights/operations', '/areas/insights/finance',
-  '/more/virtual-campus',
+  '/more/virtual-campus', '/more/account/campuses', '/more/setup/institution/campus',
 ]);
 const evidenceRecordId = '[0-9a-fA-F]{8}(?:-[0-9a-fA-F]{4}){3}-[0-9a-fA-F]{12}';
 const neutralRecordScreen = new RegExp(`^/areas/(?:events/(?:assigned|manage|calendar)|departure/(?:manage/journeys|operate))/${evidenceRecordId}$`, 'u');

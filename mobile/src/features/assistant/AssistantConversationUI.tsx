@@ -41,7 +41,7 @@ function UtilityButton({ label, hint, children, onPress, disabled, controlRef }:
   return <Pressable ref={controlRef} accessibilityRole="button" accessibilityLabel={label} accessibilityHint={hint} accessibilityState={{ disabled }} disabled={disabled} onPress={onPress} style={({ pressed }) => [styles.utilityButton, { opacity: disabled ? .4 : pressed ? .6 : 1 }]}>{children}</Pressable>;
 }
 
-export function ConversationComposer({ value, onChange, locked, busy, running, stopDisabled, onSend, onStop, status, expanded = false }: { value: string; onChange: (value: string) => void; locked: boolean; busy: boolean; running: boolean; stopDisabled: boolean; onSend: () => void; onStop: () => void; status?: string; expanded?: boolean }) {
+export function ConversationComposer({ value, onChange, locked, busy, running, stopDisabled, onSend, onStop, status }: { value: string; onChange: (value: string) => void; locked: boolean; busy: boolean; running: boolean; stopDisabled: boolean; onSend: () => void; onStop: () => void; status?: string }) {
   const { colors } = useTheme(), [height, setHeight] = useState(36), input = useRef<ComponentRef<typeof TextInput>>(null);
   const resizeWeb = () => {
     if (Platform.OS !== 'web') return;
@@ -59,7 +59,7 @@ export function ConversationComposer({ value, onChange, locked, busy, running, s
   return <View style={{ gap: 8 }}>
     {status ? <Text accessibilityLiveRegion="polite" style={[styles.caption, { color: colors.muted, paddingHorizontal: 4 }]}>{status}</Text> : null}
     <View style={[styles.composer, { borderColor: colors.border }]}>
-      <View pointerEvents="none" accessibilityElementsHidden importantForAccessibility="no-hide-descendants" style={StyleSheet.absoluteFill}><Glass style={[StyleSheet.absoluteFill, { borderRadius: 28 }, !expanded && { backgroundColor: colors.surface }]} /></View>
+      <View pointerEvents="none" accessibilityElementsHidden importantForAccessibility="no-hide-descendants" style={StyleSheet.absoluteFill}><Glass material="assistant" style={[StyleSheet.absoluteFill, { borderRadius: 28 }]} /></View>
       <TextInput ref={input} accessibilityLabel="Ask Assistant" accessibilityHint={Platform.OS === 'web' ? 'Enter to send. Shift and Enter for a new line.' : 'Write your question, then use Send question.'} value={value} onChangeText={onChange} multiline maxLength={4000} editable={!locked} placeholder="Ask anything…" placeholderTextColor={colors.muted} underlineColorAndroid="transparent" textAlignVertical="top" onLayout={resizeWeb} onContentSizeChange={event => { if (Platform.OS !== 'web') setHeight(assistantComposerHeight(event.nativeEvent.contentSize.height)); }}
         {...(Platform.OS === 'web' ? { numberOfLines: 1, onKeyPress: (event: { nativeEvent: { key?: string; shiftKey?: boolean; isComposing?: boolean; keyCode?: number; repeat?: boolean }; preventDefault?: () => void }) => { if (assistantShouldSendKey(event.nativeEvent, canSend)) { event.preventDefault?.(); send(); } } } : {})}
         style={[styles.input, { color: colors.ink, height }]} />
@@ -168,7 +168,9 @@ export function ConversationBubble({ children, onExpand, onClose, source, hasCha
   // Page owns actual IME avoidance. While that frame is reduced, collapse only
   // this optional preview: its same mounted editor and Expand/Close stay usable.
   // No fixed keyboard height or duplicated bottom inset is reserved here.
-  return <View style={[styles.bubble, { backgroundColor: colors.surface, borderColor: colors.border, display: visible ? 'flex' : 'none' }]} accessibilityElementsHidden={!visible} importantForAccessibility={visible ? 'auto' : 'no-hide-descendants'}>
+  return <View style={[styles.bubble, { borderColor: colors.border, display: visible ? 'flex' : 'none' }]} accessibilityElementsHidden={!visible} importantForAccessibility={visible ? 'auto' : 'no-hide-descendants'}>
+    <Glass material="assistant" pointerEvents="none" accessibilityElementsHidden importantForAccessibility="no-hide-descendants"
+      style={[StyleSheet.absoluteFill, { borderRadius: 28 }]} />
     <View style={styles.bubbleHeader}><AssistantMark size={24} />{keyboardVisible && minimizedLabel ? <Text accessibilityLiveRegion="polite" numberOfLines={1} style={[styles.caption, { color: colors.muted, flex: 1 }]}>{minimizedLabel}</Text> : <View style={{ flex: 1 }} />}{copyControl}<UtilityButton label="Expand Assistant" hint="Read the complete conversation." onPress={onExpand}><ArrowsOutSimpleIcon size={18} color={colors.muted} /></UtilityButton>{onClose ? <UtilityButton label="Close Assistant" onPress={onClose}><XIcon size={20} color={colors.muted} /></UtilityButton> : null}</View>
     <ScrollView style={{ minHeight: 0, flexShrink: 1, maxHeight: Math.min(hasChart ? 410 : 244, frameHeight * (hasChart ? .46 : .3)), display: keyboardVisible ? 'none' : 'flex' }} accessibilityElementsHidden={keyboardVisible} importantForAccessibility={keyboardVisible ? 'no-hide-descendants' : 'auto'} keyboardShouldPersistTaps="handled" showsVerticalScrollIndicator contentContainerStyle={{ gap: 12, paddingBottom: 4 }}>{children}</ScrollView>
     {source ? <View style={{ paddingTop: 4, display: keyboardVisible ? 'none' : 'flex' }} accessibilityElementsHidden={keyboardVisible} importantForAccessibility={keyboardVisible ? 'no-hide-descendants' : 'auto'}>{source}</View> : null}
@@ -201,6 +203,6 @@ const styles = StyleSheet.create({
   empty: { flexGrow: 1, justifyContent: 'center', alignItems: 'flex-start', gap: 12, paddingVertical: 28, paddingHorizontal: 4 }, emptyTitle: { fontSize: 20, lineHeight: 27, fontWeight: '600' },
   sheetHeader: { flexDirection: 'row', alignItems: 'center', gap: 12, paddingLeft: 20, paddingRight: 12, paddingVertical: 8 }, sheetTitle: { flex: 1, fontSize: 20, lineHeight: 27, fontWeight: '600' }, sheetContent: { paddingHorizontal: 20, paddingTop: 8, paddingBottom: 40, gap: 16 }, thread: { minHeight: 72, paddingVertical: 12, paddingHorizontal: 14, borderBottomWidth: StyleSheet.hairlineWidth, borderRadius: 16, gap: 4 }, threadTitle: { fontSize: 16, lineHeight: 23, fontWeight: '600' },
   answerText: { gap: 12 }, answerHeading: { fontSize: 16, lineHeight: 25, fontWeight: '700' }, listItem: { flexDirection: 'row', gap: 10, alignItems: 'flex-start' }, listMarker: { minWidth: 14 },
-  bubble: { minHeight: 0, flexShrink: 1, borderRadius: 28, borderWidth: 1, paddingHorizontal: 16, paddingBottom: 12, gap: 4 }, bubbleHeader: { minHeight: 44, flexDirection: 'row', alignItems: 'center', gap: 2 },
+  bubble: { minHeight: 0, overflow: 'hidden', flexShrink: 1, borderRadius: 28, borderWidth: 1, paddingHorizontal: 16, paddingBottom: 12, gap: 4 }, bubbleHeader: { minHeight: 44, flexDirection: 'row', alignItems: 'center', gap: 2 },
   copyControl: { minHeight: 44, minWidth: 44, maxWidth: '100%', flexShrink: 1, paddingHorizontal: 8, borderRadius: 22, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 4 },
 });

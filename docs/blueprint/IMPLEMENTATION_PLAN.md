@@ -35,7 +35,7 @@ Live development is active at
 The managed Mac web host runs `mobile/scripts/serve-web-preview.cjs --mode
 development --metro-origin 'http://[::1]:8084'`, using the SSD checkout, normal
 `dev.thatcampus.web` job and existing port 5173/Cloudflare process. The same-origin
-API 8000 cookie/CSRF ceremony and campus history remain unchanged; no Vite server
+API routing to loopback8001 retains the cookie/CSRF ceremony and campus history; no Vite server
 is involved. [18 HTTP/WebSocket checks](../../artifacts/native-web-ui-20261029/live-development-host-tests.log),
 the [real Metro probe](../../artifacts/native-web-ui-20261029/live-development-existing-metro-probe.json)
 and [isolated candidate](../../artifacts/native-web-ui-20261029/live-development-host-root-candidate.json)
@@ -60,6 +60,16 @@ database backups retained.
 A Quick Tunnel URL is temporary, not a product
 deployment promise. Git-dependent validation/push remains deferred while metadata
 points into the protected Omnischool directory.
+
+The owner reserved local8000 for Kite on12November. The existing managed API is
+now on8001 and the5173 mobile web host proxies to that port. Local environment
+and proxy/native development defaults were updated together. Six direct/proxied
+liveness/readiness/release checks passed with identical runtime release identity;
+24 existing proxy/web-host checks passed, including cookie, CSRF and native Bearer
+forwarding. Exact local receipts are `.runtime/port-8001-{before,config,after}.json`.
+Live/Simulation impact is transport-only: both keep the same domain routes,
+tenant/world/session headers and stores. No migration, seed or domain workflow
+was changed, and no full workflow regression is claimed for this port edit.
 
 Owner decision, 29 October 2026: React Native/Expo is the sole actively developed
 frontend across browser, iPhone, iPad and Android. Put new features and fixes there
@@ -453,10 +463,12 @@ saved-draft commands. Focused checks cover exact plan targets, bounded source
 filtering, isolated Simulation effects, A2UI actions, described resource counts
 and pin geometry. Browser runs from both a guided draft and a published campus
 placed one room and four items, saved them in an atomic draft and verified them
-after reload. They left the member publication unchanged. Public-plan discovery
-needs a configured index provider.
-Indexed links require an authorized upload before the image is traced, and saved
-geometry remains subject to normal review and publication.
+after reload. They left the member publication unchanged. The Assistant can search the free
+public index and read a public page from explicit chat requests. For verified
+publisher floor plans, the normal interior setup offers a rights confirmation
+before downloading and previewing the image in a private draft. Indexed links
+outside the verified download catalogue can be opened or supplied as authorized
+uploads. Saved geometry remains subject to review and publication.
 
 The map recovery test reproduced the primary-provider timeout and used a configured
 regional source to produce 224 editable features, including 93 buildings, from a
@@ -475,8 +487,14 @@ Simulation refusal. Authenticated compact and wide browser runs use the live
 application controls with a controlled agent response. They prove navigation,
 the campus picker, an editable search, visible published-place focus and
 Take over suppressing a late command. A phone-width and desktop-width repeat
-also verified the reused map graphics context. The current registry adopts
-Virtual Campus first. Saved changes continue through each owning approval.
+also verified the reused map graphics context. The registry now opens the campus
+creation form and exact mapped-building interior setup from the Assistant.
+Authenticated browser verification exercised an A2UI campus name, zero campus
+writes before explicit confirmation, exactly one creation request, and the
+new campus onboarding handoff. The focused floor-plan browser check resolved
+the official LuLu Lucknow building and showed all three publisher choices and
+the reuse confirmation. Isolated PostgreSQL checks exercised the shared
+public-lookup budget, role boundaries and confirmed first-party image ingestion.
 
 The retained evidence covers reviewed floor-plan intake/publication, authored
 interiors, messaging/academic evidence repair and Care/Resources/Dining continuity.

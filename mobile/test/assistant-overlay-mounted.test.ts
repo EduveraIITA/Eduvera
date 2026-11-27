@@ -22,11 +22,11 @@ test('the actual global host retains one body, draft and journal across full/com
   const base = { mode: 'compact' as 'compact' | 'fullscreen' | 'split',mounted: true,active: true,expanded: false,entryToken: 'actual-key:1',href: '/areas/assistant/conversation',setFrame() {} }, presentation = createContext(base);
   const owner = createContext(false), activity = createContext<boolean | undefined>(undefined);
   let mounts = 0, unmounts = 0, setQuestion!: (value: string) => void;
-  function Body() { const [question,set] = useState(''); setQuestion = set; useEffect(() => { mounts++; return () => { unmounts++; }; },[]); return React.createElement('input',{ value: question,onChange() {},'data-owner': 'one-conversation' }); }
+  function Body({ workspaceTask: task }: { workspaceTask?: { content: React.ReactNode; onReturn():void } }) { const [question,set] = useState(''); setQuestion = set; useEffect(() => { mounts++; return () => { unmounts++; }; },[]); return React.createElement(React.Fragment,null,React.createElement('input',{ value: question,onChange() {},'data-owner': 'one-conversation' }),task?.content,task&&React.createElement('button',{ onClick:task.onReturn },'Back to map')); }
   const View = ({ children,style,...props }: { children?: React.ReactNode; style?: React.CSSProperties; [key: string]: unknown }) => React.createElement('div',{ style: { ...(Array.isArray(style) ? Object.assign({},...style) : style),flexDirection: undefined },'data-modal': props.accessibilityViewIsModal },children);
   const dependencies: Record<string,unknown> = {
     'react': React,'react/jsx-runtime': require('react/jsx-runtime'),
-    'react-native': { View,ScrollView: View,Text: View,Platform: { OS: 'web' },BackHandler: { addEventListener() { return { remove() {} }; } } },
+    'react-native': { View,ScrollView: View,Text: View,Platform: { OS: 'web' },StyleSheet: { absoluteFill: {} },BackHandler: { addEventListener() { return { remove() {} }; } } },
     'react-native-safe-area-context': { SafeAreaView: View },
     '../features/AssistantScreen': { AssistantScreen: Body },
     '../auth/SessionProvider': { useSession: () => ({ scopeKey:'school:live' }) },
@@ -36,7 +36,7 @@ test('the actual global host retains one body, draft and journal across full/com
     './assistant-presentation-context': { useAssistantPresentationState: () => useContext(presentation) },
     './assistant-overlay-context': { AssistantOverlayOwnerContext: owner,AssistantOverlayActivityContext: activity },
     './BackNavigation': { useCampusNavigation: () => ({ onAssistantNavigate() {} }) },
-    './theme': { useTheme: () => ({ colors: { canvas: '#fff' } }) },'./ExecutionBanner': { ExecutionBanner: () => React.createElement('span',null,'Current world') },
+    './theme': { useTheme: () => ({ colors: { canvas: '#fff' } }) },'./Glass': { Glass: View },'./ExecutionBanner': { ExecutionBanner: () => React.createElement('span',null,'Current world') },
   };
   const file = path.join(root,'src/ui/AssistantOverlayHost.tsx'), compiled = ts.transpileModule(readFileSync(file,'utf8'),{ compilerOptions: { jsx: ts.JsxEmit.ReactJSX,module: ts.ModuleKind.CommonJS,target: ts.ScriptTarget.ES2022,esModuleInterop: true } }).outputText;
   const exports: { AssistantOverlayHost?: React.ComponentType<{ layout?: AssistantLayout }> } = {};

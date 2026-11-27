@@ -566,12 +566,15 @@ an explicit review of the campus drawing.
 
 Authorized editors can open **Map building interiors** after linking a building
 or from a published campus. Select the building and floor, or name a new floor.
-The guide checks for matching public plans on the institution's official site
-when the bounded search provider is configured. It displays links for review.
-The administrator must confirm the correct building, floor and reuse rights before
-uploading an authorized PNG, JPEG or WebP. The existing trace flow converts
-visible geometry into editable proposals when floor-plan analysis is available.
-Public links alone grant no rights and trigger no downloads or layout changes.
+The guide offers matching publisher plans and checks the public index for
+official-site references when free web search is enabled. Candidate sources show
+inside the Assistant. When ThatCampus can verify an exact publisher image for
+the chosen building and floor, the administrator can confirm reuse rights and
+download it into the private draft for preview. Other indexed results can be
+opened for review. The authorized upload flow also accepts PNG, JPEG or WebP.
+The trace flow converts visible geometry into editable proposals when
+floor-plan analysis is available. The administrator reviews the draft before
+saving or publishing geometry.
 
 Without a plan, describe the floor in the main Assistant to propose named rooms and resources. Return to the floor map for exact placement. The
 bounded [A2UI 1.0](https://a2ui.org/specification/v1.0-a2ui/) catalog renders

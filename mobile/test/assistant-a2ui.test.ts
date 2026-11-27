@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import {
+  assistantCampusNameAnswer, assistantCampusNameMessages, assistantPublicWebSourceMessages, assistantPublicWebSourceSelected,
   assistantActionRecordMessages, assistantActionRecordSelected, assistantDecisionMessages,
   assistantDecisionSelected, assistantReportMessages, assistantReportSourceSelected,
 } from '../src/lib/assistant-a2ui';
@@ -42,4 +43,26 @@ test('Assistant review passes only the current unlocked action to the native dec
   assert.equal(assistantActionRecordSelected(open, 'first-action'), true);
   assert.equal(assistantDecisionSelected(open, 'first-action', false, false), undefined);
   assert.equal(assistantActionRecordSelected(confirm, 'first-action'), false);
+});
+
+test('the campus name field returns a valid value only for its current owning request', () => {
+  const detailId = 'active-call';
+  const [surface] = readCampusA2uiSurfaces(assistantCampusNameMessages(detailId), ASSISTANT_A2UI_CATALOG)!;
+  const action = dispatch(surface, 'accept');
+  assert.equal(assistantCampusNameAnswer(action, detailId), undefined);
+  const answer = { ...action, action: { ...action.action, context: { detailId, name: ' North Campus ' } } };
+  assert.equal(assistantCampusNameAnswer(answer, detailId), 'North Campus');
+  assert.equal(assistantCampusNameAnswer(answer, 'expired-call'), undefined);
+});
+
+test('web citation controls open only their exact verified public source', () => {
+  const source = { id: '861291df-e176-47e8-8595-e48161a8e61f', title: 'Floor plans',
+    url: 'https://www.lucknow.lulumall.in/floor-plans/', description: 'Ground, first and second floors.' };
+  const [full] = readCampusA2uiSurfaces(assistantPublicWebSourceMessages(source), ASSISTANT_A2UI_CATALOG)!;
+  assert.deepEqual(campusA2uiChildren(full.components.get('root')!), ['open', 'description']);
+  const action = dispatch(full, 'open');
+  assert.deepEqual(action.action.context, { sourceId: source.id });
+  assert.equal(assistantPublicWebSourceSelected(action, source), source.url);
+  assert.equal(assistantPublicWebSourceSelected(action, { ...source, url: 'https://example.com/?token=private' }), undefined);
+  assert.equal(assistantPublicWebSourceSelected(action, { ...source, url: 'https://127.0.0.1/' }), undefined);
 });

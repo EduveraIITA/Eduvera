@@ -5,7 +5,7 @@ import { sceneImportSchema, sceneLookupSchema } from '../src/campus-scene-import
 import { publicSceneDocument } from '../src/campus-scenes/campus-scenes.contracts.js';
 import { mappedPlaceCandidates } from '../src/campus-scene-import/scene-import.assistance.js';
 import { prepareMapArea } from '../src/campus-scene-import/scene-import.area.js';
-import { discoverPublicFloorPlans, floorPlanSearchSettings, officialSchoolHost } from '../src/campus-scene-import/scene-import.floor-plan-discovery.js';
+import { discoverFreePublicFloorPlans, discoverPublicFloorPlans, floorPlanSearchSettings, freeFloorPlanSearchSettings, officialSchoolHost, publicWebRequest } from '../src/campus-scene-import/scene-import.floor-plan-discovery.js';
 const testBoundary = [
   { latitude:12, longitude:77 }, { latitude:12, longitude:77.002 },
   { latitude:12.002, longitude:77.002 }, { latitude:12.002, longitude:77 },
@@ -62,6 +62,41 @@ describe('Campus import boundaries',()=>{
     await expect(discoverPublicFloorPlans(settings!, { host: 'willow-research.edu', building: 'Learning block' }))
       .resolves.toEqual({ status: 'not_found', candidates: [] });
     expect(fetch).toHaveBeenCalledTimes(2);
+  });
+  it('uses opt-in keyless bounded search and filters its citations', async () => {
+    vi.stubEnv('CAMPUS_FLOOR_PLAN_FREE_SEARCH_ENABLED','true');
+    vi.stubEnv('CAMPUS_MAP_AI_ENABLED_UNTIL','2000-01-01T00:00:00Z');
+    expect(freeFloorPlanSearchSettings()).toEqual({maximumDailyLookups:20});
+    vi.stubEnv('CAMPUS_FLOOR_PLAN_FREE_SEARCH_ENABLED','false');
+    expect(freeFloorPlanSearchSettings()).toBeNull();
+    const url='https://school.edu/library-floor-plan/';
+    const text=`Title: Learning Library Floor Plans\nURL: ${url}\nHighlights: Ground Floor\n\n---\n\nTitle: Learning Library Floor Plans\nURL: https://thirdparty.edu/floor-plan/\nHighlights: Ground Floor`;
+    const result={jsonrpc:'2.0',id:3,result:{content:[{type:'text',text}]}};
+    const fetch=vi.fn().mockResolvedValueOnce(Response.json({jsonrpc:'2.0',id:1,result:{protocolVersion:'2025-03-26'}},{headers:{'Mcp-Session-Id':'test-session'}}))
+      .mockResolvedValueOnce(new Response(null,{status:202}))
+      .mockResolvedValueOnce(Response.json({jsonrpc:'2.0',id:2,result:{tools:[{name:'web_search_exa'}]}}))
+      .mockResolvedValueOnce(new Response(`event: message\ndata: ${JSON.stringify(result)}\n\n`,{headers:{'Content-Type':'text/event-stream'}}));
+    vi.stubGlobal('fetch',fetch);
+    await expect(discoverFreePublicFloorPlans({host:'school.edu',building:'Learning Library',floor:'Ground Floor'})).resolves.toEqual({
+      status:'found',candidates:[{title:'Learning Library Floor Plans',url,source_host:'school.edu'}],
+    });
+    expect(fetch.mock.calls.map(([target,options])=>[target,JSON.parse(options.body).method])).toEqual([
+      ['https://mcp.exa.ai/mcp?tools=web_search_exa','initialize'],['https://mcp.exa.ai/mcp?tools=web_search_exa','notifications/initialized'],
+      ['https://mcp.exa.ai/mcp?tools=web_search_exa','tools/list'],['https://mcp.exa.ai/mcp?tools=web_search_exa','tools/call'],
+    ]);
+    expect(fetch.mock.calls.at(-1)?.[1]).toMatchObject({redirect:'error',headers:{'Mcp-Session-Id':'test-session'}});
+    expect(fetch.mock.calls.at(-1)?.[1].body).toContain('site:school.edu');
+    expect(fetch.mock.calls.at(-1)?.[1].headers).not.toHaveProperty('x-api-key');
+  });
+  it('admits only explicit public search terms and unsigned HTTPS page addresses',()=>{
+    expect(publicWebRequest('Search the web for local astronomy clubs')).toEqual({kind:'search',query:'local astronomy clubs'});
+    expect(publicWebRequest('Read this public page https://space.gov/stars/')).toEqual({kind:'read',url:'https://space.gov/stars/'});
+    expect(publicWebRequest('What did the public page say?')).toBeUndefined();
+    for(const url of ['http://space.gov/stars/','https://127.0.0.1/','https://school.internal/',
+      'https://user:password@school.edu/','https://school.edu/private/plan','https://school.edu/plan?signature=secret',
+      'https://school.edu/plan#code=secret','https://school.edu/plan%3fcode=secret'])
+      expect(publicWebRequest(`Read this public page ${url}`)).toEqual({kind:'invalid'});
+    expect(publicWebRequest('Search the web for https://school.edu/signin?token=secret')).toEqual({kind:'invalid'});
   });
   it('preserves image aspect ratio and never turns generated outlines into verified places',()=>{
     const scene=imageDraft({elements:[{kind:'building',label:'Building 1',asset_key:'generic',points:[{x:100,y:100},{x:300,y:100},{x:300,y:400},{x:100,y:400}]}]},image);

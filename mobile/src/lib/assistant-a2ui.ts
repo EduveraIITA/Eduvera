@@ -1,3 +1,6 @@
+import type { AgentPublicWebSource } from '../../../packages/contracts/src/wire/features/assistant/agentApi';
+import { assistantPublicWebUrl } from './assistant-policy';
+import { validCopilotArgs } from './copilot';
 import { ASSISTANT_A2UI_CATALOG, type CampusA2uiActionMessage, type CampusA2uiComponent } from './campus-a2ui';
 
 const SOURCE = { '@path': '/sourceId' };
@@ -52,4 +55,41 @@ export function assistantActionRecordMessages(actionId: string, label: string) {
 export function assistantActionRecordSelected({ action }: CampusA2uiActionMessage, actionId: string) {
   return action.surfaceId === controlsId(actionId, 'record') && action.sourceComponentId === 'root' &&
     action.name === 'open_assistant_action' && action.context.actionId === actionId;
+}
+
+
+export function assistantCampusNameMessages(detailId:string) {
+  const binding={ '@path':'/name' };
+  return surface(`assistant-campus-name-${detailId}`, { id:'root',component:'Column',children:['name','accept'] }, [
+    { id:'name',component:'TextField',variant:'shortText',label:'Campus name',maxLength:180,value:binding },
+    { id:'accept',component:'Button',variant:'primary',child:'accept-label',
+      action:{event:{name:'answer_campus_detail',context:{detailId:{'@path':'/detailId'},name:binding}}} },
+    { id:'accept-label',component:'Text',text:'Use name' },
+  ],{detailId,name:''});
+}
+
+export function assistantCampusNameAnswer({action}:CampusA2uiActionMessage,detailId:string):string | undefined {
+  if(action.surfaceId!==`assistant-campus-name-${detailId}` || action.sourceComponentId!=='accept' ||
+     action.name!=='answer_campus_detail' || action.context.detailId!==detailId || typeof action.context.name!=='string')return;
+  const name=action.context.name.trim();
+  return validCopilotArgs('prepare_campus_create',{name}) ? name : undefined;
+}
+
+export function assistantPublicWebSourceMessages(source: AgentPublicWebSource, compact = false) {
+  const id = `assistant-public-web-${source.id}`;
+  const host = new URL(source.url).hostname;
+  const description = !compact && !!source.description;
+  const components: CampusA2uiComponent[] = [
+    { id: 'open', component: 'Button', variant: 'borderless', child: 'label',
+      action: { event: { name: 'open_public_web_source', context: { sourceId: SOURCE } } } },
+    { id: 'label', component: 'Text', text: { '@path': '/label' } },
+  ];
+  if (description) components.push({ id: 'description', component: 'Text', text: { '@path': '/description' } });
+  return surface(id, { id: 'root', component: 'Column', children: description ? ['open', 'description'] : ['open'] },
+    components, { sourceId: source.id, label: compact ? source.title : `${source.title} · ${host}`, description: source.description });
+}
+
+export function assistantPublicWebSourceSelected({ action }: CampusA2uiActionMessage, source: AgentPublicWebSource) {
+  if (action.surfaceId === `assistant-public-web-${source.id}` && action.sourceComponentId === 'open' &&
+      action.name === 'open_public_web_source' && action.context.sourceId === source.id) return assistantPublicWebUrl(source.url);
 }

@@ -9,6 +9,8 @@ export interface AgentChartData {
 
 export interface AgentSource { id: string; title: string; href: string; retrieved_at: string; capability: string; chart?:AgentChartData }
 
+export interface AgentPublicWebSource { id:string; title:string; url:string; description?:string }
+
 export interface AgentAction {
   capability?: string;
   contract?: {
@@ -25,10 +27,10 @@ export interface AgentAction {
   receipt: { message?: string; request_id?: string; completed_at?: string; href?: string } | null;
 }
 
-export interface AgentRun { id:string; question:string; answer:string; status:'running'|'completed'|'confirmation'|'failed'|'cancelled'; progress:string; provider:string; model:string; evidence:AgentSource[]; action:AgentAction|null; created_at:string }
+export interface AgentRun { id:string; question:string; answer:string; status:'running'|'completed'|'confirmation'|'failed'|'cancelled'; progress:string; provider:string; model:string; evidence:AgentSource[]; public_web_sources?:AgentPublicWebSource[]; action:AgentAction|null; created_at:string }
 
 export interface AgentThread { id:string; title:string; runs:AgentRun[] }
 
 export interface ThreadSummary { id:string; title:string; updated_at:string }
 
-export interface AgentStatus { provider:string; model:string; ready:boolean; local:boolean; tools:number; pro_features_enabled:boolean; confirmation_required:boolean; capability_contract?:{version:string;controls:Record<string,number>} }
+export interface AgentStatus { provider:string; model:string; ready:boolean; public_web_available?:boolean; local:boolean; tools:number; pro_features_enabled:boolean; confirmation_required:boolean; capability_contract?:{version:string;controls:Record<string,number>} }

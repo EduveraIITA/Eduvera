@@ -63,9 +63,9 @@ export function campusSceneEditorFocus(document:CampusSceneDocument,elementId:st
 }
 export function campusSceneActionAllowed(record:NativePendingAction,scope:NativePendingScope):boolean {
  try {
- const match=new RegExp(`^/api/v1/schools/${encodeURIComponent(scope.schoolId)}/campus-scenes/([^/]+)/(draft|publish|reopen|reviewed-places|imports|imports/lookup|images)/$`).exec(record.endpoint);
+ const match=new RegExp(`^/api/v1/schools/${encodeURIComponent(scope.schoolId)}/campus-scenes/([^/]+)/(draft|publish|reopen|reviewed-places|imports|imports/lookup|imports/floor-plan-download|images)/$`).exec(record.endpoint);
  if(!match||!uuid(match[1])||!record.source||record.source.sourceId!==match[1]||record.source.kind!=='campus_scene'||!integer(record.source.revision)||record.replayPolicy!=='same_request'||record.refreshPath!==`/api/v1/schools/${encodeURIComponent(scope.schoolId)}/campus-scenes/${match[1]}/workspace/`)return false;
- if(record.continuation!==undefined){const c=object(record.continuation),f=object(c?.newFloor),body=record.payload.kind==='json'?object(JSON.parse(record.payload.body)):null,t=object(body?.target);if(match[2]!=='imports'||!c||c.kind!=='floor_plan'||!uuid(c.buildingId)||(c.floorId!==null&&!uuid(c.floorId))||!nativeSceneDocument(c.baseDocument)||c.newFloor!==undefined&&(!f||!text(f.name,160)||typeof f.code!=='string'||f.code.length>40)||body?.kind!=='image'||body.purpose!=='floor_plan'||t?.building_id!==c.buildingId||(t?.floor_id??null)!==c.floorId)return false;}
+ if(record.continuation!==undefined&&match[2]!=='imports/floor-plan-download'){const c=object(record.continuation),f=object(c?.newFloor),body=record.payload.kind==='json'?object(JSON.parse(record.payload.body)):null,t=object(body?.target);if(match[2]!=='imports'||!c||c.kind!=='floor_plan'||!uuid(c.buildingId)||(c.floorId!==null&&!uuid(c.floorId))||!nativeSceneDocument(c.baseDocument)||c.newFloor!==undefined&&(!f||!text(f.name,160)||typeof f.code!=='string'||f.code.length>40)||body?.kind!=='image'||body.purpose!=='floor_plan'||t?.building_id!==c.buildingId||(t?.floor_id??null)!==c.floorId)return false;}
  const action=match[2];if(record.method!==(action==='draft'?'PUT':'POST'))return false;
  if(action==='images') {
    if(record.payload.kind!=='multipart'||!keys(record.payload.fields,['idempotency_key','rights_confirmed'])||record.payload.fields.idempotency_key!==record.clientId||record.payload.fields.rights_confirmed!=='true'||!['image/png','image/jpeg','image/webp'].includes(record.payload.file.type)||record.payload.file.size>4*1024*1024)return false;
@@ -74,6 +74,17 @@ export function campusSceneActionAllowed(record:NativePendingAction,scope:Native
  if(['draft','reviewed-places'].includes(action)){if(body.expected_revision!==record.source.revision||!nativeSceneDocument(body.document)||!keys(body,action==='draft'?['idempotency_key','expected_revision','document']:['idempotency_key','expected_revision','document','rows']))return false;if(action==='reviewed-places'&&(!Array.isArray(body.rows)||!body.rows.length||body.rows.length>2000))return false;}
  else if(['publish','reopen'].includes(action)){if(!keys(body,['idempotency_key','expected_revision'])||body.expected_revision!==record.source.revision)return false;}
  else if(action==='imports/lookup'){if(!keys(body,['idempotency_key','query'])||!text(body.query,120)||body.query.trim().length<4)return false;}
+ else if(action==='imports/floor-plan-download'){
+   const target=object(body.target),continuation=object(record.continuation);
+   if(scope.mode!=='live'||!keys(body,['idempotency_key','source_id','rights_confirmed','target','official_website'])||
+    !text(body.source_id,100)||!/^[-a-z0-9]+$/u.test(body.source_id)||body.rights_confirmed!==true||
+    body.official_website!==undefined&&!text(body.official_website,240)||!target||
+    !keys(target,['building_id','expected_building_revision','floor_id','expected_floor_revision'])||
+    !uuid(target.building_id)||!integer(target.expected_building_revision,1)||
+    (target.floor_id===undefined ? target.expected_floor_revision!==undefined : !uuid(target.floor_id)||!integer(target.expected_floor_revision,1))||
+    !continuation||!keys(continuation,['kind','buildingId','floorId','floorLabel'])||continuation.kind!=='public_floor_plan'||
+    continuation.buildingId!==target.building_id||continuation.floorId!==(target.floor_id??null)||!text(continuation.floorLabel,160))return false;
+ }
  else if(action==='imports'){
  if(body.kind==='geojson'){if(!keys(body,['idempotency_key','kind','text','label','attribution','rights_confirmed'])||!text(body.text,2*1024*1024)||!text(body.label,160)||!text(body.attribution,500)||body.rights_confirmed!==true)return false;JSON.parse(body.text);}
  else if(body.kind==='location'){const l=object(body.location);if(!keys(body,['idempotency_key','kind','location','radius_metres'])||!l||!text(l.id,100)||!text(l.name,200)||typeof l.latitude!=='number'||typeof l.longitude!=='number'||!Number.isFinite(l.latitude)||!Number.isFinite(l.longitude)||l.source!=='OpenStreetMap'||!integer(body.radius_metres,100)||body.radius_metres>1200)return false;}
@@ -86,12 +97,21 @@ export function campusSceneActionAllowed(record:NativePendingAction,scope:Native
  if(['draft','publish','reopen','reviewed-places'].includes(action)){if(r.id!==match[1]||r.revision!==record.source.revision+1||!nativeSceneDocument(r.document))return false;}
  else if(action==='imports'&&!nativeSceneDocument(r.document))return false;
  else if(action==='imports/lookup'&&(!Array.isArray(r.locations)||r.locations.length>100))return false;
+ else if(action==='imports/floor-plan-download'){
+   const image=object(r.image);
+   if(!image||!uuid(image.id)||!['image/png','image/jpeg','image/webp'].includes(String(image.mime_type))||
+    !integer(image.width,1)||!integer(image.height,1)||!integer(image.byte_size,1)||image.byte_size>4*1024*1024||
+    typeof image.sha256!=='string'||!(/^[a-f0-9]{64}$/u.test(image.sha256))||!text(r.label,160)||
+    !text(r.source_url,2048)||typeof r.replayed!=='boolean')return false;
+   const source=new URL(r.source_url);
+   if(source.protocol!=='https:'||source.username||source.password||source.port)return false;
+ }
  else if(action==='images'){const i=object(r.image);if(!i||i.id!==record.clientId||record.payload.kind!=='multipart'||!integer(i.width,1)||!integer(i.height,1)||i.byte_size!==record.payload.file.size||!text(i.mime_type,80)||i.sha256!==record.payload.file.hash)return false;}
  }
  return true;
  }catch{return false;}
 }
-export function definitiveCampusImportFailure(error:unknown,action:Pick<NativePendingAction,'domain'|'endpoint'>){const e=object(error),details=object(e?.details),inner=object(details?.error);return action.domain==='campus'&&/\/imports\/(?:lookup\/)?$/.test(action.endpoint)&&(details?.code==='campus_import_failed'&&details.retry_requires_new_key===true||inner?.code==='campus_import_failed');}
+export function definitiveCampusImportFailure(error:unknown,action:Pick<NativePendingAction,'domain'|'endpoint'>){const e=object(error),details=object(e?.details),inner=object(details?.error);return action.domain==='campus'&&/\/imports\/(?:lookup\/|floor-plan-download\/)?$/.test(action.endpoint)&&(details?.code==='campus_import_failed'&&details.retry_requires_new_key===true||inner?.code==='campus_import_failed');}
 
 /** Exact current whole-campus setup intents; these select presentation only. */
 export function campusSceneGuideIntent(href:string){

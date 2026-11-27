@@ -1,12 +1,12 @@
 import { useScreenExitGuard } from '../ui/BackNavigation';
 import React, { useEffect, useMemo, useRef, useState } from 'react';
-import { Platform, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { Linking, Platform, ScrollView, StyleSheet, Text, View } from 'react-native';
 import Svg, { Circle, Polyline } from 'react-native-svg';
 import * as Crypto from 'expo-crypto';
 import * as Clipboard from 'expo-clipboard';
 import * as SecureStore from '../lib/device-storage';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
-import type { AgentAction, AgentChartData, AgentRun, AgentSource, AgentThread } from '../../../packages/contracts/src/wire/features/assistant/agentApi';
+import type { AgentAction, AgentChartData, AgentRun, AgentSource, AgentThread, AgentPublicWebSource } from '../../../packages/contracts/src/wire/features/assistant/agentApi';
 import type { AssistantPortal } from '../../../packages/contracts/src/wire/features/assistant/context';
 import { useSession } from '../auth/SessionProvider';
 import { assistantPerspective } from '../lib/assistant-access';
@@ -14,11 +14,12 @@ import { ApiError, apiFetch, getApiOrigin } from '../lib/api';
 import { isInternalHref } from '../lib/api-policy';
 import { Button, Empty, Loading, Notice, PageBody, Row } from '../ui/components';
 import { useTheme } from '../ui/theme';
+import { Glass } from '../ui/Glass';
 import { AssistantMark } from '../ui/AssistantMark';
 import { useAssistantOperationContext, useAssistantPresentation } from '../ui/AssistantPresentation';
 import { assistantDefinitiveRefusal, bindAssistantConversation, clearAssistantCommand, dispatchAssistantCommand, restoreAssistantCommand, type AssistantCommand } from '../lib/assistant-command';
 import { assistantChartKind, assistantChartValue, assistantLineSegments, parseAssistantStatus, parseAssistantThread, parseAssistantThreads } from '../lib/assistant-policy';
-import { assistantActionRecordMessages, assistantActionRecordSelected, assistantDecisionMessages, assistantDecisionSelected, assistantReportMessages, assistantReplyMessages, assistantReportSourceSelected } from '../lib/assistant-a2ui';
+import { assistantCampusNameAnswer, assistantCampusNameMessages, assistantActionRecordMessages, assistantActionRecordSelected, assistantDecisionMessages, assistantDecisionSelected, assistantReportMessages, assistantReplyMessages, assistantReportSourceSelected, assistantPublicWebSourceMessages, assistantPublicWebSourceSelected } from '../lib/assistant-a2ui';
 import { ASSISTANT_A2UI_CATALOG } from '../lib/campus-a2ui';
 import { ControlButton, Disclosure, Facts, InfoDisclosure } from '../ui/DomainControls';
 import { Alert } from '../ui/Alert';
@@ -26,10 +27,11 @@ import { AssistantAnswer, CompactAnswer, ConversationBubble, ConversationCanvas,
 import { assertAssistantWriteReady, assistantChartDisplayPoints, assistantCompactPresentation, assistantLinkedThreadRequest, assistantPreferenceState, assistantRunAnswer, assistantSourceLabel, prepareAssistantConversationChange } from './assistant/conversation-presentation';
 import { assistantCopySnapshot, copyAssistantResponse } from './assistant/assistant-copy';
 import { CampusA2uiSurface } from './campus/CampusA2uiSurface';
-import { useCopilot } from '../ui/CopilotProvider';
+import { CopilotStatusBar, useCopilot } from '../ui/CopilotProvider';
+import type { WorkspaceTask } from '../ui/assistant-workspace-task';
 import { copilotCallId } from '../lib/copilot';
 
-type Props = { href: string; onNavigate: (href: string) => void };
+type Props = { href: string; onNavigate: (href: string) => void; onCompactHeightChange?: (height: number) => void; workspaceTask?: WorkspaceTask | null };
 type Pending = AssistantCommand;
 const label = (value: string) => value.replaceAll('_', ' ').replace(/^./, letter => letter.toUpperCase());
 type JournalEntry = { pending: Pending | null; busy: boolean; loading?: Promise<void>; listeners: Set<() => void> };
@@ -47,14 +49,14 @@ export function AssistantScreen(props: Props) {
 }
 /** The campus host owns the real background, chrome, scope and safe area. This
  * feature frame supplies no route title, history boundary or duplicate banner. */
-function AssistantFrame({ children, footer, canvas = false, maxWidth = 720, footerPadding = 16, footerSeparator = false }: React.PropsWithChildren<{ footer?: React.ReactNode; canvas?: boolean; maxWidth?: number; footerPadding?: number; footerSeparator?: boolean }>) {
-  const { expanded, expand, close, canClose, frame } = useAssistantPresentation(), { colors } = useTheme();
+function AssistantFrame({ children, footer, canvas = false, maxWidth = 720, footerPadding = 16, footerSeparator = false, onCompactHeightChange }: React.PropsWithChildren<{ onCompactHeightChange?: (height: number) => void; footer?: React.ReactNode; canvas?: boolean; maxWidth?: number; footerPadding?: number; footerSeparator?: boolean }>) {
+  const { expanded, expand, close, canClose, frame } = useAssistantPresentation();
   // The host frame can be a tablet side pane. A window-sized limit must not
   // escape that pane or introduce a second layout/owner for its editor.
   const availableWidth = frame.width > 0 ? Math.max(0, frame.width - footerPadding * 2) : maxWidth;
   const contentMaxWidth = Math.min(expanded ? maxWidth : 440, availableWidth);
   const preview = !canvas && !expanded ? <ConversationBubble onExpand={expand} onClose={canClose ? close : undefined} availableHeight={frame.height}>{children}</ConversationBubble> : null;
-  return <View pointerEvents="box-none" style={{ flex: 1, minHeight: 0, backgroundColor: expanded ? colors.canvas : 'transparent' }}><PageBody passThrough={!expanded} footer={canvas ? footer : preview} footerPadding={footerPadding} footerSeparator={footerSeparator} maxWidth={contentMaxWidth} footerBackgroundColor={expanded ? colors.canvas : 'transparent'}>
+  return <View pointerEvents="box-none" style={{ flex: 1, minHeight: 0 }}><PageBody passThrough={!expanded} footer={canvas ? footer : preview} footerPadding={footerPadding} footerSeparator={footerSeparator} maxWidth={contentMaxWidth} footerBackgroundColor="transparent" onFooterHeightChange={expanded ? undefined : onCompactHeightChange}>
     {canvas ? <View pointerEvents={expanded ? 'auto' : 'box-none'} style={{ flex: 1, minHeight: 0 }}>{children}</View> : expanded ? <ScrollView keyboardShouldPersistTaps="handled" contentContainerStyle={{ padding: 20, gap: 16, flexGrow: 1 }}>{children}</ScrollView> : <View pointerEvents="none" style={{ flex: 1 }} />}
   </PageBody></View>;
 }
@@ -75,7 +77,7 @@ function AssistantAccess(props: Props & { portal: AssistantPortal }) {
   return <AssistantFrame><PresentationExit /><AssistantMark /><Empty title="AI assistance is turned off" message="Enable Pro features in your account settings to continue. Remembered preferences can still be inspected or forgotten there." /><Button title="Account settings" kind="secondary" onPress={() => props.onNavigate('/more/account')} /></AssistantFrame>;
 }
 
-function Conversation({ href, onNavigate, portal, accessPaused, preferenceError, preferenceRefreshing, onPreferenceRetry }: Props & { portal: AssistantPortal; accessPaused: boolean; preferenceError?: string; preferenceRefreshing: boolean; onPreferenceRetry: () => void }) {
+function Conversation({ href, onNavigate, onCompactHeightChange, workspaceTask, portal, accessPaused, preferenceError, preferenceRefreshing, onPreferenceRetry }: Props & { portal: AssistantPortal; accessPaused: boolean; preferenceError?: string; preferenceRefreshing: boolean; onPreferenceRetry: () => void }) {
   const { scopeKey, status: sessionStatus } = useSession(), client = useQueryClient(), { colors } = useTheme(), presentation = useAssistantPresentation();
   const copilot=useCopilot();
   const accessPausedRef = useRef(accessPaused); accessPausedRef.current = accessPaused;
@@ -142,13 +144,15 @@ function Conversation({ href, onNavigate, portal, accessPaused, preferenceError,
   const focusedPreview = assistantCompactPresentation(runs, { attention: false, loading: false });
   const warningRef = useRef<React.ComponentRef<typeof View>>(null), reviewRef = useRef<React.ComponentRef<typeof View>>(null), reviewId = focusedPreview.mode === 'review' ? focusedPreview.action?.id ?? '' : '';
   const awaiting = runs.some(run => run.action?.status === 'pending' || run.action?.status === 'executing');
-  const locked = !presentation.active || accessPaused || busy || !!pending || !journal || !!activeRun || awaiting || status.data?.ready !== true || status.data?.pro_features_enabled !== true || threads.isPending || threads.isError || !!threadId && (detail.isPending || detail.isError) || missingLinked && selected === null;
+  const webAvailable = status.data?.public_web_available === true;
+  const canSendRequest = status.data?.ready === true || webAvailable;
+  const locked = !presentation.active || accessPaused || busy || !!pending || !journal || !!activeRun || awaiting || !canSendRequest || status.data?.pro_features_enabled !== true || threads.isPending || threads.isError || !!threadId && (detail.isPending || detail.isError) || missingLinked && selected === null;
   const conversationChange = useRef({ source: '', question: '', newBlocked: true, historyBlocked: true, knownIds: [] as string[] }), conversationPrompt = useRef(false);
   conversationChange.current = { source: JSON.stringify([scopeKey, href, portal, studentId, threadId]), question, newBlocked: locked, historyBlocked: busy || !!pending || !!activeRun || awaiting, knownIds: knownThreads.map(thread => thread.id) };
   useScreenExitGuard({ blocked: busy, dirty: !!question.trim() && !pending, draftSignature: JSON.stringify([href, portal, studentId, threadId, question, pending?.kind === 'send' ? pending.clientId : pending?.kind === 'decision' ? pending.actionId : null]), title: 'Leave this assistant question?', message: 'The unsent question will be lost. Saved conversations stay available.', onLeave: () => setQuestion('') });
   const refresh = async () => { await Promise.all([status.refetch({ throwOnError: true }), threads.refetch({ throwOnError: true }), ...(threadId ? [detail.refetch({ throwOnError: true })] : [])]); };
   async function perform(command: Pending) {
-    if (!presentation.active || !journal || running.current || accessPaused && command.phase !== 'accepted' || !status.data?.pro_features_enabled || command.kind === 'send' && command.phase !== 'accepted' && !status.data.ready) return;
+    if (!presentation.active || !journal || running.current || accessPaused && command.phase !== 'accepted' || !status.data?.pro_features_enabled || command.kind === 'send' && command.phase !== 'accepted' && !canSendRequest) return;
     const entry = journalFor(journal); if (entry.busy) return;
     if (entry.pending && JSON.stringify(entry.pending) !== JSON.stringify(command)) { setError('Recover the exact earlier assistant request before another action.'); return; }
     entry.busy = true; notify(entry); running.current = true; setError('');
@@ -229,7 +233,7 @@ function Conversation({ href, onNavigate, portal, accessPaused, preferenceError,
     if (!observed || observed.threadId!==threadId) return;
     if (accessPaused || !presentation.active && copilot.activity?.phase!=='applying') { copilot.takeOver(); return; }
     if (runs.some(run=>run.id===observed.id&&run.status!=='running'))
-      copilot.inspect(observed.id,()=>{ if(presentation.mode!=='split')presentation.close(); });
+      copilot.inspect(observed.id,()=>{ if(presentation.mode==='fullscreen')presentation.collapse(); });
   },[copilot.pending,copilot.activity?.phase,presentation.active,accessPaused,threadId,runs]);
   async function cancelRun() {
     if (!presentation.active || !activeRun || !threadId || busy || pending || accessPaused) return;
@@ -254,28 +258,35 @@ function Conversation({ href, onNavigate, portal, accessPaused, preferenceError,
   if (status.isPending) return <AssistantFrame><PresentationExit /><Loading /></AssistantFrame>;
   if (status.isError || !status.data) return <AssistantFrame><PresentationExit /><AssistantMark /><Empty title={status.error instanceof ApiError && status.error.status === 403 ? 'AI access could not be confirmed' : 'AI assistance is unavailable'} message={status.error instanceof ApiError && status.error.status === 403 ? `${status.error.message} Staff need “Use AI assistance” and each underlying campus permission.` : status.error?.message} onRetry={() => void status.refetch()} /><ControlButton title="Account settings" onPress={() => onNavigate('/more/account')} /></AssistantFrame>;
   if (!status.data.pro_features_enabled) return <AssistantFrame><PresentationExit /><AssistantMark /><Empty title="AI assistance is turned off" /><ControlButton title="Account settings" onPress={() => onNavigate('/more/account')} /></AssistantFrame>;
-  const attention = accessPaused ? 'access-check' : pending ? `recovery:${pending.kind}:${pending.phase ?? 'unconfirmed'}` : error ? `error:${error}` : linkedRequest ? 'linked-conversation' : !status.data.ready ? 'provider-unavailable' : missingLinked && selected === null ? 'missing-conversation' : threads.isError ? 'history-error' : detail.isError ? 'conversation-error' : '';
+  const attention = accessPaused ? 'access-check' : pending ? `recovery:${pending.kind}:${pending.phase ?? 'unconfirmed'}` : error ? `error:${error}` : linkedRequest ? 'linked-conversation' : !canSendRequest ? 'provider-unavailable' : missingLinked && selected === null ? 'missing-conversation' : threads.isError ? 'history-error' : detail.isError ? 'conversation-error' : '';
   const copyControl = <ResponseCopyControl onCopy={() => void copyResponse()} disabled={!copySnapshot} state={copyOwner.current === copyIdentity ? copyState : 'idle'} />;
-  const composer = <View style={{ gap: 8, minHeight: 0, flexShrink: 1, width: '100%', maxWidth: presentation.expanded ? 720 : 440, alignSelf: 'center' }}><CompactConversation visible={!presentation.expanded} runs={runs} onExpand={presentation.expand} onClose={presentation.canClose ? presentation.close : undefined} onNavigate={onNavigate} copyControl={copyControl}
+  const campusDetail=copilot.detail?.threadId===threadId?copilot.detail:null;
+  const composer = <View style={{ gap: 8, minHeight: 0, flexShrink: 1, width: '100%', maxWidth: presentation.expanded ? 720 : 440, alignSelf: 'center' }}><CopilotStatusBar /><CompactConversation visible={!presentation.expanded} runs={runs} onExpand={presentation.expand} onClose={presentation.canClose ? presentation.close : undefined} onNavigate={onNavigate} copyControl={copyControl}
     attention={attention} pending={pending} error={error} preferenceError={preferenceError} detailError={detail.error?.message} historyError={threads.error?.message} loading={!!threadId && detail.isPending || threads.isPending} availableHeight={presentation.frame.height} />
-    <ConversationComposer value={question} onChange={setQuestion} locked={locked} busy={busy} running={!!activeRun} stopDisabled={busy || !!pending || accessPaused} expanded={presentation.expanded}
-    status={accessPaused ? 'Access check paused. Your question is retained.' : pending ? 'Recover the earlier request before another question.' : activeRun ? `${activeRun.progress || 'Checking your request'}…` : awaiting ? 'Review the pending change before another question.' : !status.data.ready ? 'AI provider unavailable. Saved conversations remain available.' : undefined}
-    onStop={() => void cancelRun()} onSend={() => void perform({ kind: 'send', threadId, question: question.trim(), clientId: Crypto.randomUUID(), uiContext:copilot.context() })} /></View>;
-  return <AssistantFrame canvas maxWidth={720} footer={composer} footerPadding={16} footerSeparator={false}>
+    {campusDetail?<CampusNameDetail key={campusDetail.id} id={campusDetail.id} locked={locked}
+      onAnswer={copilot.answerDetail} onUseForm={copilot.takeOver}/>:<ConversationComposer value={question} onChange={setQuestion} locked={locked} busy={busy} running={!!activeRun} stopDisabled={busy || !!pending || accessPaused}
+    status={accessPaused ? 'Access check paused. Your question is retained.' : pending ? 'Recover the earlier request before another question.' : activeRun ? `${activeRun.progress || 'Checking your request'}…` : awaiting ? 'Review the pending change before another question.' : !status.data.ready ? webAvailable ? 'Public web is available. Try “Search the web for…”' : 'AI provider unavailable. Saved conversations remain available.' : undefined}
+    onStop={() => void cancelRun()} onSend={() => void perform({ kind: 'send', threadId, question: question.trim(), clientId: Crypto.randomUUID(), uiContext:copilot.context() })} />}</View>;
+  return <AssistantFrame canvas maxWidth={720} footer={composer} footerPadding={16} footerSeparator={false} onCompactHeightChange={onCompactHeightChange}>
     <View style={{ flex: presentation.expanded ? 1 : 0, minHeight: 0, display: presentation.expanded ? 'flex' : 'none' }} accessibilityElementsHidden={!presentation.expanded} importantForAccessibility={presentation.expanded ? 'auto' : 'no-hide-descendants'}>
     <ConversationToolbar onHistory={() => setHistory(true)} onNew={createConversation} historyDisabled={busy} newDisabled={locked} onCollapse={presentation.collapse} copyControl={copyControl} availableWidth={presentation.frame.width} />
+    {workspaceTask ? <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12, paddingHorizontal: 16, paddingVertical: 8, borderBottomWidth: StyleSheet.hairlineWidth, borderColor: colors.border }}>
+      <Text accessibilityRole="header" aria-level={2} style={{ flex: 1, color: colors.ink, fontSize: 16, fontWeight: '600' }}>{workspaceTask.title}</Text>
+      <ControlButton title="Back to map" onPress={workspaceTask.onReturn} />
+    </View> : null}
     <ConversationCanvas visible={presentation.active && presentation.expanded} historyOpen={history} historyDismissal={historyDismissal} state={{ threadId, latestId: runs.at(-1)?.id ?? '', status: runs.at(-1)?.status ?? '', reviewId: attention || reviewId }} reviewRef={attention ? warningRef : reviewRef} refreshing={detail.isRefetching || threads.isRefetching} onRefresh={() => { void refresh().catch(cause => setError(cause instanceof Error ? cause.message : 'The current conversation could not refresh.')); }}>
       {attention ? <View ref={warningRef} collapsable={false} style={{ gap: 8 }}>
       {accessPaused ? <View style={{ gap: 4 }}><Notice tone="warning" message={`Account preference could not be rechecked. Your conversation and unsent question are retained; new requests and decisions are paused.${preferenceError ? ` ${preferenceError}` : ''}`} /><ControlButton title="Retry access check" busy={preferenceRefreshing} onPress={onPreferenceRetry} /></View> : null}
-      {!status.data.ready ? <Notice tone="warning" message="The configured AI provider or allowance is unavailable. Saved authorized conversations and existing action review remain available; new questions wait for the provider. Use campus tools directly meanwhile." /> : null}
+      {!canSendRequest ? <Notice tone="warning" message="The configured AI provider or allowance is unavailable. Saved authorized conversations and existing action review remain available; new questions wait for the provider. Use campus tools directly meanwhile." /> : null}
       {missingLinked && selected === null && !pending ? <Notice tone="warning" message="The requested conversation is not in your current owned history. Choose an available conversation explicitly; another one has not been substituted." /> : null}
       {threads.isError ? <Empty title="Conversations could not load" message={threads.error.message} onRetry={() => void threads.refetch()} /> : null}
       {detail.isError ? <Empty title="Conversation could not load" message={detail.error.message} onRetry={() => void detail.refetch()} /> : null}
       {linkedRequest ? <View style={{ gap: 4 }}><Notice tone="warning" message={knownThreads.some(thread => thread.id === linkedRequest.id) ? 'A link requested another conversation. Your current conversation is retained until that selection is accepted.' : 'The linked conversation is not in the current owned history. Another conversation has not been substituted for it.'} /><ControlButton title="Open requested conversation" disabled={busy || !!pending || !!activeRun || awaiting || !knownThreads.some(thread => thread.id === linkedRequest.id)} onPress={() => void changeConversation(linkedRequest.id)} /><ControlButton title="Refresh conversations" busy={threads.isRefetching} onPress={() => void threads.refetch()} /></View> : null}
       {error ? <Notice tone="danger" message={error} /> : null}
-      {pending ? <View style={{ gap: 8 }}><Notice tone="warning" message={pending.phase === 'accepted' ? 'This request was accepted. Finish secure local cleanup, then refresh its saved conversation. It will not be submitted again.' : pending.phase === 'creating' ? 'New conversation creation is unconfirmed. The question has not been sent. Refresh Conversations and explicitly choose where it belongs, or discard this unsent question.' : pending.kind === 'send' ? 'This request has an unconfirmed result. Retry only the same question and message key.' : 'This decision has an unconfirmed result. Retry the original decision to recover its recorded state.'} />{pending.phase === 'creating' ? <><ControlButton title="Refresh conversations" busy={busy || threads.isRefetching} onPress={() => { setHistory(true); void threads.refetch(); }} /><ControlButton title="Discard unsent question" kind="danger" disabled={busy} onPress={() => Alert.alert('Discard this unsent question?', 'No message was sent. An empty conversation may have been created. This removes only the local question preparation.', [{ text: 'Keep question', style: 'cancel' }, { text: 'Discard', style: 'destructive', onPress: () => void resolveUnsent() }])} /></> : <ControlButton title={pending.phase === 'accepted' ? 'Finish local recovery' : 'Retry original request'} busy={busy} disabled={pending.phase !== 'accepted' && (accessPaused || pending.kind === 'send' && !status.data.ready)} onPress={() => void perform(pending)} />}</View> : null}
+      {pending ? <View style={{ gap: 8 }}><Notice tone="warning" message={pending.phase === 'accepted' ? 'This request was accepted. Finish secure local cleanup, then refresh its saved conversation. It will not be submitted again.' : pending.phase === 'creating' ? 'New conversation creation is unconfirmed. The question has not been sent. Refresh Conversations and explicitly choose where it belongs, or discard this unsent question.' : pending.kind === 'send' ? 'This request has an unconfirmed result. Retry only the same question and message key.' : 'This decision has an unconfirmed result. Retry the original decision to recover its recorded state.'} />{pending.phase === 'creating' ? <><ControlButton title="Refresh conversations" busy={busy || threads.isRefetching} onPress={() => { setHistory(true); void threads.refetch(); }} /><ControlButton title="Discard unsent question" kind="danger" disabled={busy} onPress={() => Alert.alert('Discard this unsent question?', 'No message was sent. An empty conversation may have been created. This removes only the local question preparation.', [{ text: 'Keep question', style: 'cancel' }, { text: 'Discard', style: 'destructive', onPress: () => void resolveUnsent() }])} /></> : <ControlButton title={pending.phase === 'accepted' ? 'Finish local recovery' : 'Retry original request'} busy={busy} disabled={pending.phase !== 'accepted' && (accessPaused || pending.kind === 'send' && !canSendRequest)} onPress={() => void perform(pending)} />}</View> : null}
       </View> : null}
-      {detail.isError ? null : threadId && detail.isPending ? <Loading label="Loading conversation…" /> : runs.length ? runs.map((run, index) => <Run key={run.id} run={run} latest={index === runs.length - 1} reviewRef={run.action?.id === reviewId ? reviewRef : undefined} locked={busy || !!pending || accessPaused} onNavigate={onNavigate} onDecision={(actionId, decision) => void perform({ kind: 'decision', threadId, actionId, decision })} />) : <ConversationEmpty />}
+      {detail.isError ? null : threadId && detail.isPending ? <Loading label="Loading conversation…" /> : runs.length ? runs.map((run, index) => <Run key={run.id} run={run} latest={index === runs.length - 1} reviewRef={run.action?.id === reviewId ? reviewRef : undefined} locked={busy || !!pending || accessPaused} onNavigate={onNavigate} onDecision={(actionId, decision) => void perform({ kind: 'decision', threadId, actionId, decision })} />) : workspaceTask ? null : <ConversationEmpty />}
+      {workspaceTask ? <View style={{ gap: 12 }}>{workspaceTask.content}</View> : null}
     </ConversationCanvas></View>
     <View pointerEvents="none" style={{ flex: presentation.expanded ? 0 : 1 }} />
     <ConversationHistory visible={presentation.active && history} onClose={() => setHistory(false)} onDismiss={() => setHistoryDismissal(value => value + 1)} threads={knownThreads} currentId={threadId} loading={threads.isPending} canSelect={!busy && (pending?.kind === 'send' && pending.phase === 'creating' || !pending && !activeRun && !awaiting)} onSelect={selectConversation}>
@@ -308,7 +319,8 @@ function CompactConversation({ visible, runs, onExpand, onClose, onNavigate, att
     {!visible ? null : problem ? <View style={{ gap: 8 }}><Text accessibilityRole="header" aria-level={2} style={[styles.chartTitle, { color: colors.ink }]}>{problem.title}</Text><Notice tone="warning" message={problem.message} /><ControlButton title="Open full conversation" onPress={onExpand} /></View>
       : loading ? <Loading label="Loading conversation…" />
         : showAction && action ? <View style={{ gap: 8 }}><Text accessibilityRole="header" aria-level={2} style={[styles.chartTitle, { color: colors.ink }]}>{action.status === 'pending' ? 'Review needed' : action.status === 'executing' ? 'Verifying result' : 'Check the affected record'}</Text><Text style={[styles.body, { color: colors.ink }]}>{action.title}</Text>{action.preview ? <Text style={[styles.caption, { color: colors.muted }]}>{[action.preview.student, action.preview.class_name, action.preview.date].filter(Boolean).join(' · ')}</Text> : null}{action.contract?.summary ? <Text style={[styles.caption, { color: colors.muted }]}>{action.contract.summary}</Text> : null}<Notice tone="warning" message={action.status === 'pending' ? Date.parse(action.expires_at) <= Date.now() ? 'This preview has expired. Ask for a fresh preview before changing the record.' : `Nothing has changed. Review the complete proposal before confirmation. Expires ${new Date(action.expires_at).toLocaleTimeString()}.` : action.receipt?.message || (action.status === 'executing' ? 'The server is verifying the result. No additional change has been confirmed here.' : 'The result needs verification. Check the affected record before another attempt.')} /><ControlButton title={action.status === 'pending' ? 'Expand to review' : 'Open full conversation'} onPress={onExpand} /></View>
-          : latest ? <><AssistantReply run={latest} chart={chart} onExpand={onExpand} />{latest.status === 'failed' ? <Notice tone="warning" message="The request stopped. No action was automatically retried." /> : null}{chartSource && chart ? <AssistantReport source={chartSource} showChart compact onNavigate={onNavigate} /> : null}</>
+          : latest ? <><AssistantReply run={latest} chart={chart} onExpand={onExpand} />{latest.status === 'failed' ? <Notice tone="warning" message="The request stopped. No action was automatically retried." /> : null}{chartSource && chart ? <AssistantReport source={chartSource} showChart compact onNavigate={onNavigate} /> : null}
+            <PublicWebSources sources={latest.public_web_sources?.slice(0, 1)} compact /></>
             : <CompactAnswer text="What would you like to know? Ask about your campus or prepare a change for review." onExpand={onExpand} />}
   </ConversationBubble>;
 }
@@ -317,11 +329,43 @@ function Run({ run, latest, reviewRef, locked, onNavigate, onDecision }: { run: 
   const chartSources = run.evidence.filter(source => source.chart), otherSources = run.evidence.filter(source => !source.chart);
   return <ConversationTurn question={run.question} latest={latest}>
     <AssistantReply run={run} chart={run.status !== 'running' && chartSources.length === 1 ? chartSources[0]!.chart : undefined} />
+    <PublicWebSources sources={run.public_web_sources} />
     {chartSources.map(source => <AssistantReport key={source.id} source={source} showChart showSource onNavigate={onNavigate} />)}
     {run.status === 'failed' ? <Notice tone="warning" message="The request stopped. No action was automatically retried." /> : null}
     {run.action ? <View ref={reviewRef} collapsable={false}><ActionReview action={run.action} locked={locked} onNavigate={onNavigate} onDecision={onDecision} /></View> : null}
     {otherSources.length ? <InfoDisclosure title={otherSources.length === 1 ? 'Source checked' : `${otherSources.length} sources checked`}>{otherSources.map(source => <AssistantReport key={source.id} source={source} showSource onNavigate={onNavigate} />)}</InfoDisclosure> : null}
   </ConversationTurn>;
+}
+
+function PublicWebSources({ sources, compact = false }: { sources?: readonly AgentPublicWebSource[]; compact?: boolean }) {
+  const [error, setError] = useState(false);
+  if (!sources?.length) return null;
+  return <View style={{ gap: 4 }}>
+    {sources.map(source => <CampusA2uiSurface key={source.id} catalog={ASSISTANT_A2UI_CATALOG}
+      messages={assistantPublicWebSourceMessages(source, compact)} onAction={event => {
+        const url = assistantPublicWebSourceSelected(event, source);
+        if (url) { setError(false); void Linking.openURL(url).catch(() => setError(true)); }
+      }} />)}
+    {error ? <Notice tone="warning" message="The public page could not be opened." /> : null}
+  </View>;
+}
+
+function CampusNameDetail({id,locked,onAnswer,onUseForm}:{id:string;locked:boolean;onAnswer:(id:string,name:string)=>Promise<boolean>;onUseForm:()=>void}) {
+  const messages=useMemo(()=>assistantCampusNameMessages(id),[id]);
+  const [busy,setBusy]=useState(false),[error,setError]=useState('');
+  return <View style={[styles.detailForm,{ borderColor:useTheme().colors.border }]}>
+    <Glass material="assistant" pointerEvents="none" accessibilityElementsHidden importantForAccessibility="no-hide-descendants"
+      style={[StyleSheet.absoluteFill,{borderRadius:20}]}/>
+    <CampusA2uiSurface catalog={ASSISTANT_A2UI_CATALOG} messages={messages} disabled={locked||busy}
+      onValueChange={()=>{if(error)setError('');}} onAction={event=>{
+        const name=assistantCampusNameAnswer(event,id);
+        if(!name){setError('Enter a campus name.');return;}
+        setBusy(true);setError('');
+        void onAnswer(id,name).then(applied=>{if(!applied)setError('Enter the name in the campus form to continue.');}).finally(()=>setBusy(false));
+      }}/>
+    {error?<Notice tone="warning" message={error}/>:null}
+    <ControlButton title="Use the campus form" disabled={busy} onPress={onUseForm}/>
+  </View>;
 }
 
 function AssistantReply({ run, chart, onExpand }: { run: AgentRun; chart?: AgentChartData; onExpand?: () => void }) {
@@ -405,6 +449,7 @@ function formatActionValue(value: unknown, labels: Record<string, string>): stri
 }
 
 const styles = StyleSheet.create({
+  detailForm: { borderWidth: StyleSheet.hairlineWidth, borderRadius: 20, padding: 12, gap: 6, overflow: 'hidden' },
   chartTitle: { fontSize: 16, lineHeight: 23, fontWeight: '600' }, caption: { fontSize: 14, lineHeight: 21 }, body: { fontSize: 16, lineHeight: 25 },
   review: { borderWidth: StyleSheet.hairlineWidth, borderRadius: 20, padding: 16, gap: 12 }, change: { flexDirection: 'row', flexWrap: 'wrap', alignItems: 'center', gap: 12, padding: 12, borderRadius: 16 }, reviewRecord: { flexDirection: 'row', alignItems: 'center', gap: 12, paddingVertical: 8, borderBottomWidth: StyleSheet.hairlineWidth },
 });

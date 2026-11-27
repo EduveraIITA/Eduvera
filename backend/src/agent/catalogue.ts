@@ -270,6 +270,8 @@ write('read_notification', 'Mark notification read', 'notifications', all, empty
 
 read('virtual_campus_layout', 'Find the Virtual Campus map and check whether you can edit it', 'virtual_campus', all, empty,
   (_,scope) => schoolPath(scope,'campus-scenes/'), () => '/more/virtual-campus');
+read('campus_workspace_capacity', 'Check private campus workspace capacity for the current account', 'virtual_campus', all, empty,
+  '/onboarding/workspaces/', () => '/more/account/campuses');
 read('events', 'School events, activities and class tests', 'events', all, z.object({ status: z.enum(['draft','published','cancelled','completed']).optional() }).strict(), '/campus-events', (_,s) => eventScreenPath(s), (i,s) => ({ ...i, school_id: s.schoolId, ...familyQuery(s) }), 'events.view');
 read('event_catalogue', 'Options for planning a school event', 'events', staff, empty, '/campus-events/catalog', (_,s) => eventScreenPath(s), (_,s) => ({ school_id: s.schoolId }), 'events.view');
 read('event_details', 'Event details, sessions, participation and revision', 'events', all, idInput, i => `/campus-events/${i.id}`, (i,s) => eventScreenPath(s, i.id), (_,s) => ({ school_id: s.schoolId, ...familyQuery(s) }), 'events.view');

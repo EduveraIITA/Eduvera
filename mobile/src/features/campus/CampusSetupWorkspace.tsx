@@ -45,7 +45,7 @@ export function CampusSetupWorkspace({ campusName, phase, map, feedback, guidanc
   const closeAssistant = () => {
     clearAssistantWorkspaceTask(taskOwner.current);
     setTaskRequested(false);
-    if (assistant.active && assistant.href === CAMPUS_ASSISTANT_TASK_HREF) assistant.close();
+    if (assistant.active && assistant.href === CAMPUS_ASSISTANT_TASK_HREF) assistant.collapse();
   };
   const launchAssistant = () => {
     if (!focused || !canUseAssistant) return;
@@ -83,9 +83,9 @@ export function CampusSetupWorkspace({ campusName, phase, map, feedback, guidanc
     if (!locked) onClose();
   };
   const backLabel = hasGuidance ? 'Back to campus layout' : 'Close campus setup';
-  return <MotionModal visible={focused && !taskVisible} animationType="fade" presentationStyle="fullScreen" onRequestClose={close}>
-    <SafeAreaProvider>
-      <SafeAreaView style={[styles.shell, { backgroundColor: colors.canvas }]} edges={['top', 'left', 'right', 'bottom']}>
+  const inline = assistant.active && focused;
+  const content = <SafeAreaProvider>
+      <SafeAreaView style={[styles.shell, { backgroundColor: colors.canvas }]} edges={inline ? [] : ['top', 'left', 'right', 'bottom']}>
         <KeyboardAvoidingView style={styles.shell} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
           <View accessibilityViewIsModal style={styles.shell}>
             <ExecutionBanner />
@@ -127,8 +127,11 @@ export function CampusSetupWorkspace({ campusName, phase, map, feedback, guidanc
           </View>
         </KeyboardAvoidingView>
       </SafeAreaView>
-    </SafeAreaProvider>
-  </MotionModal>;
+    </SafeAreaProvider>;
+  // A native modal sits above the workspace window. Keep the real map in the
+  // current workspace while Assistant is open so both surfaces stay usable.
+  if (inline) return <View style={styles.shell}>{content}</View>;
+  return <MotionModal visible={focused && !taskVisible} animationType="fade" presentationStyle="fullScreen" onRequestClose={close}>{content}</MotionModal>;
 }
 
 const styles = StyleSheet.create({

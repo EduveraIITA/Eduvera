@@ -43,7 +43,7 @@ export function NativePageSafeArea({ children,headerShown,backgroundColor }: Rea
   }
   return <SafeAreaView edges={{ top: true,bottom: Platform.OS !== 'ios',left: true,right: true }} style={{ flex: 1,backgroundColor }}>{children}</SafeAreaView>;
 }
-export function PageBody({ children, footer, footerPadding, footerSeparator, maxWidth, footerBackgroundColor, passThrough = false, footerKeyboardBehavior = 'keep' }: React.PropsWithChildren<{ passThrough?: boolean; footer?: React.ReactNode; footerPadding: number; footerSeparator: boolean; maxWidth: number; footerBackgroundColor?: string; footerKeyboardBehavior?: 'keep' | 'hide' }>) {
+export function PageBody({ children, footer, footerPadding, footerSeparator, maxWidth, footerBackgroundColor, onFooterHeightChange, passThrough = false, footerKeyboardBehavior = 'keep' }: React.PropsWithChildren<{ passThrough?: boolean; footer?: React.ReactNode; footerPadding: number; footerSeparator: boolean; maxWidth: number; footerBackgroundColor?: string; onFooterHeightChange?: (height: number) => void; footerKeyboardBehavior?: 'keep' | 'hide' }>) {
   const { colors } = useTheme(), { bottom } = useNativeScreenInsets();
   const frame = useRef<React.ComponentRef<typeof View>>(null);
   const [keyboardVisible, setKeyboardVisible] = useState(false), [windowTop, setWindowTop] = useState(0);
@@ -87,7 +87,7 @@ export function PageBody({ children, footer, footerPadding, footerSeparator, max
     else if (Platform.OS === 'android') measureAndroidFrame();
   }} style={{ flex: 1, minHeight: 0, ...(Platform.OS === 'android' && footer ? { paddingBottom: androidOverlap } : {}) }}><KeyboardAvoidingView pointerEvents={passThrough ? 'box-none' : 'auto'} enabled={!!footer && Platform.OS === 'ios'} behavior="padding" keyboardVerticalOffset={windowTop} style={{ flex: 1, minHeight: 0 }}>
     {children}
-    {footer ? <View pointerEvents={passThrough ? 'box-none' : 'auto'} collapsable={false} style={{ display: keyboardVisible && footerKeyboardBehavior === 'hide' ? 'none' : 'flex', backgroundColor: footerBackgroundColor ?? colors.canvas, borderTopColor: colors.border, borderTopWidth: footerSeparator ? StyleSheet.hairlineWidth : 0, paddingHorizontal: footerPadding, paddingTop: 12, paddingBottom: 12 + (keyboardVisible ? 0 : bottom) }}><View pointerEvents={passThrough ? 'box-none' : 'auto'} style={{ width: '100%', maxWidth, alignSelf: 'center' }}>{footer}</View></View> : null}
+    {footer ? <View pointerEvents={passThrough ? 'box-none' : 'auto'} collapsable={false} onLayout={event => onFooterHeightChange?.(Math.ceil(event.nativeEvent.layout.height))} style={{ display: keyboardVisible && footerKeyboardBehavior === 'hide' ? 'none' : 'flex', backgroundColor: footerBackgroundColor ?? colors.canvas, borderTopColor: colors.border, borderTopWidth: footerSeparator ? StyleSheet.hairlineWidth : 0, paddingHorizontal: footerPadding, paddingTop: 12, paddingBottom: 12 + (keyboardVisible ? 0 : bottom) }}><View pointerEvents={passThrough ? 'box-none' : 'auto'} style={{ width: '100%', maxWidth, alignSelf: 'center' }}>{footer}</View></View> : null}
   </KeyboardAvoidingView></View>;
 }
 export function Section({ title, action, children }: React.PropsWithChildren<{ title: string; action?: { title: string; onPress: () => void } }>) {

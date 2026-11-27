@@ -2,7 +2,7 @@ import { useSyncExternalStore, type ReactNode } from 'react';
 
 export const CAMPUS_ASSISTANT_TASK_HREF = '/areas/assistant/conversation?workspace_task=campus';
 
-type WorkspaceTask = {
+export type WorkspaceTask = {
   owner: symbol;
   scopeKey: string;
   title: string;

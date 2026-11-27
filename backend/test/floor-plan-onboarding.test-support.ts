@@ -8,17 +8,17 @@ import { createFacilitiesFixture } from './facilities.test-support.js';
 import { resourceLoanRequest } from './resource-loans.test-support.js';
 
 /** A new institution and normally accepted neutral member, never an Aaranya ID. */
-export async function createFloorPlanFixture(database: DatabaseService) {
+export async function createFloorPlanFixture(database: DatabaseService, buildingName='Learning and research block') {
   const base = await createFacilitiesFixture(database), services = campusOperationsServices(database);
   const f = { ...base, ...services };
   return f.run(async () => {
     const building = await f.topology.createSpace(f.user, f.schoolId, {
-      campus_id: f.campusId, name: 'Learning and research block', code: 'LEARNING', kind: 'building',
+      campus_id: f.campusId, name: buildingName, code: 'LEARNING', kind: 'building',
     }, resourceLoanRequest(f.user));
     const document: SceneDocument = {
       schema_version: 1, name: 'Willow Research Campus', bounds: { width: 800, height: 600, unit: 'relative' },
       source: { kind: 'manual', label: 'Institution-reviewed campus plan' },
-      elements: [{ id: 'learning-block', kind: 'building', label: 'Learning and research block',
+      elements: [{ id: 'learning-block', kind: 'building', label: buildingName,
         geometry: { type: 'polygon', points: [{ x: 100, y: 100 }, { x: 700, y: 100 }, { x: 700, y: 500 }, { x: 100, y: 500 }] },
         space_id: String(building.id), floor_id: null, levels: 2, material: 'concrete', review_state: 'reviewed' }],
     };

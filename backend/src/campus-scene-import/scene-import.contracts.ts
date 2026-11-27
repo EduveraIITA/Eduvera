@@ -34,6 +34,10 @@ export const floorPlanDiscoverySchema = z.object({
   target: floorPlanTargetSchema,
   official_website: z.string().trim().min(1).max(240).optional(),
 }).strict();
+export const floorPlanDownloadSchema = floorPlanDiscoverySchema.extend({
+  source_id: z.string().min(1).max(100).regex(/^[a-z0-9-]+$/u),
+  rights_confirmed: z.literal(true),
+});
 export const indoorGuidanceSchema = z.object({
   idempotency_key: identifier,
   target: floorPlanTargetSchema,

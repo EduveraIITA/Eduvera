@@ -7,14 +7,15 @@ import { CampusScenesService } from '../campus-scenes/campus-scenes.service.js';
 import { sceneDocumentSchema, type SceneDocument } from '../campus-scenes/campus-scenes.contracts.js';
 import { assertAgentEnabled, AgentLimitError } from '../agent/limits.js';
 import { captureSimulationProviderEffect, selectedSimulationResources } from '../common/simulation-resources.js';
+import { publicWebLookupsSince } from '../common/public-web-lookup.js';
 import { executionNow } from '../campus-model-core/execution-time.runtime.js';
-import { floorPlanDiscoverySchema, indoorGuidanceSchema, sceneImportSchema, sceneLookupSchema, type FloorPlanTarget } from './scene-import.contracts.js';
+import { floorPlanDiscoverySchema, floorPlanDownloadSchema, indoorGuidanceSchema, sceneImportSchema, sceneLookupSchema, type FloorPlanTarget } from './scene-import.contracts.js';
 import { sceneFromGeoJson } from './scene-import.geometry.js';
 import { CAMPUS_MAP_HINT_OUTPUT_TOKENS, CampusSceneImportProvider, imageSceneBounds } from './scene-import.provider.js';
 import { prepareMapArea } from './scene-import.area.js';
 import { campusMapAssistance, mappedPlaceCandidates } from './scene-import.assistance.js';
 import { simulationMapArea } from './scene-import.simulation-map.js';
-import { discoverPublicFloorPlans, floorPlanSearchSettings, floorPlanSearchUnavailable, officialSchoolHost, type FloorPlanDiscovery } from './scene-import.floor-plan-discovery.js';
+import { discoverFreePublicFloorPlans, discoverPublicFloorPlans, downloadVerifiedPublicFloorPlan, floorPlanSearchSettings, floorPlanSearchUnavailable, freeFloorPlanSearchSettings, officialSchoolHost, verifiedPublicFloorPlans, type FloorPlanDiscovery } from './scene-import.floor-plan-discovery.js';
 
 type ImportRun = {id:string;school_id:string;campus_id:string;actor_user_id:string;kind:string;request_hash:string;status:'running'|'completed'|'failed';result:unknown;error_message:string|null;created_at:Date};
 type Admission<T> = {kind:'cached';result:T}|{kind:'new'}|{kind:'expired';message:string};
@@ -30,14 +31,15 @@ export class CampusSceneImportService {
   async capabilities(user:AuthUser,school:string,campus:string) {
     await this.scenes.requireAdmin(user,school,campus);
     return { ...this.provider.capabilities(),
-      indoor_guidance: { available: this.provider.indoorGuidanceAvailable() }, floor_plan_discovery: { available: !selectedSimulationResources() && Boolean(floorPlanSearchSettings()) } };
+      indoor_guidance: { available: this.provider.indoorGuidanceAvailable() }, floor_plan_discovery: { available: !selectedSimulationResources() } };
   }
 
   /** Explicit current identities, resolved through the selected-world database. */
   private async floorPlanTarget(user:AuthUser,school:string,campus:string,target:FloorPlanTarget) {
     const workspace=await this.scenes.workspace(user,school,campus);
     const document=workspace.scene?.draft ?? workspace.scene?.published?.document;
-    if(!document?.elements.some(element=>element.kind==='building' && element.space_id===target.building_id))
+    const mapped=document?.elements.find(element=>element.kind==='building' && element.space_id===target.building_id);
+    if(!mapped)
       throw new BadRequestException('Choose a building already linked in the saved campus layout. Save its layout first, then add the floor plan.');
     const places=await this.db.selectFrom('campus_spaces').select(['id','name','kind','parent_space_id','revision'])
       .where('school_id','=',school).where('campus_id','=',campus).where('status','=','active').execute();
@@ -45,7 +47,8 @@ export class CampusSceneImportService {
     const building=byId.get(target.building_id);
     if(!building)throw new BadRequestException('Choose an active building in this campus and current world.');
     if(building.revision!==target.expected_building_revision)throw new ConflictException('This building changed. Refresh the campus places before importing its floor plan.');
-    if(!target.floor_id)return { building, floor: undefined };
+    const identity={building,mappedLabel:mapped.label,campusName:workspace.campus.name};
+    if(!target.floor_id)return { ...identity,floor:undefined };
     const floor=byId.get(target.floor_id);
     if(floor?.kind!=='floor')throw new BadRequestException('Choose an active floor in this campus and current world.');
     if(floor.revision!==target.expected_floor_revision)throw new ConflictException('This floor changed. Refresh the campus places before importing its floor plan.');
@@ -55,7 +58,13 @@ export class CampusSceneImportService {
       visited.add(ancestor.id);ancestor=ancestor.parent_space_id?byId.get(ancestor.parent_space_id):undefined;
     }
     if(ancestor?.id!==building.id)throw new BadRequestException('Choose a floor belonging to the selected building.');
-    return { building, floor };
+    return { ...identity,floor };
+  }
+
+  private async floorPlanSchoolHost(school:string) {
+    const approved=(await sql<{website:string}>`SELECT website FROM institution_onboarding_applications
+      WHERE provisioned_school_id=${school}::uuid AND status='approved' ORDER BY reviewed_at DESC LIMIT 1`.execute(this.db)).rows[0];
+    return officialSchoolHost(approved?.website??'');
   }
 
   private async proposal<T>(user:AuthUser,school:string,campus:string,id:string,kind:string,input:unknown,operation:()=>Promise<T>,transientLookup?:TransientLookup<T>):Promise<T> {
@@ -95,9 +104,7 @@ export class CampusSceneImportService {
         // serializes the durable allowance across replicas and providers.
         const day = new Date(at);
         day.setUTCHours(0, 0, 0, 0);
-        const { count } = (await sql<{count:number}>`SELECT count(*)::int AS count FROM campus_scene_import_runs
-          WHERE kind='lookup' AND created_at>=${day}`.execute(tx)).rows[0]!;
-        if (count >= transientLookup.maximumDailyLookups)
+        if (await publicWebLookupsSince(tx,day) >= transientLookup.maximumDailyLookups)
           throw new HttpException('Today’s public floor-plan search allowance was reached. Continue with guided setup.', 429);
       }
       await sql`INSERT INTO campus_scene_import_runs(id,school_id,campus_id,actor_user_id,kind,request_hash,status,created_at)
@@ -139,7 +146,7 @@ export class CampusSceneImportService {
     const parsed = floorPlanDiscoverySchema.safeParse(raw);
     if (!parsed.success) throw new BadRequestException('Choose the current mapped building before searching for a public floor plan.');
     const { idempotency_key, target, official_website } = parsed.data;
-    const { building, floor } = await this.floorPlanTarget(user, school, campus, target);
+    const { building, floor, mappedLabel, campusName } = await this.floorPlanTarget(user, school, campus, target);
     if (selectedSimulationResources()) {
       return this.proposal(user, school, campus, idempotency_key, 'lookup', { kind: 'floor_plan_discovery', target }, async () => {
         await captureSimulationProviderEffect({ kind: 'connector_call', provider: 'campus_scene', operation: 'floor_plan_discovery',
@@ -147,23 +154,48 @@ export class CampusSceneImportService {
         return floorPlanSearchUnavailable('Continue with guided room setup in this Simulation.');
       });
     }
-    const settings = floorPlanSearchSettings();
-    if (!settings) return floorPlanSearchUnavailable('Public floor-plan search is currently unavailable. Continue with guided setup.');
-    const approved = (await sql<{ website: string }>`SELECT website FROM institution_onboarding_applications
-      WHERE provisioned_school_id=${school}::uuid AND status='approved' ORDER BY reviewed_at DESC LIMIT 1`.execute(this.db)).rows[0];
-    const host = officialSchoolHost(approved?.website ?? '') ?? officialSchoolHost(official_website ?? '');
+    const configuredHost=await this.floorPlanSchoolHost(school);
+    const requestedHost=officialSchoolHost(official_website??'');
+    const candidates=verifiedPublicFloorPlans({building:building.name,mappedLabel,campus:campusName,floor:floor?.name,hosts:[configuredHost,requestedHost]});
+    if(candidates.length)return {status:'found',candidates};
+    const free=freeFloorPlanSearchSettings();
+    const keyed=free ? null : floorPlanSearchSettings();
+    const maximumDailyLookups=(free??keyed)?.maximumDailyLookups;
+    if (!maximumDailyLookups) return {status:'not_found',candidates:[]};
+    const host = configuredHost ?? requestedHost;
     if (!host) return floorPlanSearchUnavailable('Public floor-plan search needs the institution’s official HTTPS website. You can continue with guided setup.');
     return this.proposal(user, school, campus, idempotency_key, 'lookup', { kind: 'floor_plan_discovery', target, host }, async () => {
-      const result = await discoverPublicFloorPlans(settings, { host, building: building.name, ...(floor ? { floor: floor.name } : {}) });
+      const source={host,building:building.name,...(floor?{floor:floor.name}:{})};
+      const result=keyed ? await discoverPublicFloorPlans(keyed,source) : await discoverFreePublicFloorPlans(source);
       await this.floorPlanTarget(user, school, campus, target);
       return result;
     }, {
-      maximumDailyLookups: settings.maximumDailyLookups,
+      maximumDailyLookups,
       // The public index permits transient display. Retain allowance/replay
       // evidence without persisting titles or links from the provider.
       receipt: result => result.status === 'found'
         ? floorPlanSearchUnavailable('The earlier search finished. Run a new search to see current links.')
         : result,
+    });
+  }
+
+  async downloadFloorPlan(user:AuthUser,school:string,campus:string,raw:unknown) {
+    const parsed=floorPlanDownloadSchema.safeParse(raw);
+    if(!parsed.success)throw new BadRequestException('Choose a verified floor plan and confirm your rights to use it.');
+    if(selectedSimulationResources())throw new BadRequestException('Use guided floor setup or a captured plan in this Simulation.');
+    const {idempotency_key,target,source_id,official_website}=parsed.data;
+    const {building,floor,mappedLabel,campusName}=await this.floorPlanTarget(user,school,campus,target);
+    const configuredHost=await this.floorPlanSchoolHost(school);
+    const requestedHost=officialSchoolHost(official_website??'');
+    const source=verifiedPublicFloorPlans({building:building.name,mappedLabel,campus:campusName,floor:floor?.name,hosts:[configuredHost,requestedHost]})
+      .find(candidate=>candidate.source_id===source_id);
+    if(!source)throw new BadRequestException('This public floor plan does not match the selected building or floor.');
+    return this.proposal(user,school,campus,idempotency_key,'lookup',{kind:'floor_plan_download',target,source_id},async()=>{
+      const bytes=await downloadVerifiedPublicFloorPlan(source_id);
+      await this.floorPlanTarget(user,school,campus,target);
+      const receipt=await this.scenes.uploadImage(user,school,campus,{idempotency_key,rights_confirmed:true,
+        data_url:`data:image/jpeg;base64,${bytes.toString('base64')}`});
+      return {...receipt,source_url:source.url,label:source.title};
     });
   }
 

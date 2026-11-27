@@ -1,4 +1,4 @@
-import type { AgentChartData, AgentStatus, AgentThread, ThreadSummary } from '../../../packages/contracts/src/wire/features/assistant/agentApi';
+import type { AgentChartData, AgentPublicWebSource, AgentStatus, AgentThread, ThreadSummary } from '../../../packages/contracts/src/wire/features/assistant/agentApi';
 const uuid = (value: unknown) => typeof value === 'string' && /^[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}$/i.test(value);
 const object = (value: unknown): Record<string, unknown> => value && typeof value === 'object' && !Array.isArray(value) ? value as Record<string, unknown> : {};
 const text = (value: unknown) => typeof value === 'string';
@@ -6,7 +6,7 @@ const instant = (value: unknown) => text(value) && Number.isFinite(Date.parse(va
 const fail = (): never => { throw new Error('The current assistant response could not be verified. Refresh this conversation.'); };
 export function parseAssistantStatus(value: unknown): AgentStatus {
   const data = object(value);
-  if (!text(data.provider) || !text(data.model) || ['ready', 'local', 'pro_features_enabled', 'confirmation_required'].some(key => typeof data[key] !== 'boolean') || !Number.isSafeInteger(data.tools) || Number(data.tools) < 0) fail();
+  if (!text(data.provider) || !text(data.model) || ['ready', 'local', 'pro_features_enabled', 'confirmation_required'].some(key => typeof data[key] !== 'boolean') || data.public_web_available !== undefined && typeof data.public_web_available !== 'boolean' || !Number.isSafeInteger(data.tools) || Number(data.tools) < 0) fail();
   return data as unknown as AgentStatus;
 }
 export function parseAssistantThreads(value: unknown): { threads: ThreadSummary[] } {
@@ -24,6 +24,23 @@ export function parseAssistantChart(value: unknown): AgentChartData {
   if (!Number.isFinite(sum)) fail();
   return chart as unknown as AgentChartData;
 }
+export function assistantPublicWebUrl(value: unknown): string | undefined {
+  if (typeof value !== 'string' || value.length > 1024) return;
+  try {
+    const url = new URL(value);
+    if (url.href === value && url.protocol === 'https:' && !url.username && !url.password && !url.port && !url.search && !url.hash &&
+        /^(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z][a-z0-9-]{1,62}$/u.test(url.hostname) &&
+        !/\.(?:localhost|local|internal|home|lan|test|example|invalid|onion)$/u.test(url.hostname)) return url.href;
+  } catch { /* Ignore malformed or private links. */ }
+}
+
+function isPublicWebSource(value: unknown): value is AgentPublicWebSource {
+  const source = object(value);
+  return uuid(source.id) && !!assistantPublicWebUrl(source.url) &&
+    typeof source.title === 'string' && source.title.length > 0 && source.title.length <= 150 &&
+    (source.description === undefined || typeof source.description === 'string' && source.description.length <= 220);
+}
+
 export function parseAssistantThread(value: unknown, id: string): AgentThread {
   const data = object(value);
   if (data.id !== id || !uuid(data.id) || !text(data.title) || !Array.isArray(data.runs) || data.runs.length > 50) fail();
@@ -33,6 +50,9 @@ export function parseAssistantThread(value: unknown, id: string): AgentThread {
     if (!uuid(run.id) || ids.has(String(run.id)) || ['question', 'answer', 'progress', 'provider', 'model'].some(key => !text(run[key])) || !instant(run.created_at) || !['running', 'completed', 'confirmation', 'failed', 'cancelled'].includes(String(run.status)) || !Array.isArray(run.evidence)) fail();
     ids.add(String(run.id));
     for (const value of run.evidence as unknown[]) { const source = object(value); if (['id', 'title', 'href', 'capability'].some(key => !text(source[key])) || !instant(source.retrieved_at)) fail(); if (source.chart !== undefined) parseAssistantChart(source.chart); }
+    if (run.public_web_sources !== undefined && (!Array.isArray(run.public_web_sources) ||
+        run.public_web_sources.length > 3 || !run.public_web_sources.every(isPublicWebSource) ||
+        new Set(run.public_web_sources.map(source => source.id)).size !== run.public_web_sources.length)) fail();
     if (run.action !== null) {
       const action = object(run.action), input = object(action.input), labels = object(action.labels), receipt = object(action.receipt);
       if (!uuid(action.id) || !text(action.title) || !text(action.href) || !instant(action.expires_at) || !['pending', 'executing', 'succeeded', 'rejected', 'expired', 'stale', 'failed', 'uncertain'].includes(String(action.status)) || !action.input || !action.labels || typeof action.labels !== 'object' || Array.isArray(action.labels) || !text(input.basis_id) || input.body !== undefined && (!input.body || typeof input.body !== 'object' || Array.isArray(input.body)) || Object.values(labels).some(label => !text(label)) || action.receipt !== null && ['message', 'request_id', 'completed_at', 'href'].some(key => receipt[key] !== undefined && !text(receipt[key]))) fail();

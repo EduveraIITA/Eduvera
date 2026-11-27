@@ -118,26 +118,41 @@ setup. Further settings and actions need their own contract, scope and review.
 The authenticated Assistant exposes ordered AG-UI 1.0 run events through the
 existing mobile request and refresh path. This app binding uses event batches for
 the current owned run. A2UI remains the presentation catalog for the conversation.
-The client advertises only named controls from the active application route
-and its local permissions. Shared context contains an allowlisted screen, tool
-names and the exact previous tool receipt status. It contains no form contents,
-arbitrary routes or account credentials.
+The client advertises only named controls from the active application route and
+its local permissions. Shared context contains an allowlisted screen, registered
+tool names, the exact currently selected virtual campus when available, and the
+previous tool receipt status. Form contents, arbitrary routes and account
+credentials stay in the owning screen.
 
-The model can request one registered control. The server revalidates the current
-owner and source and emits the AG-UI tool call lifecycle. The app validates the
-completed arguments and the exact mounted control, highlights the activity, and
-uses the same UI event path as a person. The first registered tools open Virtual
-Campus, open its campus picker, fill its place search or focus an exact published
-place. They do not change saved records or choose a campus in the human's place.
-Modules extend the typed registry with scoped handlers and their current-source
-identity. Consequential writes remain in the owning reviewed command path.
+The server revalidates the current owner and source before emitting AG-UI tool
+events. The app checks the complete ordered batch, highlights each applied
+control and uses the same UI event path as a person. The Virtual Campus registry
+opens the workspace or a verified campus and interior, opens its campus picker,
+fills place search and focuses an exact published place. Campus creation opens
+the existing account form. When the name is missing, A2UI collects it in the
+same chat and fills the owned form. The user confirms creation in that form.
+Additional modules register scoped handlers with their owning route and source.
+A later tool in the same run can cross a route only through a declared handoff.
 
-Take over revokes pending and in-flight UI actions. Changing scope or replacing
-the underlying target invalidates the original action. The next Assistant turn
-can receive the exact resulting applied, blocked or stopped status. No previous
-conversation automatically reruns the user's local interaction. Simulation does
-not load a Live Assistant thread or its events. Its owning campus workflows
-continue through the ordinary isolated interface.
+Take over revokes pending and in-flight UI actions. A changed scope or target
+invalidates the original action. The next turn can receive the exact applied,
+blocked or stopped result. The global Assistant remains available across
+supported app navigation. Its compact controls are measured so app actions
+remain reachable. Campus setup renders its A2UI controls inside the same chat and
+returns to the retained map for placement. The fullscreen backdrop uses
+supported UIKit Liquid Glass or browser blur and honors reduced transparency.
+
+### Public web browsing
+
+When public browsing is enabled, an authorized Live user can ask
+“Search the web for …” or “Read this public page …”. The Assistant calls
+[Exa’s keyless public search and page reader](https://exa.ai/mcp) with the exact
+user-provided search terms or public HTTPS address. Browsing is independent of
+model availability and shares a daily limit of 20 requests with public
+floor-plan discovery. Sources are returned in A2UI with links that open on
+request. Source excerpts are transient data and are never executed, passed to a
+model or applied to a campus. Signed addresses and account or record context
+are excluded. Simulation makes no public browsing requests.
 
 ### Bounded long-term personalization
 

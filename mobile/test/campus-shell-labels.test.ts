@@ -24,10 +24,10 @@ function shell(width: number,height: number,expanded = false,isPad = width > 700
   const dependencies: Record<string,unknown> = {
     'react': { useMemo: (read: () => unknown) => read(),useState: (value: unknown) => { const index = states.push(value)-1; return [value,(next: unknown) => { states[index] = typeof next === 'function' ? next(states[index]) : next; }]; },useRef: (value: unknown) => ({ current: value }),useEffect() {} },'react/jsx-runtime': require('react/jsx-runtime'),
     'react-native': { View,Text,Pressable,Image: Symbol('Image'),Platform: { OS: 'ios',isPad },StyleSheet: { create: (value: unknown) => value,flatten,hairlineWidth: .5 },useWindowDimensions: () => ({ width,height }) },
-    'expo-router': { Link: Symbol('Link'),Redirect: Symbol('Redirect'),Tabs,usePathname: () => '/today' },
+    'expo-router': { Link: Symbol('Link'),Redirect: Symbol('Redirect'),Tabs,usePathname: () => '/today',useGlobalSearchParams: () => ({}) },
     '../auth/SessionProvider': { useSession: () => ({ status: 'authenticated',ready: true,scopeKey: 'actor:campus:live',user: { id: 'actor' },memberships: [{ school_id: 'campus',school_name: 'Campus' }],schoolId: 'campus',environment: { mode: 'live' } }) },
     '../lib/query': { useApi: (route: string) => ({ data: route === '/api/v1/auth/pro-features/' ? { enabled: options.assistantEnabled ?? true,preview: true } : undefined,error: route === '/api/v1/auth/pro-features/' && options.assistantErrorStatus ? new ApiError(options.assistantErrorStatus) : undefined }) },
-    '../lib/campus-tabs': { campusTabs,campusTabForHref: () => campusTabs[0] },
+    '../lib/copilot': {},'../lib/campus-tabs': { campusTabs,campusTabForHref: () => campusTabs[0] },
     '../lib/assistant-layout': { assistantLayout,assistantVisibleHeight },'../lib/dock-geometry': { iosDockGeometry },'./OperatingPane': { OperatingPaneContext: { Provider: Symbol('OperatingPane') } },
     '../lib/assistant-access': { assistantPerspective: () => 'principal',assistantEntryAvailable: () => options.assistantEligible ?? true },
     '../../../packages/contracts/src/workspace-normalizer': {},

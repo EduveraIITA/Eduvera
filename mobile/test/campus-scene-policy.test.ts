@@ -2,7 +2,8 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import { NativePendingActionJournal, validateNativePendingAction, type NativePendingAction, type NativePendingScope } from '../src/lib/native-pending-action';
 import { campusSceneActionAllowed, definitiveCampusImportFailure, nativeSceneDocument, campusSceneSourceState, campusSceneEditorFocus, retainedCampusMapBoundary } from '../src/lib/campus-scene-policy';
-import type { CampusSceneDocument } from '../../packages/contracts/src/campus-scenes/types';
+import { campusInteriorBuildings, campusInteriorSetupStage, findCampusInteriorBuilding } from '../src/features/campus/campus-copilot-targets';
+import type { CampusSceneDocument, CampusSceneSpace } from '../../packages/contracts/src/campus-scenes/types';
 const campus='10000000-0000-4000-8000-000000000001',sceneId='10000000-0000-4000-8000-000000000002',key='10000000-0000-4000-8000-000000000003';
 const scope:NativePendingScope={actorId:'actor',schoolId:'school',mode:'simulation',namespaceId:'world',origin:'https://campus.test'},root=`/api/v1/schools/school/campus-scenes/${campus}/`;
 const document:CampusSceneDocument={schema_version:1,name:'Current campus',bounds:{width:1000,height:800,unit:'relative'},source:{kind:'manual',label:'Reviewed source'},elements:[{id:'osm_way_42',kind:'building',label:'Library',geometry:{type:'polygon',points:[{x:10,y:10},{x:200,y:10},{x:200,y:100},{x:10,y:100}]},space_id:null,floor_id:null,review_state:'reviewed'}]};
@@ -79,4 +80,43 @@ test('opening an exact indoor element selects its recorded floor and plan mode',
  assert.deepEqual(campusSceneEditorFocus(indoor,'room_1'),{selected:'room_1',floor:sceneId,mode:'2d'});
  assert.deepEqual(campusSceneEditorFocus(indoor,'osm_way_42'),{selected:'osm_way_42',floor:null,mode:'2.5d'});
  assert.deepEqual(campusSceneEditorFocus(indoor,'missing'),{selected:null,floor:null,mode:'2.5d'});
+});
+test('Assistant opens the next available interior setup step for the selected campus',()=>{
+ const building={...document.elements[0]!,space_id:sceneId};
+ const linked={...document,elements:[building]};
+ const active=[{id:sceneId,status:'active' as const}];
+ assert.equal(campusInteriorSetupStage(linked,active,false),'reopen');
+ assert.equal(campusInteriorSetupStage(linked,active,true),'indoor');
+ assert.equal(campusInteriorSetupStage(linked,[{id:sceneId,status:'inactive'}],true),'preview');
+ assert.equal(campusInteriorSetupStage(linked,[{id:key,status:'active'}],true),'preview');
+ assert.equal(campusInteriorSetupStage(document,[],true),'assisted');
+ assert.equal(campusInteriorSetupStage({...document,elements:[]},[],true),'map');
+ assert.equal(campusInteriorSetupStage({...document,source:{...document.source,image_asset_id:key},elements:[]},[],true),'preview');
+});
+test('the indoor plan source requires one exact authorized linked building',()=>{
+ const library:CampusSceneSpace={id:sceneId,campus_id:campus,parent_space_id:null,name:'Main Library',code:'LIBRARY',kind:'library',status:'active'};
+ const alternate:CampusSceneSpace={...library,id:key,name:'West Library',code:'LIB-WEST'};
+ const draft={...document,elements:[{...document.elements[0]!,space_id:sceneId},{...document.elements[0]!,id:'west',space_id:key}]};
+ const spaces=[library,alternate],buildings=campusInteriorBuildings(draft,spaces);
+ assert.equal(findCampusInteriorBuilding(buildings,spaces,' main library ')?.space_id,sceneId);
+ assert.equal(findCampusInteriorBuilding(buildings,spaces,'lib-west')?.space_id,key);
+ assert.equal(findCampusInteriorBuilding(buildings,spaces,'Library'),undefined);
+ assert.equal(findCampusInteriorBuilding(buildings,spaces,'Old Library'),undefined);
+ assert.equal(findCampusInteriorBuilding(campusInteriorBuildings(draft,[library]),[library],'West Library'),undefined);
+});
+test('the retained public download binds consent and the exact campus, building and floor',()=>{
+ const live={...scope,mode:'live' as const,namespaceId:null};
+ const payload={idempotency_key:key,source_id:'lulu-lucknow-first',rights_confirmed:true,
+  target:{building_id:sceneId,expected_building_revision:4,floor_id:campus,expected_floor_revision:6}};
+ const download:NativePendingAction={...action(),scope:live,method:'POST',endpoint:root+'imports/floor-plan-download/',
+  payload:{kind:'json',body:JSON.stringify(payload)},continuation:{kind:'public_floor_plan',buildingId:sceneId,floorId:campus,floorLabel:'First Floor'}};
+ assert.ok(validateNativePendingAction(download,live,'campus'));
+ assert.equal(campusSceneActionAllowed(download,scope),false);
+ for(const patch of [{rights_confirmed:false},{source_id:'https://plan.test/a.jpg'},{target:{...payload.target,floor_id:undefined}}])
+  assert.equal(campusSceneActionAllowed({...download,payload:{kind:'json',body:JSON.stringify({...payload,...patch})}},live),false);
+ const receipt={image:{id:sceneId,mime_type:'image/jpeg',width:20,height:20,sha256:'a'.repeat(64),byte_size:1300},
+  label:'LuLu Mall Lucknow · First Floor',source_url:'https://plan.test/1.jpg',replayed:true};
+ const accepted={...download,phase:'accepted' as const,receipt};
+ assert.ok(validateNativePendingAction(accepted,live,'campus'));
+ assert.equal(campusSceneActionAllowed({...accepted,receipt:{...receipt,source_url:'https://user:pass@plan.test/1.jpg'}},live),false);
 });

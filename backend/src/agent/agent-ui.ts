@@ -1,27 +1,38 @@
 import { z } from 'zod';
 import type { ToolDefinition } from './providers.js';
+import type { PublicWebSource } from '../campus-scene-import/scene-import.floor-plan-discovery.js';
 
-const toolName = z.enum(['campus_search_places','campus_focus_place','open_virtual_campus','campus_open_picker']);
+const toolName = z.enum(['campus_search_places','campus_focus_place','open_virtual_campus','campus_open_picker',
+  'open_campus_create','prepare_campus_create','open_campus_interiors']);
 type ClientToolName = z.infer<typeof toolName>;
-const screenTools: Record<'workspace'|'virtual_campus', readonly ClientToolName[]> = {
-  workspace: ['open_virtual_campus'],
-  virtual_campus: ['campus_search_places','campus_focus_place','campus_open_picker'],
+const screen = z.enum(['workspace','virtual_campus','campus_account']);
+const screenTools: Record<z.infer<typeof screen>, readonly ClientToolName[]> = {
+  workspace: ['open_virtual_campus','open_campus_create','open_campus_interiors'],
+  virtual_campus: ['campus_search_places','campus_focus_place','campus_open_picker','open_campus_create','open_campus_interiors'],
+  campus_account: ['prepare_campus_create','open_campus_interiors'],
 };
 const empty = z.object({}).strict();
 const query = z.object({query:z.string().trim().min(1).max(120).refine(value => Array.from(value).every(character => character.charCodeAt(0) >= 32))}).strict();
+export const draftCampusName = z.string().trim().min(2).max(180)
+  .refine(value => !/[<>]/u.test(value) && Array.from(value).every(character => character.charCodeAt(0) >= 32));
+export const indoorBuildingName = z.string().trim().min(2).max(160).refine(value=>!/[<>\p{Cc}\p{Cf}]/u.test(value));
 const toolDefinitions = {
   open_virtual_campus: {schema:empty, description:'Open the current institution’s Virtual Campus screen when the user explicitly requests it.'},
   campus_open_picker: {schema:empty, description:'Open the current map’s campus picker without choosing or changing a campus.'},
   campus_search_places: {schema:query, description:'Fill the current map place search with the user’s query and show authoritative matches.'},
   campus_focus_place: {schema:query, description:'Focus an exact place match on the active Virtual Campus map. Ambiguous matches stay in search for human choice.'},
+  open_campus_create: {schema:empty, description:'Open the account’s campus workspace page.'},
+  prepare_campus_create: {schema:z.object({name:draftCampusName.optional()}).strict(), description:'Open and optionally prefill the campus creation form. The user confirms creation there.'},
+  open_campus_interiors: {schema:z.object({campus_id:z.uuid(),building_name:indoorBuildingName.optional()}).strict(), description:'Open interior mapping for the authorized campus.'},
 } as const;
 
 export const clientUiContextSchema = z.object({
-  screen:z.enum(['workspace','virtual_campus']),
-  tools:z.array(toolName).max(3),
+  screen,
+  tools:z.array(toolName).max(5),
+  campus_id:z.uuid().optional(),
   last_result:z.object({tool:toolName,status:z.enum(['applied','blocked','stopped']),call_id:z.uuid().optional()}).strict().optional(),
 }).strict().refine(context => new Set(context.tools).size === context.tools.length &&
-  context.tools.every(tool => screenTools[context.screen].includes(tool)),
+  context.tools.every(tool => screenTools[context.screen].includes(tool)) && (!context.campus_id || context.screen==='virtual_campus'),
 { message:'Client tools must be uniquely advertised by the current screen.', path:['tools'] });
 export type ClientUiContext = z.infer<typeof clientUiContextSchema>;
 
@@ -30,16 +41,22 @@ export function isClientUiTool(value: string): value is ClientToolName {
 }
 
 export function advertisedClientTools(context: ClientUiContext | undefined): ToolDefinition[] {
-  return (context?.tools ?? []).map(name => {
+  return (context?.tools ?? []).filter(name => !isCampusWorkflowTool(name)).map(name => {
     const {schema,description}=toolDefinitions[name];
     return {name,description,parameters:z.toJSONSchema(schema,{io:'input'})};
   });
 }
 
-export function parseClientUiCall(context: ClientUiContext | undefined, name: ClientToolName, input: unknown) {
-  if (!context?.tools.includes(name)) return undefined;
+export function isCampusWorkflowTool(tool: ClientToolName) {
+  return tool==='open_campus_create' || tool==='prepare_campus_create' || tool==='open_campus_interiors';
+}
+export function validateClientUiCall(name: ClientToolName, input: unknown) {
   const parsed=toolDefinitions[name].schema.safeParse(input);
   return parsed.success ? {tool:name,arguments:parsed.data} : undefined;
+}
+export type ClientUiCall = NonNullable<ReturnType<typeof validateClientUiCall>>;
+export function parseClientUiCall(context: ClientUiContext | undefined, name: ClientToolName, input: unknown) {
+  return context?.tools.includes(name) ? validateClientUiCall(name,input) : undefined;
 }
 
 export function restoreClientUiCall(id: string, input: unknown) {
@@ -70,6 +87,7 @@ export type AssistantAgUiEvent =
   | {type:'TEXT_MESSAGE_CONTENT';messageId:string;delta:string}
   | {type:'TEXT_MESSAGE_END';messageId:string}
   | {type:'CUSTOM';name:'thatcampus.ui-intent';value:{version:1;kind:UiIntentKind;subjectId:string}}
+  | {type:'CUSTOM';name:'thatcampus.public-web-source';value:{version:1;source:PublicWebSource}}
   | {type:'TOOL_CALL_START';toolCallId:string;toolCallName:ClientToolName}
   | {type:'TOOL_CALL_ARGS';toolCallId:string;delta:string}
   | {type:'TOOL_CALL_END';toolCallId:string}
@@ -81,8 +99,10 @@ type AgUiProjection = {
   threadId:string; runId:string; status:RunStatus; progress:string; answer:string;
   evidence:readonly {id:string;chart?:unknown}[];
   actionId?:string; clientCall?:NonNullable<ReturnType<typeof restoreClientUiCall>>;
+  clientCalls?:readonly NonNullable<ReturnType<typeof restoreClientUiCall>>[];
+  publicWebSources?:readonly PublicWebSource[];
 };
-export function projectAssistantAgUi({threadId,runId,status,progress,answer,evidence,actionId,clientCall}:AgUiProjection) {
+export function projectAssistantAgUi({threadId,runId,status,progress,answer,evidence,actionId,clientCall,clientCalls,publicWebSources}:AgUiProjection) {
   const ids={threadId,runId}, messageId=`${runId}:assistant`;
   const event=(kind:UiIntentKind,subjectId:string):AssistantAgUiEvent => ({type:'CUSTOM', name:'thatcampus.ui-intent', value:{version:1,kind,subjectId}});
   const events:AssistantAgUiEvent[]=[
@@ -101,13 +121,14 @@ export function projectAssistantAgUi({threadId,runId,status,progress,answer,evid
     return {version:'1.0' as const,events};
   }
   for (const source of evidence) events.push(event(source.chart?'view_report':'view_source',source.id));
+  for (const source of publicWebSources??[]) events.push({type:'CUSTOM',name:'thatcampus.public-web-source',value:{version:1,source}});
   if (status==='confirmation' && actionId) events.push(event('review_action',actionId));
-  if (status==='completed' && clientCall) {
-    const toolCallId=clientCall.id;
-    events.push({type:'TOOL_CALL_START',toolCallId,toolCallName:clientCall.tool},
-      {type:'TOOL_CALL_ARGS',toolCallId,delta:JSON.stringify(clientCall.arguments)},{type:'TOOL_CALL_END',toolCallId});
+  const calls=status==='completed' ? clientCalls ?? (clientCall ? [clientCall] : []) : [];
+  for (const call of calls) {
+    events.push({type:'TOOL_CALL_START',toolCallId:call.id,toolCallName:call.tool},
+      {type:'TOOL_CALL_ARGS',toolCallId:call.id,delta:JSON.stringify(call.arguments)},{type:'TOOL_CALL_END',toolCallId:call.id});
   }
   events.push({type:'RUN_FINISHED',...ids,result:{status},
-    ...(status==='completed' && clientCall ? {outcome:{type:'success',pendingToolCallIds:[clientCall.id]} as const}: {})});
+    ...(calls.length ? {outcome:{type:'success',pendingToolCallIds:calls.map(call=>call.id)} as const}: {})});
   return {version:'1.0' as const,events};
 }

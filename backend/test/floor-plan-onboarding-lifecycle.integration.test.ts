@@ -141,12 +141,41 @@ async function reportAndVerify(f: FloorPlanFixture, holdingId: string, roomId: s
 }
 
 describe.skipIf(!enabled)('Floor-plan onboarding to exact asset repair lifecycle on a fresh campus', () => {
+  it('finds first-party public plans without a search key and saves only an explicitly approved image', async () => {
+    const f=await createFloorPlanFixture(db,'LuLu Mall Lucknow');
+    vi.stubEnv('CAMPUS_FLOOR_PLAN_SEARCH_API_KEY','');
+    const bytes=Buffer.from('ffd8ffc0000b080002000301011100ffd9','hex');
+    const fetch=vi.spyOn(globalThis,'fetch').mockResolvedValue(new Response(bytes,{headers:{'content-type':'image/jpeg'}}));
+    await f.run(async()=>{
+      const target={building_id:f.buildingId,expected_building_revision:f.buildingRevision};
+      const discovery=await f.importer.discoverFloorPlan(f.user,f.schoolId,f.campusId,{idempotency_key:randomUUID(),target});
+      expect(discovery.status).toBe('found');
+      expect(discovery.candidates.map(candidate=>candidate.floor_label)).toEqual(['Ground Floor','First Floor','Second Floor']);
+      expect(fetch).not.toHaveBeenCalled();
+      const source=discovery.candidates[0]!;
+      const input={idempotency_key:randomUUID(),target,source_id:source.source_id,rights_confirmed:true};
+      const before=(await f.scenes.workspace(f.user,f.schoolId,f.campusId)).scene;
+      await expect(f.importer.downloadFloorPlan(f.borrower,f.schoolId,f.campusId,input)).rejects.toThrow(/administrator/);
+      await expect(f.importer.downloadFloorPlan(f.user,f.schoolId,f.campusId,{...input,rights_confirmed:false})).rejects.toThrow(/confirm your rights/);
+      await expect(f.importer.downloadFloorPlan(f.user,f.schoolId,f.campusId,{...input,source_id:'untrusted-plan'})).rejects.toThrow(/does not match/);
+      expect(fetch).not.toHaveBeenCalled();
+      const result=await f.importer.downloadFloorPlan(f.user,f.schoolId,f.campusId,input);
+      expect(result).toMatchObject({source_url:source.url,image:{id:input.idempotency_key,mime_type:'image/jpeg',width:3,height:2}});
+      expect(await f.importer.downloadFloorPlan(f.user,f.schoolId,f.campusId,input)).toEqual(result);
+      expect(fetch).toHaveBeenCalledExactlyOnceWith(source.url,expect.objectContaining({redirect:'error'}));
+      const scene=await f.scenes.workspace(f.user,f.schoolId,f.campusId);
+      expect(scene.scene).toEqual(before);
+    });
+  },60000);
+
   it('finds official indexed links for the exact mapped building, retaining only a bounded search receipt', async () => {
     const f = await createFloorPlanFixture(db);
     const site = 'https://willow-research.edu';
     const url = site + '/buildings/learning-and-research-block-floor-plan.pdf';
-    const todayCount = (await sql<{ count: number }>`SELECT count(*)::int AS count FROM campus_scene_import_runs
-      WHERE kind='lookup' AND created_at>=date_trunc('day', now() AT TIME ZONE 'UTC') AT TIME ZONE 'UTC'`.execute(db)).rows[0]!.count;
+    const todayCount = (await sql<{ count: number }>`SELECT count(*)::int AS count FROM (
+        SELECT created_at FROM campus_scene_import_runs WHERE kind='lookup'
+        UNION ALL SELECT created_at FROM agent_tool_steps WHERE capability='assistant_public_web_lookup' AND kind='handoff'
+      ) lookups WHERE created_at>=date_trunc('day', now() AT TIME ZONE 'UTC') AT TIME ZONE 'UTC'`.execute(db)).rows[0]!.count;
     vi.stubEnv('CAMPUS_FLOOR_PLAN_SEARCH_API_KEY', 'disposable-fixture-key');
     vi.stubEnv('CAMPUS_FLOOR_PLAN_SEARCH_MAX_DAILY', String(todayCount + 1));
     const fetch = vi.spyOn(globalThis, 'fetch').mockImplementation(() => Promise.resolve(Response.json({ web: { results: [
@@ -396,6 +425,8 @@ describe.skipIf(!enabled)('Floor-plan onboarding to exact asset repair lifecycle
       await world.run(async () => {
         vi.stubEnv('CAMPUS_FLOOR_PLAN_SEARCH_API_KEY', 'simulation-forbidden-key');
         vi.stubEnv('CAMPUS_FLOOR_PLAN_SEARCH_MAX_DAILY', '3');
+        vi.stubEnv('CAMPUS_FLOOR_PLAN_FREE_SEARCH_ENABLED','true');
+        vi.stubEnv('CAMPUS_MAP_AI_ENABLED_UNTIL','2099-01-01T00:00:00Z');
         const fetch = vi.spyOn(globalThis, 'fetch').mockRejectedValue(new Error('Simulation must not fetch public floor plans.'));
         try {
           const discovery = { idempotency_key: randomUUID(), official_website: 'https://willow-research.edu', target: captured.input.target };
@@ -407,6 +438,9 @@ describe.skipIf(!enabled)('Floor-plan onboarding to exact asset repair lifecycle
           const unavailable = await world.importer.discoverFloorPlan(f.user, f.schoolId, f.campusId, discovery);
           expect(unavailable).toMatchObject({ status: 'unavailable', reason: expect.stringContaining('guided room setup'), candidates: [] });
           expect(await world.importer.discoverFloorPlan(f.user, f.schoolId, f.campusId, discovery)).toEqual(unavailable);
+          await expect(world.importer.downloadFloorPlan(f.user,f.schoolId,f.campusId,{
+            idempotency_key:randomUUID(),target:discovery.target,source_id:'lulu-lucknow-ground',rights_confirmed:true,
+          })).rejects.toThrow(/in this Simulation/);
           expect(await world.importer.guideIndoors(f.user, f.schoolId, f.campusId, guidance)).toEqual({ prompt: null });
           expect(await world.importer.guideIndoors(f.user, f.schoolId, f.campusId, guidance)).toEqual({ prompt: null });
           expect((await world.effectResources.list(1, 20)).counts.effects).toMatchObject({ connector_call: 1, external_compute_call: 1 });

@@ -1,5 +1,5 @@
-import { useMemo, useRef, useState } from 'react';
-import { View } from 'react-native';
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
+import { Image, View } from 'react-native';
 import { useQueryClient } from '@tanstack/react-query';
 import { useOperatingPaneDimensions } from '../../ui/OperatingPane';
 import * as Crypto from 'expo-crypto';
@@ -23,6 +23,7 @@ import { useNativePendingAction, type NativePendingAction, type NativePendingFil
 import { shareCampusDraft } from '../../lib/share-local-document';
 import { useOperationContext } from '../../lib/use-operation-context';
 import { useNativeSceneLighting } from '../../lib/native-scene-lighting';
+import { campusSceneFloorBelongsToBuilding } from '../../lib/campus-scene-inspector';
 import { Alert } from '../../ui/Alert';
 import { ScreenBack, useScreenExitGuard } from '../../ui/BackNavigation';
 import { Button, Empty, Field, Loading, Notice, Page, Row, SearchField, Section } from '../../ui/components';
@@ -39,6 +40,8 @@ import { useCampusSceneImage } from './useCampusSceneImage';
 import { CampusAreaMap, type CampusAreaPoint } from './CampusAreaMap';
 import { CampusMapAreaReview, canGuideCampusFacilities, type CampusMapReviewHint, type CampusMapReviewHints } from './CampusMapAreaReview';
 import { CampusIndoorMapping, type CampusIndoorSave } from './CampusIndoorMapping';
+import type { PublicFloorPlanRequest } from './CampusIndoorPlanDiscovery';
+import { campusInteriorBuildings, campusInteriorSetupStage } from './campus-copilot-targets';
 import { CampusSetupWorkspace } from './CampusSetupWorkspace';
 import { CampusControl } from './CampusWorkspace';
 import { PlusIcon } from 'phosphor-react-native/src/icons/Plus';
@@ -46,6 +49,8 @@ import { MinusIcon } from 'phosphor-react-native/src/icons/Minus';
 import { CrosshairSimpleIcon } from 'phosphor-react-native/src/icons/CrosshairSimple';
 
 export const emptyNativeScene=(name:string):CampusSceneDocument=>({schema_version:1,name,bounds:{width:1000,height:800,unit:'relative'},source:{kind:'manual',label:'Manually drawn campus'},elements:[]});
+type DownloadedFloorPlan = {kind:'public_floor_plan';buildingId:string;floorId:string|null;floorLabel:string};
+type AvailableFloorPlan = DownloadedFloorPlan & {image:CampusSceneImage;label:string};
 type CampusSceneEditorProps = DomainScreenProps & {
  schoolId: string; campusId: string; mapFirst?: boolean;
  onChooseCampus?: () => void; onViewPublished?: () => void;
@@ -65,15 +70,29 @@ function NativeSceneEditor({href,onNavigate,schoolId,campusId,root,workspace,rel
  const guide=campusSceneGuideIntent(href);
  const initialFocus=useRef(campusSceneEditorFocus(history.document,guide?.element??domainParams(href).get('element_id'))).current;
  const document=history.document,current=useRef(document),knownRevision=useRef(workspace.scene?.revision??0);current.current=document;knownRevision.current=Math.max(knownRevision.current,workspace.scene?.revision??0);
- const requestedIndoor=domainParams(href).get('indoor')==='1';
- const initialPanel=guide?.panel??(requestedIndoor&&workspace.scene?.draft?'indoor':!guide&&!initialFocus.selected
+ const params=domainParams(href),requestedIndoor=params.get('indoor')==='1';
+ const requestedBuilding=requestedIndoor?params.get('indoor_building'):null;
+ const interiorRequestKey=requestedIndoor?JSON.stringify([requestedBuilding]):'';
+ const initialInterior=requestedIndoor&&!sourceError
+  ? campusInteriorSetupStage(document,workspace.spaces,!workspace.scene||workspace.scene.draft!==null) : null;
+ const initialPanel=guide?.panel??(initialInterior?initialInterior==='reopen'?null:initialInterior:!initialFocus.selected
    ? canStartCampusMapSetup(workspace,campusId,!sourceError) ? 'map'
      : canResumeCampusMapSetup(workspace,campusId,!sourceError) ? 'preview' : null
    : null);
  const [draftOpen,setDraftOpen]=useState(!workspace.scene||workspace.scene.draft!==null),[revision,setRevision]=useState(workspace.scene?.revision??0),[published,setPublished]=useState(workspace.scene?.published_version??null),[spaces,setSpaces]=useState<CampusSceneSpace[]>(workspace.spaces.map(p=>({...p,campus_id:campusId}))),[selected,setSelected]=useState<string|null>(initialFocus.selected),[floor,setFloor]=useState<string|null>(initialFocus.floor),[panel,setPanel]=useState<'map'|'preview'|'assisted'|'publication'|'indoor'|'source'|'items'|'review'|'places'|'floorplan'|null>(initialPanel),[mode,setMode]=useState<'2d'|'2.5d'>(initialFocus.mode),[camera,setCamera]=useState(initialCampusCamera),[asset,setAsset]=useState('0'),[drawing,setDrawing]=useState<CampusScenePoint[]|null>(null),[creating,setCreating]=useState(false),[floorPlan,setFloorPlan]=useState<SceneFloorPlanContext|null>(null),[search,setSearch]=useState(''),[page,setPage]=useState(1),[onlyPending,setOnlyPending]=useState(false),[notice,setNotice]=useState(''),[error,setError]=useState(''),[preparing,setPreparing]=useState(false),[floorImageId,setFloorImageId]=useState<string|undefined>(),[showGuide,setShowGuide]=useState(true),[reviewChecks,setReviewChecks]=useState({signature:'',values:[false,false,false]});
- const [indoorBuilding,setIndoorBuilding]=useState<string|null>(null);
+ const [indoorBuilding,setIndoorBuilding]=useState<string|null>(()=>document.elements.find(element=>element.id===initialFocus.selected&&element.kind==='building')?.space_id??null);
+ const [indoorTarget,setIndoorTarget]=useState(requestedBuilding);
  const [floorplanReturn,setFloorplanReturn]=useState(false);
+ const [publicPlan,setPublicPlan]=useState<AvailableFloorPlan|null>(null);
  const indoorReturn=useRef<'preview'|null>(null);
+ const interiorEntry=useRef(!sourceError?interiorRequestKey:''),continueIndoors=useRef(requestedIndoor);
+ const leaveIndoor=useRef(false);
+ const indoorEditing=useRef(false);
+ const trackIndoorEditing=useCallback((editing:boolean)=>{indoorEditing.current=editing;},[]);
+ const endIndoor=()=>{
+  leaveIndoor.current=requestedIndoor;
+  setPanel(indoorReturn.current);
+ };
  const [mapBoundary,setMapBoundary]=useState<CampusAreaPoint[]>(()=>document.source.drawn_boundary??[]);
  const [mapAttempted,setMapAttempted]=useState(false);
  const [assistance,setAssistance]=useState<CampusMapAssistance|null>(null);
@@ -93,12 +112,27 @@ function NativeSceneEditor({href,onNavigate,schoolId,campusId,root,workspace,rel
     void client.invalidateQueries({queryKey:['campus',session.scopeKey,root+'published/'],exact:true});
     if(panel==='publication')setPanel(null);
    }
-   if(requestedIndoor&&action.endpoint.endsWith('/reopen/'))setPanel('indoor');
+   const interiorStage=continueIndoors.current&&value.scene!.draft
+    ? campusInteriorSetupStage(next,value.spaces,true) : null;
+   if(interiorStage&&interiorStage!=='reopen'&&action.endpoint.endsWith('/reopen/'))setPanel(interiorStage);
    setDraftOpen(value.scene!.draft!==null);setRevision(value.scene!.revision);setPublished(value.scene!.published_version);setSpaces(value.spaces.map(p=>({...p,campus_id:campusId})));history.acceptSaved(next);setFloorPlan(null);floorBase.current=null;
    const guidedPlaceSave=action.endpoint.endsWith('/reviewed-places/')&&(panel==='assisted'||panel==='preview'||panel==='map');
    if(guidedPlaceSave){setConfirmedFacilities({});setMapPlaceKinds(new Map());setSelected(null);}
    setNotice(value.scene!.revision>saved.revision?'Your action was saved; a newer campus draft or publication is now displayed.':action.endpoint.endsWith('/publish/')?'Campus view published. All apps now read this reviewed version.':guidedPlaceSave?'Facilities saved with your campus layout.':'Campus draft saved.');
-   if(action.endpoint.endsWith('/reviewed-places/')){const mappings=Array.isArray(receipt.mappings)?receipt.mappings as Array<{proposal_id:string;space_id:string}>:[],mappedFloor=mappings.find(row=>row.proposal_id==='floor_plan_target')?.space_id;if(mappedFloor&&value.spaces.some(row=>row.id===mappedFloor&&row.kind==='floor'&&row.status!=='inactive')){setFloor(mappedFloor);setSelected(null);setMode('2d');}if(panel==='indoor'){setPanel(indoorReturn.current);setNotice('Indoor mapping saved.');}else if(floorplanReturn&&mappedFloor){setFloorplanReturn(false);setPanel('indoor');}else setPanel(guidedPlaceSave?'preview':null);}
+   if(action.endpoint.endsWith('/reviewed-places/')){
+    const mappings=Array.isArray(receipt.mappings)?receipt.mappings as Array<{proposal_id:string;space_id:string}>:[];
+    const mappedFloor=mappings.find(row=>row.proposal_id==='floor_plan_target')?.space_id;
+    if(mappedFloor&&value.spaces.some(row=>row.id===mappedFloor&&row.kind==='floor'&&row.status!=='inactive')){setFloor(mappedFloor);setSelected(null);setMode('2d');}
+    if(panel==='indoor'){endIndoor();setNotice('Indoor mapping saved.');}
+    else if(floorplanReturn&&mappedFloor){setFloorplanReturn(false);setPanel('indoor');}
+    else if(interiorStage==='indoor'&&guidedPlaceSave){indoorReturn.current='preview';setPanel('indoor');}
+    else setPanel(guidedPlaceSave?'preview':null);
+   }
+  }else if(action.endpoint.endsWith('/floor-plan-download/')){
+   const target=action.continuation as DownloadedFloorPlan;
+   const image=receipt.image as CampusSceneImage;
+   setPublicPlan({...target,image,label:receipt.label as string});
+   setFloorImageId(image.id);setIndoorBuilding(target.buildingId);setIndoorTarget(null);setFloorplanReturn(true);setPanel('floorplan');
   }else if(action.endpoint.endsWith('/images/')){const result=receipt.image as CampusSceneImage;if(action.payload.kind!=='multipart'||result.id!==action.clientId||result.sha256!==action.payload.file.hash||result.byte_size!==action.payload.file.size)throw new Error('The image receipt does not match the original upload.');imageReceipt.current=result;uploadedImage.current=result;setNotice('Source image saved. Continue with its layout or select the source again if you left this step.');}
   else if(action.endpoint.endsWith('/imports/lookup/'))lookupReceipt.current=receipt.locations as CampusSceneLocation[];
   else if(action.endpoint.endsWith('/imports/')){
@@ -111,7 +145,9 @@ function NativeSceneEditor({href,onNavigate,schoolId,campusId,root,workspace,rel
     const fromBoundary=payload.kind==='map_area';
     setMapBoundary(fromBoundary?(proposed.source.drawn_boundary??payload.boundary??[]):[]);
     setAssistance(mapResult);setMapPlaceKinds(new Map());setConfirmedFacilities({});
-    history.change(proposed);setFloor(null);setMode(proposed.elements.length&&!proposed.source.map_coverage?'2.5d':'2d');setPanel(fromBoundary?'preview':null);
+    const interiorStage=fromBoundary&&continueIndoors.current ? campusInteriorSetupStage(proposed,spaces,true) : null;
+    history.change(proposed);setFloor(null);setMode(proposed.elements.length&&!proposed.source.map_coverage?'2.5d':'2d');
+    setPanel(interiorStage==='assisted'?'assisted':fromBoundary?'preview':null);
    }
    setSelected(null);setCamera(initialCampusCamera);setNotice('Layout prepared. Review names, positions and campus links before saving or publishing.');
   }
@@ -121,6 +157,26 @@ function NativeSceneEditor({href,onNavigate,schoolId,campusId,root,workspace,rel
  const sourceState=campusSceneSourceState(revision,knownRevision.current,!!sourceError),locked=write.locked||preparing||!draftOpen||sourceState!=='current',dirty=history.dirty||!!drawing||!!floorPlan,formOpen=creating||panel==='map'||panel==='preview'||panel==='assisted'||panel==='publication'||panel==='indoor'||panel==='places'||panel==='source'||panel==='floorplan',controlsLocked=locked||formOpen;
  useScreenExitGuard({blocked:write.busy||preparing,dirty:dirty&&!write.action,title:'Leave this campus draft?',message:'Unsaved drawing changes will be discarded. Saved drafts and retained commands remain available.'});
  const select=document.elements.find(e=>e.id===selected),items=document.elements.filter(e=>(!onlyPending||e.review_state!=='reviewed')&&`${e.label} ${e.kind}`.toLocaleLowerCase().includes(search.trim().toLocaleLowerCase())),actualPage=Math.min(page,Math.max(1,Math.ceil(items.length/8)));
+ useLayoutEffect(()=>{
+  if(!requestedIndoor){interiorEntry.current='';continueIndoors.current=false;return;}
+  if(interiorEntry.current===interiorRequestKey||sourceState!=='current')return;
+  interiorEntry.current=interiorRequestKey;
+  if(dirty||indoorEditing.current||creating||write.locked||preparing||panel==='source'||panel==='floorplan')return;
+  continueIndoors.current=true;
+  setIndoorTarget(requestedBuilding);
+  const stage=campusInteriorSetupStage(document,spaces,draftOpen);
+  if(stage==='reopen')return;
+  if(stage==='indoor'){
+   indoorReturn.current=panel==='preview'?'preview':null;
+   setIndoorBuilding(select?.kind==='building'?select.space_id:null);
+  }else setSelected(null);
+  setPanel(stage);
+ },[requestedIndoor,requestedBuilding,interiorRequestKey,sourceState,dirty,creating,write.locked,preparing,panel,document,spaces,draftOpen,select]);
+ useEffect(()=>{
+  if(!leaveIndoor.current||panel==='indoor'||write.busy||preparing)return;
+  leaveIndoor.current=false;
+  if(requestedIndoor)onNavigate(domainHref('/more/virtual-campus',domainParams(href),{indoor:undefined,indoor_building:undefined}));
+ },[href,panel,requestedIndoor,write.busy,preparing,onNavigate]);
  const outlineOnly=!!document.source.map_coverage&&document.elements.length===1&&document.elements[0]?.id==='map-boundary';
  const focusElement=selected??(outlineOnly&&panel==='preview'?'map-boundary':null);
  const focus=useMemo(()=>scenePlaceFocus(document,focusElement,floorPlan?'2d':mode,floor),[document,focusElement,mode,floor,floorPlan]);
@@ -185,12 +241,38 @@ function NativeSceneEditor({href,onNavigate,schoolId,campusId,root,workspace,rel
   else if(request.kind==='geojson')await send('imports',{kind:'geojson',text:request.text,label:request.label.slice(0,160),attribution:request.attribution,rights_confirmed:true});
   else{const uploaded=await upload(request.file,check);if(request.traceOnly||(capabilities.data?.floor_plan_analysis?.available??capabilities.data?.image_analysis.available)!==true){const longest=Math.max(uploaded.width,uploaded.height);history.change({...emptyNativeScene(workspace.campus.name),bounds:{width:Math.max(1,Math.round(uploaded.width/longest*1000)),height:Math.max(1,Math.round(uploaded.height/longest*1000)),unit:'relative'},source:{kind:request.sourceKind,label:request.label.slice(0,160),image_asset_id:uploaded.id,notes:'Uploaded source image for manual tracing. No places are inferred.'}});setPanel(null);setAssistance(null);setMapPlaceKinds(new Map());setMode('2d');setNotice('Source ready. Add a feature and trace its outline on the plan.');}else await send('imports',{kind:'image',image_asset_id:uploaded.id,label:request.label.slice(0,160),source_kind:request.sourceKind,instructions:request.instructions});}
  });if(!ok)throw new Error('Source preparation is unconfirmed. Review the retained original action.');};
- const importFloor=async(request:NativeFloorPlanIntakeRequest)=>{const ok=await task(async check=>{
-  const base=current.current,building=base.elements.find(e=>e.kind==='building'&&e.space_id===request.buildingId),place=spaces.find(p=>p.id===request.buildingId),floorPlace=spaces.find(p=>p.id===request.floorId);if(!building||!place?.revision||request.floorId&&!floorPlace?.revision)throw new Error('Refresh the exact mapped building and floor before continuing.');
-  const uploaded=await upload(request.file,check);setFloorImageId(uploaded.id);const continuation={kind:'floor_plan',buildingId:request.buildingId,floorId:request.floorId,newFloor:request.newFloor,baseDocument:base};
-  if(request.traceOnly||capabilities.data?.image_analysis.available!==true){const longest=Math.max(uploaded.width,uploaded.height),proposal={...emptyNativeScene(workspace.campus.name),bounds:{width:Math.max(1,Math.round(uploaded.width/longest*1000)),height:Math.max(1,Math.round(uploaded.height/longest*1000)),unit:'relative' as const}};const merged=mergeFloorPlanProposal(base,proposal,building,request.floorId,Crypto.randomUUID);floorBase.current=base;history.change(merged.document);setFloorPlan({buildingId:request.buildingId,buildingElementId:building.id,floorId:request.floorId,newFloor:request.newFloor,elementIds:[],imageBounds:merged.imageBounds});setPanel(null);setFloor(request.floorId);setMode('2d');setNotice('Floor plan ready for tracing. Review the floor and rooms together when finished.');}
-  else await send('imports',{kind:'image',purpose:'floor_plan',source_kind:'site_plan',image_asset_id:uploaded.id,label:request.file.name.slice(0,160),instructions:request.instructions,target:{building_id:place.id,expected_building_revision:place.revision,...(floorPlace?{floor_id:floorPlace.id,expected_floor_revision:floorPlace.revision}:{})}},{continuation});
+ const prepareFloor=async(request:Omit<NativeFloorPlanIntakeRequest,'file'>,label:string,loadImage:(check:()=>void)=>Promise<CampusSceneImage>)=>{const ok=await task(async check=>{
+  const base=current.current,building=campusInteriorBuildings(base,spaces).find(e=>e.space_id===request.buildingId),place=spaces.find(p=>p.id===request.buildingId),floorPlace=spaces.find(p=>p.id===request.floorId&&p.status!=='inactive'&&campusSceneFloorBelongsToBuilding(p,request.buildingId,spaces));if(!building||!place?.revision||request.floorId&&!floorPlace?.revision)throw new Error('Refresh the exact mapped building and floor before continuing.');
+  const uploaded=await loadImage(check);check();setFloorImageId(uploaded.id);const continuation={kind:'floor_plan',buildingId:request.buildingId,floorId:request.floorId,newFloor:request.newFloor,baseDocument:base};
+  if(request.traceOnly||(capabilities.data?.floor_plan_analysis?.available??capabilities.data?.image_analysis.available)!==true){const longest=Math.max(uploaded.width,uploaded.height),proposal={...emptyNativeScene(workspace.campus.name),bounds:{width:Math.max(1,Math.round(uploaded.width/longest*1000)),height:Math.max(1,Math.round(uploaded.height/longest*1000)),unit:'relative' as const}};const merged=mergeFloorPlanProposal(base,proposal,building,request.floorId,Crypto.randomUUID);floorBase.current=base;history.change(merged.document);setFloorPlan({buildingId:request.buildingId,buildingElementId:building.id,floorId:request.floorId,newFloor:request.newFloor,elementIds:[],imageBounds:merged.imageBounds});setPanel(null);setFloor(request.floorId);setMode('2d');setNotice('Floor plan ready for tracing. Review the floor and rooms together when finished.');}
+  else await send('imports',{kind:'image',purpose:'floor_plan',source_kind:'site_plan',image_asset_id:uploaded.id,label:label.slice(0,160),instructions:request.instructions,target:{building_id:place.id,expected_building_revision:place.revision,...(floorPlace?{floor_id:floorPlace.id,expected_floor_revision:floorPlace.revision}:{})}},{continuation});
  });if(!ok)throw new Error('Floor-plan preparation is unconfirmed. Review the retained original action.');};
+
+ const importFloor=(request:NativeFloorPlanIntakeRequest)=>prepareFloor(request,request.file.name,check=>upload(request.file,check));
+ const downloadPublicPlan=async(request:PublicFloorPlanRequest)=>{
+  if(locked||indoorEditing.current||session.environment.mode!=='live')throw new Error('Finish indoor edits before using another source.');
+  const place=spaces.find(item=>item.id===request.buildingId&&item.status!=='inactive');
+  if(!place?.revision||!campusInteriorBuildings(current.current,spaces).some(row=>row.space_id===place.id))
+   throw new Error('Refresh the exact mapped building before continuing.');
+  const floors=spaces.filter(item=>item.status!=='inactive'&&campusSceneFloorBelongsToBuilding(item,place.id,spaces));
+  const floorName=request.floorLabel?.trim();
+  const fold=(name:string)=>name.trim().normalize('NFC').toLocaleLowerCase();
+  const candidates=floorName?floors.filter(item=>fold(item.name)===fold(floorName)):floors.filter(item=>item.id===request.floorId);
+  const floorPlace=candidates.length===1?candidates[0]:undefined;
+  if(candidates.length>1)throw new Error('Multiple mapped floors have this name. Rename one before using this source.');
+  if(floorPlace&&!floorPlace.revision)throw new Error('Refresh the exact mapped floor before continuing.');
+  const target={building_id:place.id,expected_building_revision:place.revision,
+   ...(floorPlace?{floor_id:floorPlace.id,expected_floor_revision:floorPlace.revision}:{})};
+  const continuation:DownloadedFloorPlan={kind:'public_floor_plan',buildingId:place.id,floorId:floorPlace?.id??null,
+   floorLabel:floorName??floorPlace?.name??'Ground floor'};
+  if(!await task(async()=>send('imports/floor-plan-download',{source_id:request.sourceId,rights_confirmed:true,target,
+   ...(request.officialWebsite?{official_website:request.officialWebsite}:{})},{continuation})))
+   throw new Error('Check the retained source request before retrying the download.');
+ };
+ const preparePublicPlan=(plan:AvailableFloorPlan,traceOnly:boolean)=>void prepareFloor({
+  buildingId:plan.buildingId,floorId:plan.floorId,...(!plan.floorId?{newFloor:{name:plan.floorLabel,code:''}}:{}),
+  instructions:'',rightsConfirmed:true,traceOnly,
+ },plan.label,async()=>plan.image).then(()=>setPublicPlan(null)).catch(()=>{});
  const add=()=>{const preset=CAMPUS_SCENE_ASSETS[Number(asset)];if(!preset||locked||document.elements.length>=2000)return;const indoor=!!floorPlan||!!floor||preset.kind==='room';if(preset.kind==='room'&&!floor&&!floorPlan){setError('Choose a mapped floor or prepare a floor plan before drawing rooms.');return;}const {key,kind,label,...style}=preset,id=Crypto.randomUUID(),points=defaultPoints(kind,document.bounds,document.elements.length),element:CampusSceneElement={id,kind,label,asset_key:key,...style,geometry:{type:geometryType(kind),points},space_id:null,floor_id:floorPlan?.floorId??floor,parent_element_id:floorPlan?.buildingElementId??(indoor?select?.id:null),review_state:'needs_review'};history.change({...document,elements:[...document.elements,element]});if(floorPlan)setFloorPlan({...floorPlan,elementIds:[...floorPlan.elementIds,id]});setSelected(id);setPanel(null);};
  const finishDrawing=()=>{if(!select||!drawing)return;const minimum=select.geometry.type==='polygon'?3:select.geometry.type==='polyline'?2:1;if(drawing.length<minimum){setError(`Add at least ${minimum} points to this outline.`);return;}update({...select,geometry:{...select.geometry,points:drawing},review_state:'needs_review'});setDrawing(null);};
  const remove=()=>{if(!select)return;const check=capture();Alert.alert('Remove this illustration?', 'Its canonical campus place and resources stay in the campus directory. Child illustrations remain available for review.',[{text:'Keep',style:'cancel'},{text:'Remove',style:'destructive',onPress:()=>{try{check();change({...document,elements:document.elements.filter(e=>e.id!==select.id).map(e=>e.parent_element_id===select.id?{...e,parent_element_id:null,review_state:'needs_review'}:e)});if(floorPlan)setFloorPlan({...floorPlan,elementIds:floorPlan.elementIds.filter(id=>id!==select.id)});setSelected(null);}catch{}}}]);};
@@ -201,29 +283,31 @@ function NativeSceneEditor({href,onNavigate,schoolId,campusId,root,workspace,rel
    document:value.document,expected_revision:revision,...(value.rows.length ? {rows:value.rows} : {}),
   }));
   if(!ok)throw new Error('The indoor changes are still here. Check the saved layout before retrying.');
-  setPanel(indoorReturn.current);setNotice('Indoor mapping saved.');
+  endIndoor();setNotice('Indoor mapping saved.');
  };
  const reviewPlaces=async(body:CampusScenePlaceReview)=>{const ok=await task(async()=>{await send('reviewed-places',body as unknown as Record<string,unknown>);await setup.refetch({throwOnError:true});});if(!ok)throw new Error('Place review is unconfirmed. Recover its exact original request.');};
  const issues=draftIssues(document),signature=JSON.stringify(document),checks=reviewChecks.signature===signature?reviewChecks.values:[false,false,false],readiness=sceneOnboardingReadiness(document,spaces);
- const viewHref=domainHref('/more/virtual-campus',domainParams(href),{edit:undefined,element_id:undefined,panel:undefined,indoor:undefined});
+ const viewHref=domainHref('/more/virtual-campus',params,{edit:undefined,element_id:undefined,panel:undefined,indoor:undefined,indoor_building:undefined});
  const layoutFeedback=<>{write.error||error?<Notice tone="warning" message={error||write.error}/>:null}{notice?<Notice message={notice}/>:null}{write.action?<Section title="Retained layout action"><DomainText>{write.action.phase==='accepted'?'The owning service acknowledged this action. Recovery only reads the saved receipt and current campus.':'The original request, source revision, file and key are retained. Recover that exact request before editing.'}</DomainText><Button title={write.resumeHref?'Open original layout action':write.action.phase==='accepted'?'Read saved layout result':'Recover original layout request'} busy={write.busy} onPress={()=>write.resumeHref?onNavigate(write.resumeHref):void write.recover()}/></Section>:null}</>;
  const guidedCanvas=panel==='preview'||panel==='assisted'||panel==='publication';
  const sceneCanvas=<CampusMapCanvas contextKey={session.scopeKey} draftPreview includeSurroundings={!guidedCanvas}
   viewportInsets={guidedCanvas?{top:32,bottom:32}:undefined} editorInterior={floorPlan??undefined} scene={document} floor={floor} mode={floorPlan?'2d':mode} selected={selected} route={null} unavailable={[]} camera={camera} onCameraChange={setCamera} onSelect={id=>{if(!locked&&!drawing&&(!formOpen||panel==='preview')){setSelected(id);if(panel!=='preview')setPanel(null);}}} lighting={lighting.lighting} sunlight={lighting.sunlight} focus={focus} sourceImageUrl={showGuide&&(floorPlan||mode==='2d')?(floorPlan?floorImage.url:floor?undefined:image.url):undefined} sourceImageBounds={floorPlan?{...floorPlan.imageBounds,rotationDeg:floorPlan.imageRotationDeg}:undefined} drawingPoints={drawing??undefined} onPoint={drawing&&!locked?point=>setDrawing(previous=>[...(previous??[]),clampPoint(point,document.bounds)].slice(0,500)):undefined}/>;
  const layoutCanvas=<View style={{height:Math.max(320,Math.min(680,height*(width>900?.58:.46))),borderRadius:20,overflow:'hidden'}}>{sceneCanvas}</View>;
  const mapFeedback=write.error||error||write.action ? layoutFeedback : undefined;
- const hasIndoorBuilding=document.elements.some(element=>element.kind==='building'&&element.space_id);
+ const hasIndoorBuilding=campusInteriorBuildings(document,spaces).length>0;
  const openIndoor=(returnTo:'preview'|null)=>{
   indoorReturn.current=returnTo;
   setIndoorBuilding(select?.kind==='building'?select.space_id:null);
+  setIndoorTarget(null);
   setFloorplanReturn(false);
   setPanel('indoor');
  };
- if(panel==='indoor'&&draftOpen)return <CampusIndoorMapping {...{document,spaces,schoolId,campusId}}
-  contextKey={session.scopeKey} aiAvailable={capabilities.data?.indoor_guidance?.available===true} initialBuildingId={indoorBuilding} initialFloorId={floor} disabled={locked} busy={write.busy||preparing}
+ if(panel==='indoor'&&draftOpen)return <CampusIndoorMapping key={JSON.stringify([indoorTarget])} {...{document,spaces,schoolId,campusId}}
+  contextKey={session.scopeKey} aiAvailable={capabilities.data?.indoor_guidance?.available===true} autoOpenAssistant={continueIndoors.current} initialBuildingId={indoorBuilding} initialFloorId={floor} disabled={locked} busy={write.busy||preparing}
+  requestedBuilding={indoorTarget} onEditingChange={trackIndoorEditing} onUsePublicPlan={downloadPublicPlan}
   feedback={mapFeedback??(sourceState!=='current'?<Notice tone="warning" message="The saved layout changed or is unavailable. Reopen the current draft to continue."/>:undefined)}
-  onClose={()=>setPanel(indoorReturn.current)} onSave={saveIndoor}
-  onImportPlan={buildingId=>{setIndoorBuilding(buildingId);setFloorplanReturn(true);setPanel('floorplan');}}/>;
+  onClose={endIndoor} onSave={saveIndoor}
+  onImportPlan={buildingId=>{setIndoorBuilding(buildingId);setIndoorTarget(null);setPublicPlan(null);setFloorplanReturn(true);setPanel('floorplan');}}/>;
  const leaveSetup=()=>onNavigate('/more');
  const lockNavigation=write.busy||preparing;
  const mapGenerationError=mapAttempted&&!write.action&&!lockNavigation ? write.error||error : '';
@@ -236,7 +320,7 @@ function NativeSceneEditor({href,onNavigate,schoolId,campusId,root,workspace,rel
   busyLabel:preparing?'Preparing your layout…':'Checking layout…',
   disabled:write.blocked,onPress:recoverMapArea,
  } : undefined;
- const traditional={label:'Traditional setup',run:()=>{setSelected(null);setPanel(null);}};
+ const traditional={label:'Traditional setup',run:()=>{continueIndoors.current=false;setSelected(null);setPanel(null);}};
  const otherSource={label:'Use a site plan or map file',run:()=>setPanel('source')};
  if((panel==='map'||draftOpen&&retainedBoundary)&&sourceState==='current')return <CampusSetupWorkspace
   campusName={workspace.campus.name} phase="boundary" feedback={mapRecovery||mapGenerationError?undefined:mapFeedback} locked={lockNavigation} onClose={leaveSetup}
@@ -281,7 +365,9 @@ function NativeSceneEditor({href,onNavigate,schoolId,campusId,root,workspace,rel
    </>}
   </Section>;
   return <CampusSetupWorkspace campusName={workspace.campus.name} phase={settingUpFacilities?'facilities':reviewingPublication?'publication':'layout'}
-   locked={lockNavigation} map={sceneCanvas} feedback={mapFeedback??(coverageMessage?<Notice message={coverageMessage}/>:notice==='Facilities saved with your campus layout.'?<Notice message={notice}/>:undefined)}
+   locked={lockNavigation} map={sceneCanvas} feedback={mapFeedback??(continueIndoors.current&&!hasIndoorBuilding&&!settingUpFacilities&&!reviewingPublication
+    ? <Notice message="Connect a building on the campus map to start mapping its floors and rooms."/>
+    : coverageMessage?<Notice message={coverageMessage}/>:notice==='Facilities saved with your campus layout.'?<Notice message={notice}/>:undefined)}
    featureCount={document.elements.filter(element=>!coverage||element.id!=='map-boundary').length}
    layoutDetail={outlineOnly?'Boundary draft':undefined}
    onClose={settingUpFacilities||reviewingPublication?()=>{setSelected(null);setPanel('preview');}:leaveSetup}
@@ -296,11 +382,31 @@ function NativeSceneEditor({href,onNavigate,schoolId,campusId,root,workspace,rel
    guidance={reviewingPublication?publicationPane:undefined}
    autoOpenAssistant={settingUpFacilities}
    assistantGuidance={settingUpFacilities?backToMap=><CampusMapAreaReview assistance={guidanceSource}
-    document={document} disabled={locked} initialHints={confirmedFacilities}
+    document={document} disabled={locked} initialHints={confirmedFacilities} interiors={continueIndoors.current}
     onFocus={featureId=>{setSelected(featureId);setCamera(initialCampusCamera);}}
     onApply={applyMapHint} onContinue={async hints=>{await continueMapReview(hints);backToMap();}}/>:undefined}/>;
  }
- return <Page key="campus-editor" title="Campus layout" subtitle={`${workspace.campus.name} · ${dirty?'Unsaved changes':revision?'Saved draft':'New draft'}`} maxWidth={1400}>{!mapFirst?<ScreenBack title={guide?"Back to campus setup guide":"Back to virtual campus"} fallbackHref={guide?.href??viewHref}/>:null}{guide?<Notice message="Build your campus one part at a time. Save this draft to continue later; add detail when it helps your campus."/>:null}{!draftOpen?<Section title="Published campus view"><DomainText>Reopen this reviewed version to make a new draft. The published map stays available while you edit.</DomainText>{onViewPublished&&published?<Button title="View published campus" disabled={write.locked||preparing} onPress={onViewPublished}/>:null}<Button title="Reopen as a draft" disabled={write.locked||preparing} busy={write.busy} onPress={()=>void task(async()=>send('reopen',{expected_revision:revision}))}/></Section>:null}
+ if(panel==='floorplan'&&publicPlan)return <Page title="Review the public floor plan" subtitle={publicPlan.label} maxWidth={760}>
+  {layoutFeedback}
+  <ScreenBack title="Back to indoor mapping" priority={30} disabled={preparing||write.busy}
+   onPress={()=>{setPublicPlan(null);setFloorImageId(undefined);setPanel('indoor');}}/>
+  <DomainText>{publicPlan.floorId?`Use on ${publicPlan.floorLabel}.`:`Review this plan as a new floor named ${publicPlan.floorLabel}.`}</DomainText>
+  {floorImage.url?<Image source={{uri:floorImage.url}} accessibilityLabel={publicPlan.label} resizeMode="contain" style={{width:'100%',height:240}}/>
+   :floorImage.error?<Notice tone="warning" message={floorImage.error}/>:<Loading label="Loading plan preview…"/>}
+  {(capabilities.data?.floor_plan_analysis?.available??capabilities.data?.image_analysis.available)===true
+   ? <Button title="Find rooms in this plan" busy={preparing} disabled={locked||!floorImage.url} onPress={()=>preparePublicPlan(publicPlan,false)}/>:null}
+  <Button title="Use plan as tracing guide" kind="secondary" disabled={locked||!floorImage.url} onPress={()=>preparePublicPlan(publicPlan,true)}/>
+ </Page>;
+ const reopenDraft=()=>{
+  const reopen=()=>void task(async()=>send('reopen',{expected_revision:revision}));
+  if(!continueIndoors.current){reopen();return;}
+  const check=capture();
+  Alert.alert('Reopen the campus layout?', 'Create an editable draft for indoor mapping. Members will still see the published campus.', [
+   {text:'Cancel',style:'cancel'},
+   {text:'Reopen as a draft',onPress:()=>{try{check();reopen();}catch{}}},
+  ]);
+ };
+ return <Page key="campus-editor" title="Campus layout" subtitle={`${workspace.campus.name} · ${dirty?'Unsaved changes':revision?'Saved draft':'New draft'}`} maxWidth={1400}>{!mapFirst?<ScreenBack title={guide?"Back to campus setup guide":"Back to virtual campus"} fallbackHref={guide?.href??viewHref}/>:null}{guide?<Notice message="Build your campus one part at a time. Save this draft to continue later; add detail when it helps your campus."/>:null}{!draftOpen?<Section title="Published campus view"><DomainText>{continueIndoors.current?'Reopen the campus layout to map its floors and rooms. Members can still use the published map.':'Reopen this reviewed version to make a new draft. The published map stays available while you edit.'}</DomainText>{onViewPublished&&published?<Button title="View published campus" disabled={write.locked||preparing} onPress={onViewPublished}/>:null}<Button title="Reopen as a draft" disabled={write.locked||preparing} busy={write.busy} onPress={reopenDraft}/></Section>:null}
  {sourceState!=='current'?<Section title={sourceState==='changed'?'The saved campus draft changed':'Current source unavailable'}><Notice tone="warning" message={sourceState==='changed'?'Your local drawing is retained. Review the current saved draft before making another layout change.':`Your local drawing is retained. Changes are paused until the saved source can be checked. ${sourceError}`}/><ControlButton title="Check saved source" disabled={write.locked||preparing} onPress={()=>void reloadSource()}/><ControlButton title="Load current saved draft" disabled={write.locked||preparing} onPress={loadCurrent}/></Section>:null}
  {layoutFeedback}
  <View style={{flexDirection:'row',flexWrap:'wrap',gap:8}}><ControlButton title="Export draft" disabled={write.busy||preparing} onPress={()=>{try{const check=capture();void shareCampusDraft(JSON.stringify(document,null,2),`${document.name.replace(/[^a-zA-Z0-9_-]/g,'-')||'campus'}-draft.json`,check).catch(cause=>setError(cause instanceof Error?cause.message:'Draft export unavailable.'));}catch(cause){setError(cause instanceof Error?cause.message:'Draft export unavailable.');}}}/><ControlButton title="Undo" disabled={controlsLocked||!history.canUndo||!!drawing||!!floorPlan} onPress={()=>history.undo()}/><ControlButton title="Redo" disabled={controlsLocked||!history.canRedo||!!drawing||!!floorPlan} onPress={()=>history.redo()}/><ControlButton title="Save draft" kind="primary" disabled={controlsLocked||!!drawing||!!floorPlan||!history.dirty&&revision>0} busy={write.busy} onPress={()=>void task(async()=>send('draft',{document,expected_revision:revision}))}/><ControlButton title={panel==='review'?'Keep editing':'Review & publish'} disabled={controlsLocked||!!drawing} onPress={()=>{setPanel(panel==='review'?null:'review');setSelected(null);}}/></View>
@@ -308,7 +414,7 @@ function NativeSceneEditor({href,onNavigate,schoolId,campusId,root,workspace,rel
  <View style={{flexDirection:'row',flexWrap:'wrap',gap:8}}><ControlButton title="Zoom in" onPress={()=>setCamera({...camera,zoom:Math.min(7,camera.zoom*1.35)})}/><ControlButton title="Zoom out" onPress={()=>setCamera({...camera,zoom:Math.max(1,camera.zoom/1.35)})}/><ControlButton title="Fit" onPress={()=>setCamera(initialCampusCamera)}/><SegmentedControl label="Map view" value={floorPlan?'2d':mode} disabled={!!drawing||!!floorPlan||formOpen} options={[{value:'2d',label:'Plan'},{value:'2.5d',label:'2.5D'}]} onChange={value=>setMode(value as typeof mode)}/></View>
  {image.error?<Notice tone="warning" message={image.error}/>:null}{image.url||floorImage.url?<LabeledSwitch label="Show private tracing guide" value={showGuide} onChange={setShowGuide}/>:null}
  {drawing?<Section title="Trace this feature"><DomainText>Tap its corners in order. Drag to pan and pinch to zoom. Finish when its outline matches the plan.</DomainText><View style={{flexDirection:'row',flexWrap:'wrap',gap:8}}><ControlButton title={`Finish outline · ${drawing.length} points`} kind="primary" disabled={controlsLocked} onPress={finishDrawing}/><ControlButton title="Undo point" disabled={controlsLocked||!drawing.length} onPress={()=>setDrawing(drawing.slice(0,-1))}/><ControlButton title="Cancel tracing" disabled={controlsLocked} onPress={()=>setDrawing(null)}/></View></Section>:null}
- {!drawing?<><View style={{flexDirection:'row',flexWrap:'wrap',gap:8}}><ControlButton title="Start from a source" disabled={controlsLocked||!!floorPlan} onPress={()=>{setPanel('source');setSelected(null);}}/><ControlButton title="Outline on map" disabled={controlsLocked||!!floorPlan} onPress={openMapSource}/>{(assistance||canResumeCampusMapSetup(workspace,campusId,true))&&!floorPlan?<ControlButton title="Open guided campus setup" disabled={controlsLocked} onPress={()=>setPanel('preview')}/>:null}<ControlButton title="Items" disabled={controlsLocked} onPress={()=>{setPanel('items');setSelected(null);}}/><ControlButton title={floorPlan?'Review floor plan':'Connect places'} disabled={controlsLocked} onPress={()=>{setPanel('places');setSelected(null);}}/>{hasIndoorBuilding?<ControlButton title="Map building interiors" disabled={controlsLocked} onPress={()=>openIndoor(null)}/>:null}<ControlButton title="Add floor plan" disabled={controlsLocked||dirty} onPress={()=>{setFloorplanReturn(false);setPanel('floorplan');}}/><ControlButton title="Campus setup" disabled={controlsLocked||dirty} onPress={()=>onNavigate(`/more/setup/institution/campus?campus_id=${encodeURIComponent(campusId)}`)}/></View>
+ {!drawing?<><View style={{flexDirection:'row',flexWrap:'wrap',gap:8}}><ControlButton title="Start from a source" disabled={controlsLocked||!!floorPlan} onPress={()=>{setPanel('source');setSelected(null);}}/><ControlButton title="Outline on map" disabled={controlsLocked||!!floorPlan} onPress={openMapSource}/>{(assistance||canResumeCampusMapSetup(workspace,campusId,true))&&!floorPlan?<ControlButton title="Open guided campus setup" disabled={controlsLocked} onPress={()=>setPanel('preview')}/>:null}<ControlButton title="Items" disabled={controlsLocked} onPress={()=>{setPanel('items');setSelected(null);}}/><ControlButton title={floorPlan?'Review floor plan':'Connect places'} disabled={controlsLocked} onPress={()=>{setPanel('places');setSelected(null);}}/>{hasIndoorBuilding?<ControlButton title="Map building interiors" disabled={controlsLocked} onPress={()=>openIndoor(null)}/>:null}<ControlButton title="Add floor plan" disabled={controlsLocked||dirty} onPress={()=>{setPublicPlan(null);setFloorplanReturn(false);setPanel('floorplan');}}/><ControlButton title="Campus setup" disabled={controlsLocked||dirty} onPress={()=>onNavigate(`/more/setup/institution/campus?campus_id=${encodeURIComponent(campusId)}`)}/></View>
  <ChoiceMenu label="Add feature" value={asset} options={CAMPUS_SCENE_ASSETS.map((a,index)=>({value:String(index),label:a.label}))} disabled={controlsLocked} onChange={setAsset}/><ControlButton title="Add selected feature" kind="primary" disabled={controlsLocked} onPress={add}/>
  <ChoiceMenu label="Drawing floor" value={floor??''} options={[{value:'',label:'Outdoors'},...spaces.filter(p=>p.kind==='floor').map(p=>({value:p.id,label:p.name}))]} disabled={controlsLocked||!!floorPlan} onChange={value=>{setFloor(value||null);setSelected(null);setCamera(initialCampusCamera);}}/>
  {select&&!formOpen?<><CampusSceneInspector key={select.id} {...{href,document,spaces,disabled:locked}} selected={select} resourceScope={{schoolId,campusId}} fixedFloorContext={!!floorPlan} onUpdate={update} onDelete={remove} onDuplicate={duplicate} onClose={()=>setSelected(null)} onCreatePlace={()=>setCreating(true)}/><ControlButton title="Draw this feature on plan" disabled={controlsLocked} onPress={()=>{setMode('2d');setDrawing([]);}}/>{select.kind==='room'?<CampusSceneRoomFurnishing existingCount={document.elements.filter(e=>e.parent_element_id===select.id).length} disabled={controlsLocked} relativeScale={document.bounds.unit==='relative'} onApply={furnish}/>:null}</>:null}

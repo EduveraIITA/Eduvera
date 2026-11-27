@@ -25,7 +25,7 @@ interface ReviewStep {
 
 const MAX_REVIEW_STEPS = 24;
 
-function createSteps(assistance: CampusMapAssistance, document: CampusSceneDocument, initialHints: CampusMapReviewHints): ReviewStep[] {
+function createSteps(assistance: CampusMapAssistance, document: CampusSceneDocument, initialHints: CampusMapReviewHints, interiors = false): ReviewStep[] {
   const elements = new Map(document.elements.map(element => [element.id, element]));
   const groups = createScenePlaceProposals(document, []);
   const byElement = new Map(groups.flatMap(group => group.elementIds.map(id => [id, group] as const)));
@@ -51,7 +51,7 @@ function createSteps(assistance: CampusMapAssistance, document: CampusSceneDocum
     if (!group || group.elementIds.some(id => Object.hasOwn(initialHints, id))) return [];
     const outlines = group.elementIds.flatMap(id => {
       const element = elements.get(id);
-      return element && !element.floor_id ? [element] : [];
+      return element && !element.floor_id && (!interiors || element.kind === 'building' && element.geometry.type === 'polygon') ? [element] : [];
     });
     const allowedKinds = sceneProposalKinds(outlines);
     const suggestion = suggestions.get(groupId);
@@ -59,7 +59,7 @@ function createSteps(assistance: CampusMapAssistance, document: CampusSceneDocum
     const kind = allowedKinds.find(value => value === suggestion?.kind || (suggestion?.kind === undefined && value === group.kind)) ?? allowedKinds[0];
     return feature && kind ? [{
       id: feature.id, label: feature.label, kind, allowedKinds,
-      question: suggestion?.question || 'What is this place called and how is it used?',
+      question: suggestion?.question || (interiors ? 'What is this building called and how is it used?' : 'What is this place called and how is it used?'),
     }] : [];
   }).slice(0, MAX_REVIEW_STEPS);
 }
@@ -72,7 +72,7 @@ export function canGuideCampusFacilities(assistance: CampusMapAssistance, docume
   return hasConfirmedPlace || createSteps(assistance, document, initialHints).length > 0;
 }
 
-function stepMessages(step: ReviewStep, last: boolean) {
+function stepMessages(step: ReviewStep, labelText: string) {
   const label = { '@path': '/facility/label' };
   const kind = { '@path': '/facility/kind' };
   return [{
@@ -89,24 +89,25 @@ function stepMessages(step: ReviewStep, last: boolean) {
             options: step.allowedKinds.map(value => ({ value, label: SCENE_PLACE_KIND_LABELS[value] ?? value })) },
         { id: 'apply', component: 'Button', child: 'apply-label', variant: 'primary',
           action: { event: { name: 'accept_place_hint', context: { feature_id: step.id, label, kind } } } },
-        { id: 'apply-label', component: 'Text', text: last ? 'Save facilities' : 'Apply and next' },
+        { id: 'apply-label', component: 'Text', text: labelText },
       ],
     },
   }];
 }
 
-export function CampusMapAreaReview({ assistance, document, disabled, initialHints = {}, onFocus, onApply, onContinue, onClose }: {
+export function CampusMapAreaReview({ assistance, document, disabled, initialHints = {}, interiors = false, onFocus, onApply, onContinue, onClose }: {
   assistance: CampusMapAssistance;
   document: CampusSceneDocument;
   disabled: boolean;
   initialHints?: CampusMapReviewHints;
+  interiors?: boolean;
   onFocus: (id: string) => void;
   onApply: (id: string, hint: CampusMapReviewHint) => void | Promise<void>;
   onContinue: (hints: CampusMapReviewHints) => void | Promise<void>;
   onClose?: () => void;
 }) {
   const { colors } = useTheme();
-  const [steps] = useState(() => createSteps(assistance, document, initialHints));
+  const [steps] = useState(() => createSteps(assistance, document, initialHints, interiors));
   const [answers, setAnswers] = useState<CampusMapReviewHints>(initialHints);
   const [index, setIndex] = useState(0);
   const [error, setError] = useState('');
@@ -120,9 +121,10 @@ export function CampusMapAreaReview({ assistance, document, disabled, initialHin
     if (currentId) focus.current(currentId);
   }, [currentId]);
 
-  const last = index === steps.length - 1;
+  const saveOnApply = interiors || index === steps.length - 1;
+  const applyLabel = interiors ? 'Connect building' : saveOnApply ? 'Save facilities' : 'Apply and next';
   // A stable message preserves unsaved input during a failed action retry.
-  const messages = useMemo(() => step ? stepMessages(step, last) : [], [step, last]);
+  const messages = useMemo(() => step ? stepMessages(step, applyLabel) : [], [step, applyLabel]);
 
   const run = async (action: () => void | Promise<void>) => {
     if (disabled || pending.current) return;
@@ -148,7 +150,7 @@ export function CampusMapAreaReview({ assistance, document, disabled, initialHin
         await onApply(step.id, next[step.id]!);
         setAnswers(next);
       }
-      if (last) await onContinue(next);
+      if (saveOnApply) await onContinue(next);
       else setIndex(previous => previous + 1);
     });
   };
@@ -157,7 +159,9 @@ export function CampusMapAreaReview({ assistance, document, disabled, initialHin
   return <View style={[styles.panel, { backgroundColor: colors.surface, borderColor: colors.border }]}>
     <View style={styles.header}>
       <Text accessibilityLiveRegion="polite" style={[styles.progress, { color: colors.muted }]}>
-        {working && (!step || last) ? 'Saving facilities…' : step ? `Place ${index + 1} of ${steps.length}` : answered ? 'Facilities ready to save' : 'Identify facilities'}
+        {working && (!step || saveOnApply) ? interiors ? 'Connecting building…' : 'Saving facilities…'
+          : step ? `${interiors ? 'Building' : 'Place'} ${index + 1} of ${steps.length}`
+          : answered ? 'Facilities ready to save' : interiors ? 'Identify a building' : 'Identify facilities'}
       </Text>
       {onClose ? <Pressable accessibilityRole="button" accessibilityLabel="Close facilities review"
         accessibilityState={{ disabled: locked }} disabled={locked} onPress={onClose}
@@ -168,7 +172,7 @@ export function CampusMapAreaReview({ assistance, document, disabled, initialHin
     {error ? <Notice message={error} tone="warning" /> : null}
     {step ? <>
       <CampusA2uiSurface messages={messages} onAction={act} disabled={locked} />
-      {!Object.hasOwn(answers, step.id) ? <ControlButton title="Skip place" disabled={locked} onPress={() => { setError(''); setIndex(previous => previous + 1); }} /> : null}
+      {!Object.hasOwn(answers, step.id) ? <ControlButton title={interiors ? 'Skip building' : 'Skip place'} disabled={locked} onPress={() => { setError(''); setIndex(previous => previous + 1); }} /> : null}
     </> : <View style={styles.finished}>
       <Text style={[styles.description, { color: colors.ink }]}>
         {answered ? 'Save the places you confirmed on the layout.' : 'No places are ready to save. You can still edit the layout.'}

@@ -71,9 +71,11 @@ function LocalA2uiSurface({ surface, onAction, onValueChange, disabled, renderAs
         const label = a2uiText(component.label, model);
         const path = a2uiBindingPath(component.value);
         const multiline = component.variant === 'longText';
+        const maxLength=assistant && typeof component.maxLength==='number' && Number.isInteger(component.maxLength)
+          ? Math.max(1,Math.min(2400,component.maxLength)) : multiline ? 2400 : 160;
         if (!label || !path || (!multiline && component.variant !== undefined && component.variant !== 'shortText')) return null;
         return <Field key={id} label={label} placeholder={a2uiText(component.placeholder, model)}
-          value={a2uiText(component.value, model)} maxLength={multiline ? 2400 : 160} multiline={multiline} editable={!disabled}
+          value={a2uiText(component.value, model)} maxLength={maxLength} multiline={multiline} editable={!disabled}
           autoCapitalize={multiline ? 'sentences' : 'words'} onChangeText={value => change(path, value)} />;
       }
       case 'ChoicePicker': {
