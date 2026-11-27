@@ -118,7 +118,7 @@ test('root/deep document URLs and real immutable JS/WASM are served while missin
   const { origin, received } = await fixture(t);
   for (const target of ['/', '/today', '/areas/assistant/conversation?thread=owned', '/areas/events/manage/new?date=2026-10-29', '/company/institutions/owned']) {
     const result = await request(origin, target); assert.equal(result.status, 200); assert.match(result.body, /Current RN Web/); assert.match(result.headers['content-type'], /text\/html/); assert.equal(result.headers['cache-control'], 'no-store');
-    assert.match(result.headers['content-security-policy'], /'wasm-unsafe-eval'/); assert.doesNotMatch(result.headers['content-security-policy'], /'unsafe-eval'/); assert.equal(result.headers['cross-origin-opener-policy'], 'same-origin-allow-popups');
+    assert.match(result.headers['content-security-policy'], /'wasm-unsafe-eval'/); assert.doesNotMatch(result.headers['content-security-policy'], /'unsafe-eval'/); assert.ok(result.headers['content-security-policy'].includes("img-src 'self' data: blob: https://tile.openstreetmap.org;")); assert.equal(result.headers['cross-origin-opener-policy'], 'same-origin-allow-popups');
   }
   const documentHead = await request(origin, '/', { method: 'HEAD' }); assert.equal(documentHead.status, 200); assert.equal(documentHead.bytes.length, 0); assert.equal(Number(documentHead.headers['content-length']), Buffer.byteLength('<!doctype html><html>Current RN Web</html>'));
   const js = await request(origin, '/assets/entry-abcdef123456.js'); assert.match(js.headers['content-type'], /javascript/); assert.match(js.headers['cache-control'], /immutable/);

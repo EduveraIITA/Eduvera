@@ -10,7 +10,10 @@ import { captureSimulationProviderEffect, selectedSimulationResources } from '..
 import { executionNow } from '../campus-model-core/execution-time.runtime.js';
 import { sceneImportSchema, sceneLookupSchema, type FloorPlanTarget } from './scene-import.contracts.js';
 import { sceneFromGeoJson } from './scene-import.geometry.js';
-import { CampusSceneImportProvider, imageSceneBounds } from './scene-import.provider.js';
+import { CAMPUS_MAP_HINT_OUTPUT_TOKENS, CampusSceneImportProvider, imageSceneBounds } from './scene-import.provider.js';
+import { prepareMapArea } from './scene-import.area.js';
+import { campusMapAssistance, mappedPlaceCandidates } from './scene-import.assistance.js';
+import { simulationMapArea } from './scene-import.simulation-map.js';
 
 type ImportRun = {id:string;school_id:string;campus_id:string;actor_user_id:string;kind:string;request_hash:string;status:'running'|'completed'|'failed';result:unknown;error_message:string|null;created_at:Date};
 type Admission<T> = {kind:'cached';result:T}|{kind:'new'}|{kind:'expired';message:string};
@@ -110,14 +113,16 @@ export class CampusSceneImportService {
     });
   }
 
-  private async reserve(id:string,userId:string,inputTokens:number,outputTokens:number) {
-    const limits=assertAgentEnabled();
-    if(!Number.isSafeInteger(inputTokens)||inputTokens<0||inputTokens>24000||outputTokens!==6144)throw new AgentLimitError('This image is too large for the AI allowance. Try a smaller plan.');
+  private async reserve(id:string,userId:string,inputTokens:number,outputTokens:number,scope?:'campus_map_review') {
+    const limits=assertAgentEnabled(scope);
+    const maximum = scope === 'campus_map_review' ? CAMPUS_MAP_HINT_OUTPUT_TOKENS : 6144;
+    if(!Number.isSafeInteger(inputTokens)||inputTokens<0||inputTokens>24000||outputTokens!==maximum)throw new AgentLimitError('This source is too large for the AI allowance. Try a smaller campus plan.');
     const reserve=Math.ceil(inputTokens*1.1)+512+outputTokens*5;
     await this.db.transaction().execute(async tx=>{
       await sql`SELECT pg_advisory_xact_lock(hashtext('agent_cloud_budget'))`.execute(tx);
+      if(scope)assertAgentEnabled(scope);
       const active=(await sql`SELECT id FROM campus_scene_import_runs WHERE id=${id}::uuid AND actor_user_id=${userId}::uuid AND status='running' AND reserved_micros=0 FOR UPDATE`.execute(tx)).rows;
-      if(!active.length)throw new AgentLimitError('This image analysis is no longer active.');
+      if(!active.length)throw new AgentLimitError('This campus import is no longer active.');
       const usage=(await sql<{day:number;month:number}>`SELECT
         coalesce(sum(reserved_micros) FILTER(WHERE created_at>=date_trunc('day',now() AT TIME ZONE 'UTC') AT TIME ZONE 'UTC'),0)::bigint AS day,
         coalesce(sum(reserved_micros),0)::bigint AS month FROM
@@ -131,13 +136,29 @@ export class CampusSceneImportService {
     });
   }
 
-  async import(user:AuthUser,school:string,campus:string,raw:unknown):Promise<{document:SceneDocument}> {
+  async import(user:AuthUser,school:string,campus:string,raw:unknown):Promise<{document:SceneDocument;assistance?:ReturnType<typeof campusMapAssistance>}> {
     const parsed=sceneImportSchema.safeParse(raw);
     if(!parsed.success)throw new BadRequestException('Check the campus source details and confirm your file rights.');
     const {idempotency_key,...input}=parsed.data;
     // Validate even a cached result: a retained proposal cannot revive an inactive
     // building or silently reuse a floor after its current revision changed.
     if(input.kind==='image' && input.purpose==='floor_plan')await this.floorPlanTarget(user,school,campus,input.target!);
+    if(input.kind==='map_area') {
+      // Drawn and searched locations share receipt storage and the map-traffic
+      // allowance. The request digest still distinguishes these two inputs.
+      return this.proposal(user,school,campus,idempotency_key,'location',input,async()=>{
+        const area = prepareMapArea(input.boundary);
+        if(selectedSimulationResources()) {
+          await captureSimulationProviderEffect({kind:'connector_call',provider:'campus_scene',operation:'drawn_map_import',logicalKey:idempotency_key,idempotencyKey:`campus-scene:${idempotency_key}`,payload:{provider_contacted:false,mode:'fictional_map'}});
+          const document = simulationMapArea(input.label,area);
+          return { document, assistance: campusMapAssistance(idempotency_key,mappedPlaceCandidates(document),'simulation') };
+        }
+        const document = await this.provider.area(input.label,area);
+        const candidates = mappedPlaceCandidates(document);
+        const hints = await this.provider.mapHints(candidates,(tokens,output)=>this.reserve(idempotency_key,user.id,tokens,output,'campus_map_review'));
+        return { document, assistance: campusMapAssistance(idempotency_key,candidates,hints?'ai':'map_only',hints) };
+      });
+    }
     return this.proposal(user,school,campus,idempotency_key,input.kind,input,async()=>{
       if(input.kind==='geojson') {
         let source:unknown;

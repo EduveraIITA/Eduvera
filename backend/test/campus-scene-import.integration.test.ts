@@ -14,7 +14,7 @@ import { requireIsolatedTestDatabaseUrl } from './test-database.js';
 const enabled=process.env.TEST_DATABASE_ISOLATED==='true';
 const db=new Kysely<Database>({dialect:new PostgresDialect({pool:new Pool({connectionString:enabled?requireIsolatedTestDatabaseUrl(process.env.DATABASE_URL):'postgresql://invalid.invalid/campus_import_unused_test',max:4})})}) as DatabaseService;
 afterAll(()=>db.destroy());
-afterEach(()=>vi.unstubAllEnvs());
+afterEach(()=>{vi.unstubAllEnvs();vi.unstubAllGlobals();});
 const geojson=JSON.stringify({type:'FeatureCollection',features:[{type:'Feature',properties:{building:'yes',name:'Surveyed building'},geometry:{type:'Polygon',coordinates:[[[77,12],[77.001,12],[77.001,12.001],[77,12.001],[77,12]]]}}]});
 describe.skipIf(!enabled)('Campus source proposals and durable cloud allowance',()=>{
   it('replays exact proposals, rejects key changes and tenant access, and leaves the scene unsaved',async()=>{
@@ -30,6 +30,56 @@ describe.skipIf(!enabled)('Campus source proposals and durable cloud allowance',
       expect((await f.scenes.workspace(f.user,f.schoolId,f.campusId)).scene).toBeNull();
       const runs=await sql<{count:number}>`SELECT count(*)::int AS count FROM campus_scene_import_runs WHERE campus_id=${f.campusId}::uuid`.execute(db);
       expect(runs.rows[0]!.count).toBe(1);
+    });
+  });
+  it('imports the selected Live area, retains its reviewed-only AI proposal, and falls back when AI is unavailable',async()=>{
+    const f = await createCampusSceneFixture(db), provider = new CampusSceneImportProvider(), service = new CampusSceneImportService(db, f.scenes, provider);
+    const body = { elements: [{ type: 'way', id: 12, tags: { building: 'yes', name: 'Library' }, geometry: [
+      { lat: 12, lon: 77 }, { lat: 12, lon: 77.0005 }, { lat: 12.0005, lon: 77.0005 }, { lat: 12, lon: 77 },
+    ] }] };
+    const fetch = vi.fn().mockImplementation(() => Promise.resolve(new Response(JSON.stringify(body))));
+    vi.stubGlobal('fetch', fetch);
+    vi.stubEnv('CAMPUS_MAP_IMPORT_ENABLED','true');
+    vi.stubEnv('AGENT_ENABLED','true'); vi.stubEnv('AGENT_PROVIDER','vertex'); vi.stubEnv('AGENT_ENABLED_UNTIL','2000-01-01T00:00:00Z');
+    vi.stubEnv('CAMPUS_MAP_AI_ENABLED_UNTIL','2099-01-01T00:00:00Z');
+    vi.stubEnv('AGENT_DAILY_BUDGET_MICROS','2000000'); vi.stubEnv('AGENT_MONTHLY_BUDGET_MICROS','20000000');
+    const generate = vi.spyOn(provider, 'mapHints').mockImplementation(async (_candidates, reserve) => {
+      await reserve(100, 1024);
+      return { hints: [{ feature_id: 'map_1', question: 'Does this outline show the library?', kind: 'library' }] };
+    });
+    await f.run(async () => {
+      const input = {
+        kind: 'map_area', idempotency_key: randomUUID(), label: 'Library campus',
+        boundary: [{ latitude: 11.999, longitude: 76.999 }, { latitude: 11.999, longitude: 77.001 }, { latitude: 12.001, longitude: 77.001 }],
+      };
+      await expect(service.import(f.borrower, f.schoolId, f.campusId, input)).rejects.toThrow(/administrator/);
+      const invalid = {
+        ...input, idempotency_key: randomUUID(), boundary: [
+          { latitude: 11.999, longitude: 76.999 }, { latitude: 12.001, longitude: 77.001 },
+          { latitude: 12.001, longitude: 76.999 }, { latitude: 11.999, longitude: 77.001 },
+        ],
+      };
+      for (let attempt = 0; attempt < 2; attempt++)
+        await expect(service.import(f.user, f.schoolId, f.campusId, invalid)).rejects.toMatchObject({
+          status: 400, response: {
+            code: 'campus_import_failed', attempt_id: invalid.idempotency_key,
+            retry_requires_new_key: true, message: expect.stringContaining('no crossing edges'),
+          },
+        });
+      expect(fetch).not.toHaveBeenCalled();
+      const result = await service.import(f.user, f.schoolId, f.campusId, input);
+      expect(result.document.elements).toEqual([expect.objectContaining({ label: 'Library', review_state: 'needs_review', space_id: null })]);
+      expect(result.assistance).toMatchObject({ status: 'ai', messages: [{ version: '1.0' }] });
+      expect(await service.import(f.user, f.schoolId, f.campusId, input)).toEqual(result);
+      expect(fetch).toHaveBeenCalledTimes(1);
+      expect(generate).toHaveBeenCalledTimes(1);
+      expect((await sql<{status:string;max_output_tokens:number}>`SELECT status,max_output_tokens FROM campus_scene_import_runs WHERE id=${input.idempotency_key}::uuid`.execute(db)).rows[0]).toEqual({ status: 'completed', max_output_tokens: 1024 });
+      generate.mockRestore();
+      vi.stubEnv('AGENT_ENABLED','false');
+      const fallback = await service.import(f.user, f.schoolId, f.campusId, { ...input, idempotency_key: randomUUID(), label: 'No AI campus' });
+      expect(fallback.document.elements).toEqual(result.document.elements);
+      expect(fallback.assistance).toMatchObject({ status: 'map_only' });
+      expect((await f.scenes.workspace(f.user, f.schoolId, f.campusId)).scene).toBeNull();
     });
   });
   it('serializes image reservations with the Assistant budget and retains failed-call allowance',async()=>{

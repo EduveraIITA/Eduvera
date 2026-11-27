@@ -25,11 +25,14 @@ export function agentLimits() {
     dailyMicros: process.env.AGENT_DAILY_BUDGET_MICROS, monthlyMicros: process.env.AGENT_MONTHLY_BUDGET_MICROS });
 }
 
-export function assertAgentEnabled() {
+export function assertAgentEnabled(scope?: 'campus_map_review') {
   const limits = agentLimits();
   if (!limits.enabled) throw new ForbiddenException('AI assistance is switched off. You can still use the app directly.');
   if (process.env.AGENT_PROVIDER === 'vertex') {
-    const expiry = Date.parse(limits.until ?? '');
+    const mapExpiry = scope === 'campus_map_review' ? process.env.CAMPUS_MAP_AI_ENABLED_UNTIL : undefined;
+    if (mapExpiry !== undefined && !z.iso.datetime({ offset: true }).safeParse(mapExpiry).success)
+      throw new ForbiddenException('Campus map AI review has an invalid trial expiry.');
+    const expiry = Date.parse(mapExpiry ?? limits.until ?? '');
     if (!Number.isFinite(expiry) || expiry <= Date.now()) throw new ForbiddenException('Cloud AI is paused until its trial allowance is reviewed.');
   }
   return limits;

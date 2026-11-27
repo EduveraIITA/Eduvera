@@ -2,6 +2,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import { CampusSceneImportProvider, imageDraft, imageSceneBounds } from '../src/campus-scene-import/scene-import.provider.js';
 import { boundMapFeatures } from '../src/campus-scene-import/scene-import.bounds.js';
 import { sceneImportSchema, sceneLookupSchema } from '../src/campus-scene-import/scene-import.contracts.js';
+import { prepareMapArea } from '../src/campus-scene-import/scene-import.area.js';
 const image = {label:'Synthetic plan',imageId:'10e8534c-477a-4bcc-b65e-83f64700c405',width:1200,height:600,sourceKind:'site_plan' as const};
 afterEach(()=>{vi.unstubAllGlobals();vi.unstubAllEnvs();});
 describe('Campus import boundaries',()=>{
@@ -72,5 +73,29 @@ describe('Campus import boundaries',()=>{
       expect.objectContaining({id:'long-road-clip-1',geometry:{type:'LineString',coordinates:[[0,5],[5,5],[10,5]]}}),
       expect.objectContaining({id:'inside'}),
     ]});
+  });
+  it('clips crossing lines to a drawn concave boundary and keeps only complete mapped footprints', async () => {
+    const toBoundary = (vertices: number[][]) => vertices.map(([x, y]) => ({ latitude: 12 + y! / 1000, longitude: 77 + x! / 1000 }));
+    const shape = [[0, 0], [5, 0], [5, 5], [3, 5], [3, 2], [2, 2], [2, 5], [0, 5]];
+    const area = prepareMapArea(toBoundary(shape));
+    const way = (id: number, tags: Record<string, string>, points: number[][]) => ({ type: 'way', id, tags, geometry: toBoundary(points).map(({ latitude: lat, longitude: lon }) => ({ lat, lon })) });
+    const elements = [
+      way(1, { highway: 'footway', name: 'Main Walk' }, [[-1, 4], [6, 4]]),
+      way(2, { building: 'yes', name: 'Library' }, [[0.2, 0.2], [0.5, 0.2], [0.5, 0.8], [0.2, 0.2]]),
+      way(3, { building: 'yes', name: 'Over the notch' }, [[1, 4], [4, 4], [4, 4.5], [1, 4]]),
+      { type: 'node', id: 4, tags: { barrier: 'gate', name: 'Campus entrance' }, lat: 12.001, lon: 77.001 },
+      { type: 'node', id: 5, tags: { natural: 'tree', name: 'Outside' }, lat: 12.004, lon: 77.0025 },
+    ];
+    const fetch = vi.fn().mockResolvedValue(new Response(JSON.stringify({ elements })));
+    vi.stubGlobal('fetch', fetch);
+    const result = await new CampusSceneImportProvider().area('Drawn campus', area);
+    expect(result.elements.map(element => element.label)).toEqual(['Main Walk', 'Main Walk', 'Library', 'Campus entrance']);
+    expect(result.elements[0]!.geometry.points[1]!.x).toBeLessThan(result.elements[1]!.geometry.points[0]!.x);
+    expect(result.elements.every(element => element.review_state === 'needs_review' && element.space_id === null)).toBe(true);
+    expect(result.source).toMatchObject({ kind: 'open_map', attribution: expect.stringContaining('OpenStreetMap'), notes: expect.stringContaining('drawn boundary') });
+    expect(new URLSearchParams(String(fetch.mock.calls[0]![1].body)).get('data')).toContain('node[barrier=gate](12,77,12.005,77.005)');
+    for (const outline of [[[0, 0], [5, 5], [0, 5], [5, 0]], [[0, 0], [1, 0], [1, 1], [0, 0]], [[0, 0], [100, 0], [100, 100]], [[0, 0], [.001, 0], [.001, .001]]])
+      expect(() => prepareMapArea(toBoundary(outline))).toThrow(/single campus boundary|more than 4 km/);
+    expect(fetch).toHaveBeenCalledTimes(1);
   });
 });

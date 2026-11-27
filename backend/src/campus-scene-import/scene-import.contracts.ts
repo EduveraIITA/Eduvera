@@ -3,6 +3,13 @@ import { z } from 'zod';
 const identifier = z.string().uuid();
 const latitude = z.number().finite().min(-85).max(85);
 const longitude = z.number().finite().min(-180).max(180);
+export const sceneMapAreaSchema = z.object({
+  kind: z.literal('map_area'),
+  idempotency_key: identifier,
+  label: z.string().trim().min(1).max(160),
+  boundary: z.array(z.object({ latitude, longitude }).strict()).min(3).max(48),
+}).strict();
+export type SceneMapBoundary = z.infer<typeof sceneMapAreaSchema>['boundary'];
 export const sceneLocationSchema = z.object({
   id: z.string().regex(/^(node|way|relation)\/[0-9]+$/),
   name: z.string().trim().min(1).max(200),
@@ -23,6 +30,7 @@ export const floorPlanTargetSchema = z.object({
 });
 export type FloorPlanTarget = z.infer<typeof floorPlanTargetSchema>;
 export const sceneImportSchema = z.discriminatedUnion('kind', [
+  sceneMapAreaSchema,
   z.object({ kind: z.literal('image'), idempotency_key: identifier, image_asset_id: identifier,
     label: z.string().trim().min(1).max(160), source_kind: z.enum(['aerial_image', 'site_plan']),
     instructions: z.string().trim().max(1000).default(''),

@@ -1,3 +1,4 @@
+import type { CampusSceneWorkspace } from '../../../packages/contracts/src/campus-scenes/contracts';
 import type { CampusSceneDocument } from '../../../packages/contracts/src/campus-scenes/types';
 import type { NativePendingAction, NativePendingScope } from './native-pending-action';
 const uuid = (v:unknown):v is string => typeof v==='string' && /^[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}$/i.test(v);
@@ -11,6 +12,18 @@ export function nativeSceneDocument(v:unknown):v is CampusSceneDocument {
  const d=object(v),bounds=object(d?.bounds),source=object(d?.source);
  return !!d&&d.schema_version===1&&text(d.name,160)&&!!bounds&&['width','height'].every(k=>typeof bounds[k]==='number'&&Number.isFinite(bounds[k])&&Number(bounds[k])>0)&&['relative','metres'].includes(String(bounds.unit))&&!!source&&['manual','aerial_image','site_plan','name_search','open_map'].includes(String(source.kind))&&text(source.label,200)&&Array.isArray(d.elements)&&d.elements.length<=2000&&new Set(d.elements.map((e:unknown)=>object(e)?.id)).size===d.elements.length&&d.elements.every((v:unknown)=>{const e=object(v),g=object(e?.geometry);return !!e&&elementId(e.id)&&typeof e.label==='string'&&e.label.length<=160&&['building','room','road','path','tree','fixture','surface'].includes(String(e.kind))&&['reviewed','needs_review'].includes(String(e.review_state))&&!!g&&['polygon','polyline','point'].includes(String(g.type))&&Array.isArray(g.points)&&g.points.length>0&&g.points.length<=500&&g.points.every((v:unknown)=>{const p=object(v);return p&&typeof p.x==='number'&&typeof p.y==='number'&&Number.isFinite(p.x)&&Number.isFinite(p.y);})&&[e.space_id,e.floor_id,e.holding_id].every(id=>id==null||uuid(id))&&(e.parent_element_id==null||elementId(e.parent_element_id));});
 }
+export function canStartCampusMapSetup(workspace: CampusSceneWorkspace | undefined, campusId: string, confirmed: boolean): boolean {
+ return confirmed && workspace?.campus.id === campusId && workspace.scene === null;
+}
+
+function campusMapBoundary(value: unknown): boolean {
+ return Array.isArray(value) && value.length >= 3 && value.length <= 48 && value.every(raw => {
+  const point=object(raw);
+  return !!point && keys(point,['latitude','longitude']) && typeof point.latitude==='number' && typeof point.longitude==='number'
+   && Number.isFinite(point.latitude) && Number.isFinite(point.longitude) && Math.abs(point.latitude)<=85.05112878 && Math.abs(point.longitude)<=180;
+ });
+}
+
 /** A last-known query can lag an exact accepted receipt. It never downgrades it. */
 export function campusSceneSourceState(localRevision:number,queriedRevision:number,sourceFailed:boolean):'current'|'failed'|'changed' {
  if(sourceFailed||!integer(localRevision)||!integer(queriedRevision))return 'failed';
@@ -36,6 +49,7 @@ export function campusSceneActionAllowed(record:NativePendingAction,scope:Native
  else if(action==='imports'){
  if(body.kind==='geojson'){if(!keys(body,['idempotency_key','kind','text','label','attribution','rights_confirmed'])||!text(body.text,2*1024*1024)||!text(body.label,160)||!text(body.attribution,500)||body.rights_confirmed!==true)return false;JSON.parse(body.text);}
  else if(body.kind==='location'){const l=object(body.location);if(!keys(body,['idempotency_key','kind','location','radius_metres'])||!l||!text(l.id,100)||!text(l.name,200)||typeof l.latitude!=='number'||typeof l.longitude!=='number'||!Number.isFinite(l.latitude)||!Number.isFinite(l.longitude)||l.source!=='OpenStreetMap'||!integer(body.radius_metres,100)||body.radius_metres>1200)return false;}
+ else if(body.kind==='map_area'){if(!keys(body,['idempotency_key','kind','label','boundary'])||!text(body.label,160)||!campusMapBoundary(body.boundary))return false;}
  else if(body.kind==='image'){if(!keys(body,['idempotency_key','kind','image_asset_id','label','source_kind','instructions','purpose','target'])||!uuid(body.image_asset_id)||!text(body.label,160)||!['aerial_image','site_plan'].includes(String(body.source_kind))||typeof body.instructions!=='string'||body.instructions.length>1000)return false;const t=object(body.target);if(body.purpose!==undefined&&(body.purpose!=='floor_plan'||body.source_kind!=='site_plan'||!t||!uuid(t.building_id)||!integer(t.expected_building_revision,1)||!!t.floor_id!==!!t.expected_floor_revision||t.floor_id&&(!uuid(t.floor_id)||!integer(t.expected_floor_revision,1))))return false;if(body.purpose===undefined&&body.target!==undefined)return false;}
  else return false;
  }

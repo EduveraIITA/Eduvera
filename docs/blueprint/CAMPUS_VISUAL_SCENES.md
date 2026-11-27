@@ -2,8 +2,9 @@
 
 Owner direction, 25 October 2026: deliver a mobile campus experience with an
 editable, realistic 2.5D campus, reusable assets and per-campus layouts. A campus
-may start from an institution-provided aerial image/site plan, a deliberate
-OpenStreetMap name lookup, a licensed GeoJSON file, or manual drawing. The owner
+may start by drawing its boundary on a real map, from an institution-provided
+aerial image/site plan, a deliberate OpenStreetMap name lookup, a licensed
+GeoJSON file, or manual drawing. The owner
 approved the existing Vertex/Gemini setup for a small synthetic inference test.
 Delivery evidence belongs in the implementation plan and QA record; this contract
 does not claim inference accuracy or production readiness.
@@ -522,6 +523,34 @@ services and captured/manual-image substitute apply in Simulation as in other im
 
 ## Sources and inference
 
+When an authorized administrator first opens a campus with no saved layout,
+show the boundary map. The administrator can explicitly center it on their
+device location, search by full campus name, or enter a coordinate. Send the
+drawn boundary only when the administrator requests a draft. Keep location
+permission optional and retain the existing plan/GeoJSON and manual paths.
+Campuses with a saved draft or publication use their existing entry points.
+
+Bounded OpenStreetMap geometry is the source for editable outdoor features.
+The selected polygon restricts the import and remains available for adjustment.
+Vertex can assist with names, place types and the review prompt for a bounded
+set of those features. Geometry and place identity stay grounded in the source
+and the existing domain review. Missing features, indoor rooms and links are
+never filled in by the model. The native app renders a bounded component
+catalog, data bindings and validated actions using [A2UI 1.0](https://a2ui.org/specification/v1.0-a2ui/).
+Place choices go through the existing campus-place review and layout publication
+commands. If the AI allowance or provider is unavailable, source-backed controls
+still support the same review. A map-only Vertex window can be enabled by
+deployment without opening a new Assistant or image-analysis window, and
+continues to share the existing user and spending limits.
+
+The map uses attributed [OpenStreetMap raster tiles](https://operations.osmfoundation.org/policies/tiles/)
+for an interactive reference. Data import uses the separately configured
+[Overpass endpoint](https://overpass.private.coffee/) and preserves ODbL
+attribution. This avoids tracing a raster basemap or requiring a multi-step file
+intake for a campus with public footprints. Aerial or site plan intake remains
+the source option when local map coverage is poor. Simulation uses a labeled
+offline practice map and a run-local proposal with the same review controls.
+
 Image intake requires explicit rights confirmation and a PNG/JPEG/WebP no larger
 than 4 MiB. Source images stay in the selected world's store. The approved provider
 is Vertex, `gemini-3.1-flash-lite`, global region, with server-side application
@@ -566,8 +595,8 @@ Live records, resource state or wall-clock interpolation.
 
 Simulation may reuse captured proposals. A new image can become an explicit manual
 trace source with a contained compute-effect receipt. New map/AI requests never
-read Live credentials or call Live providers; uncaptured map results fail visibly,
-while local GeoJSON and manual editing remain available. This is a declared connector
+read Live credentials or call Live providers; uncaptured name-search results fail visibly. Drawn map setup uses the prepared
+fictional practice campus; local GeoJSON and manual editing remain available. This is a declared connector
 substitute, not a claim that Simulation performed real inference.
 
 Source images, scene history and allowance records are retained as evidence. Upload

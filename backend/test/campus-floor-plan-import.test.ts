@@ -7,6 +7,7 @@ import { CampusSceneImportService } from '../src/campus-scene-import/scene-impor
 import type { CampusScenesService } from '../src/campus-scenes/campus-scenes.service.js';
 import type { DatabaseService } from '../src/database/database.service.js';
 import type { AuthUser } from '../src/common/request.js';
+import { campusMapAssistance } from '../src/campus-scene-import/scene-import.assistance.js';
 
 const model = vi.hoisted(() => ({ countTokens: vi.fn(), generateContent: vi.fn() }));
 vi.mock('@google/genai', async importOriginal => ({ ...await importOriginal<typeof GoogleGenAi>(),
@@ -80,6 +81,7 @@ describe('Floor tracing through the existing bounded Vertex provider', () => {
     vi.clearAllMocks();
     vi.stubEnv('AGENT_PROVIDER', 'vertex'); vi.stubEnv('AGENT_ENABLED', 'true');
     vi.stubEnv('AGENT_ENABLED_UNTIL', '2099-01-01T00:00:00Z');
+    vi.stubEnv('CAMPUS_MAP_AI_ENABLED_UNTIL', undefined);
     vi.stubEnv('AGENT_GOOGLE_PROJECT', 'floor-plan-test'); vi.stubEnv('AGENT_GOOGLE_LOCATION', 'global');
     vi.stubEnv('AGENT_MODEL', 'gemini-3.1-flash-lite'); vi.stubEnv('AGENT_API_KEY', ''); vi.stubEnv('AGENT_BASE_URL', '');
     model.countTokens.mockResolvedValue({ totalTokens: 100 });
@@ -105,6 +107,67 @@ describe('Floor tracing through the existing bounded Vertex provider', () => {
     const reserve = vi.fn().mockRejectedValue(new Error('allowance reached'));
     await expect(new CampusSceneImportProvider().image(input(), reserve)).rejects.toThrow(/could not produce a valid floor plan/);
     expect(model.generateContent).not.toHaveBeenCalled();
+  });
+
+  it('grounds map review questions and editable A2UI fields in exact mapped places', async () => {
+    const candidates = [
+      { id: 'map_1', label: 'Library', defaultKind: 'library', allowedKinds: ['building', 'library'], priority: 2 },
+      { id: 'map_2', label: 'Building 2', defaultKind: 'building', allowedKinds: ['building', 'library'], priority: 1 },
+    ];
+    const hints = { hints: [
+      { feature_id: 'map_1', question: 'Does this outline show the campus library?', kind: 'library' },
+      { feature_id: 'map_2', question: 'Is this another library?', kind: 'library' },
+      { feature_id: 'unknown', question: 'Can you map this invented building?', kind: 'building' },
+    ] };
+    model.generateContent.mockResolvedValue({ text: JSON.stringify(hints), candidates: [{ finishReason: 'STOP' }] });
+    const reserve = vi.fn().mockResolvedValue(undefined);
+    const provider = new CampusSceneImportProvider();
+    const result = await provider.mapHints(candidates, reserve);
+    expect(reserve).toHaveBeenCalledExactlyOnceWith(100, 1024);
+    expect(reserve.mock.invocationCallOrder[0]).toBeLessThan(model.generateContent.mock.invocationCallOrder[0]!);
+    expect(model.generateContent).toHaveBeenCalledWith(expect.objectContaining({ config: expect.objectContaining({
+      maxOutputTokens: 1024, automaticFunctionCalling: { disable: true }, responseMimeType: 'application/json',
+    }) }));
+    const assistance = campusMapAssistance(source.imageId, candidates, 'ai', result);
+    expect(assistance.status).toBe('ai');
+    const [message] = assistance.messages;
+    expect(message).toMatchObject({ version: '1.0', createSurface: {
+      catalogId: 'https://a2ui.org/specification/v1_0/catalogs/basic/catalog.json',
+      dataModel: { hints: { map_1: { label: 'Library', kind: ['library'] }, map_2: { label: 'Building 2', kind: ['building'] } } },
+      components: expect.arrayContaining([
+        expect.objectContaining({ component: 'Text', text: hints.hints[0]!.question }),
+        expect.objectContaining({ component: 'TextField', value: { '@path': '/hints/map_1/label' } }),
+        expect.objectContaining({ component: 'Button', action: { event: { name: 'focus_feature', context: { feature_id: 'map_1' } } } }),
+        expect.objectContaining({ component: 'Button', action: { event: { name: 'review_places', context: { hints: { '@path': '/hints' } } } } }),
+      ]),
+    } });
+    expect(JSON.stringify(message)).not.toMatch(/invented|another library/);
+    reserve.mockRejectedValue(new Error('allowance reached'));
+    expect(await provider.mapHints(candidates, reserve)).toBeUndefined();
+    expect(model.generateContent).toHaveBeenCalledTimes(1);
+  });
+
+  it('admits a scoped, valid map AI trial independently of the global Vertex expiry', async () => {
+    vi.stubEnv('AGENT_ENABLED_UNTIL', '2000-01-01T00:00:00Z');
+    vi.stubEnv('CAMPUS_MAP_IMPORT_ENABLED', 'true');
+    const provider = new CampusSceneImportProvider();
+    expect(provider.capabilities()).toMatchObject({ image_analysis: { available: false }, map_area: { available: true, ai_available: false } });
+    vi.stubEnv('CAMPUS_MAP_AI_ENABLED_UNTIL', '2099-01-01T00:00:00Z');
+    expect(provider.capabilities()).toMatchObject({ image_analysis: { available: false }, map_area: { available: true, ai_available: true } });
+    await expect(provider.image(input(), vi.fn())).rejects.toThrow(/Image analysis is not enabled/);
+    const candidates = [{ id: 'map_1', label: 'Library', defaultKind: 'library', allowedKinds: ['building', 'library'], priority: 2 }];
+    const expireDuringCount = vi.fn(() => {
+      vi.stubEnv('CAMPUS_MAP_AI_ENABLED_UNTIL', '2000-01-01T00:00:00Z');
+      return Promise.resolve();
+    });
+    await expect(provider.mapHints(candidates, expireDuringCount)).resolves.toBeUndefined();
+    expect(model.generateContent).not.toHaveBeenCalled();
+    vi.stubEnv('AGENT_ENABLED_UNTIL', '2099-01-01T00:00:00Z');
+    vi.stubEnv('CAMPUS_MAP_AI_ENABLED_UNTIL', 'invalid');
+    expect(provider.capabilities()).toMatchObject({ image_analysis: { available: true }, map_area: { available: true, ai_available: false } });
+    vi.stubEnv('CAMPUS_MAP_AI_ENABLED_UNTIL', '2099-01-01T00:00:00Z');
+    vi.stubEnv('AGENT_ENABLED', 'false');
+    expect(provider.capabilities()).toMatchObject({ image_analysis: { available: false }, map_area: { available: true, ai_available: false } });
   });
 
   it('fails visibly on incomplete or malformed output without exposing the model payload', async () => {

@@ -94,6 +94,7 @@ export type CampusSceneImportRequest =
 export interface CampusSceneImportCapabilities {
   image_analysis: { available: boolean; reason?: string };
   map_search: { available: boolean; reason?: string };
+  map_area?: { available: boolean; reason?: string; ai_available: boolean };
   max_image_bytes: number;
 }
 

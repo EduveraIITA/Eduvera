@@ -3,7 +3,7 @@ import { Text, View } from 'react-native';
 import type { CampusSpace } from '../../../../packages/contracts/src/institution';
 import type { CampusSceneDocument } from '../../../../packages/contracts/src/campus-scenes/types';
 import { adjustFloorPlan, type FloorPlanAdjustment, type SceneFloorPlanContext } from '../../../../packages/contracts/src/campus-scenes/sceneFloorPlans';
-import { createScenePlaceProposals, scenePlaceMatches, sceneProposalElements, sceneProposalKinds, splitScenePlaceProposal, SCENE_PLACE_KIND_LABELS, type ScenePlaceProposal } from '../../../../packages/contracts/src/campus-scenes/scenePlaceProposals';
+import { createScenePlaceProposals, scenePlaceMatches, sceneProposalElements, sceneProposalKinds, splitScenePlaceProposal, SCENE_PLACE_KIND_LABELS, type ScenePlaceKind, type ScenePlaceProposal } from '../../../../packages/contracts/src/campus-scenes/scenePlaceProposals';
 import { useSession } from '../../auth/SessionProvider';
 import { nativeCampusScenePlaceReview, nativeScenePlaceDescends, type CampusScenePlaceReview } from '../../lib/campus-scene-place-review';
 import { useOperationContext } from '../../lib/use-operation-context';
@@ -17,6 +17,7 @@ export interface CampusScenePlaceBatchReviewProps {
   href:string;document:CampusSceneDocument;spaces:CampusSpace[];revision:number;campusId:string;
   disabled?:boolean;busy?:boolean;unknown?:boolean;stale?:boolean;error?:string;
   floorPlan?:SceneFloorPlanContext|null;
+  suggestedKinds?:ReadonlyMap<string,ScenePlaceKind>;
   onFloorPlanAdjusted?:(document:CampusSceneDocument,context:SceneFloorPlanContext)=>void;
   onSelectElement?:(id:string|null)=>void;
   onReview:(review:CampusScenePlaceReview)=>Promise<void>;onRetry?:()=>Promise<void>;onClose:()=>void;
@@ -28,7 +29,16 @@ const kindLabel=(kind:CampusSpace['kind'])=>SCENE_PLACE_KIND_LABELS[kind]??kind.
 export function CampusScenePlaceBatchReview(props:CampusScenePlaceBatchReviewProps){
   const {schoolId}=useSession(),{colors}=useTheme();
   const [source,setSource]=useState(props.document),[revision]=useState(props.revision),[catalogue]=useState(()=>props.spaces.filter(row=>row.campus_id===props.campusId)),[floorPlan,setFloorPlan]=useState(props.floorPlan);
-  const [proposals,setProposals]=useState(()=>createScenePlaceProposals(props.floorPlan?{...props.document,elements:props.document.elements.filter(row=>props.floorPlan!.elementIds.includes(row.id))}:props.document,catalogue));
+  const [proposals,setProposals]=useState(()=>{
+    const document=props.floorPlan?{...props.document,elements:props.document.elements.filter(row=>props.floorPlan!.elementIds.includes(row.id))}:props.document;
+    const proposals=createScenePlaceProposals(document,catalogue);
+    return proposals.map(proposal=>{
+      const hints=new Set(proposal.elementIds.map(id=>props.suggestedKinds?.get(id)).filter(kind=>kind!==undefined));
+      const kind=hints.size===1?[...hints][0]:undefined;
+      return kind&&sceneProposalKinds(sceneProposalElements(document,proposals,proposal)).includes(kind)
+        ? {...proposal,kind} : proposal;
+    });
+  });
   const initialChoices=useRef(JSON.stringify(proposals)),expectedSource=useRef(JSON.stringify(props.document));
   const [split,setSplit]=useState<Set<string>>(()=>new Set()),[category,setCategory]=useState<'places'|'other'>('places'),[page,setPage]=useState(1),[search,setSearch]=useState(''),[selected,setSelected]=useState(''),[working,setWorking]=useState(false),[error,setError]=useState(''),[angle,setAngle]=useState('');
   const inProgress=useRef(false),mounted=useRef(true),capture=useOperationContext(JSON.stringify([props.href,props.campusId,revision]));

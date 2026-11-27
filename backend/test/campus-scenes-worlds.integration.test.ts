@@ -125,6 +125,66 @@ async function openWorld(
 describe.skipIf(!enabled || !target)(
   "Campus scenes in actual selected COW worlds",
   () => {
+    it("rehearses offline map-assisted setup and connects a reviewed place only inside the selected world", async () => {
+      const f = await createCampusSceneFixture(db);
+      const store = new SimulationSnapshotStore(source, requireIsolatedTestDatabaseUrl(target), 3);
+      const opened: Awaited<ReturnType<typeof openWorld>>[] = [];
+      const input = {
+        kind: "map_area", idempotency_key: randomUUID(), label: "Rehearsed campus map",
+        boundary: [
+          { latitude: 28.61155, longitude: 77.23025 }, { latitude: 28.61155, longitude: 77.2316 },
+          { latitude: 28.61255, longitude: 77.2316 }, { latitude: 28.61255, longitude: 77.23025 },
+        ],
+      };
+      try {
+        const snapshot = await store.capture(f.schoolId, f.now);
+        await initializeSimulationResources(store.pool);
+        const world = await openWorld(store, snapshot, f.schoolId);
+        opened.push(world);
+        const sibling = await openWorld(store, snapshot, f.schoolId);
+        opened.push(sibling);
+        const fetch = vi.spyOn(globalThis, "fetch").mockRejectedValue(new Error("No Simulation map provider may be contacted"));
+        const hints = vi.spyOn(world.provider, "mapHints");
+        try {
+          await world.run(async () => {
+            expect(await world.importer.capabilities(f.user, f.schoolId, f.campusId)).toMatchObject({ map_area: { available: true, ai_available: false }, map_search: { available: false } });
+            await expect(world.importer.import(f.borrower, f.schoolId, f.campusId, input)).rejects.toThrow(/administrator/);
+            const result = await world.importer.import(f.user, f.schoolId, f.campusId, input);
+            expect(result.assistance).toMatchObject({ status: "simulation", messages: [{ version: "1.0" }] });
+            expect(result.document.elements.map(element => element.label)).toEqual(["Learning block", "Library", "Campus walk", "Sports ground"]);
+            expect(await world.importer.import(f.user, f.schoolId, f.campusId, input)).toEqual(result);
+            await expect(world.importer.import(f.user, f.schoolId, f.campusId, { ...input, label: "Changed boundary proposal" })).rejects.toThrow(/already used/);
+            expect((await world.resources.list(1, 20)).counts.effects).toMatchObject({ connector_call: 1 });
+            expect((await world.scenes.workspace(f.user, f.schoolId, f.campusId)).scene).toBeNull();
+            const building = result.document.elements[0]!;
+            const reviewed = {
+              ...command(0), document: result.document,
+              rows: [{ proposal_id: "learning", element_ids: [building.id], action: "create",
+                name: "Teaching block", kind: "building", code: "TEACHING-BLOCK" }],
+            };
+            const saved = await world.scenes.saveReviewedPlaces(f.user, f.schoolId, f.campusId, reviewed, resourceLoanRequest(f.user));
+            expect(saved).toMatchObject({ revision: 1, mappings: [{ element_ids: [building.id], action: "created" }] });
+            expect(await world.scenes.saveReviewedPlaces(f.user, f.schoolId, f.campusId, reviewed, resourceLoanRequest(f.user))).toMatchObject({ replayed: true });
+            expect((await world.scenes.workspace(f.user, f.schoolId, f.campusId)).spaces).toEqual(expect.arrayContaining([expect.objectContaining({ name: "Teaching block" })]));
+          });
+          expect(fetch).not.toHaveBeenCalled();
+          expect(hints).not.toHaveBeenCalled();
+        } finally { fetch.mockRestore(); hints.mockRestore(); }
+        await sibling.run(async () => {
+          expect((await sibling.scenes.workspace(f.user, f.schoolId, f.campusId)).scene).toBeNull();
+          expect((await sibling.database.selectFrom("campus_spaces").select("id").where("school_id", "=", f.schoolId).execute())).toEqual([]);
+        });
+        await f.run(async () => {
+          expect((await f.scenes.workspace(f.user, f.schoolId, f.campusId)).scene).toBeNull();
+          expect((await db.selectFrom("campus_spaces").select("id").where("school_id", "=", f.schoolId).execute())).toEqual([]);
+          expect((await sql`SELECT id FROM campus_scene_import_runs WHERE id=${input.idempotency_key}::uuid`.execute(db)).rows).toEqual([]);
+        });
+      } finally {
+        for (const world of opened) unbindSimulationResources(world.namespace);
+        await Promise.all(opened.map(world => world.database.destroy()));
+        await store.pool.end();
+      }
+    }, 120_000);
     it("reads exact room pooled quantities without widening the individual picker and isolates a branch inventory change", async () => {
       const f = await createIndoorSceneFixture(db), store = new SimulationSnapshotStore(source, requireIsolatedTestDatabaseUrl(target), 3);
       const opened: DatabaseService[] = [], namespaces: string[] = [];

@@ -226,6 +226,17 @@ Read the owning contract before extending a workflow and inspect its exact recei
 
 ## Latest accepted changes
 
+### Map-first Virtual Campus setup
+
+An administrator of a confirmed empty campus can outline it on a real map,
+review an editable campus draft, and use an A2UI 1.0 interaction to name and
+classify the mapped places before the existing place and publication reviews.
+An isolated Simulation uses a labeled offline practice campus with the same
+review flow. Initial mobile coverage checks map coordinates and boundary
+validation, A2UI edit-to-action binding, journal scope and place handoff.
+See the [campus scene contract](CAMPUS_VISUAL_SCENES.md#sources-and-inference)
+for provider configuration and limits.
+
 ### Universal navigation and current workflow ports
 
 The React Native/Expo target now uses one destination-labelled top Back control,

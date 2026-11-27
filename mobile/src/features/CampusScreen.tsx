@@ -9,6 +9,7 @@ import { campusMapPresentationChanges,type CampusMapPresentation } from '../../.
 import { personalOutdoorScene,personalWalkingDestination } from '../../../packages/contracts/src/campus-scenes/personalJourney';
 import { boundCampusAssets,campusAssetUnavailable,campusBlockedLiftIds } from '../../../packages/contracts/src/campus-operation-presentation';
 import { CampusSceneEditorScreen } from './campus/CampusSceneEditorScreen';
+import { canStartCampusMapSetup } from '../lib/campus-scene-policy';
 import { useCampusPeople } from './campus/useCampusPeople';
 import type { SceneEvidenceLayer } from '../../../packages/contracts/src/campus-scenes/sceneEvidence.types';
 import { campusMemberMarkers,campusAdministratorMarkers } from '../lib/campus-member-presentation';
@@ -19,7 +20,7 @@ import { CampusPublishedOperations } from './campus/CampusPublishedOperations';
 import { CampusAssetDetails,CampusPersonalPlaceActivities,CampusJourneyDetails,CampusMemberLayer,campusSourceHref } from './campus/CampusPublishedDetails';
 import { ArrowLeftIcon } from 'phosphor-react-native/src/icons/ArrowLeft';
 import { CaretDownIcon } from 'phosphor-react-native/src/icons/CaretDown';
-import type { CampusSceneDirectory, CampusScenePublished } from '../../../packages/contracts/src/campus-scenes/contracts';
+import type { CampusSceneDirectory, CampusScenePublished, CampusSceneWorkspace } from '../../../packages/contracts/src/campus-scenes/contracts';
 import { sceneBuildingFloorIds, sceneElementBuilding } from '../../../packages/contracts/src/campus-scenes/sceneInterior';
 import { nativeCampusPlaceFocus } from '../lib/campus-camera';
 import type { SceneViewMode } from '../../../packages/contracts/src/campus-scenes/sceneGeometry';
@@ -54,15 +55,36 @@ function CampusDirectory({ href, onNavigate, schoolId }: DomainScreenProps & { s
   const choose = () => setChoosingCampus(true);
   const canEdit=!directory.error&&!session.environment.unavailable&&directory.data?.can_edit===true&&session.memberships.some(row=>row.school_id===schoolId&&row.role==='admin'&&row.access_scope!=='assigned_work');
   const editing=params.get('edit')==='1',transientError=directory.isError&&(!(directory.error instanceof ApiError)||directory.error.status>=500);
-  useLayoutEffect(()=>{if(!editing)priorEditor.current='';else if(canEdit&&selected)priorEditor.current=selected.id;},[editing,canEdit,selected?.id]);
-  if(editing&&selected&&(canEdit||transientError&&priorEditor.current===selected.id))return <View style={{flex:1}}>{directory.isError?<Notice tone="warning" message="Campus access could not refresh. Your draft remains mounted; restore access before continuing."/>:null}<View style={{flex:1}} pointerEvents={canEdit?'auto':'none'} accessibilityElementsHidden={!canEdit} importantForAccessibility={canEdit?'auto':'no-hide-descendants'}><CampusSceneEditorScreen {...{href,onNavigate,schoolId}} campusId={selected.id}/></View>{directory.isError?<Button title="Refresh campus access" onPress={()=>void directory.refetch()}/>:null}</View>;
-  if(params.get('edit')==='1'&&!directory.isPending)return <Page title="Campus layout"><Empty title="Layout editing is unavailable" message="The current institution must authorize layout editing for this exact campus." onRetry={()=>void directory.refetch()}/><Button title="View published campus" onPress={()=>onNavigate(domainHref(nativeCampusRoutePath(href),params,{edit:undefined}))}/></Page>;
+  const workspace = useApi<CampusSceneWorkspace>(canEdit && selected && !editing
+    ? `/api/v1/schools/${encodeURIComponent(schoolId)}/campus-scenes/${encodeURIComponent(selected.id)}/workspace/` : null, { refetchInterval: false });
+  const [finishedSetup, setFinishedSetup] = useState<string | null>(null);
+  const setupCampus = useRef<string | null>(null);
+  const startSetup = !editing && canEdit && !!selected && finishedSetup !== selected.id
+    && canStartCampusMapSetup(workspace.data, selected.id, workspace.isSuccess && !workspace.isFetching);
+  const settingUp = !editing && !!selected && finishedSetup !== selected.id && (startSetup || setupCampus.current === selected.id);
+  useLayoutEffect(() => {
+    if (startSetup && selected) setupCampus.current = selected.id;
+    else if (editing || setupCampus.current !== selected?.id || finishedSetup === selected?.id) setupCampus.current = null;
+  }, [startSetup, editing, selected?.id, finishedSetup]);
+  useLayoutEffect(()=>{if(!editing&&!settingUp)priorEditor.current='';else if(canEdit&&selected)priorEditor.current=selected.id;},[editing,settingUp,canEdit,selected?.id]);
+  const campusChoices = <CampusChoices visible={choosingCampus} title="Choose campus" options={directory.data?.campuses ?? []} selected={selected?.id} onClose={() => setChoosingCampus(false)} onSelect={id => {const next=new URLSearchParams(params);for(const key of [...nativeCampusPresentationKeys,'panel','edit'])next.delete(key);next.set('campus_id',id);onNavigate(`${nativeCampusRoutePath(href)}?${next}`);}} />;
+  if((editing||settingUp)&&selected&&(canEdit||transientError&&priorEditor.current===selected.id))return <View style={{flex:1}}>
+    {directory.isError?<Notice tone="warning" message="Campus access could not refresh. Your draft remains mounted; restore access before continuing."/>:null}
+    <View style={{flex:1}} pointerEvents={canEdit?'auto':'none'} accessibilityElementsHidden={!canEdit} importantForAccessibility={canEdit?'auto':'no-hide-descendants'}>
+      <CampusSceneEditorScreen {...{href,onNavigate,schoolId}} campusId={selected.id} mapFirst={settingUp}
+        onChooseCampus={settingUp && (directory.data?.campuses.length ?? 0) > 1 ? choose : undefined}
+        onViewPublished={settingUp ? () => setFinishedSetup(selected.id) : undefined}/>
+    </View>
+    {directory.isError?<Button title="Refresh campus access" onPress={()=>void directory.refetch()}/>:null}
+    {campusChoices}
+  </View>;
+  if(editing&&!directory.isPending)return <Page title="Campus layout"><Empty title="Layout editing is unavailable" message="The current institution must authorize layout editing for this exact campus." onRetry={()=>void directory.refetch()}/><Button title="View published campus" onPress={()=>onNavigate(domainHref(nativeCampusRoutePath(href),params,{edit:undefined}))}/></Page>;
   return <CampusFrame campusName={selected?.name} onChooseCampus={directory.data && directory.data.campuses.length > 1 ? choose : undefined}>
-    {directory.isPending ? <Loading /> : (!directory.data) ? <View style={{ padding: 20 }}><Empty title="Your campuses could not be loaded" message={directory.error?.message} onRetry={() => { void directory.refetch(); }} /></View> : selected ? <PublishedCampus key={selected.id} schoolId={schoolId} campusId={selected.id} canEdit={canEdit} href={href} onNavigate={onNavigate} /> : <View style={{ padding: 20 }}><Empty title={params.has('campus_id') ? 'This campus is unavailable' : 'No published campus yet'} message="Select an authorized campus to explore its published layout." />{directory.data.campuses.length ? <Button title="Choose campus" kind="secondary" onPress={choose} /> : null}</View>}
-    <CampusChoices visible={choosingCampus} title="Choose campus" options={directory.data?.campuses ?? []} selected={selected?.id} onClose={() => setChoosingCampus(false)} onSelect={id => {const next=new URLSearchParams(params);for(const key of [...nativeCampusPresentationKeys,'panel','edit'])next.delete(key);next.set('campus_id',id);onNavigate(`${nativeCampusRoutePath(href)}?${next}`);}} />
+    {directory.isPending ? <Loading /> : (!directory.data) ? <View style={{ padding: 20 }}><Empty title="Your campuses could not be loaded" message={directory.error?.message} onRetry={() => { void directory.refetch(); }} /></View> : selected ? <PublishedCampus key={selected.id} schoolId={schoolId} campusId={selected.id} canEdit={canEdit} checkingSetup={canEdit && workspace.isPending} href={href} onNavigate={onNavigate} /> : <View style={{ padding: 20 }}><Empty title={params.has('campus_id') ? 'This campus is unavailable' : 'No published campus yet'} message="Select an authorized campus to explore its published layout." />{directory.data.campuses.length ? <Button title="Choose campus" kind="secondary" onPress={choose} /> : null}</View>}
+    {campusChoices}
   </CampusFrame>;
 }
-function PublishedCampus({ schoolId, campusId, href, onNavigate,canEdit }: DomainScreenProps & { schoolId: string; campusId: string;canEdit:boolean }) {
+function PublishedCampus({ schoolId, campusId, href, onNavigate,canEdit,checkingSetup }: DomainScreenProps & { schoolId: string; campusId: string;canEdit:boolean;checkingSetup:boolean }) {
   const { environment, memberships,user,scopeKey } = useSession(), { colors } = useTheme(), params = domainParams(href);
   const root = `/api/v1/schools/${encodeURIComponent(schoolId)}`, sceneRoot = `${root}/campus-scenes/${encodeURIComponent(campusId)}`;
   const published = useApi<CampusScenePublished>(`${sceneRoot}/published/`);
@@ -161,6 +183,7 @@ function PublishedCampus({ schoolId, campusId, href, onNavigate,canEdit }: Domai
   </>;
   if (published.isPending) return <Loading label="Loading published campus…" />;
   if (published.error || !data || !valid) return <View style={{ padding: 20 }}><Empty title="The published layout could not be verified" message={published.error?.message} onRetry={refresh} /></View>;
+  if(!scene && checkingSetup)return <Loading label="Checking campus setup…" />;
   if(!scene)return <View style={{padding:20}}><Empty title="The campus layout is being prepared" message="A private draft is not shown as the published map."/>{canEdit&&data.can_edit?<Button title="Create or edit layout" onPress={edit}/>:null}{admin?<CampusPublishedOperations {...{href,onNavigate,schoolId,campusId}} mode={urlView?.privatePanel??'spaces'} spaceId={params.get('campus_space')} onSelectPlace={selectPlace}/>:null}</View>;
   return <><CampusWorkspace expanded={expanded} onExpandedChange={changeExpanded} selectionKey={`${selection.selectedId}:${selection.spaceId}:${selection.floorId}`} panel={panel} title={title} panelContent={<>{urlView?.error?<Notice tone="warning" message={urlView.error}/>:null}{!routingAvailable||!layerData?<Notice tone="warning" message={layoutChanged?'The publication changed. Refresh the map before using directions or asset signals.':'Current campus layers are unavailable. Lifts without a matching current asset record are excluded from directions.'}/>:null}{panelContent}</>} onPanel={next => {const value=next==='place'&&!selected&&!selectedPlace?null:next;setPanel(value);update({...campusMapPresentationChanges({panel:value}),...(next!=='operations'?{panel:null}:{})});}}
     map={bottomOverlap => display?.document ? <CampusMapCanvas contextKey={scopeKey} markers={allMarkers} selectedMarkerId={markerGroup?.id??null} onSelectMarker={selectMarker} assetStates={assetStates} people={{compiled:people.compiled,clock:people.clock,visibility:people.visibility}} bottomOverlap={bottomOverlap} lighting={sceneLighting.lighting} sunlight={sceneLighting.sunlight} scene={display.document} floor={display.floorId} mode={renderMode} selected={selection.selectedId} route={route} unavailable={unavailable} onSelect={selectElement} camera={camera} onCameraChange={setCamera} viewBounds={display.interior?.viewBounds} outline={display.interior?.outline} focus={focus} /> : <View style={{ padding: 20 }}><Empty title="This floor could not be verified" /><Button title="Return to campus" kind="secondary" onPress={()=>selectFloor(null)} /></View>}

@@ -39,7 +39,7 @@ export default ({ config }: ConfigContext): ExpoConfig => ({
     'expo-secure-store',
     ['expo-camera', { cameraPermission: 'Allow ThatCampus to scan campus QR codes and capture evidence you choose to attach.', microphonePermission: false, recordAudioAndroid: false }],
     ['expo-sqlite', { useSQLCipher: true }],
-    ['expo-location', { locationWhenInUsePermission: 'Allow ThatCampus to share your location while you operate an assigned journey.' }],
+    ['expo-location', { locationWhenInUsePermission: 'Allow ThatCampus to center the campus map or share your location during an assigned journey you operate.' }],
   ],
   extra: { apiUrl: process.env.EXPO_PUBLIC_API_URL },
 });

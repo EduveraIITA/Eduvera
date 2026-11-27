@@ -48,7 +48,7 @@ function lineKind(properties: Record<string, unknown>): 'road' | 'path' | null {
 }
 
 /** Source-backed outlines only. Courtyard holes are omitted until the scene schema supports rings. */
-export function sceneFromGeoJson(input: unknown, name: string, source: SceneDocument['source']): SceneDocument {
+export function sceneFromGeoJson(input: unknown, name: string, source: SceneDocument['source'], areaBounds?: { west: number; east: number; south: number; north: number }): SceneDocument {
   if (!source.attribution?.trim()) throw new BadRequestException('Include the map data attribution before importing it.');
   if (!record(input) || input.type !== 'FeatureCollection' || !Array.isArray(input.features) || input.features.length > 5000)
     throw new BadRequestException('Upload a GeoJSON FeatureCollection with no more than 5,000 features.');
@@ -81,9 +81,9 @@ export function sceneFromGeoJson(input: unknown, name: string, source: SceneDocu
       extracted.push({ properties, points, shape, sourceFeatureId: `geojson-feature-${featureIndex + 1}` });
     }
   }
-  if (!extracted.length) throw new BadRequestException(courtyardParts ? 'These polygons contain courtyard holes. Draw their separate building wings in the editor; the holes have not been filled.' : 'No supported, valid building outlines, paths or landscape features were found in this map data.');
-  let west = Infinity, east = -Infinity, south = Infinity, north = -Infinity;
-  for (const item of extracted) for (const point of item.points) {
+  if (!extracted.length && !areaBounds) throw new BadRequestException(courtyardParts ? 'These polygons contain courtyard holes. Draw their separate building wings in the editor; the holes have not been filled.' : 'No supported, valid building outlines, paths or landscape features were found in this map data.');
+  let { west = Infinity, east = -Infinity, south = Infinity, north = -Infinity } = areaBounds ?? {};
+  if (!areaBounds) for (const item of extracted) for (const point of item.points) {
     west = Math.min(west, point.lon); east = Math.max(east, point.lon); south = Math.min(south, point.lat); north = Math.max(north, point.lat);
   }
   const scaleX = 111_320 * Math.cos((south + north) / 2 * Math.PI / 180), scaleY = 111_320;
@@ -110,8 +110,8 @@ export function sceneFromGeoJson(input: unknown, name: string, source: SceneDocu
       ...(line ? { width: positive(properties.width, 100) ?? (line === 'road' ? 6 : 2.5) } : pointAsset === 'tree' ? { width: 7, height: 9 } : pointAsset === 'gate' ? { width: 5, height: 3 } : pointAsset === 'bench' ? { width: 2, height: 1 } : pointAsset === 'lamp' ? { width: 1, height: 6 } : {}),
     });
   }
-  if (!elements.length) throw new BadRequestException('The map outlines could not be imported. Draw the missing outlines in the editor.');
-  const notes = ['Imported outlines need review. Heights, vegetation and path widths without source values are visual estimates; this local projection is not a survey or a walking route.', 'Interior rooms need separate plans.', courtyardParts ? `${courtyardParts} polygon part(s) with courtyard holes were omitted; draw separate wings to preserve them.` : '', omitted ? `${omitted} unsupported or invalid feature(s) were omitted.` : '', source.notes ?? ''].filter(Boolean).join(' ').slice(0, 1000);
+  if (!elements.length && !areaBounds) throw new BadRequestException('The map outlines could not be imported. Draw the missing outlines in the editor.');
+  const notes = [elements.length ? 'Imported outlines need review. Heights, vegetation and path widths without source values are visual estimates; this local projection is not a survey or a walking route.' : 'The selected area has no usable mapped outlines. Add an aerial image or draw missing outlines.', 'Interior rooms need separate plans.', courtyardParts ? `${courtyardParts} polygon part(s) with courtyard holes were omitted; draw separate wings to preserve them.` : '', omitted ? `${omitted} unsupported or invalid feature(s) were omitted.` : '', source.notes ?? ''].filter(Boolean).join(' ').slice(0, 1000);
   const document = { schema_version: 1, name, bounds: { width: Math.ceil(width), height: Math.ceil(height), unit: 'metres' }, source: { ...source, attribution: source.attribution.trim(), notes }, elements };
   const checked = sceneDocumentSchema.safeParse(document);
   if (!checked.success) throw new BadRequestException('This map is too complex to import as one campus. Use a smaller boundary or simplify its outlines.');

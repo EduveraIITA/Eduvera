@@ -198,6 +198,9 @@ export async function verify(origin, sha, wasm, fetcher = fetch) {
   const policy = home.response.headers.get('content-security-policy') ?? '';
   const scriptPolicy = policy.split(';').find(value => value.trim().startsWith('script-src ')) ?? '';
   if (!scriptPolicy.includes("'wasm-unsafe-eval'") || /(?:^|\s)'unsafe-eval'(?:\s|$)/u.test(scriptPolicy)) throw new Error('The reviewed same-origin WebAssembly CSP is missing.');
+  const imagePolicy = policy.split(';').find(value => value.trim().startsWith('img-src '))?.trim().split(/\s+/u).slice(1) ?? [];
+  const imageSources = ["'self'", "data:", "blob:", "https://tile.openstreetmap.org"];
+  if (imagePolicy.length !== imageSources.length || !imageSources.every(source => imagePolicy.includes(source))) throw new Error('The reviewed Virtual Campus image CSP is missing.');
   const scriptPaths = [...html.matchAll(/<script\b[^>]*\bsrc=["']([^"']+)["']/giu)].map(match => new URL(match[1], base));
   if (!scriptPaths.length || scriptPaths.length > 5) throw new Error('The Expo entry script is missing or ambiguous.');
   for (const script of scriptPaths) {

@@ -2,10 +2,15 @@ import fastifyStatic from "@fastify/static";
 import type { FastifyInstance } from "fastify";
 import { access, stat } from "node:fs/promises";
 import { join } from "node:path";
+import { PRIVATE_IMAGE_SOURCES } from "./common/attachment-headers.js";
 
 // CanvasKit compiles the reviewed, same-origin WebAssembly asset. This does not
 // enable JavaScript eval, remote scripts, blob scripts or a development server.
 export const WEB_ASSET_SCRIPT_SOURCES = ["'self'", "'wasm-unsafe-eval'"] as const;
+// Allow the explicit Virtual Campus background tile provider. Private photos
+// still use their authenticated object URLs, and external script/connection
+// permissions remain unchanged.
+export const WEB_ASSET_IMAGE_SOURCES = [...PRIVATE_IMAGE_SOURCES, "https://tile.openstreetmap.org"] as const;
 
 /** Only packaged public assets belong here; private uploads retain their API. */
 export async function registerWebAssets(server: FastifyInstance, directory: string): Promise<void> {

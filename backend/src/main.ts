@@ -3,7 +3,6 @@ import compress from "@fastify/compress";
 import cookie from "@fastify/cookie";
 import helmet from "@fastify/helmet";
 import multipart from "@fastify/multipart";
-import { PRIVATE_IMAGE_SOURCES } from "./common/attachment-headers.js";
 import { Logger } from "@nestjs/common";
 import { NestFactory } from "@nestjs/core";
 import { FastifyAdapter, type NestFastifyApplication } from "@nestjs/platform-fastify";
@@ -15,7 +14,7 @@ import { registerApiResponseCacheControl } from "./common/api-response-cache.js"
 import { rateLimitHook } from "./common/rate-limit.js";
 import { config } from "./config.js";
 import { DatabaseService } from "./database/database.service.js";
-import { registerWebAssets, WEB_ASSET_SCRIPT_SOURCES } from "./web-assets.js";
+import { registerWebAssets, WEB_ASSET_IMAGE_SOURCES, WEB_ASSET_SCRIPT_SOURCES } from "./web-assets.js";
 
 async function bootstrap(): Promise<void> {
   const settings = config();
@@ -34,7 +33,7 @@ async function bootstrap(): Promise<void> {
   await app.register(helmet, {
     crossOriginOpenerPolicy: { policy: "same-origin-allow-popups" },
     contentSecurityPolicy: settings.NODE_ENV === "production" ? { directives: {
-      imgSrc: PRIVATE_IMAGE_SOURCES,
+      imgSrc: WEB_ASSET_IMAGE_SOURCES,
       formAction: ["'self'", ...(razorpay ? ["https://api.razorpay.com"] : [])],
       scriptSrc: [...WEB_ASSET_SCRIPT_SOURCES, ...googleSources, ...(razorpay ? ["https://checkout.razorpay.com", "https://cdn.razorpay.com", "https://checkout-static-next.razorpay.com"] : [])],
       styleSrc: ["'self'", "'unsafe-inline'", "https:", ...googleSources],

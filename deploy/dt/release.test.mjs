@@ -38,7 +38,7 @@ function publicFetch(override = () => undefined) {
     const changed = override(path, calls); if (changed) return changed;
     if (path === '/releasez') return Response.json({ release_sha: sha, environment: 'production' });
     if (path === '/readyz') return Response.json({ status: 'ready' });
-    if (path === '/' || path === '/more/virtual-campus') return new Response('<!doctype html><div id="root"></div><script defer src="/_expo/static/js/web/entry.abcdef123.js"></script>', { headers: { 'Content-Type': 'text/html', 'Content-Security-Policy': "script-src 'self' 'wasm-unsafe-eval'; object-src 'none'" } });
+    if (path === '/' || path === '/more/virtual-campus') return new Response('<!doctype html><div id="root"></div><script defer src="/_expo/static/js/web/entry.abcdef123.js"></script>', { headers: { 'Content-Type': 'text/html', 'Content-Security-Policy': "script-src 'self' 'wasm-unsafe-eval'; object-src 'none'; img-src 'self' data: blob: https://tile.openstreetmap.org" } });
     if (path.endsWith('.js')) return new Response('globalThis.ThatCampusApp=true;'.repeat(20), { headers: { 'Content-Type': 'text/javascript' } });
     if (path === wasm.path) return new Response(wasmBytes, { headers: { 'Content-Type': 'application/wasm' } });
     if (path === '/api/v1/workspace') return Response.json({ message: 'Sign in required' }, { status: 401 });
@@ -178,7 +178,7 @@ test('stale release, missing assets, HTML fallbacks, untrusted scripts, bad WASM
     path => path === '/releasez' ? Response.json({ release_sha: 'wrong', environment: 'production' }) : undefined,
     path => path === '/readyz' ? Response.json({ status: 'starting' }) : undefined,
     path => path.endsWith('.js') ? new Response('<html>fallback</html>', { headers: { 'Content-Type': 'text/html' } }) : undefined,
-    path => path === '/' ? new Response('<div id="root"></div><script src="https://foreign.test/app.js"></script>', { headers: { 'Content-Type': 'text/html', 'Content-Security-Policy': "script-src 'self' 'wasm-unsafe-eval'" } }) : undefined,
+    path => path === '/' ? new Response('<div id="root"></div><script src="https://foreign.test/app.js"></script>', { headers: { 'Content-Type': 'text/html', 'Content-Security-Policy': "script-src 'self' 'wasm-unsafe-eval'; img-src 'self' data: blob: https://tile.openstreetmap.org" } }) : undefined,
     path => path === wasm.path ? new Response(Buffer.from('wrong payload'), { headers: { 'Content-Type': 'application/wasm' } }) : undefined,
     path => path === '/api/v1/auth/native/login/' ? Response.json({ error: 'invalid' }, { status: 400, headers: { 'Set-Cookie': 'unexpected=session' } }) : undefined,
   ];

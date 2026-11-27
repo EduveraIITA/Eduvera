@@ -33,7 +33,7 @@ const MIME = {
 const CSP = [
   "default-src 'self'", "base-uri 'self'", "object-src 'none'", "frame-ancestors 'self'",
   "script-src 'self' 'wasm-unsafe-eval' https://accounts.google.com https://checkout.razorpay.com https://cdn.razorpay.com https://checkout-static-next.razorpay.com",
-  "style-src 'self' 'unsafe-inline' https://accounts.google.com", "img-src 'self' data: blob:", "font-src 'self' data:", "media-src 'self' blob: data:",
+  "style-src 'self' 'unsafe-inline' https://accounts.google.com", "img-src 'self' data: blob: https://tile.openstreetmap.org", "font-src 'self' data:", "media-src 'self' blob: data:",
   "connect-src 'self' https://accounts.google.com https://api.razorpay.com https://api-dark.razorpay.com https://checkout.razorpay.com https://express.razorpay.com https://lumberjack.razorpay.com https://lumberjack-cx.razorpay.com https://lumberjack-metrics.razorpay.com",
   "frame-src 'self' https://accounts.google.com https://api.razorpay.com https://checkout.razorpay.com", "form-action 'self' https://api.razorpay.com",
 ].join('; ');

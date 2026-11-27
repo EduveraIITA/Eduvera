@@ -10,8 +10,11 @@ import { sceneLocationSchema, type SceneLocation } from './scene-import.contract
 import { osmToGeoJson, sceneFromGeoJson } from './scene-import.geometry.js';
 import { boundMapFeatures } from './scene-import.bounds.js';
 import { FLOOR_PLAN_INSTRUCTION, floorPlanDraft, floorPlanResponseSchema } from './floor-plan-draft.js';
+import type { PreparedMapArea } from './scene-import.area.js';
+import { CAMPUS_MAP_HINT_INSTRUCTION, campusMapHintResponse, campusMapHintsSchema, type mappedPlaceCandidates } from './scene-import.assistance.js';
 
 const MAX_MAP_ELEMENTS = 1800;
+export const CAMPUS_MAP_HINT_OUTPUT_TOKENS = 1024;
 const draftSchema = z.object({ elements: z.array(z.object({
   kind: z.enum(['building', 'road', 'path', 'tree', 'surface']),
   label: z.string().min(1).max(100),
@@ -59,13 +62,20 @@ export class CampusSceneImportProvider {
   private readonly logger = new Logger(CampusSceneImportProvider.name);
   capabilities() {
     if (selectedSimulationResources()) return { image_analysis: { available: false, reason: 'This Simulation uses captured drafts or image tracing. It does not contact Live AI.' },
-      map_search: { available: false, reason: 'Use a captured map draft, GeoJSON, or image tracing in this Simulation.' }, max_image_bytes: 4 * 1024 * 1024 };
+      map_search: { available: false, reason: 'Use a captured map draft, GeoJSON, or image tracing in this Simulation.' },
+      map_area: { available: true, ai_available: false }, max_image_bytes: 4 * 1024 * 1024 };
     let imageReason: string | undefined;
     try { if (process.env.AGENT_PROVIDER !== 'vertex') throw new Error(); assertAgentEnabled(); vertexSettings(); }
     catch { imageReason = 'Image analysis is not enabled in this environment. Upload a plan and trace it in the editor.'; }
     const mapAvailable=process.env.CAMPUS_MAP_IMPORT_ENABLED !== 'false' && (process.env.NODE_ENV!=='production'||Boolean(process.env.CAMPUS_OVERPASS_URL));
+    let mapAiAvailable = false;
+    if (mapAvailable && process.env.AGENT_PROVIDER === 'vertex') {
+      try { assertAgentEnabled('campus_map_review'); vertexSettings(); mapAiAvailable = true; }
+      catch { /* The source-backed map review remains available without Vertex. */ }
+    }
     return { image_analysis: { available: !imageReason, ...(imageReason ? { reason: imageReason } : {}) },
       map_search: { available: mapAvailable, ...(!mapAvailable ? { reason: 'Map search needs a configured provider. You can import GeoJSON or trace a plan.' } : {}) },
+      map_area: { available: mapAvailable, ai_available: mapAiAvailable, ...(!mapAvailable ? { reason: 'Map import needs a configured provider. You can upload or draw a plan.' } : {}) },
       max_image_bytes: 4 * 1024 * 1024 };
   }
 
@@ -77,7 +87,7 @@ export class CampusSceneImportProvider {
     const signal = AbortSignal.timeout(25_000);
     try {
       const response = await fetch(endpoint, { method: 'POST', signal,
-        headers: { 'Content-Type': 'application/x-www-form-urlencoded', 'User-Agent': 'ThatCampus-CampusImporter/1.0' },
+        headers: { 'Content-Type': 'application/x-www-form-urlencoded', 'User-Agent': 'ThatCampus-CampusImporter/1.0 (+https://thatcampus.com)' },
         body: new URLSearchParams({ data: query }), redirect: 'error' });
       if (!response.ok || !response.body) throw new Error('unavailable');
       const reader = response.body.getReader(); const chunks: Uint8Array[] = []; let bytes = 0;
@@ -122,15 +132,56 @@ export class CampusSceneImportProvider {
       location.latitude < bounds.south || location.latitude > bounds.north || location.longitude < bounds.west || location.longitude > bounds.east) {
       throw new BadRequestException('Choose a campus area no more than 4 km across. Large campuses can be imported as separate areas.');
     }
-    const box = [bounds.south,bounds.west,bounds.north,bounds.east].join(',');
-    const raw = await this.overpass(`[out:json][timeout:20][maxsize:16777216];(way[building](${box});way[highway](${box});way[leisure~"^(pitch|track|garden|park)$"](${box});way[amenity=parking](${box});way[natural=water](${box});way[landuse=grass](${box});node[natural=tree](${box}););out geom ${MAX_MAP_ELEMENTS};`);
+    const features = await this.mapFeatures(bounds);
+    return sceneFromGeoJson(boundMapFeatures(features,bounds), location.name, { kind: 'open_map', label: location.name,
+      reference_url: `https://www.openstreetmap.org/${location.id}`, attribution: '© OpenStreetMap contributors · ODbL', provider: 'OpenStreetMap / Overpass',
+      notes: 'Open map features in the selected campus area. Roads are clipped to the area; partial boundary buildings are omitted. Verify boundaries and remove neighbouring features. Source data may omit buildings, courtyards and paths.' });
+  }
+
+  private async mapFeatures(bounds: PreparedMapArea['bounds'], includeGates = false) {
+    const box = [bounds.south, bounds.west, bounds.north, bounds.east].join(',');
+    const gates = includeGates ? `node[barrier=gate](${box});` : '';
+    const raw = await this.overpass(`[out:json][timeout:20][maxsize:16777216];(way[building](${box});way[highway](${box});way[leisure~"^(pitch|track|garden|park)$"](${box});way[amenity=parking](${box});way[natural=water](${box});way[landuse=grass](${box});node[natural=tree](${box});${gates});out geom ${MAX_MAP_ELEMENTS};`);
     // Overpass's output limit silently truncates without a remark. At the cap
     // we cannot prove completeness, so do not present it as a campus proposal.
     if(raw && typeof raw==='object' && 'elements' in raw && Array.isArray(raw.elements) && raw.elements.length>=MAX_MAP_ELEMENTS)
       throw new BadRequestException('This map area contains too many features for a complete draft. Choose a smaller area, upload a smaller GeoJSON map, or trace a campus plan.');
-    return sceneFromGeoJson(boundMapFeatures(osmToGeoJson(raw),bounds), location.name, { kind: 'open_map', label: location.name,
-      reference_url: `https://www.openstreetmap.org/${location.id}`, attribution: '© OpenStreetMap contributors · ODbL', provider: 'OpenStreetMap / Overpass',
-      notes: 'Open map features in the selected campus area. Roads are clipped to the area; partial boundary buildings are omitted. Verify boundaries and remove neighbouring features. Source data may omit buildings, courtyards and paths.' });
+    return osmToGeoJson(raw);
+  }
+
+  async area(label: string, area: PreparedMapArea): Promise<SceneDocument> {
+    const features = await this.mapFeatures(area.bounds, true);
+    return sceneFromGeoJson(area.filter(features), label, { kind: 'open_map', label,
+      reference_url: 'https://www.openstreetmap.org/copyright', attribution: '© OpenStreetMap contributors · ODbL', provider: 'OpenStreetMap / Overpass',
+      notes: 'Paths are clipped to your drawn boundary. Partial buildings are omitted. Check the map for missing or neighbouring features.' }, area.bounds);
+  }
+
+  async mapHints(candidates: ReturnType<typeof mappedPlaceCandidates>, reserve: (inputTokens: number, outputTokens: number) => Promise<void>) {
+    assertLiveExternalEffect('Campus map review');
+    if (!this.capabilities().map_area.ai_available || !candidates.length) return undefined;
+    const settings = vertexSettings(), signal = AbortSignal.timeout(20_000);
+    const client = new GoogleGenAI({ vertexai: true, project: settings.project, location: settings.location, apiVersion: 'v1',
+      httpOptions: { timeout: 20_000, retryOptions: { attempts: 1 } } });
+    const contents = JSON.stringify(candidates.map(({ id, label, allowedKinds, defaultKind }) =>
+      ({ feature_id: id, label, allowed_kinds: allowedKinds, default_kind: defaultKind })));
+    try {
+      const count = await client.models.countTokens({ model: settings.model, contents,
+        config: { abortSignal: signal, systemInstruction: CAMPUS_MAP_HINT_INSTRUCTION } });
+      await reserve(z.number().int().nonnegative().parse(count.totalTokens), CAMPUS_MAP_HINT_OUTPUT_TOKENS);
+      assertAgentEnabled('campus_map_review');
+      const response = await client.models.generateContent({ model: settings.model, contents, config: {
+        abortSignal: signal, systemInstruction: CAMPUS_MAP_HINT_INSTRUCTION, maxOutputTokens: CAMPUS_MAP_HINT_OUTPUT_TOKENS,
+        candidateCount: 1, thinkingConfig: { thinkingLevel: ThinkingLevel.MINIMAL }, automaticFunctionCalling: { disable: true },
+        responseMimeType: 'application/json', responseSchema: campusMapHintResponse,
+      } });
+      if (response.candidates?.[0]?.finishReason !== FinishReason.STOP || !response.text || Buffer.byteLength(response.text) > 16_384)
+        throw new Error('Incomplete output');
+      return campusMapHintsSchema.parse(JSON.parse(response.text));
+    } catch {
+      // Import succeeds with map-backed review controls if the optional model is unavailable.
+      this.logger.warn('Campus map AI review was unavailable. Returning source-backed review controls.');
+      return undefined;
+    }
   }
 
   async image(input: {bytes:Buffer;mimeType:string;imageId:string;width:number;height:number;label:string;sourceKind:'aerial_image'|'site_plan';instructions:string;purpose?:'floor_plan'}, reserve: (inputTokens:number,outputTokens:number)=>Promise<void>): Promise<SceneDocument> {
