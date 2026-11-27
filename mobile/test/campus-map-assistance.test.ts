@@ -18,11 +18,18 @@ const document: CampusSceneDocument = {
   source: { kind: 'open_map', label: 'Selected map area' },
 };
 
-test('the boundary opens on a confirmed empty campus and skips existing drafts and foreign campuses', () => {
+test('the boundary opens on a confirmed empty campus or saved blank manual draft', () => {
   const fresh: CampusSceneWorkspace = { campus, scene: null, spaces: [] };
-  const draft: CampusSceneWorkspace = { ...fresh, scene: { id: campusId, revision: 1, draft: document, published_version: null, published: null, updated_at: '' } };
+  const blank: CampusSceneDocument = { ...document, elements: [], source: { kind: 'manual', label: 'Manually drawn campus' } };
+  const scene = { id: campusId, revision: 1, draft: blank, published_version: null, published: null, updated_at: '' };
+  const draft = (update: Partial<NonNullable<CampusSceneWorkspace['scene']>> = {}): CampusSceneWorkspace => ({ ...fresh, scene: { ...scene, ...update } });
   assert.equal(canStartCampusMapSetup(fresh, campusId, true), true);
-  assert.equal(canStartCampusMapSetup(draft, campusId, true), false);
+  assert.equal(canStartCampusMapSetup(draft(), campusId, true), true);
+  assert.equal(canStartCampusMapSetup(draft({ draft: { ...blank, elements: [building] } }), campusId, true), false);
+  assert.equal(canStartCampusMapSetup(draft({ draft: { ...blank, source: { ...blank.source, image_asset_id: key } } }), campusId, true), false);
+  assert.equal(canStartCampusMapSetup(draft({ draft: { ...document, elements: [] } }), campusId, true), false);
+  assert.equal(canStartCampusMapSetup(draft({ published_version: 1 }), campusId, true), false);
+  assert.equal(canStartCampusMapSetup(draft({ draft: null }), campusId, true), false);
   assert.equal(canStartCampusMapSetup(fresh, key, true), false);
   assert.equal(canStartCampusMapSetup(fresh, campusId, false), false);
   assert.equal(canStartCampusMapSetup(undefined, campusId, true), false);

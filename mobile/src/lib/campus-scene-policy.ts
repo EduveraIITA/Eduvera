@@ -13,7 +13,13 @@ export function nativeSceneDocument(v:unknown):v is CampusSceneDocument {
  return !!d&&d.schema_version===1&&text(d.name,160)&&!!bounds&&['width','height'].every(k=>typeof bounds[k]==='number'&&Number.isFinite(bounds[k])&&Number(bounds[k])>0)&&['relative','metres'].includes(String(bounds.unit))&&!!source&&['manual','aerial_image','site_plan','name_search','open_map'].includes(String(source.kind))&&text(source.label,200)&&Array.isArray(d.elements)&&d.elements.length<=2000&&new Set(d.elements.map((e:unknown)=>object(e)?.id)).size===d.elements.length&&d.elements.every((v:unknown)=>{const e=object(v),g=object(e?.geometry);return !!e&&elementId(e.id)&&typeof e.label==='string'&&e.label.length<=160&&['building','room','road','path','tree','fixture','surface'].includes(String(e.kind))&&['reviewed','needs_review'].includes(String(e.review_state))&&!!g&&['polygon','polyline','point'].includes(String(g.type))&&Array.isArray(g.points)&&g.points.length>0&&g.points.length<=500&&g.points.every((v:unknown)=>{const p=object(v);return p&&typeof p.x==='number'&&typeof p.y==='number'&&Number.isFinite(p.x)&&Number.isFinite(p.y);})&&[e.space_id,e.floor_id,e.holding_id].every(id=>id==null||uuid(id))&&(e.parent_element_id==null||elementId(e.parent_element_id));});
 }
 export function canStartCampusMapSetup(workspace: CampusSceneWorkspace | undefined, campusId: string, confirmed: boolean): boolean {
- return confirmed && workspace?.campus.id === campusId && workspace.scene === null;
+ if (!confirmed || workspace?.campus.id !== campusId) return false;
+ const { scene } = workspace;
+ if (!scene) return scene === null;
+ const draft = scene.draft;
+ return scene.published === null && scene.published_version === null
+  && nativeSceneDocument(draft) && draft.elements.length === 0
+  && draft.source.kind === 'manual' && !draft.source.image_asset_id;
 }
 
 function campusMapBoundary(value: unknown): boolean {

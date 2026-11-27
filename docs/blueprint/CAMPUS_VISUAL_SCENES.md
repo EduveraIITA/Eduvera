@@ -523,12 +523,14 @@ services and captured/manual-image substitute apply in Simulation as in other im
 
 ## Sources and inference
 
-When an authorized administrator first opens a campus with no saved layout,
-show the boundary map. The administrator can explicitly center it on their
+When an authorized administrator opens a campus with no drawing or a saved
+blank manual draft and no publication, show the boundary map. The administrator can explicitly center it on their
 device location, search by full campus name, or enter a coordinate. Send the
 drawn boundary only when the administrator requests a draft. Keep location
 permission optional and retain the existing plan/GeoJSON and manual paths.
-Campuses with a saved draft or publication use their existing entry points.
+Campuses with a substantive draft or publication use their existing entry points.
+An administrator can deliberately start from the map in the draft editor after
+confirming replacement of a drawing or sourced draft.
 
 Bounded OpenStreetMap geometry is the source for editable outdoor features.
 The selected polygon restricts the import and remains available for adjustment.
