@@ -34,7 +34,7 @@ function shell(width: number,height: number,expanded = false,isPad = width > 700
     './assistant-presentation-context': { useAssistantPresentationState: () => ({ expanded,mode: assistantLayout({ width,height,expanded,isPad }).mode }) },
     '../lib/assistant-presentation-policy': { assistantPresentationPermitted },'../lib/api': { ApiError },
     './theme': { useTheme: () => ({ colors: {},dark: false }) },'react-native-safe-area-context': { SafeAreaView: View,useSafeAreaInsets: () => ({ top: 59,bottom: 34,left: 0,right: 0 }) },
-    './Glass': { Glass: View },'./CampusTabs': { CampusTabs: Tabs },'./campus-tabs-options': { NativeDockMetricsContext: { Provider: Symbol('DockMetricsProvider') } },'./AssistantOverlayHost': { AssistantOverlayHost: Overlay },
+    './Glass': { Glass: View },'./CampusTabs': { CampusTabs: Tabs },'./campus-tabs-options': { NativeDockMetricsContext: { Provider: Symbol('DockMetricsProvider') } }, './CopilotProvider': {CopilotStatusBar:()=>null,useCopilotAction:()=>{},useCopilotTakeOver:()=>()=>{}},'./AssistantOverlayHost': { AssistantOverlayHost: Overlay },
     './AssistantPresentation': { useAssistantPresentation: () => ({ active,open() { actions.open++; },close() { actions.close++; } }) },
     './native-tab-insets-context': { NativeTabInsetsContext: { Provider: Symbol('InsetProvider') }, FloatingDockInsetsContext: { Provider: Symbol('FloatingInsetProvider') } },
     './Icon': { Icon: Symbol('Icon') },'./AssistantMark': { AssistantMark },

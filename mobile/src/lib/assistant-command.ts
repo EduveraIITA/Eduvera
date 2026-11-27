@@ -1,5 +1,7 @@
+import { parseCopilotContext, type CopilotContext } from './copilot';
+
 export type AssistantCommand =
-  | { kind: 'send'; threadId: string; question: string; clientId: string; phase?: 'creating' | 'accepted' }
+  | { kind: 'send'; threadId: string; question: string; clientId: string; uiContext?: CopilotContext; phase?: 'creating' | 'accepted' }
   | { kind: 'decision'; threadId: string; actionId: string; decision: 'confirm' | 'reject'; phase?: 'accepted' };
 const uuid = (value: unknown): value is string => typeof value === 'string' && /^[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}$/i.test(value);
 const outcomes = ['executing', 'succeeded', 'rejected', 'expired', 'stale', 'failed', 'uncertain'];
@@ -7,7 +9,7 @@ export function validAssistantCommand(value: unknown): value is AssistantCommand
   if (!value || typeof value !== 'object') return false;
   const command = value as AssistantCommand;
   return command.kind === 'send'
-    ? (command.threadId === '' || uuid(command.threadId)) && uuid(command.clientId) && typeof command.question === 'string' && command.question.trim().length > 0 && command.question.length <= 4000 && (command.phase === undefined || command.phase === 'creating' && !command.threadId || command.phase === 'accepted' && !!command.threadId)
+    ? (command.threadId === '' || uuid(command.threadId)) && uuid(command.clientId) && typeof command.question === 'string' && command.question.trim().length > 0 && command.question.length <= 4000 && (command.uiContext === undefined || !!parseCopilotContext(command.uiContext)) && (command.phase === undefined || command.phase === 'creating' && !command.threadId || command.phase === 'accepted' && !!command.threadId)
     : command.kind === 'decision' && uuid(command.threadId) && uuid(command.actionId) && ['confirm', 'reject'].includes(command.decision) && (command.phase === undefined || command.phase === 'accepted');
 }
 export function restoreAssistantCommand(value: unknown): AssistantCommand {

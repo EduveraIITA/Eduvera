@@ -26,6 +26,8 @@ import { AssistantAnswer, CompactAnswer, ConversationBubble, ConversationCanvas,
 import { assertAssistantWriteReady, assistantChartDisplayPoints, assistantCompactPresentation, assistantLinkedThreadRequest, assistantPreferenceState, assistantRunAnswer, assistantSourceLabel, prepareAssistantConversationChange } from './assistant/conversation-presentation';
 import { assistantCopySnapshot, copyAssistantResponse } from './assistant/assistant-copy';
 import { CampusA2uiSurface } from './campus/CampusA2uiSurface';
+import { useCopilot } from '../ui/CopilotProvider';
+import { copilotCallId } from '../lib/copilot';
 
 type Props = { href: string; onNavigate: (href: string) => void };
 type Pending = AssistantCommand;
@@ -75,6 +77,7 @@ function AssistantAccess(props: Props & { portal: AssistantPortal }) {
 
 function Conversation({ href, onNavigate, portal, accessPaused, preferenceError, preferenceRefreshing, onPreferenceRetry }: Props & { portal: AssistantPortal; accessPaused: boolean; preferenceError?: string; preferenceRefreshing: boolean; onPreferenceRetry: () => void }) {
   const { scopeKey, status: sessionStatus } = useSession(), client = useQueryClient(), { colors } = useTheme(), presentation = useAssistantPresentation();
+  const copilot=useCopilot();
   const accessPausedRef = useRef(accessPaused); accessPausedRef.current = accessPaused;
   const params = new URLSearchParams(href.split('?')[1] ?? ''), studentId = portal === 'parent' ? params.get('student_id') ?? undefined : undefined;
   const scope = new URLSearchParams({ portal, ...(studentId ? { student_id: studentId } : {}) });
@@ -158,9 +161,18 @@ function Conversation({ href, onNavigate, portal, accessPaused, preferenceError,
         retain: value => SecureStore.setItemAsync(journal, JSON.stringify(value), { keychainAccessible: SecureStore.WHEN_UNLOCKED_THIS_DEVICE_ONLY }),
         retained,
         createThread: () => { assertAssistantWriteReady(accessPausedRef.current); return apiFetch<{ id: string }>(`${root}/threads`, { method: 'POST', body: JSON.stringify({ portal, ...(studentId ? { student_id: studentId } : {}) }) }); },
-        dispatch: value => { assertAssistantWriteReady(accessPausedRef.current); return value.kind === 'send'
-          ? apiFetch(`${root}/threads/${encodeURIComponent(value.threadId)}/messages`, { method: 'POST', body: JSON.stringify({ question: value.question, client_id: value.clientId }) })
-          : apiFetch(`${root}/threads/${encodeURIComponent(value.threadId)}/actions/${encodeURIComponent(value.actionId)}`, { method: 'POST', body: JSON.stringify({ decision: value.decision }) }); },
+        dispatch: async value => {
+          assertAssistantWriteReady(accessPausedRef.current);
+          if (value.kind === 'decision') return apiFetch(`${root}/threads/${encodeURIComponent(value.threadId)}/actions/${encodeURIComponent(value.actionId)}`, { method: 'POST', body: JSON.stringify({ decision: value.decision }) });
+          const lease = !recovering && value.uiContext ? copilot.capture(value.uiContext) : undefined;
+          const receipt = await apiFetch<{run_id?: string}>(`${root}/threads/${encodeURIComponent(value.threadId)}/messages`, {
+            method:'POST',body:JSON.stringify({question:value.question,client_id:value.clientId,...(value.uiContext?{ui_context:value.uiContext}:{})}),
+          });
+          assertCurrent?.();
+          if (lease && copilotCallId(receipt?.run_id))
+            copilot.follow({id:receipt.run_id,threadId:value.threadId,lease});
+          return receipt;
+        },
         clear: () => SecureStore.deleteItemAsync(journal),
       });
       assertCurrent(); await client.invalidateQueries({ queryKey: ['campus', scopeKey] }); assertCurrent();
@@ -212,9 +224,16 @@ function Conversation({ href, onNavigate, portal, accessPaused, preferenceError,
     } catch (cause) { try { assertCurrent(); setError(cause instanceof Error ? cause.message : 'The unsent question was retained.'); } catch { /* Retain the exact preparation. */ } }
     finally { entry.busy = false; notify(entry); }
   }
+  useEffect(() => {
+    const observed=copilot.pending;
+    if (!observed || observed.threadId!==threadId) return;
+    if (accessPaused || !presentation.active && copilot.activity?.phase!=='applying') { copilot.takeOver(); return; }
+    if (runs.some(run=>run.id===observed.id&&run.status!=='running'))
+      copilot.inspect(observed.id,()=>{ if(presentation.mode!=='split')presentation.close(); });
+  },[copilot.pending,copilot.activity?.phase,presentation.active,accessPaused,threadId,runs]);
   async function cancelRun() {
     if (!presentation.active || !activeRun || !threadId || busy || pending || accessPaused) return;
-    setBusy(true); setError('');
+    copilot.takeOver();setBusy(true); setError('');
     try { const assertCurrent = captureOperation(); const value = await apiFetch<{ cancelled: boolean }>(`${root}/threads/${encodeURIComponent(threadId)}/runs/${encodeURIComponent(activeRun.id)}/cancel`, { method: 'POST', body: '{}' }); assertCurrent(); if (typeof value?.cancelled !== 'boolean') throw new Error('Cancellation was not confirmed. Refresh the original request.'); await detail.refetch(); assertCurrent(); }
     catch (cause) { setError(cause instanceof Error ? cause.message : 'Cancellation was not confirmed. Refresh before trying again.'); }
     finally { setBusy(false); }
@@ -241,7 +260,7 @@ function Conversation({ href, onNavigate, portal, accessPaused, preferenceError,
     attention={attention} pending={pending} error={error} preferenceError={preferenceError} detailError={detail.error?.message} historyError={threads.error?.message} loading={!!threadId && detail.isPending || threads.isPending} availableHeight={presentation.frame.height} />
     <ConversationComposer value={question} onChange={setQuestion} locked={locked} busy={busy} running={!!activeRun} stopDisabled={busy || !!pending || accessPaused} expanded={presentation.expanded}
     status={accessPaused ? 'Access check paused. Your question is retained.' : pending ? 'Recover the earlier request before another question.' : activeRun ? `${activeRun.progress || 'Checking your request'}…` : awaiting ? 'Review the pending change before another question.' : !status.data.ready ? 'AI provider unavailable. Saved conversations remain available.' : undefined}
-    onStop={() => void cancelRun()} onSend={() => void perform({ kind: 'send', threadId, question: question.trim(), clientId: Crypto.randomUUID() })} /></View>;
+    onStop={() => void cancelRun()} onSend={() => void perform({ kind: 'send', threadId, question: question.trim(), clientId: Crypto.randomUUID(), uiContext:copilot.context() })} /></View>;
   return <AssistantFrame canvas maxWidth={720} footer={composer} footerPadding={16} footerSeparator={false}>
     <View style={{ flex: presentation.expanded ? 1 : 0, minHeight: 0, display: presentation.expanded ? 'flex' : 'none' }} accessibilityElementsHidden={!presentation.expanded} importantForAccessibility={presentation.expanded ? 'auto' : 'no-hide-descendants'}>
     <ConversationToolbar onHistory={() => setHistory(true)} onNew={createConversation} historyDisabled={busy} newDisabled={locked} onCollapse={presentation.collapse} copyControl={copyControl} availableWidth={presentation.frame.width} />

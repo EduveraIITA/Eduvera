@@ -22,10 +22,14 @@ import { conversationSummaryPrompt, needsStoredConversationCompaction, turnsToCo
 import { AGENT_PROMPT_VERSION,agentSystemPrompt,basicAgentPrompt,responsePrompt,skillPrompt } from './agent-prompts.js';
 import { conversationRoutingQuery } from './tool-routing.js';
 import { AgentMemoryService,agentMemoryLimits,longTermMemoryPrompt,userIdentityPrompt,userMemoryTool,AGENT_MEMORY_CONTRACT_VERSION } from './long-term-memory.js';
+import {
+  CLIENT_UI_CALL_STEP, CLIENT_UI_CONTEXT_STEP, advertisedClientTools, clientUiContextSchema, clientUiPrompt,
+  isClientUiTool, parseClientUiCall, projectAssistantAgUi, restoreClientUiCall, type ClientUiContext,
+} from './agent-ui.js';
 
 const portalSchema = z.enum(['principal','teacher','parent','student']);
 const threadInput = z.object({ portal: portalSchema, student_id: z.string().uuid().optional() }).strict();
-const messageInput = z.object({ question: z.string().trim().min(1).max(4000), client_id: z.string().uuid() }).strict();
+const messageInput = z.object({ question: z.string().trim().min(1).max(4000), client_id: z.string().uuid(), ui_context:clientUiContextSchema.optional() }).strict();
 interface Thread { id: string; owner_id: string; school_id: string; portal: Portal; student_id: string | null; title: string; archived: boolean; context_summary:string; context_summary_through_run_id:string|null }
 interface Run { id: string; thread_id: string; question: string; answer: string; status: string; progress: string; provider: string; model: string; evidence: Evidence[]; created_at: Date; finished_at: Date | null }
 interface ConversationTurn extends Run,MemoryTurn { action_status:string|null; action_capability:string|null }
@@ -275,6 +279,43 @@ export class AgentService implements OnModuleDestroy {
           expires_at:action.expires_at, receipt:action.receipt, href:assertLocalScreen(verificationScreen(capability,action.input,scope,undefined,basis?.result)) } : null };
     })) };
   }
+  async runEvents(request: AuthenticatedRequest, threadId: string, runId: string) {
+    const credentials=this.credentials(request);
+    const {thread,scope}=await this.owned(request,threadId);
+    z.string().uuid().parse(runId);
+    const run=(await sql<Pick<Run,'id'|'progress'|'answer'|'evidence'> & {
+      status:Parameters<typeof projectAssistantAgUi>[0]['status']; is_latest:boolean;
+    }>`SELECT run.id,run.status,run.progress,run.answer,run.evidence,
+        NOT EXISTS(SELECT 1 FROM agent_runs newer WHERE newer.thread_id=run.thread_id
+          AND (newer.created_at,newer.id)>(run.created_at,run.id)) AS is_latest
+      FROM agent_runs run WHERE run.thread_id=${threadId}::uuid AND run.id=${runId}::uuid`.execute(this.db)).rows[0];
+    if(!run)throw new NotFoundException('Request not found.');
+    const steps=(await sql<Step>`SELECT * FROM agent_tool_steps WHERE run_id=${run.id}::uuid
+      AND (kind='read' OR (kind='handoff' AND capability=${CLIENT_UI_CALL_STEP}))`.execute(this.db)).rows;
+    const reads=steps.filter(step=>step.kind==='read');
+    const ids={threadId,runId:run.id};
+    if(!await this.currentSourcesVisible(scope,credentials)(reads))return projectAssistantAgUi({...ids,
+      status:'completed',progress:'Access changed',answer:'This answer’s sources are no longer available with your current access.',evidence:[]});
+    const available=new Set(availableCapabilities(scope).map(cap=>cap.name));
+    const evidence=run.evidence.filter(item=>available.has(item.capability)).slice(0,40);
+    const action=run.status==='confirmation'?(await sql<{id:string;capability:string}>`SELECT id,capability FROM agent_actions
+      WHERE run_id=${run.id}::uuid AND status='pending' AND expires_at>now()`.execute(this.db)).rows[0]:undefined;
+    const step=steps.find(item=>item.kind==='handoff' && item.capability===CLIENT_UI_CALL_STEP);
+    const clientCall=!thread.archived && run.is_latest && run.status==='completed' && reads.some(item=>item.capability==='virtual_campus_layout')
+      && step && step.snapshot_hash===stableHash(step.input) ? restoreClientUiCall(step.id,step.input):undefined;
+    return projectAssistantAgUi({...ids,status:run.status,progress:run.progress,answer:run.answer,evidence,
+      ...(clientCall?{clientCall}:{}),...(action&&available.has(action.capability)?{actionId:action.id}:{})});
+  }
+  private async admittedUiContext(tx:Transaction<Database>,threadId:string,context:ClientUiContext|undefined) {
+    const result=context?.last_result;
+    if(!context || !result?.call_id)return context;
+    const step=(await sql<Pick<Step,'id'|'input'|'snapshot_hash'>>`SELECT step.id,step.input,step.snapshot_hash FROM agent_tool_steps step
+      WHERE step.run_id=(SELECT id FROM agent_runs WHERE thread_id=${threadId}::uuid ORDER BY created_at DESC,id DESC LIMIT 1)
+        AND step.kind='handoff' AND step.capability=${CLIENT_UI_CALL_STEP} AND step.id=${result.call_id}::uuid`.execute(tx)).rows[0];
+    if(step && step.snapshot_hash===stableHash(step.input) && restoreClientUiCall(step.id,step.input)?.tool===result.tool)return context;
+    // A stale control result should not prevent the user's new question.
+    return {screen:context.screen,tools:context.tools};
+  }
   async send(request: AuthenticatedRequest, id: string) {
     const { thread,scope } = await this.owned(request,id);
     const input = messageInput.parse(request.body);
@@ -286,7 +327,13 @@ export class AgentService implements OnModuleDestroy {
       await sql`SELECT pg_advisory_xact_lock(hashtext('school_agent_capacity'))`.execute(tx);
       await sql`SELECT pg_advisory_xact_lock(hashtext('agent_cloud_budget'))`.execute(tx);
       const previous = (await sql<Run>`SELECT * FROM agent_runs WHERE thread_id=${id}::uuid AND client_id=${input.client_id}::uuid`.execute(tx)).rows[0];
-      if (previous) { if (previous.question !== input.question) throw new ConflictException('This message key was already used.'); return { id:previous.id, existing:true }; }
+      if (previous) {
+        const context=(await sql<{snapshot_hash:string}>`SELECT snapshot_hash FROM agent_tool_steps WHERE run_id=${previous.id}::uuid
+          AND capability=${CLIENT_UI_CONTEXT_STEP} AND kind='handoff'`.execute(tx)).rows[0];
+        if (previous.question !== input.question || context?.snapshot_hash !== (input.ui_context ? stableHash(input.ui_context):undefined))
+          throw new ConflictException('This message key was already used.');
+        return { id:previous.id, existing:true,uiContext:undefined };
+      }
       const counts = (await sql<{ total:number; own:number }>`SELECT count(*)::int AS total,count(*) FILTER(WHERE thread.owner_id=${scope.userId}::uuid)::int AS own
         FROM agent_runs run JOIN agent_threads thread ON thread.id=run.thread_id WHERE run.status='running' AND run.lease_expires_at>now()`.execute(tx)).rows[0]!;
       if (counts.own >= 1 || counts.total >= 2) throw new ConflictException('The assistant is finishing another request. Wait or cancel it first.');
@@ -297,16 +344,19 @@ export class AgentService implements OnModuleDestroy {
       if (recent.hour>=limits.hourly || recent.day>=limits.daily) throw new AgentLimitError('Your AI message allowance has been reached. Please use the app directly for now.');
       const pending = (await sql`SELECT action.id FROM agent_actions action JOIN agent_runs run ON run.id=action.run_id WHERE run.thread_id=${id}::uuid AND action.status IN ('pending','executing') LIMIT 1`.execute(tx)).rows;
       if (pending.length) throw new ConflictException('Confirm or dismiss the pending action before sending another message.');
+      const uiContext=await this.admittedUiContext(tx,id,input.ui_context);
       const run = (await sql<{ id:string }>`INSERT INTO agent_runs(thread_id,client_id,question,status,provider,model) VALUES
         (${id}::uuid,${input.client_id}::uuid,${input.question},'running',${settings.provider},${settings.model}) RETURNING id`.execute(tx)).rows[0]!;
+      if(input.ui_context)await sql`INSERT INTO agent_tool_steps(run_id,capability,kind,input,result,snapshot_hash)
+        VALUES(${run.id}::uuid,${CLIENT_UI_CONTEXT_STEP},'handoff',${JSON.stringify(input.ui_context)}::jsonb,'{}'::jsonb,${stableHash(input.ui_context)})`.execute(tx);
       await sql`UPDATE agent_threads SET updated_at=now(),title=CASE WHEN title='New conversation' THEN ${input.question.slice(0,80)} ELSE title END WHERE id=${id}::uuid`.execute(tx);
-      return { id:run.id, existing:false };
+      return { id:run.id, existing:false,uiContext };
     });
     if (!created.existing) {
       const controller = new AbortController(); this.running.set(created.id,controller);
       const credentials = this.credentials(request);
       // Background work only reads and prepares. Writes require a separate fresh HTTP confirmation.
-      void this.run(created.id,thread,scope,input.question,credentials,controller).catch(async () => {
+      void this.run(created.id,thread,scope,input.question,credentials,controller,created.uiContext).catch(async () => {
         await this.finish(created.id,'failed','The assistant was interrupted. No pending action was executed.');
       }).finally(() => this.running.delete(created.id)).catch(() => undefined); // DB outage: lease recovery remains authoritative.
     }
@@ -315,6 +365,14 @@ export class AgentService implements OnModuleDestroy {
   private async finish(id:string,status:string,answer:string,evidence:Evidence[] = []) {
     await sql`UPDATE agent_runs SET status=${status},answer=${answer.slice(0,12000)},evidence=${JSON.stringify(evidence)}::jsonb,progress=${status === 'confirmation' ? 'Review your action' : status === 'completed' ? 'Complete' : 'Stopped'},finished_at=now()
       WHERE id=${id}::uuid AND status='running'`.execute(this.db);
+  }
+  private async finishClientUiCall(id:string,call:NonNullable<ReturnType<typeof parseClientUiCall>>,evidence:Evidence[]) {
+    await this.db.transaction().execute(async tx=>{
+      const claimed=(await sql`UPDATE agent_runs SET status='completed',answer='The app can take this step.',progress='Complete',
+        evidence=${JSON.stringify(evidence)}::jsonb,finished_at=now() WHERE id=${id}::uuid AND status='running' RETURNING id`.execute(tx)).rows;
+      if(claimed.length)await sql`INSERT INTO agent_tool_steps(run_id,capability,kind,input,result,snapshot_hash)
+        VALUES(${id}::uuid,${CLIENT_UI_CALL_STEP},'handoff',${JSON.stringify(call)}::jsonb,'{}'::jsonb,${stableHash(call)})`.execute(tx);
+    });
   }
   private async log(scope:AgentScope,action:string,targetId:string,requestId:string,metadata:unknown) {
     await sql`INSERT INTO audit_events(action,actor_id,school_id,target_type,target_id,request_id,metadata)
@@ -398,7 +456,7 @@ export class AgentService implements OnModuleDestroy {
     });
     await this.log(scope,`agent.action.${status}`,runId,credentials.requestId,{action_id:actionId,capability:capability.name,control:capability.contract.control});
   }
-  private async run(id:string,thread:Thread,scope:AgentScope,question:string,credentials:AgentCredentials,controller:AbortController) {
+  private async run(id:string,thread:Thread,scope:AgentScope,question:string,credentials:AgentCredentials,controller:AbortController,uiContext?:ClientUiContext) {
     const timeout = setTimeout(() => controller.abort(),240_000);
     const evidence:Evidence[] = [];
     const known = new Set([scope.schoolId,...(scope.studentId ? [scope.studentId] : [])]);
@@ -417,6 +475,9 @@ export class AgentService implements OnModuleDestroy {
         if(event.retrying)await sql`UPDATE agent_runs SET progress='Recovering AI response' WHERE id=${id}::uuid AND status='running'`.execute(this.db);
       });
       const available = availableCapabilities(scope);
+      const campusMapRead=available.find(capability=>capability.name==='virtual_campus_layout' && capability.kind==='read');
+      const admittedUi=campusMapRead?uiContext:undefined;
+      const uiTools=advertisedClientTools(admittedUi);
       // Only read-only or successfully executed turns may become conversational
       // context. Rejected, expired, stale and failed proposals are never memory.
       const history = (await sql<Run>`SELECT run.* FROM agent_runs run WHERE run.thread_id=${thread.id}::uuid AND run.id<>${id}::uuid AND run.status='completed'
@@ -444,7 +505,7 @@ export class AgentService implements OnModuleDestroy {
       const activeDomains=[...new Set([...selected.values()].map(capability=>capability.domain))];
       const domainSkills=skillPrompt(activeDomains);
       const operatingPrompt=scope.proFeaturesEnabled
-        ? [agentSystemPrompt(scope,available),domainSkills,responsePrompt(scope,recentConversation.length===0)].filter(Boolean).join('\n\n')
+        ? [agentSystemPrompt(scope,available),domainSkills,responsePrompt(scope,recentConversation.length===0),clientUiPrompt(admittedUi)].filter(Boolean).join('\n\n')
         : basicAgentPrompt(scope);
       const messages:ModelMessage[] = [{ role:'system',content:operatingPrompt },
         {role:'user' as const,content:userIdentityPrompt(scope)},
@@ -475,7 +536,7 @@ export class AgentService implements OnModuleDestroy {
         // The account-level switch is an execution boundary, not only a UI preference.
         // Re-check it during a run so disabling Pro also stops in-flight model/tool work.
         await requireProFeatures(this.db,scope.userId);
-        const result = await model.complete(messages,[discover,userMemoryTool,...[...selected.values()].slice(-14).map(capabilityTool)],controller.signal);
+        const result = await model.complete(messages,[discover,userMemoryTool,...[...selected.values()].slice(-14).map(capabilityTool),...uiTools],controller.signal);
         const current = (await sql<{status:string}>`SELECT status FROM agent_runs WHERE id=${id}::uuid`.execute(this.db)).rows[0];
         if (current?.status !== 'running') return;
         await requireProFeatures(this.db,scope.userId);
@@ -489,6 +550,9 @@ export class AgentService implements OnModuleDestroy {
           return;
         }
         if (result.calls.length>executionLimits.batch || toolCount+result.calls.length>executionLimits.tools) { await this.finish(id,'completed','Please narrow this request to one record or action.',evidence); return; }
+        if(result.calls.length>1 && result.calls.some(call=>isClientUiTool(call.name))) {
+          await this.finish(id,'completed','Choose one step for me to take in the app first.',evidence);return;
+        }
         toolCount+=result.calls.length;
         // A model can violate parallel_tool_calls=false. Never execute a batch of writes.
         messages.push({ role:'assistant',content:result.text,calls:result.calls });
@@ -510,7 +574,14 @@ export class AgentService implements OnModuleDestroy {
           }
           try {
             await requireProFeatures(this.db,scope.userId);
-            if (call.name === 'find_tools') {
+            if (isClientUiTool(call.name)) {
+              const clientCall=parseClientUiCall(admittedUi,call.name,call.arguments);
+              if(!clientCall || !campusMapRead)throw new BadRequestException('That control is unavailable on the current screen.');
+              const directory=await rememberRead(campusMapRead,{});
+              const campuses=z.object({campuses:z.array(z.unknown()).min(1)}).safeParse(directory.data);
+              if(!campuses.success)throw new ForbiddenException('No Virtual Campus is currently available in this workspace.');
+              await this.finishClientUiCall(id,clientCall,evidence);return;
+            } else if (call.name === 'find_tools') {
               const query = z.object({ query:z.string().max(120) }).strict().parse(call.arguments).query;
               const found = findCapabilities(query,available,contextDomains);
               found.forEach(cap => selected.set(cap.name,cap));

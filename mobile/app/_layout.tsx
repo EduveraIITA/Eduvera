@@ -10,6 +10,7 @@ import { AlertHost } from '../src/ui/AlertHost';
 import { MotionProvider } from '../src/ui/Motion';
 import { AssistantPresentationProvider } from '../src/ui/AssistantPresentation';
 import { BackNavigationProvider } from '../src/ui/BackNavigation';
+import { CopilotProvider } from '../src/ui/CopilotProvider';
 import { sessionPresentationIdentity } from '../src/auth/session-presentation';
 import { AttendanceOfflineSync } from '../src/features/AttendanceOfflineSync';
 
@@ -27,7 +28,7 @@ function AppearanceBoundary() {
   useEffect(() => { focusManager.setFocused(AppState.currentState === 'active'); const listener = AppState.addEventListener('change', state => focusManager.setFocused(state === 'active')); return () => { listener.remove(); focusManager.setFocused(undefined); }; }, []);
   return <NavigationThemeProvider value={navigationTheme}><StatusBar style={dark ? 'light' : 'dark'} /><AttendanceOfflineSync /><Stack screenOptions={{ headerShown: false }} /><AlertHost /></NavigationThemeProvider>;
 }
-function ThemedApp() { const session = useSession(); const presentationKey = JSON.stringify([session.scopeKey, sessionPresentationIdentity(session)]); return <ThemeProvider simulation={session.environment.mode === 'simulation'}><MotionProvider><AssistantPresentationProvider key={presentationKey}><BackNavigationProvider><AppearanceBoundary /></BackNavigationProvider></AssistantPresentationProvider></MotionProvider></ThemeProvider>; }
+function ThemedApp() { const session = useSession(); const presentationKey = JSON.stringify([session.scopeKey, sessionPresentationIdentity(session)]); return <ThemeProvider simulation={session.environment.mode === 'simulation'}><MotionProvider><AssistantPresentationProvider key={presentationKey}><BackNavigationProvider><CopilotProvider><AppearanceBoundary /></CopilotProvider></BackNavigationProvider></AssistantPresentationProvider></MotionProvider></ThemeProvider>; }
 export default function RootLayout() { return <SafeAreaProvider><QueryClientProvider client={client}><SessionProvider><ThemedApp /></SessionProvider></QueryClientProvider></SafeAreaProvider>; }
 export function ErrorBoundary({ error, retry }: { error: Error; retry: () => void }) {
   const dark = useColorScheme() === 'dark', ink = dark ? '#ffffff' : '#111111', canvas = dark ? '#111111' : '#ffffff';

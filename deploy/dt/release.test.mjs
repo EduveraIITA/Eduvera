@@ -256,15 +256,15 @@ test('one maintained workflow verifies only active applications, uses pinned OID
   await assert.rejects(access(new URL('../../.github/workflows/digital-twin.yml', import.meta.url)), /ENOENT/u);
 });
 
-test('the owned PostgreSQL gate retains all44 files, explicit temporary HTTP build and bounded existing database targets', async () => {
+test('the owned PostgreSQL gate retains all45 files, explicit temporary HTTP build and bounded existing database targets', async () => {
   const require = createRequire(new URL('../../mobile/package.json', import.meta.url)), yaml = require('js-yaml');
   const workflow = yaml.load(await readFile(new URL('../../.github/workflows/digital-twin-deploy.yml', import.meta.url), 'utf8'));
   const step = workflow.jobs.verify.steps.find(row => row.name === 'Native identity, role revocation and real isolated-world regressions');
   const declaration = step.run.match(/const files = (\[[\s\S]*?\])\.map\(name => `test\/\$\{name\}\.integration\.test\.ts`\);/u);
   assert.ok(declaration, 'Regression inventory must remain explicit');
   const names = Array.from(runInNewContext(declaration[1]));
-  assert.equal(names.length, 44); assert.equal(new Set(names).size, 44);
-  for (const name of ['native-auth-session', 'academic-catalogue-recovery', 'academic-catalogue-recovery-http', 'learning-assignment-handover', 'learning-assignment-handover-worlds', 'domain-message-supersession', 'learning-assignments', 'learning-assignment-files-worlds', 'exam-schedule-amendments', 'exam-operations', 'simulation-branch-concurrency', 'floor-plan-onboarding-lifecycle', 'account-mail-delivery', 'account-mail-http', 'invitation-queue', 'native-google-locks', 'learning-elective-change', 'learning-elective-change-worlds', 'academic-offering-cycle', 'academic-offering-worlds', 'academic-offering-http', 'assessments', 'academic-reports', 'academic-history-integrity', 'grading-policy-worlds', 'assessment-evidence-integrity', 'assessment-result-worlds', 'assessment-correction-worlds'])
+  assert.equal(names.length, 45); assert.equal(new Set(names).size, 45);
+  for (const name of ['native-auth-session', 'academic-catalogue-recovery', 'academic-catalogue-recovery-http', 'learning-assignment-handover', 'learning-assignment-handover-worlds', 'domain-message-supersession', 'learning-assignments', 'learning-assignment-files-worlds', 'exam-schedule-amendments', 'exam-operations', 'simulation-branch-concurrency', 'floor-plan-onboarding-lifecycle', 'agent-ui', 'account-mail-delivery', 'account-mail-http', 'invitation-queue', 'native-google-locks', 'learning-elective-change', 'learning-elective-change-worlds', 'academic-offering-cycle', 'academic-offering-worlds', 'academic-offering-http', 'assessments', 'academic-reports', 'academic-history-integrity', 'grading-policy-worlds', 'assessment-evidence-integrity', 'assessment-result-worlds', 'assessment-correction-worlds'])
     assert.ok(names.includes(name), name);
   for (const name of names) await access(new URL(`../../backend/test/${name}.integration.test.ts`, import.meta.url));
   for (const name of ['FLOOR_PLAN_ONBOARDING_SIMULATION_TEST_TARGET_URL', 'LEARNING_ASSIGNMENTS_SIMULATION_TEST_TARGET_URL', 'ASSESSMENTS_SIMULATION_TEST_TARGET_URL', 'ACADEMIC_CATALOGUE_SIMULATION_TEST_TARGET_URL', 'ACADEMIC_OFFERING_SIMULATION_TEST_TARGET_URL', 'ACADEMIC_HISTORY_SIMULATION_TEST_TARGET_URL', 'GRADING_POLICY_SIMULATION_TEST_TARGET_URL', 'ASSESSMENT_EVIDENCE_SIMULATION_TEST_TARGET_URL', 'SIMULATION_MARKS_TEST_TARGET_URL', 'SIMULATION_CORRECTION_TEST_TARGET_URL'])
@@ -284,16 +284,16 @@ test('the owned PostgreSQL gate retains all44 files, explicit temporary HTTP bui
   assert.doesNotMatch(step.run, /printenv|console\.log\(process\.env|JSON\.stringify\(process\.env|set -x/u);
 });
 
-test('the actual workflow summary gate rejects missing, skipped, todo, failed or fewer than224 PostgreSQL cases', async () => {
+test('the actual workflow summary gate rejects missing, skipped, todo, failed or fewer than225 PostgreSQL cases', async () => {
   const require = createRequire(new URL('../../mobile/package.json', import.meta.url)), yaml = require('js-yaml');
   const workflow = yaml.load(await readFile(new URL('../../.github/workflows/digital-twin-deploy.yml', import.meta.url), 'utf8'));
   const source = workflow.jobs.verify.steps.find(row => row.name === 'Native identity, role revocation and real isolated-world regressions').run;
   const guard = source.match(/if \(summary\.numTotalTests[\s\S]*?throw new Error\('[^']+'\);/u)?.[0];
-  assert.ok(guard); assert.match(guard, /summary\.numTotalTests < 224/u);
-  const accepted = { numTotalTests: 224, numPassedTests: 224, numPendingTests: 0, numTodoTests: 0 };
+  assert.ok(guard); assert.match(guard, /summary\.numTotalTests < 225/u);
+  const accepted = { numTotalTests: 225, numPassedTests: 225, numPendingTests: 0, numTodoTests: 0 };
   const check = summary => runInNewContext(guard, { summary });
   assert.doesNotThrow(() => check(accepted));
-  assert.doesNotThrow(() => check({ ...accepted, numTotalTests: 225, numPassedTests: 225 }));
-  for (const summary of [{}, { ...accepted, numTotalTests: 223, numPassedTests: 223 }, { ...accepted, numPassedTests: 223 },
-    { ...accepted, numPendingTests: 1 }, { ...accepted, numTodoTests: 1 }]) assert.throws(() => check(summary), /224/u);
+  assert.doesNotThrow(() => check({ ...accepted, numTotalTests: 226, numPassedTests: 226 }));
+  for (const summary of [{}, { ...accepted, numTotalTests: 224, numPassedTests: 224 }, { ...accepted, numPassedTests: 224 },
+    { ...accepted, numPendingTests: 1 }, { ...accepted, numTodoTests: 1 }]) assert.throws(() => check(summary), /225/u);
 });

@@ -5,7 +5,7 @@ import type { EXECUTION_EFFECT_KINDS } from "../campus-model-core/execution-effe
  * rewrite a stale lock unless this number is increased first, so accepting
  * platform drift always leaves a reviewed Simulation change in the diff.
  */
-export const SIMULATION_CONFORMANCE_REVISION = 236 as const;
+export const SIMULATION_CONFORMANCE_REVISION = 237 as const;
 
 export const SIMULATION_DATA_PLANE_CAPABILITIES = Object.freeze([
   "snapshot",
@@ -762,7 +762,7 @@ export const SIMULATION_MODULE_REGISTRY = Object.freeze([
   { module_class: "CampusSceneImportModule", module_file: "backend/src/campus-scene-import/scene-import.module.ts", source_roots: ["backend/src/campus-scene-import"], disposition: "campus_operational", evidence: ["world:campus-floor-plan-onboarding", "world:campus-map-onboarding", "world:campus-scene-publications", "runtime:campus-scene-realtime"] },
   { module_class: "ChatModule", module_file: "backend/src/chat/chat.module.ts", source_roots: ["backend/src/chat"], disposition: "campus_operational", evidence: ["world:chat-class-source", "world:chat-policy", "world:chat-current-scope"] },
   { module_class: "AiModule", module_file: "backend/src/ai/ai.module.ts", source_roots: ["backend/src/ai"], disposition: "provider_administration", exclusion_reason: "AI provider configuration and remote inference are external provider administration; Simulation requires a separate sink/fixture.", evidence: [] },
-  { module_class: "AgentModule", module_file: "backend/src/agent/agent.module.ts", source_roots: ["backend/src/agent"], disposition: "provider_administration", exclusion_reason: "Assistant provider execution and long-term model memory are not permitted to contact Live providers from Simulation.", evidence: [] },
+  { module_class: "AgentModule", module_file: "backend/src/agent/agent.module.ts", source_roots: ["backend/src/agent"], disposition: "provider_administration", exclusion_reason: "Assistant provider execution, memory and AG-UI run projections use the Live-only Assistant owner. The run owner refuses a selected Simulation before reading Live threads or emitting client commands.", evidence: [] },
   { module_class: "CoordinationModule", module_file: "backend/src/coordination/coordination.module.ts", source_roots: ["backend/src/coordination"], disposition: "campus_operational", evidence: [] },
   { module_class: "PeopleModule", module_file: "backend/src/people/people.module.ts", source_roots: ["backend/src/people"], disposition: "campus_operational", evidence: ["world:native-people-transport-workers", "world:canonical-people-connections", "world:exact-person-owning-attachments", "world:fee-charge-audience", "world:reviewed-enrollment-roster", "world:canonical-staff-current-identity", "world:explicit-guardian-current-identity"] },
   { module_class: "DayPlanModule", module_file: "backend/src/day-plans/day-plan.module.ts", source_roots: ["backend/src/day-plans"], disposition: "campus_operational", evidence: ["world:day-plan-published-revision"] },

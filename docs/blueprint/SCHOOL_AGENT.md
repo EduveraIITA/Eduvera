@@ -113,6 +113,32 @@ and the app can resume the task without choosing a new campus or floor.
 The Assistant can use the current authorized Virtual Campus directory to open
 setup. Further settings and actions need their own contract, scope and review.
 
+### App copilot protocol
+
+The authenticated Assistant exposes ordered AG-UI 1.0 run events through the
+existing mobile request and refresh path. This app binding uses event batches for
+the current owned run. A2UI remains the presentation catalog for the conversation.
+The client advertises only named controls from the active application route
+and its local permissions. Shared context contains an allowlisted screen, tool
+names and the exact previous tool receipt status. It contains no form contents,
+arbitrary routes or account credentials.
+
+The model can request one registered control. The server revalidates the current
+owner and source and emits the AG-UI tool call lifecycle. The app validates the
+completed arguments and the exact mounted control, highlights the activity, and
+uses the same UI event path as a person. The first registered tools open Virtual
+Campus, open its campus picker, fill its place search or focus an exact published
+place. They do not change saved records or choose a campus in the human's place.
+Modules extend the typed registry with scoped handlers and their current-source
+identity. Consequential writes remain in the owning reviewed command path.
+
+Take over revokes pending and in-flight UI actions. Changing scope or replacing
+the underlying target invalidates the original action. The next Assistant turn
+can receive the exact resulting applied, blocked or stopped status. No previous
+conversation automatically reruns the user's local interaction. Simulation does
+not load a Live Assistant thread or its events. Its owning campus workflows
+continue through the ordinary isolated interface.
+
 ### Bounded long-term personalization
 
 Only an explicit durable statement in the current user message can change a

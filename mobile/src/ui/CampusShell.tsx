@@ -18,6 +18,7 @@ import { Glass } from './Glass';
 import { CampusTabs } from './CampusTabs';
 import { NativeDockMetricsContext } from './campus-tabs-options';
 import { AssistantOverlayHost } from './AssistantOverlayHost';
+import { CopilotStatusBar, useCopilotAction, useCopilotTakeOver } from './CopilotProvider';
 import { useAssistantPresentation } from './AssistantPresentation';
 import { NativeTabInsetsContext } from './native-tab-insets-context';
 import { Icon } from './Icon';
@@ -46,6 +47,24 @@ export function CampusShell() {
   },[tablet,expanded,layout.axis]);
   const pathname = usePathname(), desktop = Platform.OS === 'web' ? width >= 960 : layout.sidebar, back = useHeaderBack();
   const { onNavigate, selectTab, tabHref, tabConfigurationBusy, tabSelectionBlocked } = useCampusNavigation();
+  const takeOver = useCopilotTakeOver();
+  const activePath = useRef(pathname);
+  activePath.current = pathname;
+  useCopilotAction({
+    name: 'open_virtual_campus', label: 'Open Virtual Campus',
+    available: pathname !== '/more/virtual-campus' && !!session.schoolId,
+    async run(_args, signal) {
+      if (signal.aborted) return false;
+      onNavigate('/more/virtual-campus');
+      // The owning navigator may pause for a dirty-screen confirmation.
+      // A request to navigate is only applied when the real route appears.
+      for (let attempt = 0; attempt < 50 && !signal.aborted; attempt++) {
+        if (activePath.current === '/more/virtual-campus') return true;
+        await new Promise<void>(resolve => setTimeout(resolve, 100));
+      }
+      return false;
+    },
+  });
   const follow = (href: string, tabRoot?: string) => (event: { preventDefault(): void; nativeEvent: unknown; button?: number; metaKey?: boolean; ctrlKey?: boolean; shiftKey?: boolean; altKey?: boolean }) => {
     const native = (event.nativeEvent ?? {}) as { button?: number; metaKey?: boolean; ctrlKey?: boolean; shiftKey?: boolean; altKey?: boolean };
     if (event.metaKey || event.ctrlKey || event.shiftKey || event.altKey || native.metaKey || native.ctrlKey || native.shiftKey || native.altKey || (event.button ?? native.button ?? 0) !== 0) return;
@@ -89,7 +108,7 @@ export function CampusShell() {
             <Glass style={styles.actions}><Link href="/more/notifications" onPress={follow('/more/notifications')} asChild><Pressable accessibilityRole="link" accessibilityLabel={`Notifications${unread > 0 ? `, ${unread} unread` : ''}`} style={styles.utility}><Icon name="notifications" size={24} />{unread > 0 ? <View accessibilityElementsHidden importantForAccessibility="no-hide-descendants" style={[styles.notificationBadge, { backgroundColor: colors.danger }]}><Text style={{ color: colors.onAction, fontSize: 10, fontWeight: '700' }}>{unread > 99 ? '99+' : unread}</Text></View> : null}</Pressable></Link><Link href="/more/account" onPress={follow('/more/account')} asChild><Pressable accessibilityRole="link" accessibilityLabel="Open account" style={styles.utility}><Icon name="profile" size={24} /></Pressable></Link></Glass>
           </View> : null}
           <View style={styles.content} onLayout={({ nativeEvent: { layout } }) => setPane(previous => previous.width === layout.width && previous.height === layout.height ? previous : { width: layout.width,height: layout.height })}>
-            <View {...(assistantPresentation.active && fullscreen && Platform.OS === 'web' ? { inert: true } : {})} pointerEvents={assistantPresentation.active && fullscreen ? 'none' : 'auto'} accessibilityElementsHidden={assistantPresentation.active && fullscreen} importantForAccessibility={assistantPresentation.active && fullscreen ? 'no-hide-descendants' : 'auto'} style={{ flex: 1,minHeight: 0 }}>
+            <View onTouchStart={takeOver} {...(assistantPresentation.active && fullscreen && Platform.OS === 'web' ? { inert: true } : {})} pointerEvents={assistantPresentation.active && fullscreen ? 'none' : 'auto'} accessibilityElementsHidden={assistantPresentation.active && fullscreen} importantForAccessibility={assistantPresentation.active && fullscreen ? 'no-hide-descendants' : 'auto'} style={{ flex: 1,minHeight: 0 }}>
               <OperatingPaneContext.Provider value={pane}><NativeTabInsetsContext.Provider value={!desktop && !fullscreen}>
                 <NativeDockMetricsContext.Provider value={setBarHeight}><CampusTabs key={session.scopeKey} hidden={fullscreen} sidebar={desktop} blocked={verifying || tabSelectionBlocked} assistant={assistant} workCount={workCount} activeRoot={root} onTabPress={selectTab} onAssistantPress={toggleAssistant} /></NativeDockMetricsContext.Provider>
               </NativeTabInsetsContext.Provider></OperatingPaneContext.Provider>
@@ -98,6 +117,7 @@ export function CampusShell() {
           {!iosDock && !desktop && !fullscreen ? <SafeAreaView pointerEvents="box-none" onLayout={({ nativeEvent: { layout } }) => setBarHeight(previous => previous === layout.height ? previous : layout.height)} edges={{ left: 'maximum',right: 'maximum',bottom: physicalBottom ? iosDock ? 'maximum' : 'additive' : 'off' }} style={[styles.bottomSafe,iosDock ? { position: 'absolute',left: 0,right: 0,bottom: 0 } : undefined,{ paddingHorizontal: dock.horizontal },iosDock ? { paddingBottom: dock.bottomPadding } : undefined]}><View style={[styles.dockRow,{ maxWidth: dock.maximumWidth,gap: dock.controlGap,marginBottom: iosDock ? dock.surfaceBottomMargin : 0 }]}><Glass onLayout={({ nativeEvent: { layout } }) => setDockHeight(previous => previous === layout.height ? previous : layout.height)} style={[styles.bottomBar, { borderColor: colors.border,minHeight: dock.minimumTabHeight + dock.interior * 2,padding: dock.interior,paddingTop: dock.interior,paddingBottom: dock.interior },iosDock ? { borderRadius: dock.surfaceRadius,borderCurve: 'continuous',borderTopWidth: 0 } : undefined]}>{nav}</Glass>{assistant ? <Glass style={{ width: dock.bubbleSize,height: dock.bubbleSize,padding: dock.interior,borderRadius: dock.bubbleSize / 2,borderCurve: 'circular',flexShrink: 0 }}><Pressable accessibilityRole="button" accessibilityLabel="Assistant" accessibilityHint={assistantPresentation.active ? 'Close the Assistant bubble' : 'Open the Assistant bubble'} accessibilityState={{ expanded: assistantPresentation.active }} onPress={toggleAssistant} style={{ flex: 1,minWidth: 44,minHeight: 44,alignItems: 'center',justifyContent: 'center',borderRadius: (dock.bubbleSize - dock.interior * 2) / 2,borderCurve: 'circular',backgroundColor: assistantPresentation.active && !iosDock ? colors.row : 'transparent' }}><AssistantMark size={36} /></Pressable></Glass> : null}</View></SafeAreaView> : null}
         </View>
         <AssistantOverlayHost layout={layout} compactInsets={{ top: Platform.OS === 'web' ? headerHeight : 0,bottom: desktop ? 0 : barHeight }} />
+        <CopilotStatusBar />
       </View>
     </View>
     {verifying ? <View style={{ position: 'absolute', top: 0, right: 0, bottom: 0, left: 0, backgroundColor: colors.canvas }}><Page title={tabConfigurationBusy ? 'Updating Assistant navigation' : session.status === 'error' ? 'Reconnect to your campus' : 'Confirming your campus'}>{session.status === 'error' ? <><Empty title="Your session could not be confirmed" message={session.error ?? undefined} onRetry={() => { void session.refresh(); }} /><Button title="Sign out" kind="secondary" onPress={() => { void session.logout().catch(() => {}); }} /></> : <Loading />}</Page></View> : null}

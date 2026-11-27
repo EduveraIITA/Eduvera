@@ -1,4 +1,4 @@
-import { Controller, Delete, Get, Post, Req, Param, Query, HttpCode } from '@nestjs/common';
+import { Controller, Delete, Get, Header, Post, Req, Param, Query, HttpCode } from '@nestjs/common';
 import type { AuthenticatedRequest } from '../common/request.js';
 import { AgentService } from './agent.service.js';
 import { AgentMemoryService } from './long-term-memory.js';
@@ -13,6 +13,8 @@ export class AgentController {
   @Get('threads') list(@Req() r:AuthenticatedRequest,@Query() q:unknown) { return this.agent.list(r,q); }
   @Post('threads') create(@Req() r:AuthenticatedRequest) { return this.agent.create(r); }
   @Get('threads/:id') detail(@Req() r:AuthenticatedRequest,@Param('id') id:string) { return this.agent.detail(r,id); }
+  @Get('threads/:id/runs/:runId/events') @Header('Cache-Control','private, no-store')
+  runEvents(@Req() r:AuthenticatedRequest,@Param('id') id:string,@Param('runId') runId:string) { return this.agent.runEvents(r,id,runId); }
   @Post('threads/:id/messages') @HttpCode(202) send(@Req() r:AuthenticatedRequest,@Param('id') id:string) { return this.agent.send(r,id); }
   @Post('threads/:id/runs/:runId/cancel') @HttpCode(200) cancel(@Req() r:AuthenticatedRequest,@Param('id') id:string,@Param('runId') runId:string) { return this.agent.cancel(r,id,runId); }
   @Post('threads/:id/actions/:actionId') @HttpCode(200) decide(@Req() r:AuthenticatedRequest,@Param('id') id:string,@Param('actionId') actionId:string) { return this.agent.decide(r,id,actionId); }

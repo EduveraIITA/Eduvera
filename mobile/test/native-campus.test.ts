@@ -4,6 +4,7 @@ import type { CampusSceneDirectory, CampusScenePublished } from '../../packages/
 import type { CampusSceneDocument, CampusSceneElement } from '../../packages/contracts/src/campus-scenes/types';
 import type { CampusMapAsset } from '../../packages/contracts/src/campus-operation';
 import { nativeCampusRoutePath, nativeCampusBuildingPage, nativeCampusSceneInstant, nativeCampusDisplay, nativeCampusPage, nativeCampusPlacePage, nativeCampusPlaceSelection, nativeCampusProjectionMatches, nativeCampusPublicationMatches, selectNativeCampus } from '../src/lib/native-campus';
+import { campusCopilotFocusTarget, campusCopilotQuery } from '../src/features/campus/campus-copilot-targets';
 
 const building: CampusSceneElement = { id: 'building-a', kind: 'building', label: 'Learning building', space_id: 'place-a', floor_id: null,
   review_state: 'reviewed', geometry: { type: 'polygon', points: [{ x: 50, y: 80 }, { x: 130, y: 80 }, { x: 130, y: 140 }, { x: 50, y: 140 }] } };
@@ -68,6 +69,27 @@ test('canonical place navigation resolves a mapped room and its authored floor w
   const draftRoom = { ...scene, elements: scene.elements.map(element => element.id === room.id ? { ...element, review_state: 'needs_review' as const } : element) };
   assert.equal(nativeCampusPlaceSelection(draftRoom, places, 'room-place')?.selectedId, building.id);
   assert.equal(nativeCampusPlaceSelection(draftRoom, places, 'room-place')?.floorId, null);
+});
+
+test('campus Assistant resolves a single reviewed map feature or floor without a parent or draft fallback', () => {
+  assert.deepEqual(campusCopilotFocusTarget(scene, places, 'place-a'), { kind: 'place', id: 'place-a' });
+  assert.deepEqual(campusCopilotFocusTarget(scene, places, 'room-place'), { kind: 'place', id: 'room-place' });
+  assert.deepEqual(campusCopilotFocusTarget(scene, places, 'floor-a'), { kind: 'place', id: 'floor-a' });
+  assert.equal(campusCopilotFocusTarget(scene, places, 'floor-b'), null);
+  assert.equal(campusCopilotFocusTarget(scene, places, 'unmapped'), null);
+  assert.equal(campusCopilotFocusTarget(scene, places, 'Learning building'), null);
+  assert.equal(campusCopilotFocusTarget(scene, places, 'Room'), null);
+  const authored = { ...fixture, label: 'Lab projector' };
+  const draft = { ...room, id: 'draft-room', label: 'Draft classroom', review_state: 'needs_review' as const };
+  const multipart = { ...building, id: 'building-a-other-outline' };
+  const map = { ...scene, elements: [building, multipart, room, authored, draft] };
+  assert.deepEqual(campusCopilotFocusTarget(map, places, 'Learning building'), { kind: 'place', id: 'place-a' });
+  assert.deepEqual(campusCopilotFocusTarget(map, places, '  ROOM  101  '), { kind: 'place', id: 'room-place' });
+  assert.deepEqual(campusCopilotFocusTarget(map, places, 'Lab projector'), { kind: 'element', id: fixture.id });
+  assert.equal(campusCopilotFocusTarget(map, places, 'Draft classroom'), null);
+  assert.equal(campusCopilotQuery('  Research lab  '), 'Research lab');
+  for (const value of ['', '   ', 'two\nlines', 'x'.repeat(121), 42, { query: 'Library' }])
+    assert.equal(campusCopilotQuery(value), null);
 });
 
 test('interior uses shared global-coordinate crop and connector landings without mutating publication', () => {
