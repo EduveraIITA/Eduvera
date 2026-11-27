@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { parseCopilotContext, readCopilotIntent } from '../src/lib/copilot';
+import { copilotRouteContext, parseCopilotContext, readCopilotIntent } from '../src/lib/copilot';
 
 const threadId = 'thread', runId = 'run', toolCallId = 'call_1';
 const event = (type: string, body: Record<string, unknown> = {}) => ({ type, ...body });
@@ -31,4 +31,13 @@ test('client context has a bounded route and takes no record values or URL', () 
   assert.equal(parseCopilotContext({screen:'workspace',tools:['open_virtual_campus','open_virtual_campus']}),null);
   assert.equal(parseCopilotContext({screen:'workspace',tools:[],href:'/more/account'}),null);
   assert.equal(parseCopilotContext({screen:'workspace',tools:[],last_result:{tool:'campus_focus_place',status:'applied',name:'Library'}}),null);
+});
+
+
+test('registered screen identity tracks its owning source, without carrying transient controls', () => {
+  assert.deepEqual(copilotRouteContext('/more/virtual-campus','/more/virtual-campus?campus_id=one&map_panel=search'),
+    {screen:'virtual_campus',identity:['one']});
+  assert.deepEqual(copilotRouteContext('/more/virtual-campus','/more/virtual-campus?campus_id=two&map_panel=layers'),
+    {screen:'virtual_campus',identity:['two']});
+  assert.deepEqual(copilotRouteContext('/more/account','/more/account?campus_id=two'),{screen:'workspace',identity:[]});
 });

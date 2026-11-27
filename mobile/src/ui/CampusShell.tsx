@@ -51,7 +51,7 @@ export function CampusShell() {
   const activePath = useRef(pathname);
   activePath.current = pathname;
   useCopilotAction({
-    name: 'open_virtual_campus', label: 'Open Virtual Campus',
+    name: 'open_virtual_campus', label: 'Open Virtual Campus', destinationPath:'/more/virtual-campus',
     available: pathname !== '/more/virtual-campus' && !!session.schoolId,
     async run(_args, signal) {
       if (signal.aborted) return false;

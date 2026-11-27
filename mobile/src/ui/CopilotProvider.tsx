@@ -4,7 +4,7 @@ import { useIsFocused, usePathname, useRootNavigationState } from 'expo-router';
 import { useSession } from '../auth/SessionProvider';
 import { apiFetch, captureApiContext } from '../lib/api';
 import { campusHrefForRoute, focusedCampusRoute, type CampusNavigationState } from '../lib/back-policy';
-import { copilotCallId, copilotToolNames, readCopilotIntent, type CopilotContext, type CopilotResult, type CopilotToolName } from '../lib/copilot';
+import { copilotCallId, copilotRouteContext, copilotToolNames, copilotToolScreen, readCopilotIntent, type CopilotContext, type CopilotResult, type CopilotToolName } from '../lib/copilot';
 import { ControlButton } from './DomainControls';
 import { useReducedMotion } from './Motion';
 import { useTheme } from './theme';
@@ -13,6 +13,7 @@ type ActionRegistration = {
   name: CopilotToolName;
   label: string;
   sourceKey?: string;
+  destinationPath?: string;
   available: boolean;
   run(args: Record<string, unknown>, signal: AbortSignal): boolean | Promise<boolean>;
 };
@@ -41,16 +42,15 @@ export function CopilotProvider({ children }: PropsWithChildren) {
   const tree = useRootNavigationState() as CampusNavigationState | undefined;
   const route = focusedCampusRoute(tree);
   const href = route && tree ? campusHrefForRoute(tree, route.key) ?? pathname : pathname;
-  const screen: CopilotContext['screen'] = pathname === '/more/virtual-campus' ? 'virtual_campus' : 'workspace';
-  // Panel and highlighted-place changes use the existing route. A different
-  // campus, route instance, account or world revokes its pending UI commands.
-  const campusId = new URL(href, 'https://thatcampus.invalid').searchParams.get('campus_id');
-  const binding = JSON.stringify([session.scopeKey, route?.key, pathname, campusId]);
+  const { screen, identity } = copilotRouteContext(pathname, href);
+  // A registered route declares its exact scope selectors. Transient view
+  // controls are given to the owning module and do not change this lease.
+  const binding = JSON.stringify([session.scopeKey, route?.key, pathname, ...identity]);
   const eligible = session.status === 'authenticated' && session.environment.mode === 'live' && !session.environment.unavailable;
-  const current = useRef({ binding, eligible, screen }); current.current = { binding, eligible, screen };
+  const current = useRef({ binding, eligible, screen, pathname }); current.current = { binding, eligible, screen, pathname };
   const byTool = useRef(new Map<CopilotToolName, Set<Parameters<Runtime['register']>[0]>>());
   const active = useRef<Run | null>(null), generation = useRef(0), lastResult = useRef<CopilotResult | undefined>(undefined);
-  const execution = useRef<{ run: Run; controller: AbortController; tool?: CopilotToolName; callId?: string } | null>(null);
+  const execution = useRef<{ run: Run; controller: AbortController; tool?: CopilotToolName; callId?: string; destinationPath?: string } | null>(null);
   const [pending, setPending] = useState<Run | null>(null), [activity, setActivity] = useState<Activity | null>(null);
   const mounted = useRef(true);
 
@@ -65,7 +65,7 @@ export function CopilotProvider({ children }: PropsWithChildren) {
   }, []);
   const context = useCallback((): CopilotContext | undefined => {
     if (!current.current.eligible || AppState.currentState !== 'active') return;
-    const tools = copilotToolNames.filter(name => (name === 'open_virtual_campus') === (current.current.screen === 'workspace') && find(name));
+    const tools = copilotToolNames.filter(name => copilotToolScreen(name) === current.current.screen && find(name));
     if (!tools.length && !lastResult.current) return;
     return { screen: current.current.screen, tools, ...(lastResult.current ? { last_result: lastResult.current } : {}) };
   }, [find]);
@@ -91,9 +91,9 @@ export function CopilotProvider({ children }: PropsWithChildren) {
   }, []);
   useLayoutEffect(() => {
     if (!mounted.current) return;
-    if (active.current && (!eligible || active.current.lease.binding !== binding) && execution.current?.tool !== 'open_virtual_campus') takeOver();
+    if (active.current && (!eligible || (active.current.lease.binding !== binding && execution.current?.destinationPath !== pathname))) takeOver();
     else if (!active.current && !execution.current) setActivity(previous => previous?.phase === 'applied' ? null : previous);
-  }, [binding, eligible, takeOver]);
+  }, [binding, eligible, pathname, takeOver]);
   useEffect(() => {
     mounted.current = true;
     const subscription = AppState.addEventListener('change', state => { if (state !== 'active') takeOver(); });
@@ -111,13 +111,13 @@ export function CopilotProvider({ children }: PropsWithChildren) {
   const inspect = useCallback((id: string, revealApp: () => void) => {
     const run = active.current;
     if (!run || run.id !== id || execution.current || !current.current.eligible || current.current.binding !== run.lease.binding) return;
-    const operation = { run, controller: new AbortController(), tool: undefined as CopilotToolName | undefined, callId: undefined as string | undefined };
+    const operation = { run, controller: new AbortController(), tool: undefined as CopilotToolName | undefined, callId: undefined as string | undefined, destinationPath: undefined as string | undefined };
     execution.current = operation;
     const signal = operation.controller.signal, transport = captureApiContext();
     const currentLease = () => {
       if (!mounted.current || signal.aborted || !current.current.eligible || active.current !== run) return false;
       try { transport.assertCurrent(); } catch { return false; }
-      return operation.tool === 'open_virtual_campus' || current.current.binding === run.lease.binding;
+      return current.current.binding === run.lease.binding || operation.destinationPath === current.current.pathname;
     };
     const finish = (result?: CopilotResult, label?: string) => {
       if (execution.current !== operation || active.current !== run) return;
@@ -141,6 +141,7 @@ export function CopilotProvider({ children }: PropsWithChildren) {
         // Give the existing page a frame to reveal itself before changing controls.
         await new Promise<void>(resolve => setTimeout(resolve, 180));
         if (!currentLease() || find(intent.name) !== action || current.current.binding !== run.lease.binding) { finish(); return; }
+        operation.destinationPath = action.destinationPath;
         const applied = await action.run(intent.args, signal);
         if (currentLease()) finish({ tool: intent.name, status: applied ? 'applied' : 'blocked' }, action.label);
         else finish();
@@ -163,11 +164,11 @@ export function useCopilotAction(action: ActionRegistration) {
   const { register } = useCopilot(), focused = useIsFocused();
   const current = useRef({ action, focused }); current.current = { action, focused };
   useLayoutEffect(() => register({
-    name: action.name, label: action.label,
+    name: action.name, label: action.label, destinationPath: action.destinationPath,
     available: () => current.current.focused && current.current.action.available,
     run: (args, signal) => !signal.aborted && current.current.focused && current.current.action.available
       && current.current.action.run(args, signal),
-  }), [register, action.name, action.label, action.sourceKey]);
+  }), [register, action.name, action.label, action.sourceKey, action.destinationPath]);
 }
 
 export function useCopilotActiveAction(tool: CopilotToolName) {

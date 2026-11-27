@@ -1,6 +1,23 @@
 export const copilotToolNames = ['open_virtual_campus', 'campus_search_places', 'campus_focus_place', 'campus_open_picker'] as const;
 export type CopilotToolName = typeof copilotToolNames[number];
 export type CopilotScreen = 'virtual_campus' | 'workspace';
+const toolPolicy: Record<CopilotToolName, { screen: CopilotScreen; input: 'none' | 'query' }> = {
+  open_virtual_campus: { screen: 'workspace', input: 'none' },
+  campus_search_places: { screen: 'virtual_campus', input: 'query' },
+  campus_focus_place: { screen: 'virtual_campus', input: 'query' },
+  campus_open_picker: { screen: 'virtual_campus', input: 'none' },
+};
+const routePolicy: Readonly<Record<string, { screen: CopilotScreen; identityParams: readonly string[] }>> = {
+  '/more/virtual-campus': { screen: 'virtual_campus', identityParams: ['campus_id'] },
+};
+export const copilotToolScreen = (name: CopilotToolName) => toolPolicy[name].screen;
+export function copilotRouteContext(pathname: string, href: string) {
+  const policy = routePolicy[pathname];
+  if (!policy) return { screen: 'workspace' as const, identity: [] };
+  const params = new URL(href, 'https://thatcampus.invalid').searchParams;
+  return { screen: policy.screen, identity: policy.identityParams.map(name => params.get(name)) };
+}
+
 export type CopilotResult = { tool: CopilotToolName; status: 'applied' | 'blocked' | 'stopped'; call_id?: string };
 export type CopilotContext = { screen: CopilotScreen; tools: CopilotToolName[]; last_result?: CopilotResult };
 export type CopilotIntent = { id: string; name: CopilotToolName; args: Record<string, unknown> };
@@ -21,7 +38,7 @@ export function parseCopilotContext(value: unknown): CopilotContext | null {
       input.tools.length > copilotToolNames.length || !input.tools.every(knownTool) || new Set(input.tools).size !== input.tools.length)
     return null;
   const screen = input.screen;
-  if (input.tools.some(tool => (tool === 'open_virtual_campus') !== (screen === 'workspace'))) return null;
+  if (input.tools.some(tool => copilotToolScreen(tool) !== screen)) return null;
   const result = record(input.last_result);
   if (input.last_result !== undefined && (!result || !exact(result,['tool', 'status', 'call_id']) || !knownTool(result.tool) || !knownResult(result.status) || (result.call_id !== undefined && !copilotCallId(result.call_id)))) return null;
   return { screen, tools: [...input.tools], ...(result ? { last_result: result as CopilotResult } : {}) };
@@ -30,7 +47,7 @@ export function parseCopilotContext(value: unknown): CopilotContext | null {
 export function validCopilotArgs(name: CopilotToolName, value: unknown): value is Record<string, unknown> {
   const args = record(value);
   if (!args) return false;
-  if (name === 'open_virtual_campus' || name === 'campus_open_picker') return Object.keys(args).length === 0;
+  if (toolPolicy[name].input === 'none') return Object.keys(args).length === 0;
   return exact(args, ['query']) && typeof args.query === 'string' && args.query === args.query.trim() &&
     args.query.length >= 1 && args.query.length <= 120 && !/[<>]/u.test(args.query)
     && Array.from(args.query).every(character => character.charCodeAt(0) >= 32);
