@@ -86,8 +86,9 @@ function PeopleTexture({ svg, frame, camera, packet, paths }: {
 }
 
 function usePeopleTexture(svg: ReturnType<typeof Skia.SVG.MakeFromString>) {
+  // Skia recreates the texture when its size object changes identity.
   return useTexture(<ImageSVG svg={svg} x={0} y={0} width={PEOPLE_ATLAS.width} height={PEOPLE_ATLAS.height} />,
-    { width: PEOPLE_ATLAS.width, height: PEOPLE_ATLAS.height }, [svg]);
+    PEOPLE_ATLAS, [svg]);
 }
 
 function PeopleAtlas({ frame, image, camera, count }: { frame: SharedValue<PeopleFrame>; image: SharedValue<SkImage | null>; camera: SharedValue<CampusSkiaCamera>; count: number }) {
