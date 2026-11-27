@@ -3,6 +3,7 @@ import { Keyboard, KeyboardAvoidingView, Platform, Pressable, RefreshControl, Sc
 import { SafeAreaView, ScrollViewMarker } from 'react-native-screens/experimental';
 import { HeaderShownContext } from 'expo-router/react-navigation';
 import { SafeAreaView as SystemSafeAreaView } from 'react-native-safe-area-context';
+import { NativeDockInsetsContext } from './campus-tabs-options';
 import { NativeTabInsetsContext } from './native-tab-insets-context';
 import { useTheme } from './theme';
 import { Icon } from './Icon';
@@ -21,6 +22,7 @@ export function Page({ title, subtitle, header, children, refreshing = false, on
   usePageNavigationTitle(title);
   const { colors } = useTheme();
   const headerShown = useContext(HeaderShownContext);
+  const { assistant } = useContext(NativeDockInsetsContext);
   const ownScroll = useRef<React.ComponentRef<typeof ScrollView>>(null);
   const scroll = scrollRef ?? ownScroll;
   const scrollToTop = useCallback(() => scroll.current?.scrollTo({ y: 0, animated: false }), [scroll]);
@@ -32,7 +34,7 @@ export function Page({ title, subtitle, header, children, refreshing = false, on
   // Ordinary pages extend behind floating native tabs. A pinned composer instead
   // owns the measured bottom exclusion; neither path reserves a guessed tab band.
   return <PageScrollContext.Provider value={scrollToTop}><NativePageSafeArea headerShown={!!headerShown} backgroundColor={colors.canvas}><ExecutionBanner /><NativeScreenInsetsProvider><PageBody footer={footer} footerKeyboardBehavior={footerKeyboardBehavior} footerPadding={footerPadding} footerSeparator={footerSeparator} maxWidth={maxWidth}>
-    {canvas ? <View style={{ flex: 1, minHeight: 0 }}>{children}</View> : <ScrollContainer style={{ flex: 1, minHeight: 0 }}><ScrollView ref={scroll} showsVerticalScrollIndicator={Platform.OS !== 'web'} keyboardShouldPersistTaps="handled" keyboardDismissMode={Platform.OS === 'ios' ? 'interactive' : 'on-drag'} automaticallyAdjustKeyboardInsets={!footer} automaticallyAdjustContentInsets={false} automaticallyAdjustsScrollIndicatorInsets contentInsetAdjustmentBehavior={Platform.OS === 'ios' && !footer ? 'automatic' : 'never'} refreshControl={onRefresh ? <RefreshControl refreshing={pulled && refreshing} onRefresh={() => { setPulled(true); onRefresh(); }} tintColor={colors.link} /> : undefined} style={{ flex: 1, backgroundColor: colors.canvas }} contentContainerStyle={styles.page}>
+    {canvas ? <View style={{ flex: 1, minHeight: 0 }}>{children}</View> : <ScrollContainer style={{ flex: 1, minHeight: 0 }}><ScrollView ref={scroll} showsVerticalScrollIndicator={Platform.OS !== 'web'} keyboardShouldPersistTaps="handled" keyboardDismissMode={Platform.OS === 'ios' ? 'interactive' : 'on-drag'} automaticallyAdjustKeyboardInsets={!footer} automaticallyAdjustContentInsets={false} automaticallyAdjustsScrollIndicatorInsets contentInsetAdjustmentBehavior={Platform.OS === 'ios' && !footer ? 'automatic' : 'never'} refreshControl={onRefresh ? <RefreshControl refreshing={pulled && refreshing} onRefresh={() => { setPulled(true); onRefresh(); }} tintColor={colors.link} /> : undefined} style={{ flex: 1, backgroundColor: colors.canvas }} contentContainerStyle={assistant && !footer ? [styles.page, { paddingBottom: styles.page.paddingBottom + assistant }] : styles.page}>
       <View style={[styles.content, { maxWidth }]}>{header !== undefined ? header : pageTitle}{header === undefined && subtitle ? <Text style={[styles.subtitle, { color: colors.muted }]}>{subtitle}</Text> : null}{children}</View>
     </ScrollView></ScrollContainer>}
   </PageBody></NativeScreenInsetsProvider></NativePageSafeArea></PageScrollContext.Provider>;

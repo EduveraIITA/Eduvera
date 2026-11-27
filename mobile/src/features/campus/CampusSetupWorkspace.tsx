@@ -1,4 +1,4 @@
-import { useLayoutEffect, useRef, useState, type ReactNode } from 'react';
+import { useContext, useLayoutEffect, useRef, useState, type ReactNode } from 'react';
 import { KeyboardAvoidingView, Platform, Pressable, ScrollView, StyleSheet, Text, useWindowDimensions, View } from 'react-native';
 import { useIsFocused } from 'expo-router';
 import { SafeAreaProvider, SafeAreaView } from 'react-native-safe-area-context';
@@ -15,6 +15,7 @@ import { assistantPresentationPermitted } from '../../lib/assistant-presentation
 import { ApiError } from '../../lib/api';
 import { useApi } from '../../lib/query';
 import { useCopilotTarget } from '../../ui/CopilotProvider';
+import { NativeDockInsetsContext } from '../../ui/campus-tabs-options';
 import { useAssistantPresentation } from '../../ui/AssistantPresentation';
 import { CAMPUS_ASSISTANT_TASK_HREF, clearAssistantWorkspaceTask, showAssistantWorkspaceTask } from '../../ui/assistant-workspace-task';
 
@@ -35,6 +36,7 @@ export function CampusSetupWorkspace({ campusName, phase, map, feedback, guidanc
   const [menu, setMenu] = useState(false);
   const wide = width >= 840;
   const session = useSession(), assistant = useAssistantPresentation();
+  const dock = useContext(NativeDockInsetsContext);
   const taskEligible = !!assistantGuidance && assistantEntryAvailable(session.environment, true,
     assistantPerspective(session.user, session.memberships, session.schoolId));
   const preference = useApi<unknown>(taskEligible ? '/api/v1/auth/pro-features/' : null);
@@ -134,7 +136,7 @@ export function CampusSetupWorkspace({ campusName, phase, map, feedback, guidanc
     </SafeAreaProvider>;
   // A native modal sits above the workspace window. Keep the real map in the
   // current workspace while Assistant is open so both surfaces stay usable.
-  if (inline) return <View style={styles.shell}>{content}</View>;
+  if (inline) return <View style={[styles.shell, dock.assistant > 0 && { paddingBottom: dock.bar + dock.assistant }]}>{content}</View>;
   return <MotionModal visible={focused && !taskVisible} animationType="fade" presentationStyle="fullScreen" onRequestClose={close}>{content}</MotionModal>;
 }
 

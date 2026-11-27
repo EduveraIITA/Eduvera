@@ -2,10 +2,10 @@ import React, { createContext, useContext, useEffect, useMemo, useState } from '
 import { Platform, StyleSheet, View, type LayoutChangeEvent, type StyleProp, type ViewStyle } from 'react-native';
 import { SafeAreaView } from 'react-native-screens/experimental';
 import { useIsFocused } from 'expo-router';
-import { NativeDockMetricsContext } from './campus-tabs-options';
+import { NativeDockInsetsContext, NativeDockMetricsContext } from './campus-tabs-options';
 
 interface NativeScreenInsets {
-  /** Native Screen bottom overlap, including its floating navigation bar. */
+  /** Screen content clearance for the floating UIKit tray and compact Assistant. */
   bottom: number;
   ready: boolean;
 }
@@ -25,15 +25,17 @@ const NativeScreenInsetsContext = createContext<NativeScreenInsets>({ bottom: 0,
  */
 export function NativeScreenInsetsProvider({ children, style, disabled = false }: React.PropsWithChildren<{ style?: StyleProp<ViewStyle>; disabled?: boolean }>) {
   const report = useContext(NativeDockMetricsContext), focused = useIsFocused();
+  const { assistant } = useContext(NativeDockInsetsContext);
   const [frame, setFrame] = useState({ width: 0, height: 0 });
   const [probe, setProbe] = useState({ width: 0, height: 0 });
   const measuring = Platform.OS === 'ios' && !disabled;
-  const insets = useMemo<NativeScreenInsets>(() => {
+  const physical = useMemo<NativeScreenInsets>(() => {
     if (!measuring) return { bottom: 0, ready: true };
     const ready = frame.width > 0 && frame.height > 0 && Math.abs(frame.width - probe.width) < .5 && probe.height > 0;
     return { bottom: ready ? Math.max(0, frame.height - probe.height) : 0, ready };
   }, [measuring, frame, probe]);
-  useEffect(() => { if (!disabled && focused && insets.ready && Platform.OS === 'ios') report(insets.bottom); },[disabled,focused,insets.ready,insets.bottom,report]);
+  useEffect(() => { if (measuring && focused && physical.ready) report(physical.bottom); }, [measuring, focused, physical.ready, physical.bottom, report]);
+  const insets = useMemo(() => ({ ...physical, bottom: physical.bottom + (measuring ? assistant : 0) }), [physical, measuring, assistant]);
   const onFrameLayout = ({ nativeEvent: { layout } }: LayoutChangeEvent) => setFrame(previous => previous.width === layout.width && previous.height === layout.height ? previous : { width: layout.width, height: layout.height });
   const onProbeLayout = ({ nativeEvent: { layout } }: LayoutChangeEvent) => setProbe(previous => previous.width === layout.width && previous.height === layout.height ? previous : { width: layout.width, height: layout.height });
 

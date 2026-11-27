@@ -13,7 +13,7 @@ const dependencies: Record<string, any> = {
   react: React, 'react/jsx-runtime': require('react/jsx-runtime'),
   'react-native': { View: 'native-view', Text: 'native-text', TextInput: 'native-input', Pressable: 'native-button', StyleSheet: { create: (value: unknown) => value, hairlineWidth: 1 } },
   'react-native-screens/experimental': {}, 'expo-router/react-navigation': {}, 'react-native-safe-area-context': {},
-  './native-tab-insets-context': {}, './theme': { useTheme: () => ({ colors: { row: '#eee', surface: '#fff', surfaceSoft: '#eee', border: '#777', ink: '#111', muted: '#555' } }) },
+  './native-tab-insets-context': {}, './campus-tabs-options': {}, './theme': { useTheme: () => ({ colors: { row: '#eee', surface: '#fff', surfaceSoft: '#eee', border: '#777', ink: '#111', muted: '#555' } }) },
   './Icon': { Icon: () => null }, './ExecutionBanner': {}, './theme-tokens': { themeRadii: { radiusControl: 16 } }, './AssistantMark': { BrandLoadingIcon: () => null },
   './native-screen-insets': {}, '../lib/campus-workspace-layout': {}, './BackNavigation': {},
 };

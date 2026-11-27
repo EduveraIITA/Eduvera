@@ -15,14 +15,14 @@ const require = createRequire(import.meta.url), root = path.resolve(path.dirname
 
 /** Execute the current shell against inert platform adapters and inspect its
  * actual Text/Pressable contracts. Native glyph fitting remains device QA. */
-function shell(width: number,height: number,expanded = false,isPad = width > 700,options: { assistantEnabled?: boolean; assistantEligible?: boolean; assistantErrorStatus?: number; assistantActive?: boolean } = {}) {
+function shell(width: number,height: number,expanded = false,isPad = width > 700,options: { assistantEnabled?: boolean; assistantEligible?: boolean; assistantErrorStatus?: number; assistantActive?: boolean; barHeight?: number; compactHeight?: number } = {}) {
   const View = () => null, Text = () => null, Pressable = () => null, Tabs = Object.assign(() => null,{ Screen: () => null }), Overlay = () => null;
-  const AssistantMark = Symbol('AssistantMark'), actions = { open: 0,close: 0 }, states: unknown[] = [];
+  const AssistantMark = Symbol('AssistantMark'), NativeDockInsets = () => null, actions = { open: 0,close: 0 }, states: unknown[] = [];
   class ApiError extends Error { constructor(readonly status: number) { super('Unavailable'); } }
   const active = options.assistantActive ?? expanded;
   const flatten = (value: unknown): Record<string,unknown> => Array.isArray(value) ? Object.assign({},...value.map(flatten)) : value && typeof value === 'object' ? value as Record<string,unknown> : {};
   const dependencies: Record<string,unknown> = {
-    'react': { useMemo: (read: () => unknown) => read(),useState: (value: unknown) => { const index = states.push(value)-1; return [value,(next: unknown) => { states[index] = typeof next === 'function' ? next(states[index]) : next; }]; },useRef: (value: unknown) => ({ current: value }),useEffect() {} },'react/jsx-runtime': require('react/jsx-runtime'),
+    'react': { useMemo: (read: () => unknown) => read(),useState: (value: unknown) => { const index = states.length; const initial = index === 2 ? options.barHeight ?? value : index === 6 ? options.compactHeight ?? value : value; states.push(initial); return [initial,(next: unknown) => { states[index] = typeof next === 'function' ? next(states[index]) : next; }]; },useRef: (value: unknown) => ({ current: value }),useCallback: (fn:unknown) => fn,useEffect() {} },'react/jsx-runtime': require('react/jsx-runtime'),
     'react-native': { View,Text,Pressable,Image: Symbol('Image'),Platform: { OS: 'ios',isPad },StyleSheet: { create: (value: unknown) => value,flatten,hairlineWidth: .5 },useWindowDimensions: () => ({ width,height }) },
     'expo-router': { Link: Symbol('Link'),Redirect: Symbol('Redirect'),Tabs,usePathname: () => '/today',useGlobalSearchParams: () => ({}) },
     '../auth/SessionProvider': { useSession: () => ({ status: 'authenticated',ready: true,scopeKey: 'actor:campus:live',user: { id: 'actor' },memberships: [{ school_id: 'campus',school_name: 'Campus' }],schoolId: 'campus',environment: { mode: 'live' } }) },
@@ -34,7 +34,7 @@ function shell(width: number,height: number,expanded = false,isPad = width > 700
     './assistant-presentation-context': { useAssistantPresentationState: () => ({ expanded,mode: assistantLayout({ width,height,expanded,isPad }).mode }) },
     '../lib/assistant-presentation-policy': { assistantPresentationPermitted },'../lib/api': { ApiError },
     './theme': { useTheme: () => ({ colors: {},dark: false }) },'react-native-safe-area-context': { SafeAreaView: View,useSafeAreaInsets: () => ({ top: 59,bottom: 34,left: 0,right: 0 }) },
-    './Glass': { Glass: View },'./CampusTabs': { CampusTabs: Tabs },'./campus-tabs-options': { NativeDockMetricsContext: { Provider: Symbol('DockMetricsProvider') } }, './CopilotPointer':{CopilotPointer:()=>null}, './CopilotProvider': {CopilotStatusBar:()=>null,useCopilotAction:()=>{},useCopilotTakeOver:()=>()=>{}},'./AssistantOverlayHost': { AssistantOverlayHost: Overlay },
+    './Glass': { Glass: View },'./CampusTabs': { CampusTabs: Tabs },'./campus-tabs-options': { NativeDockMetricsContext: { Provider: Symbol('DockMetricsProvider') }, NativeDockInsetsContext: { Provider: NativeDockInsets } }, './CopilotPointer':{CopilotPointer:()=>null}, './CopilotProvider': {CopilotStatusBar:()=>null,useCopilotAction:()=>{},useCopilotTakeOver:()=>()=>{}},'./AssistantOverlayHost': { AssistantOverlayHost: Overlay },
     './AssistantPresentation': { useAssistantPresentation: () => ({ active,open() { actions.open++; },close() { actions.close++; } }) },
     './native-tab-insets-context': { NativeTabInsetsContext: { Provider: Symbol('InsetProvider') }, FloatingDockInsetsContext: { Provider: Symbol('FloatingInsetProvider') } },
     './Icon': { Icon: Symbol('Icon') },'./AssistantMark': { AssistantMark },
@@ -46,7 +46,7 @@ function shell(width: number,height: number,expanded = false,isPad = width > 700
   runInNewContext(code,{ exports,require(name: string) { if (name.endsWith('.png')) return 1; if (!(name in dependencies)) throw new Error(`Unexpected shell dependency ${name}`); return dependencies[name]; } },{ filename: file,timeout: 1000 });
   const result = exports.CampusShell!(), elements: React.ReactElement<Record<string,unknown>>[] = [];
   function walk(value: React.ReactNode) { if (Array.isArray(value)) { value.forEach(walk); return; } if (!React.isValidElement<Record<string,unknown>>(value)) return; elements.push(value); walk(value.props.children as React.ReactNode); } walk(result);
-  return { elements,Text,Pressable,Tabs,Overlay,AssistantMark,flatten,actions,states };
+  return { elements,Text,Pressable,Tabs,Overlay,AssistantMark,NativeDockInsets,flatten,actions,states };
 }
 
 test('iPhone and portrait iPad use one native tab host without a second custom dock',()=>{
@@ -93,4 +93,15 @@ test('iPad split retains one router and two usable panes across portrait and lan
   assert.equal((hosts[0]!.props.layout as ReturnType<typeof assistantLayout>).mode,'split');
   if(width!<height!)assert.equal(tabs[0]!.props.sidebar,false);
  }
+});
+
+test('iPhone compact Assistant reserves space in content without moving the UIKit tab host', () => {
+  const view = shell(393, 852, false, false, { assistantActive: true, barHeight: 92, compactHeight: 168 });
+  assert.equal(view.elements.some(element => view.flatten(element.props.style).marginBottom === 168), false,
+    'shortening the native tab host lifts its tray behind the compact chat');
+  const dock = view.elements.find(element => element.type === view.NativeDockInsets)!;
+  assert.equal((dock.props.value as { bar: number }).bar, 92);
+  assert.equal((dock.props.value as { assistant: number }).assistant, 168);
+  const host = view.elements.find(element => element.type === view.Overlay)!;
+  assert.equal((host.props.compactInsets as { bottom: number }).bottom, 92, 'the mini settles just above the physical tray');
 });

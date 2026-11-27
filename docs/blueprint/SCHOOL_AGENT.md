@@ -138,7 +138,9 @@ the original action. The next turn can receive the exact applied, blocked or
 stopped result.
 
 The global Assistant remains available across supported navigation. The shell
-measures the compact dock so app actions remain reachable. Campus setup renders
+measures the compact dock so app actions remain reachable. On iOS the UIKit
+tray retains its full-height navigator, and the active page reserves space for
+the compact Assistant. The Assistant itself sits above the measured tray. Campus setup renders
 A2UI controls inside the conversation and returns to the retained map for
 placement. The fullscreen backdrop uses supported UIKit Liquid Glass or browser
 blur and honors reduced transparency.

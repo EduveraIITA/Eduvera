@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Image, Keyboard, Platform, Pressable, StyleSheet, Text, useWindowDimensions, View } from 'react-native';
 import { Link, Redirect, useGlobalSearchParams, usePathname, type Href } from 'expo-router';
 import { useSession } from '../auth/SessionProvider';
@@ -16,7 +16,7 @@ import { useTheme } from './theme';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Glass } from './Glass';
 import { CampusTabs } from './CampusTabs';
-import { NativeDockMetricsContext } from './campus-tabs-options';
+import { NativeDockInsetsContext, NativeDockMetricsContext } from './campus-tabs-options';
 import { AssistantOverlayHost } from './AssistantOverlayHost';
 import { useCopilotAction, useCopilotTakeOver } from './CopilotProvider';
 import { CopilotPointer } from './CopilotPointer';
@@ -50,6 +50,14 @@ export function CampusShell() {
     return () => { changed.remove(); hidden.remove(); };
   },[tablet,expanded,layout.axis]);
   const pathname = usePathname(), desktop = Platform.OS === 'web' ? width >= 960 : layout.sidebar, back = useHeaderBack();
+  const iosDock = Platform.OS === 'ios', nativeBarVisible = iosDock && !desktop && !fullscreen;
+  const nativeDockInsets = useMemo(() => ({
+    bar: nativeBarVisible ? barHeight : 0,
+    assistant: iosDock ? compactInset : 0,
+  }), [nativeBarVisible, barHeight, iosDock, compactInset]);
+  const reportNativeBar = useCallback((height: number) => {
+    if (nativeBarVisible) setBarHeight(height);
+  }, [nativeBarVisible]);
   const { onNavigate, selectTab, tabHref, tabConfigurationBusy, tabSelectionBlocked } = useCampusNavigation();
   const takeOver = useCopilotTakeOver();
   const workspaceInteraction = useRef<React.ComponentRef<typeof View>>(null);
@@ -123,7 +131,7 @@ export function CampusShell() {
   const workCount = manifest?.work.counts?.needs_me ?? 0;
   const unread = Number.isSafeInteger(notifications.data?.unread_count) ? notifications.data!.unread_count : 0;
   const assistant = assistantPresentationPermitted(assistantEntryAvailable(session.environment,true,assistantPerspective(session.user,session.memberships,session.schoolId)),preference.data,preference.error instanceof ApiError ? preference.error.status : undefined);
-  const destinations = campusTabs.filter(item => item.name !== '(assistant)' || desktop && assistant), iosDock = Platform.OS === 'ios', physicalBottom = !(split && layout.axis === 'vertical');
+  const destinations = campusTabs.filter(item => item.name !== '(assistant)' || desktop && assistant), physicalBottom = !(split && layout.axis === 'vertical');
   const dock = iosDockGeometry({ width: layout.app.width,height: dockHeight,bottom: safeInsets.bottom,left: safeInsets.left,right: safeInsets.right,count: destinations.length,physicalBottom,assistantBubble: !desktop && assistant,border: Platform.OS === 'web' ? 1 : 0 });
   const toggleAssistant = () => {
     if (assistantPresentation.active) { takeOver(); assistantPresentation.close(); }
@@ -147,10 +155,10 @@ export function CampusShell() {
             {!desktop && !detail ? brand : <View style={{ flex: 1 }} />}
             <Glass style={styles.actions}><Link href="/more/notifications" onPress={follow('/more/notifications')} asChild><Pressable accessibilityRole="link" accessibilityLabel={`Notifications${unread > 0 ? `, ${unread} unread` : ''}`} style={styles.utility}><Icon name="notifications" size={24} />{unread > 0 ? <View accessibilityElementsHidden importantForAccessibility="no-hide-descendants" style={[styles.notificationBadge, { backgroundColor: colors.danger }]}><Text style={{ color: colors.onAction, fontSize: 10, fontWeight: '700' }}>{unread > 99 ? '99+' : unread}</Text></View> : null}</Pressable></Link><Link href="/more/account" onPress={follow('/more/account')} asChild><Pressable accessibilityRole="link" accessibilityLabel="Open account" style={styles.utility}><Icon name="profile" size={24} /></Pressable></Link></Glass>
           </View> : null}
-          <View style={[styles.content, compactInset > 0 && { marginBottom: compactInset }]} onLayout={({ nativeEvent: { layout } }) => setPane(previous => previous.width === layout.width && previous.height === layout.height ? previous : { width: layout.width,height: layout.height })}>
+          <View style={[styles.content, !iosDock && compactInset > 0 && { marginBottom: compactInset }]} onLayout={({ nativeEvent: { layout } }) => setPane(previous => previous.width === layout.width && previous.height === layout.height ? previous : { width: layout.width,height: layout.height })}>
             <View ref={workspaceInteraction} onTouchStart={Platform.OS==='web' ? undefined : takeOver} onPointerDown={Platform.OS==='web' ? takeOver : undefined} {...(assistantPresentation.active && fullscreen && Platform.OS === 'web' ? { inert: true } : {})} pointerEvents={assistantPresentation.active && fullscreen ? 'none' : 'auto'} accessibilityElementsHidden={assistantPresentation.active && fullscreen} importantForAccessibility={assistantPresentation.active && fullscreen ? 'no-hide-descendants' : 'auto'} style={{ flex: 1,minHeight: 0 }}>
               <OperatingPaneContext.Provider value={pane}><NativeTabInsetsContext.Provider value={!desktop && !fullscreen}>
-                <NativeDockMetricsContext.Provider value={setBarHeight}><CampusTabs key={session.scopeKey} hidden={fullscreen} sidebar={desktop} blocked={verifying || tabSelectionBlocked} assistant={assistant} workCount={workCount} activeRoot={root} onTabPress={selectTab} onAssistantPress={toggleAssistant} /></NativeDockMetricsContext.Provider>
+                <NativeDockInsetsContext.Provider value={nativeDockInsets}><NativeDockMetricsContext.Provider value={reportNativeBar}><CampusTabs key={session.scopeKey} hidden={fullscreen} sidebar={desktop} blocked={verifying || tabSelectionBlocked} assistant={assistant} workCount={workCount} activeRoot={root} onTabPress={selectTab} onAssistantPress={toggleAssistant} /></NativeDockMetricsContext.Provider></NativeDockInsetsContext.Provider>
               </NativeTabInsetsContext.Provider></OperatingPaneContext.Provider>
             </View>
           </View>
