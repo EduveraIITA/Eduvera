@@ -496,6 +496,13 @@ the official LuLu Lucknow building and showed all three publisher choices and
 the reuse confirmation. Isolated PostgreSQL checks exercised the shared
 public-lookup budget, role boundaries and confirmed first-party image ingestion.
 
+Compact Assistant replies now open the full conversation on tap and copy the
+full reply on a long press. A compact browser test exercised both gestures,
+keyboard copy, the tray toggle and provider cancellation. Working status and
+Stop occupy the composer. The test also followed the pointer from an off-screen
+campus creation control to the real name field after the owning page scrolled.
+The pointer and highlights are visual cues for registered app controls.
+
 The retained evidence covers reviewed floor-plan intake/publication, authored
 interiors, messaging/academic evidence repair and Care/Resources/Dining continuity.
 It does not close every old whole-system audit finding. Shared controls keep

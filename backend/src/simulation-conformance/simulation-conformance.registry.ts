@@ -5,7 +5,7 @@ import type { EXECUTION_EFFECT_KINDS } from "../campus-model-core/execution-effe
  * rewrite a stale lock unless this number is increased first, so accepting
  * platform drift always leaves a reviewed Simulation change in the diff.
  */
-export const SIMULATION_CONFORMANCE_REVISION = 240 as const;
+export const SIMULATION_CONFORMANCE_REVISION = 241 as const;
 
 export const SIMULATION_DATA_PLANE_CAPABILITIES = Object.freeze([
   "snapshot",
@@ -584,7 +584,7 @@ export const SIMULATION_SAFETY_EVIDENCE = Object.freeze([
   { id: "safety:campus-floor-plan-discovery", kind: "real_postgres", test_file: "backend/test/floor-plan-onboarding-lifecycle.integration.test.ts",
     proves: "Current administration and exact mapped building revision gate indexed official links. Optional external index results retain only a capped allowance receipt in Live. Verified publisher downloads require explicit rights and reuse the native bounded image writer without editing the scene. A real COW world records one guided substitute for an exact search, refuses public downloads, and contacts no network, even when a provider key and daily cap are configured." },
   { id: "safety:assistant-public-web", kind: "real_postgres", test_file: "backend/test/agent-ui.integration.test.ts",
-    proves: "Explicit public web requests in the signed-in app stay outside the mutation/model path. A controlled remote seam asserts only the current user-entered query or exact external address is sent, rejects signed addresses and Simulation before remote work, and keeps bounded citations owned by the current thread without persisting returned excerpts." },
+    proves: "Explicit public web requests in the signed-in app stay outside the mutation/model path. A controlled remote seam asserts only the current user-entered query or exact external address is sent, rejects signed addresses and Simulation before remote work, exposes truthful in-flight progress, and keeps bounded citations owned by the current thread without persisting returned excerpts." },
   { id: "safety:campus-scene-import-allowance", kind: "real_postgres", test_file: "backend/test/campus-scene-import.integration.test.ts",
     proves: "Proposals require current administrative access, replay their exact source request, and do not save a scene. A fresh key can retry a completed boundary-only map after an upstream outage while the original key retains the exact selection and original result. Image inference reservations share the Assistant's durable global allowance; provider failure retains its reservation and blocks a competing Assistant reservation. No live provider generation occurs in this test." },
   {

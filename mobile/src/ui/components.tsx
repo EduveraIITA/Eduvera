@@ -12,24 +12,28 @@ import { BrandLoadingIcon } from './AssistantMark';
 import { NativeScreenInsetsProvider, useNativeScreenInsets } from './native-screen-insets';
 import { campusKeyboardOverlap } from '../lib/campus-workspace-layout';
 import { usePageNavigationTitle } from './BackNavigation';
+import type { CopilotTargetNode } from '../lib/copilot-target';
 
 const PageScrollContext = createContext<() => void>(() => {});
 export function usePageScroll() { return useContext(PageScrollContext); }
 
-export function Page({ title, subtitle, header, children, refreshing = false, onRefresh, maxWidth = 920, footer, footerPadding = 20, canvas = false, footerSeparator = true, footerKeyboardBehavior = 'keep' }: React.PropsWithChildren<{ title: string; subtitle?: string; header?: React.ReactNode; refreshing?: boolean; onRefresh?: () => void; maxWidth?: number; footer?: React.ReactNode; footerPadding?: number; canvas?: boolean; footerSeparator?: boolean; footerKeyboardBehavior?: 'keep' | 'hide' }>) {
+export function Page({ title, subtitle, header, children, refreshing = false, onRefresh, maxWidth = 920, footer, footerPadding = 20, canvas = false, footerSeparator = true, footerKeyboardBehavior = 'keep', scrollRef, titleTarget }: React.PropsWithChildren<{ titleTarget?: React.RefCallback<CopilotTargetNode>; scrollRef?: React.RefObject<React.ComponentRef<typeof ScrollView> | null>; title: string; subtitle?: string; header?: React.ReactNode; refreshing?: boolean; onRefresh?: () => void; maxWidth?: number; footer?: React.ReactNode; footerPadding?: number; canvas?: boolean; footerSeparator?: boolean; footerKeyboardBehavior?: 'keep' | 'hide' }>) {
   usePageNavigationTitle(title);
   const { colors } = useTheme();
   const headerShown = useContext(HeaderShownContext);
-  const scroll = useRef<React.ComponentRef<typeof ScrollView>>(null);
-  const scrollToTop = useCallback(() => scroll.current?.scrollTo({ y: 0, animated: false }), []);
+  const ownScroll = useRef<React.ComponentRef<typeof ScrollView>>(null);
+  const scroll = scrollRef ?? ownScroll;
+  const scrollToTop = useCallback(() => scroll.current?.scrollTo({ y: 0, animated: false }), [scroll]);
   const [pulled, setPulled] = useState(false), previous = useRef(refreshing);
   useEffect(() => { if (previous.current && !refreshing) setPulled(false); previous.current = refreshing; }, [refreshing]);
   const ScrollContainer = Platform.OS === 'ios' ? ScrollViewMarker : View;
+  const defaultTitle = <Text accessibilityRole="header" aria-level={1} style={[styles.title, { color: colors.ink }]}>{title}</Text>;
+  const pageTitle = titleTarget ? <View collapsable={false} ref={titleTarget}>{defaultTitle}</View> : defaultTitle;
   // Ordinary pages extend behind floating native tabs. A pinned composer instead
   // owns the measured bottom exclusion; neither path reserves a guessed tab band.
   return <PageScrollContext.Provider value={scrollToTop}><NativePageSafeArea headerShown={!!headerShown} backgroundColor={colors.canvas}><ExecutionBanner /><NativeScreenInsetsProvider><PageBody footer={footer} footerKeyboardBehavior={footerKeyboardBehavior} footerPadding={footerPadding} footerSeparator={footerSeparator} maxWidth={maxWidth}>
     {canvas ? <View style={{ flex: 1, minHeight: 0 }}>{children}</View> : <ScrollContainer style={{ flex: 1, minHeight: 0 }}><ScrollView ref={scroll} showsVerticalScrollIndicator={Platform.OS !== 'web'} keyboardShouldPersistTaps="handled" keyboardDismissMode={Platform.OS === 'ios' ? 'interactive' : 'on-drag'} automaticallyAdjustKeyboardInsets={!footer} automaticallyAdjustContentInsets={false} automaticallyAdjustsScrollIndicatorInsets contentInsetAdjustmentBehavior={Platform.OS === 'ios' && !footer ? 'automatic' : 'never'} refreshControl={onRefresh ? <RefreshControl refreshing={pulled && refreshing} onRefresh={() => { setPulled(true); onRefresh(); }} tintColor={colors.link} /> : undefined} style={{ flex: 1, backgroundColor: colors.canvas }} contentContainerStyle={styles.page}>
-      <View style={[styles.content, { maxWidth }]}>{header !== undefined ? header : <Text accessibilityRole="header" aria-level={1} style={[styles.title, { color: colors.ink }]}>{title}</Text>}{header === undefined && subtitle ? <Text style={[styles.subtitle, { color: colors.muted }]}>{subtitle}</Text> : null}{children}</View>
+      <View style={[styles.content, { maxWidth }]}>{header !== undefined ? header : pageTitle}{header === undefined && subtitle ? <Text style={[styles.subtitle, { color: colors.muted }]}>{subtitle}</Text> : null}{children}</View>
     </ScrollView></ScrollContainer>}
   </PageBody></NativeScreenInsetsProvider></NativePageSafeArea></PageScrollContext.Provider>;
 }

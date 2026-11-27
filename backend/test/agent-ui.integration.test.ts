@@ -155,7 +155,7 @@ describe.skipIf(!enabled)('authorized Assistant AG-UI event read and client tool
     const http=new AgentController(agent,memory);
     const {id:threadId}=await agent.create(request(fixture.owner,{portal:'principal'}));
     const sourceUrl='https://science.nasa.gov/moon/';
-    const outbound:unknown[]=[];
+    const outbound:unknown[]=[], inFlight:string[]=[];
     const fetch=vi.spyOn(globalThis,'fetch').mockImplementation((endpoint,options)=>{
       if(typeof endpoint!=='string'||typeof options?.body!=='string')throw new Error('Expected a fixed MCP endpoint and JSON body.');
       expect(endpoint).toMatch(/^https:\/\/mcp\.exa\.ai\/mcp\?tools=web_(search|fetch)_exa$/u);
@@ -169,7 +169,8 @@ describe.skipIf(!enabled)('authorized Assistant AG-UI event read and client tool
       const text=selected==='web_search_exa'
         ? `Title: NASA Moon\nURL: ${sourceUrl}\nHighlights: Moon observation.\n---\nTitle: Unsafe\nURL: https://127.0.0.1/`
         : `# NASA Moon\nURL: ${sourceUrl}\n\nPublic information about the Moon.`;
-      return reply({content:[{type:'text',text}]});
+      return sql<{progress:string}>`SELECT progress FROM agent_runs WHERE thread_id=${threadId}::uuid AND status='running'`.execute(db)
+        .then(({rows})=>{ inFlight.push(...rows.map(row=>row.progress)); return reply({content:[{type:'text',text}]}); });
     });
     try {
       async function browse(question:string) {
@@ -191,6 +192,7 @@ describe.skipIf(!enabled)('authorized Assistant AG-UI event read and client tool
         executionEnvironmentView:{mode:'simulation'}} as AuthenticatedRequest;
       await expect(http.send(simulation,threadId)).rejects.toThrow('Simulation');
       expect(outbound).toEqual([{query:'lunar observations',numResults:5},{urls:[sourceUrl],maxCharacters:700}]);
+      expect(inFlight).toEqual(['Searching the web','Reading the page']);
       expect(complete).not.toHaveBeenCalled();
       expect(dispatch).not.toHaveBeenCalled();
       const detail=await http.detail(request(fixture.owner),threadId);

@@ -16,7 +16,9 @@ const View = React.forwardRef<HTMLDivElement, Props>(function View({ children, s
   const flat = flatten(style);
   return React.createElement('div', { ref, 'data-panel-height': flat.borderTopWidth !== undefined && typeof flat.height === 'number' ? flat.height : undefined, 'data-panel-bottom': flat.borderTopWidth !== undefined ? flat.paddingBottom : undefined }, children);
 });
-const Pressable = ({ children, accessibilityLabel, disabled, onPress }: Props) => React.createElement('button', { 'aria-label': accessibilityLabel, disabled, onClick: onPress }, children);
+const Pressable = React.forwardRef<HTMLButtonElement, Props>(function Pressable({ children, accessibilityLabel, disabled, onPress }, ref) {
+  return React.createElement('button', { ref, 'aria-label': accessibilityLabel, disabled, onClick: onPress }, children);
+});
 
 function workspace(isFocused: () => boolean,bottomOverlap=0) {
   const Insets = React.createContext(bottomOverlap);
@@ -100,5 +102,24 @@ test('native dock exclusion belongs to the details frame, while fullscreen and a
     await render(false,null);
     assert.equal(container.querySelector('[data-panel-height]'),null);
     assert.equal(mapInsets.at(-1),dock,'a closed panel keeps the canvas edge-to-edge and offsets map controls instead');
+  });
+});
+
+
+test('Copilot can locate the exact map Search control while manual search still works', async () => {
+  const Screen = workspace(() => true);
+  await mounted(async (container, renderer) => {
+    let target: HTMLButtonElement | null = null;
+    const opened: string[] = [];
+    await act(async () => renderer.render(React.createElement(Screen, {
+      ...props(), expanded: false, panel: null, map: () => null,
+      searchTarget: (node: HTMLButtonElement | null) => { target = node; },
+      onPanel: (name: string) => opened.push(name),
+    })));
+    const button = container.querySelector<HTMLButtonElement>('button[aria-label="Find a place"]');
+    assert.ok(button);
+    assert.equal(target, button);
+    await act(async () => button.click());
+    assert.deepEqual(opened, ['search']);
   });
 });

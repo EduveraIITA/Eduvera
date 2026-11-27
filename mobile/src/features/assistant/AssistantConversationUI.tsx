@@ -8,7 +8,6 @@ import { NotePencilIcon } from 'phosphor-react-native/src/icons/NotePencil';
 import { SquareIcon } from 'phosphor-react-native/src/icons/Square';
 import { XIcon } from 'phosphor-react-native/src/icons/X';
 import { ArrowRightIcon } from 'phosphor-react-native/src/icons/ArrowRight';
-import { ArrowsOutSimpleIcon } from 'phosphor-react-native/src/icons/ArrowsOutSimple';
 import { ArrowsInSimpleIcon } from 'phosphor-react-native/src/icons/ArrowsInSimple';
 import { CopyIcon } from 'phosphor-react-native/src/icons/Copy';
 import { CheckIcon } from 'phosphor-react-native/src/icons/Check';
@@ -22,9 +21,19 @@ import { assistantCompactText, assistantComposerHeight, assistantExpandedScroll,
 import type { AgentChartData } from '../../../../packages/contracts/src/wire/features/assistant/agentApi';
 import { isInternalHref } from '../../lib/api-policy';
 
-export function ConversationToolbar({ onHistory, onNew, historyDisabled, newDisabled, onCollapse, copyControl, availableWidth }: { onHistory: () => void; onNew: () => void; historyDisabled: boolean; newDisabled: boolean; onCollapse?: () => void; copyControl?: React.ReactNode; availableWidth?: number }) {
+export function ConversationToolbar({ onHistory, onNew, historyDisabled, newDisabled, onCollapse, copyControl, availableWidth, focusTitle }: { onHistory: () => void; onNew: () => void; historyDisabled: boolean; newDisabled: boolean; onCollapse?: () => void; copyControl?: React.ReactNode; availableWidth?: number; focusTitle?: () => void }) {
   const { colors } = useTheme(), { fontScale } = useWindowDimensions(), narrow = !!availableWidth && availableWidth < 360 * Math.max(1, fontScale);
-  return <View style={[styles.toolbar, narrow && { flexDirection: 'column', alignItems: 'stretch', gap: 2 }]}><Text accessibilityRole="header" aria-level={1} style={[styles.toolbarTitle, { color: colors.muted }, narrow && { flex: 0, alignSelf: 'flex-start' }]}>Conversation</Text><View style={[styles.toolbarActions, narrow && { alignSelf: 'flex-end' }]}>
+  const title = useRef<ComponentRef<typeof Text>>(null);
+  useEffect(() => {
+    if (!focusTitle) return;
+    if (Platform.OS === 'web') title.current?.focus();
+    else {
+      const node = findNodeHandle(title.current);
+      if (typeof node === 'number') AccessibilityInfo.setAccessibilityFocus(node);
+    }
+    focusTitle();
+  }, [focusTitle]);
+  return <View style={[styles.toolbar, narrow && { flexDirection: 'column', alignItems: 'stretch', gap: 2 }]}><Text ref={title} {...(Platform.OS === 'web' ? { tabIndex: -1 } : {})} accessibilityRole="header" aria-level={1} style={[styles.toolbarTitle, { color: colors.muted }, narrow && { flex: 0, alignSelf: 'flex-start' }]}>Conversation</Text><View style={[styles.toolbarActions, narrow && { alignSelf: 'flex-end' }]}>
     <UtilityButton label="Conversation history" onPress={onHistory} disabled={historyDisabled}><ClockCounterClockwiseIcon size={21} color={colors.ink} /></UtilityButton>
     <UtilityButton label="New conversation" onPress={onNew} disabled={newDisabled}><NotePencilIcon size={21} color={colors.ink} /></UtilityButton>
     {copyControl}
@@ -32,7 +41,9 @@ export function ConversationToolbar({ onHistory, onNew, historyDisabled, newDisa
   </View></View>;
 }
 
-export function ResponseCopyControl({ onCopy, disabled, state }: { onCopy: () => void; disabled: boolean; state: 'idle' | 'copying' | 'copied' | 'failed' }) {
+type CopyState = 'idle' | 'copying' | 'copied' | 'failed';
+
+export function ResponseCopyControl({ onCopy, disabled, state }: { onCopy: () => void; disabled: boolean; state: CopyState }) {
   const { colors } = useTheme(), busy = state === 'copying';
   return <Pressable accessibilityRole="button" accessibilityLabel={state === 'copied' ? 'Copied latest response' : state === 'failed' ? 'Copy failed. Try copying the latest response again.' : 'Copy latest response'} accessibilityHint="Copies the latest recorded AI response as plain text." accessibilityState={{ disabled: disabled || busy, busy }} disabled={disabled || busy} onPress={onCopy} style={({ pressed }) => [styles.copyControl, { opacity: disabled ? .4 : pressed ? .6 : 1 }]}>{busy ? <BrandLoadingIcon size={19} /> : state === 'copied' ? <CheckIcon size={19} color={colors.positive} /> : <CopyIcon size={19} color={colors.muted} />}{state === 'copied' || state === 'failed' ? <Text accessibilityLiveRegion="polite" style={[styles.caption, { color: state === 'failed' ? colors.danger : colors.positive, flexShrink: 1 }]}>{state === 'copied' ? 'Copied' : 'Try again'}</Text> : null}</Pressable>;
 }
@@ -41,8 +52,12 @@ function UtilityButton({ label, hint, children, onPress, disabled, controlRef }:
   return <Pressable ref={controlRef} accessibilityRole="button" accessibilityLabel={label} accessibilityHint={hint} accessibilityState={{ disabled }} disabled={disabled} onPress={onPress} style={({ pressed }) => [styles.utilityButton, { opacity: disabled ? .4 : pressed ? .6 : 1 }]}>{children}</Pressable>;
 }
 
-export function ConversationComposer({ value, onChange, locked, busy, running, stopDisabled, onSend, onStop, status }: { value: string; onChange: (value: string) => void; locked: boolean; busy: boolean; running: boolean; stopDisabled: boolean; onSend: () => void; onStop: () => void; status?: string }) {
+export function ConversationComposer({ value, onChange, locked, busy, working, stopDisabled, onSend, onStop, status }: {
+  value: string; onChange: (value: string) => void; locked: boolean; busy: boolean;
+  working?: string; stopDisabled: boolean; onSend: () => void; onStop: () => void; status?: string;
+}) {
   const { colors } = useTheme(), [height, setHeight] = useState(36), input = useRef<ComponentRef<typeof TextInput>>(null);
+  const running = !!working;
   const resizeWeb = () => {
     if (Platform.OS !== 'web') return;
     // RN-web exposes the textarea host here. Reset its height before reading
@@ -53,18 +68,22 @@ export function ConversationComposer({ value, onChange, locked, busy, running, s
     const next = assistantComposerHeight(node.scrollHeight);
     node.style.height = `${next}px`; setHeight(next);
   };
-  useEffect(() => { if (!value) setHeight(36); resizeWeb(); }, [value]);
-  const canSend = !locked && !!value.trim();
+  useEffect(() => { if (!value) setHeight(36); if (!running) resizeWeb(); }, [value, running]);
+  useEffect(() => {
+    if (working && Platform.OS === 'ios') AccessibilityInfo.announceForAccessibility(working);
+  }, [working]);
+  const canSend = !locked && !running && !!value.trim();
   const send = () => { if (canSend) onSend(); };
   return <View style={{ gap: 8 }}>
-    {status ? <Text accessibilityLiveRegion="polite" style={[styles.caption, { color: colors.muted, paddingHorizontal: 4 }]}>{status}</Text> : null}
+    {status && !running ? <Text accessibilityLiveRegion="polite" style={[styles.caption, { color: colors.muted, paddingHorizontal: 4 }]}>{status}</Text> : null}
     <View style={[styles.composer, { borderColor: colors.border }]}>
       <View pointerEvents="none" accessibilityElementsHidden importantForAccessibility="no-hide-descendants" style={StyleSheet.absoluteFill}><Glass material="assistant" style={[StyleSheet.absoluteFill, { borderRadius: 28 }]} /></View>
-      <TextInput ref={input} accessibilityLabel="Ask Assistant" accessibilityHint={Platform.OS === 'web' ? 'Enter to send. Shift and Enter for a new line.' : 'Write your question, then use Send question.'} value={value} onChangeText={onChange} multiline maxLength={4000} editable={!locked} placeholder="Ask anything…" placeholderTextColor={colors.muted} underlineColorAndroid="transparent" textAlignVertical="top" onLayout={resizeWeb} onContentSizeChange={event => { if (Platform.OS !== 'web') setHeight(assistantComposerHeight(event.nativeEvent.contentSize.height)); }}
+      {working ? <Text accessibilityLiveRegion="polite" numberOfLines={2} style={[styles.working, { color: colors.muted }]}>{working}</Text> : null}
+      <TextInput ref={input} accessibilityLabel="Ask Assistant" accessibilityHint={Platform.OS === 'web' ? 'Enter to send. Shift and Enter for a new line.' : 'Write your question, then use Send question.'} value={value} onChangeText={onChange} multiline maxLength={4000} editable={!locked && !running} accessibilityElementsHidden={running} importantForAccessibility={running ? 'no-hide-descendants' : 'auto'} placeholder="Ask anything…" placeholderTextColor={colors.muted} underlineColorAndroid="transparent" textAlignVertical="top" onLayout={running ? undefined : resizeWeb} onContentSizeChange={event => { if (Platform.OS !== 'web' && !running) setHeight(assistantComposerHeight(event.nativeEvent.contentSize.height)); }}
         {...(Platform.OS === 'web' ? { numberOfLines: 1, onKeyPress: (event: { nativeEvent: { key?: string; shiftKey?: boolean; isComposing?: boolean; keyCode?: number; repeat?: boolean }; preventDefault?: () => void }) => { if (assistantShouldSendKey(event.nativeEvent, canSend)) { event.preventDefault?.(); send(); } } } : {})}
-        style={[styles.input, { color: colors.ink, height }]} />
-      <Pressable accessibilityRole="button" accessibilityLabel={running ? 'Stop request' : 'Send question'} accessibilityState={{ disabled: running ? stopDisabled : !canSend, busy }} disabled={running ? stopDisabled : !canSend} onPress={running ? onStop : send} style={({ pressed }) => [styles.sendButton, { backgroundColor: running ? colors.row : colors.action, opacity: (running ? stopDisabled : !canSend) ? .45 : pressed ? .7 : 1 }]}>
-        {busy ? <BrandLoadingIcon size={20} onFilledAction={!running} /> : running ? <SquareIcon size={17} weight="fill" color={colors.ink} /> : <ArrowUpIcon size={22} color={colors.onAction} weight="bold" />}
+        style={[styles.input, { color: colors.ink, height, display: running ? 'none' : 'flex' }]} />
+      <Pressable accessibilityRole="button" accessibilityLabel={running ? 'Stop request' : 'Send question'} accessibilityState={{ disabled: running ? stopDisabled : !canSend, busy }} disabled={running ? stopDisabled : !canSend} onPress={running ? onStop : send} style={({ pressed }) => [styles.sendButton, { backgroundColor: running ? colors.row : colors.action, opacity: (running ? stopDisabled : !canSend) ? .55 : pressed ? .7 : 1 }]}>
+        {running ? <SquareIcon size={17} weight="fill" color={colors.ink} /> : busy ? <BrandLoadingIcon size={20} onFilledAction /> : <ArrowUpIcon size={22} color={colors.onAction} weight="bold" />}
       </Pressable>
     </View>
   </View>;
@@ -150,9 +169,17 @@ export function ConversationEmpty() {
 }
 
 /** Compact dock is a preview above visible navigation, never another editor. */
-export function ConversationBubble({ children, onExpand, onClose, source, hasChart = false, visible = true, minimizedLabel, copyControl, availableHeight }: PropsWithChildren<{ onExpand: () => void; onClose?: () => void; source?: React.ReactNode; hasChart?: boolean; visible?: boolean; minimizedLabel?: string; copyControl?: React.ReactNode; availableHeight?: number }>) {
+export function ConversationBubble({ children, availableHeight, summary = false }: PropsWithChildren<{ availableHeight?: number; summary?: boolean }>) {
   const { colors } = useTheme(), { height } = useWindowDimensions();
   const frameHeight = availableHeight && availableHeight > 0 ? availableHeight : height;
+  return <View style={[styles.bubble, { borderColor: colors.border }, !summary && styles.bubbleDetails]}>
+    <Glass material="assistant" pointerEvents="none" accessibilityElementsHidden importantForAccessibility="no-hide-descendants"
+      style={[StyleSheet.absoluteFill, { borderRadius: 28 }]} />
+    {summary ? children : <ScrollView style={{ minHeight: 0, maxHeight: Math.min(244, frameHeight * .3) }} keyboardShouldPersistTaps="handled" contentContainerStyle={{ gap: 12 }}>{children}</ScrollView>}
+  </View>;
+}
+
+function useReplyKeyboard() {
   const [keyboardVisible, setKeyboardVisible] = useState(() => Platform.OS !== 'web' && !!Keyboard.metrics());
   useEffect(() => {
     if (Platform.OS === 'web') {
@@ -165,22 +192,54 @@ export function ConversationBubble({ children, onExpand, onClose, source, hasCha
     const hidden = Keyboard.addListener(Platform.OS === 'ios' ? 'keyboardWillHide' : 'keyboardDidHide', () => setKeyboardVisible(false));
     return () => { shown.remove(); hidden.remove(); };
   }, []);
-  // Page owns actual IME avoidance. While that frame is reduced, collapse only
-  // this optional preview: its same mounted editor and Expand/Close stay usable.
-  // No fixed keyboard height or duplicated bottom inset is reserved here.
-  return <View style={[styles.bubble, { borderColor: colors.border, display: visible ? 'flex' : 'none' }]} accessibilityElementsHidden={!visible} importantForAccessibility={visible ? 'auto' : 'no-hide-descendants'}>
-    <Glass material="assistant" pointerEvents="none" accessibilityElementsHidden importantForAccessibility="no-hide-descendants"
-      style={[StyleSheet.absoluteFill, { borderRadius: 28 }]} />
-    <View style={styles.bubbleHeader}><AssistantMark size={24} />{keyboardVisible && minimizedLabel ? <Text accessibilityLiveRegion="polite" numberOfLines={1} style={[styles.caption, { color: colors.muted, flex: 1 }]}>{minimizedLabel}</Text> : <View style={{ flex: 1 }} />}{copyControl}<UtilityButton label="Expand Assistant" hint="Read the complete conversation." onPress={onExpand}><ArrowsOutSimpleIcon size={18} color={colors.muted} /></UtilityButton>{onClose ? <UtilityButton label="Close Assistant" onPress={onClose}><XIcon size={20} color={colors.muted} /></UtilityButton> : null}</View>
-    <ScrollView style={{ minHeight: 0, flexShrink: 1, maxHeight: Math.min(hasChart ? 410 : 244, frameHeight * (hasChart ? .46 : .3)), display: keyboardVisible ? 'none' : 'flex' }} accessibilityElementsHidden={keyboardVisible} importantForAccessibility={keyboardVisible ? 'no-hide-descendants' : 'auto'} keyboardShouldPersistTaps="handled" showsVerticalScrollIndicator contentContainerStyle={{ gap: 12, paddingBottom: 4 }}>{children}</ScrollView>
-    {source ? <View style={{ paddingTop: 4, display: keyboardVisible ? 'none' : 'flex' }} accessibilityElementsHidden={keyboardVisible} importantForAccessibility={keyboardVisible ? 'no-hide-descendants' : 'auto'}>{source}</View> : null}
-  </View>;
+  return keyboardVisible;
 }
 
-export function CompactAnswer({ text, chart, onExpand }: { text: string; chart?: AgentChartData; onExpand: () => void }) {
-  const { colors } = useTheme();
-  const value = assistantCompactText(text, chart);
-  return <Pressable accessibilityRole="button" accessibilityLabel="Open full conversation" accessibilityHint="Read the complete answer and its source details." onPress={onExpand} style={({ pressed }) => [{ minHeight: 44, justifyContent: 'center', opacity: pressed ? .7 : 1 }]}><Text numberOfLines={chart ? 2 : 3} style={[styles.body, { color: colors.ink }]}>{assistantInline(value).map((part, index) => <Text key={index} style={[part.bold && { fontWeight: '700' }, part.italic && { fontStyle: 'italic' }]}>{part.text}</Text>)}</Text></Pressable>;
+export function CompactAnswer({ text, chart, onExpand, onCopy, copyState, restoreFocus }: {
+  text: string; chart?: AgentChartData; onExpand: () => void; onCopy?: () => void;
+  copyState?: CopyState; restoreFocus?: () => void;
+}) {
+  const { colors } = useTheme(), keyboardVisible = useReplyKeyboard();
+  const value = assistantCompactText(text, chart) || 'Open conversation', parts = assistantInline(value);
+  const reply = useRef<ComponentRef<typeof Pressable>>(null), held = useRef(false);
+  const [focused, setFocused] = useState(false);
+  const copyMessage = copyState === 'copied' ? 'Copied' : copyState === 'failed' ? 'Couldn’t copy. Try again.' : '';
+  useEffect(() => {
+    if (!restoreFocus) return;
+    if (Platform.OS === 'web') reply.current?.focus();
+    else {
+      const node = findNodeHandle(reply.current);
+      if (typeof node === 'number') AccessibilityInfo.setAccessibilityFocus(node);
+    }
+    restoreFocus();
+  }, [restoreFocus]);
+  useEffect(() => {
+    if (copyMessage && Platform.OS === 'ios') AccessibilityInfo.announceForAccessibility(copyMessage);
+  }, [copyMessage]);
+  return <>
+    <Pressable ref={reply} accessibilityRole="button" accessibilityLabel={parts.map(part => part.text).join('')}
+      accessibilityHint={onCopy ? 'Opens the full conversation. Long press or use the Copy reply action to copy the whole answer.' : 'Opens the full conversation.'}
+      accessibilityActions={onCopy ? [{ name: 'copy', label: 'Copy reply' }] : undefined}
+      onAccessibilityAction={onCopy ? event => { if (event.nativeEvent.actionName === 'copy') onCopy(); } : undefined}
+      onPress={onExpand} onLongPress={onCopy ? () => { if (Platform.OS === 'web') held.current = true; else onCopy(); } : undefined}
+      onPressIn={onCopy ? () => { held.current = false; } : undefined}
+      onPressOut={onCopy && Platform.OS === 'web' ? event => {
+        // Safari grants clipboard access in the release event, outside the long-press timer.
+        if (held.current && /^(?:touchend|mouseup|pointerup)$/.test((event.nativeEvent as { type?: string }).type ?? '')) onCopy();
+        held.current = false;
+      } : undefined}
+      {...(onCopy && Platform.OS === 'web' ? {
+        onKeyDown: (event: { key?: string; ctrlKey?: boolean; metaKey?: boolean; altKey?: boolean; shiftKey?: boolean; repeat?: boolean; preventDefault(): void }) => {
+          if (event.key?.toLowerCase() !== 'c' || !(event.ctrlKey || event.metaKey) || event.altKey || event.shiftKey || event.repeat) return;
+          event.preventDefault(); onCopy();
+        },
+      } : {})}
+      onFocus={() => setFocused(true)} onBlur={() => setFocused(false)}
+      style={({ pressed }) => [styles.compactReply, { opacity: pressed ? .7 : 1, borderColor: focused ? colors.link : 'transparent' }]}>
+      <Text numberOfLines={keyboardVisible ? 1 : chart ? 2 : 3} style={[styles.body, { color: colors.ink }]}>{parts.map((part, index) => <Text key={index} style={[part.bold && { fontWeight: '700' }, part.italic && { fontStyle: 'italic' }]}>{part.text}</Text>)}</Text>
+    </Pressable>
+    {copyMessage ? <Text accessibilityLiveRegion="polite" style={[styles.caption, styles.copyFeedback, { color: copyState === 'failed' ? colors.danger : colors.positive }]}>{copyMessage}</Text> : null}
+  </>;
 }
 
 export function ConversationSource({ source, title = source.title, onNavigate }: { source: AgentSource; title?: string; onNavigate: (href: string) => void }) {
@@ -203,6 +262,10 @@ const styles = StyleSheet.create({
   empty: { flexGrow: 1, justifyContent: 'center', alignItems: 'flex-start', gap: 12, paddingVertical: 28, paddingHorizontal: 4 }, emptyTitle: { fontSize: 20, lineHeight: 27, fontWeight: '600' },
   sheetHeader: { flexDirection: 'row', alignItems: 'center', gap: 12, paddingLeft: 20, paddingRight: 12, paddingVertical: 8 }, sheetTitle: { flex: 1, fontSize: 20, lineHeight: 27, fontWeight: '600' }, sheetContent: { paddingHorizontal: 20, paddingTop: 8, paddingBottom: 40, gap: 16 }, thread: { minHeight: 72, paddingVertical: 12, paddingHorizontal: 14, borderBottomWidth: StyleSheet.hairlineWidth, borderRadius: 16, gap: 4 }, threadTitle: { fontSize: 16, lineHeight: 23, fontWeight: '600' },
   answerText: { gap: 12 }, answerHeading: { fontSize: 16, lineHeight: 25, fontWeight: '700' }, listItem: { flexDirection: 'row', gap: 10, alignItems: 'flex-start' }, listMarker: { minWidth: 14 },
-  bubble: { minHeight: 0, overflow: 'hidden', flexShrink: 1, borderRadius: 28, borderWidth: 1, paddingHorizontal: 16, paddingBottom: 12, gap: 4 }, bubbleHeader: { minHeight: 44, flexDirection: 'row', alignItems: 'center', gap: 2 },
+  bubble: { minHeight: 0, overflow: 'hidden', flexShrink: 1, borderRadius: 28, borderWidth: StyleSheet.hairlineWidth },
+  bubbleDetails: { paddingHorizontal: 16, paddingVertical: 12 },
+  compactReply: { minHeight: 44, justifyContent: 'center', paddingHorizontal: 16, paddingVertical: 8, borderRadius: 27, borderWidth: 2 },
+  copyFeedback: { paddingHorizontal: 16, paddingBottom: 8 },
+  working: { flex: 1, minWidth: 0, fontSize: 16, lineHeight: 21 },
   copyControl: { minHeight: 44, minWidth: 44, maxWidth: '100%', flexShrink: 1, paddingHorizontal: 8, borderRadius: 22, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 4 },
 });

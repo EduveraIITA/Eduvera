@@ -79,29 +79,23 @@ The app still refreshes every source before a record answer or effect.
 
 ### Compact and expanded presentation
 
-With Pro enabled, Assistant sits between Work and Areas in the shared navigation.
-While that navigation is visible, show a compact latest-response bubble and
-composer over the actual retained workspace page. Keep that page visible and
-preserve its position and draft. On iPhone, Expand opens the full conversation and
-hides the workspace navigation and header. On iPad with enough room, Expand opens
-a conversation pane beside the actual operating app. Keep that app usable with
-its own navigation and adapt its contents to the remaining width; portrait iPad
-keeps bottom navigation under the app pane. The same conversation and editor
-survive rotation and resizing. A narrow multitasking window stacks the two usable
-panes when they cannot fit side by side. The full-screen text field and Send
-control occupy the former bottom-navigation position; the split-pane composer
-sits at the bottom of its conversation pane. Both use the same native Liquid Glass
-surface on supported Apple systems and the shared accessible fallback elsewhere.
-Collapse restores the compact view without losing the conversation, unsent question
-or exact pending-command recovery. Native phone Back collapses an expanded
-conversation first. In iPad split mode, app Back and Assistant source links follow
-the actual app chronology while the conversation pane stays open. Browser Back
-follows its actual guarded history. Compact action previews open the full review
-before confirmation. Place Copy beside Expand or Collapse in both modes; it copies
-the full latest displayed AI response as plain text and acknowledges only a
-successful write for the current response. Close reveals the retained workspace;
-it must not invent a destination or silently discard a draft. This records the owner's
-29 October clarification; platform rendering and recovery need their own evidence.
+With Pro enabled, the Assistant control in shared navigation toggles the compact
+conversation over the retained workspace. The latest reply opens the full
+conversation when activated and copies the full plain-text reply on a long
+press. A screen-reader copy action and full conversation copy control use the
+same acknowledged clipboard path. While a request or local app action is working,
+the composer displays current progress in the input area and replaces Send with
+Stop. Stop interrupts local actions and asks the server to cancel a running
+request using its exact confirmed identity.
+
+On iPhone, the expanded conversation hides workspace navigation and header.
+iPad opens the conversation beside the app when the window can fit both and
+stacks the panes in narrower multitasking windows. The composer uses Liquid
+Glass on supported Apple systems and respects the system transparency setting.
+Collapse restores the compact view and retains the conversation, unsent question
+and pending-request recovery. Native phone Back collapses the full conversation.
+App Back and Assistant source links follow the guarded navigation chronology.
+The full conversation contains approval and report details.
 
 Assistant replies, report charts, source links and approval controls in the
 conversation use a bounded A2UI 1.0 catalog. The renderer binds report source and
@@ -134,13 +128,20 @@ same chat and fills the owned form. The user confirms creation in that form.
 Additional modules register scoped handlers with their owning route and source.
 A later tool in the same run can cross a route only through a declared handoff.
 
-Take over revokes pending and in-flight UI actions. A changed scope or target
-invalidates the original action. The next turn can receive the exact applied,
-blocked or stopped result. The global Assistant remains available across
-supported app navigation. Its compact controls are measured so app actions
-remain reachable. Campus setup renders its A2UI controls inside the same chat and
-returns to the retained map for placement. The fullscreen backdrop uses
-supported UIKit Liquid Glass or browser blur and honors reduced transparency.
+Mounted tools can register exact visual targets before or after a step. The
+owning screen reveals a target in its own scroll view when necessary. An inert
+Assistant marker follows measured controls and published map geometry. Its
+motion follows the system preference and it never takes input focus. The
+composer names the current step while it is running. Stop and manual workspace
+interaction revoke pending UI actions. A changed scope or target invalidates
+the original action. The next turn can receive the exact applied, blocked or
+stopped result.
+
+The global Assistant remains available across supported navigation. The shell
+measures the compact dock so app actions remain reachable. Campus setup renders
+A2UI controls inside the conversation and returns to the retained map for
+placement. The fullscreen backdrop uses supported UIKit Liquid Glass or browser
+blur and honors reduced transparency.
 
 ### Public web browsing
 

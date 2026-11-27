@@ -6,7 +6,7 @@ import { useDerivedValue, type SharedValue } from 'react-native-reanimated';
 import type { CampusMapCanvasProps } from '../CampusMapCanvas.types';
 import type { CampusSceneElement } from '../../../../../packages/contracts/src/campus-scenes/types';
 import { projectScenePoint, sceneElementHeight, sceneElementWidth, scenePaintOrder, scenePointBounds, sceneUnitScale, unprojectScenePoint, type SceneViewport } from '../../../../../packages/contracts/src/campus-scenes/sceneGeometry';
-import { placeSceneMarkers } from '../../../../../packages/contracts/src/campus-scenes/sceneEvidencePlacement';
+import { placeSceneMarkers, sceneEvidenceAnchor } from '../../../../../packages/contracts/src/campus-scenes/sceneEvidencePlacement';
 import { isSceneIndoorAssetKey, sceneIndoorFootprint } from '../../../../../packages/contracts/src/campus-scenes/sceneIndoorAssets';
 import { DEFAULT_SCENE_SUNLIGHT } from '../../../../../packages/contracts/src/campus-scenes/sceneSunlight';
 import { nativeEditorVisibleElements } from '../../../lib/campus-scene-editor-view';
@@ -77,6 +77,13 @@ export default function CampusSkiaMap(props: CampusMapCanvasProps) {
   const selectionTone = props.placeHighlights?.find(row => row.elementId === selected)?.tone;
   const selectionColor = selectionTone ? colors[selectionTone] : colors.action;
   const selectedElement = useMemo(() => elements.find(element => element.id === selected), [elements, selected]);
+  const selectedAnchor = props.focusTargetRef && selectedElement ? sceneEvidenceAnchor(selectedElement) : null;
+  const projectedAnchor = selectedElement && selectedAnchor
+    ? projectScenePoint(selectedAnchor, selectedElement.kind === 'building' ? sceneElementHeight(selectedElement, unit) : 0, mode)
+    : null;
+  const settled = controller.settledViewport;
+  const anchorX = projectedAnchor ? projectedAnchor.x * settled.scale + settled.x : -1;
+  const anchorY = projectedAnchor ? projectedAnchor.y * settled.scale + settled.y : -1;
   const routePaths = useMemo(() => route?.status === 'available' ? route.segments.filter(segment => segment.floorId === floor)
     .map(segment => Skia.Path.Polygon(segment.points.map(point => projectScenePoint(point, unit * .15, mode)), false)) : [], [route, floor, unit, mode]);
   const points = useMemo(() => drawingPoints?.map(point => projectScenePoint(point, 0, mode)) ?? [], [drawingPoints, mode]);
@@ -103,6 +110,10 @@ export default function CampusSkiaMap(props: CampusMapCanvasProps) {
           {!draftPreview && people ? <CampusSkiaPeople {...people} {...{ scene, mode, unit, night }} camera={controller.viewport} viewport={size} /> : null}
           <CampusSkiaLabels {...{ elements, mode, unit, selected, markers, selectedMarkerId, interior, assetStates, night }} selectionColor={selectionColor} selectionTextColor={selectionTone ? colors.canvas : colors.onAction} size={viewportSize} viewport={controller.settledViewport} camera={controller.viewport} />
         </Canvas> : null}
+        {anchorX >= 0 && anchorX < size.width && anchorY >= 0 && anchorY < size.height
+          ? <View ref={props.focusTargetRef} collapsable={false} pointerEvents="none" accessibilityElementsHidden importantForAccessibility="no-hide-descendants"
+              style={{ position: 'absolute', left: anchorX, top: anchorY, width: 1, height: 1 }} />
+          : null}
       </View>
     </GestureDetector>
   </GestureHandlerRootView>;

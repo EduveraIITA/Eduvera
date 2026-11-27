@@ -14,6 +14,7 @@ import { assistantEntryAvailable, assistantPerspective } from '../../lib/assista
 import { assistantPresentationPermitted } from '../../lib/assistant-presentation-policy';
 import { ApiError } from '../../lib/api';
 import { useApi } from '../../lib/query';
+import { useCopilotTarget } from '../../ui/CopilotProvider';
 import { useAssistantPresentation } from '../../ui/AssistantPresentation';
 import { CAMPUS_ASSISTANT_TASK_HREF, clearAssistantWorkspaceTask, showAssistantWorkspaceTask } from '../../ui/assistant-workspace-task';
 
@@ -52,6 +53,9 @@ export function CampusSetupWorkspace({ campusName, phase, map, feedback, guidanc
     setTaskRequested(true);
     assistant.requestCanonical(CAMPUS_ASSISTANT_TASK_HREF);
   };
+  const visibleInApp = focused && assistant.active && assistant.mode !== 'fullscreen';
+  const campusTarget = useCopilotTarget('open_virtual_campus', { enabled: visibleInApp && phase !== 'interior', stage: 'after' });
+  const interiorsTarget = useCopilotTarget('open_campus_interiors', { enabled: visibleInApp && phase === 'interior', stage: 'after' });
   const title = phase === 'facilities' ? 'Set up facilities' : phase === 'publication' ? 'Review and publish' : phase === 'interior' ? 'Map building interiors' : 'Virtual campus';
   useLayoutEffect(() => {
     if (taskVisible && assistantGuidance) {
@@ -92,7 +96,7 @@ export function CampusSetupWorkspace({ campusName, phase, map, feedback, guidanc
             <View style={[styles.header, { backgroundColor: colors.surface, borderColor: colors.border }]}>
               <Pressable accessibilityRole="button" accessibilityLabel={backLabel} disabled={locked}
                 onPress={close} style={styles.icon}><CaretLeftIcon size={22} color={colors.ink} /></Pressable>
-              <View style={styles.titleGroup}>
+              <View ref={phase === 'interior' ? interiorsTarget : campusTarget} collapsable={false} style={styles.titleGroup}>
                 <Text accessibilityRole="header" aria-level={1} style={[styles.title, { color: colors.ink }]}>{title}</Text>
                 <Text numberOfLines={1} style={[styles.subtitle, { color: colors.muted }]}>{campusName}</Text>
               </View>

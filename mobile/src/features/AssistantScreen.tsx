@@ -27,12 +27,13 @@ import { AssistantAnswer, CompactAnswer, ConversationBubble, ConversationCanvas,
 import { assertAssistantWriteReady, assistantChartDisplayPoints, assistantCompactPresentation, assistantLinkedThreadRequest, assistantPreferenceState, assistantRunAnswer, assistantSourceLabel, prepareAssistantConversationChange } from './assistant/conversation-presentation';
 import { assistantCopySnapshot, copyAssistantResponse } from './assistant/assistant-copy';
 import { CampusA2uiSurface } from './campus/CampusA2uiSurface';
-import { CopilotStatusBar, useCopilot } from '../ui/CopilotProvider';
+import { useCopilot, useCopilotTarget } from '../ui/CopilotProvider';
 import type { WorkspaceTask } from '../ui/assistant-workspace-task';
 import { copilotCallId } from '../lib/copilot';
 
 type Props = { href: string; onNavigate: (href: string) => void; onCompactHeightChange?: (height: number) => void; workspaceTask?: WorkspaceTask | null };
 type Pending = AssistantCommand;
+type StopTarget = { threadId: string; runId: string };
 const label = (value: string) => value.replaceAll('_', ' ').replace(/^./, letter => letter.toUpperCase());
 type JournalEntry = { pending: Pending | null; busy: boolean; loading?: Promise<void>; listeners: Set<() => void> };
 const journals = new Map<string, JournalEntry>();
@@ -50,12 +51,12 @@ export function AssistantScreen(props: Props) {
 /** The campus host owns the real background, chrome, scope and safe area. This
  * feature frame supplies no route title, history boundary or duplicate banner. */
 function AssistantFrame({ children, footer, canvas = false, maxWidth = 720, footerPadding = 16, footerSeparator = false, onCompactHeightChange }: React.PropsWithChildren<{ onCompactHeightChange?: (height: number) => void; footer?: React.ReactNode; canvas?: boolean; maxWidth?: number; footerPadding?: number; footerSeparator?: boolean }>) {
-  const { expanded, expand, close, canClose, frame } = useAssistantPresentation();
+  const { expanded, frame } = useAssistantPresentation();
   // The host frame can be a tablet side pane. A window-sized limit must not
   // escape that pane or introduce a second layout/owner for its editor.
   const availableWidth = frame.width > 0 ? Math.max(0, frame.width - footerPadding * 2) : maxWidth;
   const contentMaxWidth = Math.min(expanded ? maxWidth : 440, availableWidth);
-  const preview = !canvas && !expanded ? <ConversationBubble onExpand={expand} onClose={canClose ? close : undefined} availableHeight={frame.height}>{children}</ConversationBubble> : null;
+  const preview = !canvas && !expanded ? <ConversationBubble availableHeight={frame.height}>{children}</ConversationBubble> : null;
   return <View pointerEvents="box-none" style={{ flex: 1, minHeight: 0 }}><PageBody passThrough={!expanded} footer={canvas ? footer : preview} footerPadding={footerPadding} footerSeparator={footerSeparator} maxWidth={contentMaxWidth} footerBackgroundColor="transparent" onFooterHeightChange={expanded ? undefined : onCompactHeightChange}>
     {canvas ? <View pointerEvents={expanded ? 'auto' : 'box-none'} style={{ flex: 1, minHeight: 0 }}>{children}</View> : expanded ? <ScrollView keyboardShouldPersistTaps="handled" contentContainerStyle={{ padding: 20, gap: 16, flexGrow: 1 }}>{children}</ScrollView> : <View pointerEvents="none" style={{ flex: 1 }} />}
   </PageBody></View>;
@@ -79,7 +80,12 @@ function AssistantAccess(props: Props & { portal: AssistantPortal }) {
 
 function Conversation({ href, onNavigate, onCompactHeightChange, workspaceTask, portal, accessPaused, preferenceError, preferenceRefreshing, onPreferenceRetry }: Props & { portal: AssistantPortal; accessPaused: boolean; preferenceError?: string; preferenceRefreshing: boolean; onPreferenceRetry: () => void }) {
   const { scopeKey, status: sessionStatus } = useSession(), client = useQueryClient(), { colors } = useTheme(), presentation = useAssistantPresentation();
-  const copilot=useCopilot();
+  const copilot = useCopilot();
+  const workspaceHeading = useCopilotTarget('open_campus_interiors', { stage: 'after', enabled: !!workspaceTask && presentation.mode === 'fullscreen' });
+  const [replyFocus, setReplyFocus] = useState<'full' | 'mini' | null>(null);
+  const [sendWork, setSendWork] = useState<'sending' | 'stopping' | null>(null);
+  const stopFlight = useRef<((settled: boolean) => void) | null>(null);
+  const cancelling = useRef(false);
   const accessPausedRef = useRef(accessPaused); accessPausedRef.current = accessPaused;
   const params = new URLSearchParams(href.split('?')[1] ?? ''), studentId = portal === 'parent' ? params.get('student_id') ?? undefined : undefined;
   const scope = new URLSearchParams({ portal, ...(studentId ? { student_id: studentId } : {}) });
@@ -141,14 +147,26 @@ function Conversation({ href, onNavigate, onCompactHeightChange, workspaceTask, 
       copyTimer.current = setTimeout(() => { setCopyState('idle'); copyTimer.current = null; }, 2200);
     } finally { copyBusy.current = false; }
   }
+  async function stopOwnedRun(target: StopTarget, assertCurrent: () => void) {
+    assertCurrent();
+    const value = await apiFetch<{ cancelled: boolean }>(`${root}/threads/${encodeURIComponent(target.threadId)}/runs/${encodeURIComponent(target.runId)}/cancel`, { method: 'POST', body: '{}' });
+    assertCurrent();
+    if (typeof value?.cancelled !== 'boolean') throw new Error('Cancellation was not confirmed. Refresh the original request.');
+  }
+  function showStopError(cause: unknown, assertCurrent: () => void) {
+    try { assertCurrent(); } catch { return; }
+    setError(cause instanceof Error ? cause.message : 'Cancellation was not confirmed. Refresh before trying again.');
+  }
+  const localPhase = copilot.pending?.threadId === threadId || copilot.detail?.threadId === threadId ? copilot.activity?.phase : undefined;
+  const localWork = localPhase === 'preparing' || localPhase === 'applying';
   const focusedPreview = assistantCompactPresentation(runs, { attention: false, loading: false });
   const warningRef = useRef<React.ComponentRef<typeof View>>(null), reviewRef = useRef<React.ComponentRef<typeof View>>(null), reviewId = focusedPreview.mode === 'review' ? focusedPreview.action?.id ?? '' : '';
   const awaiting = runs.some(run => run.action?.status === 'pending' || run.action?.status === 'executing');
   const webAvailable = status.data?.public_web_available === true;
   const canSendRequest = status.data?.ready === true || webAvailable;
-  const locked = !presentation.active || accessPaused || busy || !!pending || !journal || !!activeRun || awaiting || !canSendRequest || status.data?.pro_features_enabled !== true || threads.isPending || threads.isError || !!threadId && (detail.isPending || detail.isError) || missingLinked && selected === null;
+  const locked = !presentation.active || accessPaused || busy || !!pending || !journal || !!activeRun || localWork || awaiting || !canSendRequest || status.data?.pro_features_enabled !== true || threads.isPending || threads.isError || !!threadId && (detail.isPending || detail.isError) || missingLinked && selected === null;
   const conversationChange = useRef({ source: '', question: '', newBlocked: true, historyBlocked: true, knownIds: [] as string[] }), conversationPrompt = useRef(false);
-  conversationChange.current = { source: JSON.stringify([scopeKey, href, portal, studentId, threadId]), question, newBlocked: locked, historyBlocked: busy || !!pending || !!activeRun || awaiting, knownIds: knownThreads.map(thread => thread.id) };
+  conversationChange.current = { source: JSON.stringify([scopeKey, href, portal, studentId, threadId]), question, newBlocked: locked, historyBlocked: busy || !!pending || !!activeRun || localWork || awaiting, knownIds: knownThreads.map(thread => thread.id) };
   useScreenExitGuard({ blocked: busy, dirty: !!question.trim() && !pending, draftSignature: JSON.stringify([href, portal, studentId, threadId, question, pending?.kind === 'send' ? pending.clientId : pending?.kind === 'decision' ? pending.actionId : null]), title: 'Leave this assistant question?', message: 'The unsent question will be lost. Saved conversations stay available.', onLeave: () => setQuestion('') });
   const refresh = async () => { await Promise.all([status.refetch({ throwOnError: true }), threads.refetch({ throwOnError: true }), ...(threadId ? [detail.refetch({ throwOnError: true })] : [])]); };
   async function perform(command: Pending) {
@@ -159,6 +177,16 @@ function Conversation({ href, onNavigate, onCompactHeightChange, workspaceTask, 
     const recovering = entry.pending !== null, progress = { dispatched: false, accepted: command.phase === 'accepted', cleared: false };
     const retained = (value: Pending | null) => { entry.pending = value; notify(entry); };
     let assertCurrent: (() => void) | undefined;
+    let runTarget: StopTarget | undefined, stopRequested = false, settledRun = false, cancellation: Promise<void> | undefined;
+    const cancelWhenReady = () => {
+      if (!stopRequested || settledRun || !runTarget || !assertCurrent || cancellation) return;
+      const verify = assertCurrent;
+      cancellation = stopOwnedRun(runTarget, verify).catch(cause => showStopError(cause, verify));
+    };
+    if (command.kind === 'send' && command.phase !== 'accepted') {
+      stopFlight.current = settled => { stopRequested = true; settledRun = settled; setSendWork('stopping'); cancelWhenReady(); };
+      setSendWork('sending');
+    }
     try {
       assertCurrent = captureOperation();
       const completed = await dispatchAssistantCommand({ command, assertCurrent, progress,
@@ -173,19 +201,29 @@ function Conversation({ href, onNavigate, onCompactHeightChange, workspaceTask, 
             method:'POST',body:JSON.stringify({question:value.question,client_id:value.clientId,...(value.uiContext?{ui_context:value.uiContext}:{})}),
           });
           assertCurrent?.();
-          if (lease && copilotCallId(receipt?.run_id))
-            copilot.follow({id:receipt.run_id,threadId:value.threadId,lease});
+          if (copilotCallId(receipt?.run_id)) {
+            runTarget = { threadId: value.threadId, runId: receipt.run_id };
+            if (stopRequested) cancelWhenReady();
+            else if (lease) copilot.follow({ id: receipt.run_id, threadId: value.threadId, lease });
+          }
           return receipt;
         },
         clear: () => SecureStore.deleteItemAsync(journal),
       });
-      assertCurrent(); await client.invalidateQueries({ queryKey: ['campus', scopeKey] }); assertCurrent();
+      assertCurrent();
+      if (cancellation) await cancellation;
+      await client.invalidateQueries({ queryKey: ['campus', scopeKey] });
+      if (cancellation) await cancellation;
+      assertCurrent();
       setSelected(completed.threadId); if (completed.kind === 'send') setQuestion('');
     } catch (cause) {
       try { assertCurrent?.(); if (!assertCurrent) return; } catch { return; }
       if (cause instanceof ApiError && assistantDefinitiveRefusal(cause.status, progress, recovering)) { try { await clearAssistantCommand({ assertCurrent, clear: () => SecureStore.deleteItemAsync(journal), retained, progress }); } catch { return; } }
       setError(progress.accepted ? 'The assistant request was accepted. Refresh its saved conversation; it will not be sent again.' : cause instanceof Error ? cause.message : 'The assistant request could not be confirmed.');
-    } finally { entry.busy = false; notify(entry); running.current = false; }
+    } finally {
+      stopFlight.current = null; setSendWork(null);
+      entry.busy = false; notify(entry); running.current = false;
+    }
   }
   async function changeConversation(target: string | null) {
     if (conversationPrompt.current) return;
@@ -216,7 +254,7 @@ function Conversation({ href, onNavigate, onCompactHeightChange, workspaceTask, 
     // An ambiguous creation is an explicit binding of the exact retained
     // question/key, not a new conversation or a discard of that preparation.
     if (pending?.kind === 'send' && pending.phase === 'creating') { void resolveUnsent(id); return; }
-    if (!pending && !activeRun && !awaiting) void changeConversation(id);
+    if (!pending && !activeRun && !localWork && !awaiting) void changeConversation(id);
   }
   async function resolveUnsent(threadId?: string) {
     if (!presentation.active || !journal || busy || pending?.kind !== 'send' || pending.phase !== 'creating') return;
@@ -231,16 +269,26 @@ function Conversation({ href, onNavigate, onCompactHeightChange, workspaceTask, 
   useEffect(() => {
     const observed=copilot.pending;
     if (!observed || observed.threadId!==threadId) return;
-    if (accessPaused || !presentation.active && copilot.activity?.phase!=='applying') { copilot.takeOver(); return; }
+    if (accessPaused || !presentation.active) { copilot.takeOver(); return; }
     if (runs.some(run=>run.id===observed.id&&run.status!=='running'))
       copilot.inspect(observed.id,()=>{ if(presentation.mode==='fullscreen')presentation.collapse(); });
   },[copilot.pending,copilot.activity?.phase,presentation.active,accessPaused,threadId,runs]);
   async function cancelRun() {
-    if (!presentation.active || !activeRun || !threadId || busy || pending || accessPaused) return;
-    copilot.takeOver();setBusy(true); setError('');
-    try { const assertCurrent = captureOperation(); const value = await apiFetch<{ cancelled: boolean }>(`${root}/threads/${encodeURIComponent(threadId)}/runs/${encodeURIComponent(activeRun.id)}/cancel`, { method: 'POST', body: '{}' }); assertCurrent(); if (typeof value?.cancelled !== 'boolean') throw new Error('Cancellation was not confirmed. Refresh the original request.'); await detail.refetch(); assertCurrent(); }
-    catch (cause) { setError(cause instanceof Error ? cause.message : 'Cancellation was not confirmed. Refresh before trying again.'); }
-    finally { setBusy(false); }
+    if (!presentation.active || accessPaused || cancelling.current) return;
+    copilot.takeOver();
+    if (stopFlight.current) {
+      const followedRun = copilot.pending?.threadId === threadId ? copilot.pending.id : undefined;
+      stopFlight.current(!!followedRun && runs.some(run => run.id === followedRun && run.status !== 'running'));
+      return;
+    }
+    if (!activeRun || !threadId || busy || pending) return;
+    let assertCurrent: () => void;
+    try { assertCurrent = captureOperation(); } catch { return; }
+    cancelling.current = true;
+    setBusy(true); setError('');
+    try { await stopOwnedRun({ threadId, runId: activeRun.id }, assertCurrent); await detail.refetch(); assertCurrent(); }
+    catch (cause) { showStopError(cause, assertCurrent); }
+    finally { cancelling.current = false; setBusy(false); }
   }
   useEffect(() => {
     if (!Number.isSafeInteger(presentation.requestRevision) || observedRequest.current >= presentation.requestRevision) return;
@@ -258,19 +306,38 @@ function Conversation({ href, onNavigate, onCompactHeightChange, workspaceTask, 
   if (status.isPending) return <AssistantFrame><PresentationExit /><Loading /></AssistantFrame>;
   if (status.isError || !status.data) return <AssistantFrame><PresentationExit /><AssistantMark /><Empty title={status.error instanceof ApiError && status.error.status === 403 ? 'AI access could not be confirmed' : 'AI assistance is unavailable'} message={status.error instanceof ApiError && status.error.status === 403 ? `${status.error.message} Staff need “Use AI assistance” and each underlying campus permission.` : status.error?.message} onRetry={() => void status.refetch()} /><ControlButton title="Account settings" onPress={() => onNavigate('/more/account')} /></AssistantFrame>;
   if (!status.data.pro_features_enabled) return <AssistantFrame><PresentationExit /><AssistantMark /><Empty title="AI assistance is turned off" /><ControlButton title="Account settings" onPress={() => onNavigate('/more/account')} /></AssistantFrame>;
-  const attention = accessPaused ? 'access-check' : pending ? `recovery:${pending.kind}:${pending.phase ?? 'unconfirmed'}` : error ? `error:${error}` : linkedRequest ? 'linked-conversation' : !canSendRequest ? 'provider-unavailable' : missingLinked && selected === null ? 'missing-conversation' : threads.isError ? 'history-error' : detail.isError ? 'conversation-error' : '';
-  const copyControl = <ResponseCopyControl onCopy={() => void copyResponse()} disabled={!copySnapshot} state={copyOwner.current === copyIdentity ? copyState : 'idle'} />;
-  const campusDetail=copilot.detail?.threadId===threadId?copilot.detail:null;
-  const composer = <View style={{ gap: 8, minHeight: 0, flexShrink: 1, width: '100%', maxWidth: presentation.expanded ? 720 : 440, alignSelf: 'center' }}><CopilotStatusBar /><CompactConversation visible={!presentation.expanded} runs={runs} onExpand={presentation.expand} onClose={presentation.canClose ? presentation.close : undefined} onNavigate={onNavigate} copyControl={copyControl}
-    attention={attention} pending={pending} error={error} preferenceError={preferenceError} detailError={detail.error?.message} historyError={threads.error?.message} loading={!!threadId && detail.isPending || threads.isPending} availableHeight={presentation.frame.height} />
-    {campusDetail?<CampusNameDetail key={campusDetail.id} id={campusDetail.id} locked={locked}
-      onAnswer={copilot.answerDetail} onUseForm={copilot.takeOver}/>:<ConversationComposer value={question} onChange={setQuestion} locked={locked} busy={busy} running={!!activeRun} stopDisabled={busy || !!pending || accessPaused}
-    status={accessPaused ? 'Access check paused. Your question is retained.' : pending ? 'Recover the earlier request before another question.' : activeRun ? `${activeRun.progress || 'Checking your request'}…` : awaiting ? 'Review the pending change before another question.' : !status.data.ready ? webAvailable ? 'Public web is available. Try “Search the web for…”' : 'AI provider unavailable. Saved conversations remain available.' : undefined}
-    onStop={() => void cancelRun()} onSend={() => void perform({ kind: 'send', threadId, question: question.trim(), clientId: Crypto.randomUUID(), uiContext:copilot.context() })} />}</View>;
+  const attention = accessPaused ? 'access-check' : pending && !busy ? `recovery:${pending.kind}:${pending.phase ?? 'unconfirmed'}` : error ? `error:${error}` : linkedRequest ? 'linked-conversation' : !canSendRequest ? 'provider-unavailable' : missingLinked && selected === null ? 'missing-conversation' : threads.isError ? 'history-error' : detail.isError ? 'conversation-error' : '';
+  const currentCopyState = copyOwner.current === copyIdentity ? copyState : 'idle';
+  const copyControl = <ResponseCopyControl onCopy={() => void copyResponse()} disabled={!copySnapshot} state={currentCopyState} />;
+  const campusDetail = copilot.detail?.threadId === threadId ? copilot.detail : null;
+  const localLabel = localPhase === 'applying' ? copilot.activity?.label : undefined;
+  const serverProgress = activeRun?.progress?.trim().replace(/[.…]+$/u, '');
+  const working = sendWork === 'stopping' || cancelling.current ? 'Stopping…'
+    : localLabel ? `${localLabel}…`
+      : sendWork || activeRun || localWork ? `${serverProgress && serverProgress !== 'Checking your request' ? serverProgress : 'Thinking'}…` : undefined;
+  const stopDisabled = accessPaused || sendWork === 'stopping' || cancelling.current
+    || (!sendWork && !localWork && (busy || !!pending));
+  const composerStatus = accessPaused ? 'Access check paused. Your question is retained.'
+    : pending ? 'Recover the earlier request before another question.'
+      : awaiting ? 'Review the pending change before another question.'
+        : copilot.activity?.phase === 'stopped' ? 'Assistant stopped.'
+          : copilot.activity?.phase === 'blocked' ? copilot.activity.label
+            : !status.data.ready ? webAvailable ? 'Public web is available. Try “Search the web for…”' : 'AI provider unavailable. Saved conversations remain available.' : undefined;
+  const composer = <View style={{ gap: 8, minHeight: 0, flexShrink: 1, width: '100%', maxWidth: presentation.expanded ? 720 : 440, alignSelf: 'center' }}>
+    {!presentation.expanded ? <CompactConversation runs={runs} onExpand={() => { setReplyFocus('full'); presentation.expand(); }}
+      onCopy={copySnapshot ? () => void copyResponse() : undefined} copyState={currentCopyState}
+      restoreFocus={replyFocus === 'mini' ? () => setReplyFocus(null) : undefined} attention={attention} pending={pending}
+      loading={!!threadId && detail.isPending || threads.isPending} working={!!working} /> : null}
+    {campusDetail ? <CampusNameDetail key={campusDetail.id} id={campusDetail.id} locked={locked}
+      onAnswer={copilot.answerDetail} onUseForm={copilot.takeOver} /> : null}
+    {!campusDetail || working ? <ConversationComposer value={question} onChange={setQuestion} locked={locked} busy={busy} working={working}
+      stopDisabled={stopDisabled} status={composerStatus} onStop={() => void cancelRun()}
+      onSend={() => void perform({ kind: 'send', threadId, question: question.trim(), clientId: Crypto.randomUUID(), uiContext: copilot.context() })} /> : null}
+  </View>;
   return <AssistantFrame canvas maxWidth={720} footer={composer} footerPadding={16} footerSeparator={false} onCompactHeightChange={onCompactHeightChange}>
     <View style={{ flex: presentation.expanded ? 1 : 0, minHeight: 0, display: presentation.expanded ? 'flex' : 'none' }} accessibilityElementsHidden={!presentation.expanded} importantForAccessibility={presentation.expanded ? 'auto' : 'no-hide-descendants'}>
-    <ConversationToolbar onHistory={() => setHistory(true)} onNew={createConversation} historyDisabled={busy} newDisabled={locked} onCollapse={presentation.collapse} copyControl={copyControl} availableWidth={presentation.frame.width} />
-    {workspaceTask ? <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12, paddingHorizontal: 16, paddingVertical: 8, borderBottomWidth: StyleSheet.hairlineWidth, borderColor: colors.border }}>
+    <ConversationToolbar onHistory={() => setHistory(true)} onNew={createConversation} historyDisabled={busy} newDisabled={locked} onCollapse={() => { setReplyFocus('mini'); presentation.collapse(); }} copyControl={copyControl} availableWidth={presentation.frame.width} focusTitle={presentation.expanded && replyFocus === 'full' ? () => setReplyFocus(null) : undefined} />
+    {workspaceTask ? <View ref={workspaceHeading} collapsable={false} style={{ flexDirection: 'row', alignItems: 'center', gap: 12, paddingHorizontal: 16, paddingVertical: 8, borderBottomWidth: StyleSheet.hairlineWidth, borderColor: colors.border }}>
       <Text accessibilityRole="header" aria-level={2} style={{ flex: 1, color: colors.ink, fontSize: 16, fontWeight: '600' }}>{workspaceTask.title}</Text>
       <ControlButton title="Back to map" onPress={workspaceTask.onReturn} />
     </View> : null}
@@ -289,39 +356,37 @@ function Conversation({ href, onNavigate, onCompactHeightChange, workspaceTask, 
       {workspaceTask ? <View style={{ gap: 12 }}>{workspaceTask.content}</View> : null}
     </ConversationCanvas></View>
     <View pointerEvents="none" style={{ flex: presentation.expanded ? 0 : 1 }} />
-    <ConversationHistory visible={presentation.active && history} onClose={() => setHistory(false)} onDismiss={() => setHistoryDismissal(value => value + 1)} threads={knownThreads} currentId={threadId} loading={threads.isPending} canSelect={!busy && (pending?.kind === 'send' && pending.phase === 'creating' || !pending && !activeRun && !awaiting)} onSelect={selectConversation}>
+    <ConversationHistory visible={presentation.active && history} onClose={() => setHistory(false)} onDismiss={() => setHistoryDismissal(value => value + 1)} threads={knownThreads} currentId={threadId} loading={threads.isPending} canSelect={!busy && (pending?.kind === 'send' && pending.phase === 'creating' || !pending && !activeRun && !localWork && !awaiting)} onSelect={selectConversation}>
       <InfoDisclosure title="Assistant settings"><Facts items={[{ label: 'Provider', value: status.data.provider }, { label: 'Model', value: status.data.model || 'Not configured' }, { label: 'Connection', value: status.data.ready ? 'Configuration available' : 'Currently unavailable' }]} /><Text style={[styles.caption, { color: colors.muted }]}>Provider credentials and deployment limits are managed by the server. Availability is not proof of a successful answer.</Text><ControlButton title="Pro features & remembered preferences" onPress={() => { setHistory(false); onNavigate('/more/account'); }} /><ControlButton title="Connected apps" onPress={() => { setHistory(false); onNavigate('/more/connections'); }} /></InfoDisclosure>
     </ConversationHistory>
   </AssistantFrame>;
 }
 
-function CompactConversation({ visible, runs, onExpand, onClose, onNavigate, attention, pending, error, preferenceError, detailError, historyError, loading, copyControl, availableHeight }: {
-  visible: boolean; runs: readonly AgentRun[]; onExpand: () => void; onClose?: () => void; onNavigate: (href: string) => void;
-  attention: string; pending: Pending | null; error: string; preferenceError?: string; detailError?: string; historyError?: string; loading: boolean; copyControl?: React.ReactNode; availableHeight?: number;
+function CompactConversation({ runs, onExpand, onCopy, copyState, restoreFocus, attention, pending, loading, working }: {
+  runs: readonly AgentRun[]; onExpand: () => void; onCopy?: () => void; copyState: ConversationCopyState;
+  restoreFocus?: () => void; attention: string; pending: Pending | null; loading: boolean; working: boolean;
 }) {
-  const { colors } = useTheme();
-  // A compact preview must not pair failed verification/recovery with an older
-  // successful chart. The full mounted transcript owns recovery and approval.
-  const problem = attention === 'access-check' ? { title: 'Access check paused', message: `Your conversation and unsent question are retained. New requests and decisions are paused.${preferenceError ? ` ${preferenceError}` : ''}` }
-    : pending ? { title: pending.phase === 'accepted' ? 'Request accepted' : 'Recovery needed', message: pending.phase === 'accepted' ? 'Finish secure local cleanup in the full conversation. This request will not be submitted again.' : pending.phase === 'creating' ? 'Conversation creation is unconfirmed. The question has not been sent. Open the full conversation to choose its owned history or discard the local preparation.' : pending.kind === 'send' ? 'The result is unconfirmed. Open the full conversation to recover only the original question and message key.' : 'The decision is unconfirmed. Open the full conversation to recover the original decision.' }
-      : error ? { title: 'Request needs attention', message: error }
-        : attention === 'conversation-error' ? { title: 'Conversation could not load', message: detailError || 'The current owned conversation could not be verified. Open it to retry.' }
-          : attention === 'history-error' ? { title: 'Conversations could not load', message: historyError || 'The current owned history could not be verified. Open it to retry.' }
-            : attention === 'missing-conversation' ? { title: 'Conversation unavailable', message: 'The requested conversation is not in your current owned history. Open the full conversation to choose one explicitly.' }
-              : attention === 'linked-conversation' ? { title: 'Conversation link needs attention', message: 'Open the full conversation to review the requested selection. Your current conversation and unsent question are retained until the selection is accepted.' }
-                : attention === 'provider-unavailable' ? { title: 'AI provider unavailable', message: 'Saved authorized conversations and existing review remain available. New questions wait for the configured provider or allowance.' } : null;
-  const { mode, latest, action, chartSource, source } = assistantCompactPresentation(runs, { attention: !!problem, loading });
-  const showAction = mode === 'review', chart = chartSource?.chart;
-  const compactSource = !problem && !loading ? showAction || action?.status === 'succeeded'
-    ? action ? <AssistantActionRecord action={action} onNavigate={onNavigate} /> : undefined
-    : source ? <AssistantReport source={source} showSource onNavigate={onNavigate} /> : undefined : undefined;
-  return <ConversationBubble visible={visible} onExpand={onExpand} onClose={onClose} hasChart={!!chart} source={compactSource} copyControl={copyControl} availableHeight={availableHeight} minimizedLabel={problem?.title ?? (showAction ? action?.status === 'pending' ? 'Review needed' : 'Check the result' : undefined)}>
-    {!visible ? null : problem ? <View style={{ gap: 8 }}><Text accessibilityRole="header" aria-level={2} style={[styles.chartTitle, { color: colors.ink }]}>{problem.title}</Text><Notice tone="warning" message={problem.message} /><ControlButton title="Open full conversation" onPress={onExpand} /></View>
-      : loading ? <Loading label="Loading conversation…" />
-        : showAction && action ? <View style={{ gap: 8 }}><Text accessibilityRole="header" aria-level={2} style={[styles.chartTitle, { color: colors.ink }]}>{action.status === 'pending' ? 'Review needed' : action.status === 'executing' ? 'Verifying result' : 'Check the affected record'}</Text><Text style={[styles.body, { color: colors.ink }]}>{action.title}</Text>{action.preview ? <Text style={[styles.caption, { color: colors.muted }]}>{[action.preview.student, action.preview.class_name, action.preview.date].filter(Boolean).join(' · ')}</Text> : null}{action.contract?.summary ? <Text style={[styles.caption, { color: colors.muted }]}>{action.contract.summary}</Text> : null}<Notice tone="warning" message={action.status === 'pending' ? Date.parse(action.expires_at) <= Date.now() ? 'This preview has expired. Ask for a fresh preview before changing the record.' : `Nothing has changed. Review the complete proposal before confirmation. Expires ${new Date(action.expires_at).toLocaleTimeString()}.` : action.receipt?.message || (action.status === 'executing' ? 'The server is verifying the result. No additional change has been confirmed here.' : 'The result needs verification. Check the affected record before another attempt.')} /><ControlButton title={action.status === 'pending' ? 'Expand to review' : 'Open full conversation'} onPress={onExpand} /></View>
-          : latest ? <><AssistantReply run={latest} chart={chart} onExpand={onExpand} />{latest.status === 'failed' ? <Notice tone="warning" message="The request stopped. No action was automatically retried." /> : null}{chartSource && chart ? <AssistantReport source={chartSource} showChart compact onNavigate={onNavigate} /> : null}
-            <PublicWebSources sources={latest.public_web_sources?.slice(0, 1)} compact /></>
-            : <CompactAnswer text="What would you like to know? Ask about your campus or prepare a change for review." onExpand={onExpand} />}
+  const { mode, latest, action, chartSource } = assistantCompactPresentation(runs, { attention: !!attention, loading });
+  const chart = chartSource?.chart;
+  let label: string | undefined;
+  if (mode === 'attention') {
+    if (pending) label = pending.phase === 'accepted' ? 'Request accepted. Open to finish recovery.' : 'Your request needs recovery. Tap to review.';
+    else if (attention === 'access-check') label = 'Access check paused. Tap for details.';
+    else if (attention === 'provider-unavailable') label = 'AI provider unavailable. Tap for details.';
+    else label = 'Assistant needs your attention. Tap for details.';
+  } else if (mode === 'review') {
+    label = action?.status === 'pending' ? 'Review the proposed change.'
+      : action?.status === 'executing' ? 'Verifying the result…' : 'Check the affected record.';
+  } else if (mode === 'loading') {
+    label = 'Loading conversation…';
+  } else if (!latest || latest.status === 'running') {
+    // While a run is active the composer owns working status. The reply remains
+    // an entry point for history, source details and the full transcript.
+    label = working ? 'Open conversation' : latest ? 'Request in progress. Open conversation.' : 'Open conversation';
+  }
+  return <ConversationBubble summary>
+    {label !== undefined ? <CompactAnswer text={label} onExpand={onExpand} restoreFocus={restoreFocus} />
+      : latest ? <AssistantReply run={latest} chart={chart} onExpand={onExpand} onCopy={onCopy} copyState={copyState} restoreFocus={restoreFocus} /> : null}
   </ConversationBubble>;
 }
 
@@ -368,11 +433,14 @@ function CampusNameDetail({id,locked,onAnswer,onUseForm}:{id:string;locked:boole
   </View>;
 }
 
-function AssistantReply({ run, chart, onExpand }: { run: AgentRun; chart?: AgentChartData; onExpand?: () => void }) {
+type ConversationCopyState = 'idle' | 'copying' | 'copied' | 'failed';
+function AssistantReply({ run, chart, onExpand, onCopy, copyState, restoreFocus }: {
+  run: AgentRun; chart?: AgentChartData; onExpand?: () => void; onCopy?: () => void; copyState?: ConversationCopyState; restoreFocus?: () => void;
+}) {
   const answer = assistantRunAnswer(run);
   const messages = useMemo(() => assistantReplyMessages(run.id, answer), [run.id, answer]);
   return <CampusA2uiSurface catalog={ASSISTANT_A2UI_CATALOG} messages={messages} onAction={() => {}}
-    renderAssistantText={text => onExpand ? <CompactAnswer text={text} chart={chart} onExpand={onExpand} /> : <AssistantAnswer text={text} chart={chart} />}/>;
+    renderAssistantText={text => onExpand ? <CompactAnswer text={text} chart={chart} onExpand={onExpand} onCopy={onCopy} copyState={copyState} restoreFocus={restoreFocus} /> : <AssistantAnswer text={text} chart={chart} />}/>;
 }
 
 function AssistantReport({ source, showChart = false, showSource = false, compact = false, onNavigate }: {

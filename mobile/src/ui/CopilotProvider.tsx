@@ -1,13 +1,11 @@
-import { createContext, useCallback, useContext, useEffect, useLayoutEffect, useMemo, useRef, useState, type PropsWithChildren } from 'react';
-import { AccessibilityInfo, Animated, AppState, Platform, StyleSheet, Text, View } from 'react-native';
+import { createContext, useCallback, useContext, useEffect, useLayoutEffect, useMemo, useRef, useState, type PropsWithChildren, type RefCallback } from 'react';
+import { AppState } from 'react-native';
 import { useIsFocused, usePathname, useRootNavigationState } from 'expo-router';
 import { useSession } from '../auth/SessionProvider';
 import { apiFetch, captureApiContext } from '../lib/api';
 import { campusHrefForRoute, focusedCampusRoute, type CampusNavigationState } from '../lib/back-policy';
 import { copilotCallId, copilotRouteContext, copilotToolNames, copilotToolAvailableOn, readCopilotPlan, validCopilotArgs, type CopilotContext, type CopilotResult, type CopilotToolName } from '../lib/copilot';
-import { ControlButton } from './DomainControls';
-import { useReducedMotion } from './Motion';
-import { useTheme } from './theme';
+import { copilotWait, measureCopilotTarget, type CopilotRect, type CopilotTargetNode } from '../lib/copilot-target';
 
 type ActionRegistration = {
   name: CopilotToolName;
@@ -23,8 +21,21 @@ type Run = { id: string; threadId: string; lease: Lease };
 type Activity = { label: string; phase: 'preparing' | 'applying' | 'applied' | 'blocked' | 'stopped'; tool?: CopilotToolName; step?: number; total?: number };
 type Detail = { id: string; threadId: string };
 type OwnedDetail = Detail & { binding: string; action: RegisteredAction; generation: number };
-type Execution = { run: Run; controller: AbortController; binding: string; tool?: CopilotToolName; callId?: string; destinationPath?: string };
+type Execution = { run: Run; controller: AbortController; binding: string; tool?: CopilotToolName; callId?: string; destinationPath?: string; applied?: boolean };
+type TargetStage = 'before' | 'after';
+type TargetOptions = {
+  enabled?: boolean;
+  stage?: TargetStage;
+  reveal?: (node: CopilotTargetNode, signal: AbortSignal) => void | Promise<void>;
+};
+type TargetRegistration = {
+  node(): CopilotTargetNode | null;
+  reveal?(node: CopilotTargetNode, signal: AbortSignal): void | Promise<void>;
+};
+type Pointer = { binding: string; rect: CopilotRect };
 type Runtime = {
+  registerTarget(tool: CopilotToolName, stage: TargetStage, target: TargetRegistration): () => void;
+  pointer: Pointer | null;
   register(action: RegisteredAction): () => void;
   registerCampusTarget(owner: symbol, id: string): () => void;
   context(): CopilotContext | undefined;
@@ -39,7 +50,7 @@ type Runtime = {
 };
 const noop = () => {};
 const RuntimeContext = createContext<Runtime>({
-  register: () => noop, registerCampusTarget: () => noop, context: () => undefined, capture: () => undefined,
+  register: () => noop, registerTarget: () => noop, pointer: null, registerCampusTarget: () => noop, context: () => undefined, capture: () => undefined,
   follow: noop, inspect: noop, takeOver: noop, answerDetail: async () => false, detail: null, pending: null, activity: null,
 });
 
@@ -55,10 +66,13 @@ export function CopilotProvider({ children }: PropsWithChildren) {
   const eligible = session.status === 'authenticated' && session.environment.mode === 'live' && !session.environment.unavailable;
   const current = useRef({ binding, eligible, screen, pathname }); current.current = { binding, eligible, screen, pathname };
   const byTool = useRef(new Map<CopilotToolName, Set<Parameters<Runtime['register']>[0]>>());
+  const targets = useRef(new Map<string, Set<TargetRegistration>>());
   const active = useRef<Run | null>(null), generation = useRef(0), lastResult = useRef<CopilotResult | undefined>(undefined);
   const execution = useRef<Execution | null>(null);
   const campusTargets = useRef(new Map<symbol, string>());
   const detailOwner = useRef<OwnedDetail | null>(null);
+  const detailAnswer = useRef<AbortController | null>(null);
+  const [pointer, setPointer] = useState<Pointer | null>(null);
   const [detail, setDetail] = useState<Detail | null>(null);
   const [pending, setPending] = useState<Run | null>(null), [activity, setActivity] = useState<Activity | null>(null);
   const mounted = useRef(true);
@@ -71,6 +85,36 @@ export function CopilotProvider({ children }: PropsWithChildren) {
     const entries = byTool.current.get(action.name) ?? new Set();
     byTool.current.set(action.name, entries); entries.add(action);
     return () => { entries.delete(action); if (!entries.size) byTool.current.delete(action.name); };
+  }, []);
+  const registerTarget: Runtime['registerTarget'] = useCallback((tool,stage,target) => {
+    const key = `${tool}:${stage}`;
+    const entries = targets.current.get(key) ?? new Set<TargetRegistration>();
+    entries.add(target);
+    targets.current.set(key, entries);
+    return () => { entries.delete(target); if (!entries.size) targets.current.delete(key); };
+  }, []);
+  const showTarget = useCallback(async (tool: CopilotToolName, stage: TargetStage, signal: AbortSignal,
+    isCurrent: () => boolean) => {
+    const key = `${tool}:${stage}`;
+    const findTarget = () => {
+      const candidates = [...(targets.current.get(key) ?? [])].filter(target => target.node());
+      return candidates.length === 1 ? candidates[0] : undefined;
+    };
+    let target = findTarget();
+    for (let attempt=0; !target && stage==='after' && isCurrent() && attempt<9; attempt++) {
+      await copilotWait(50, signal);
+      target = findTarget();
+    }
+    const node = target?.node();
+    if (!target || !node || !isCurrent()) return false;
+    const binding = current.current.binding;
+    try {
+      if (target.reveal) await Promise.race([target.reveal(node, signal), copilotWait(650,signal)]);
+      const rect = await measureCopilotTarget(node, signal);
+      if (!rect || !isCurrent() || binding!==current.current.binding || findTarget()!==target || target.node()!==node) return false;
+      setPointer({binding,rect});
+      return true;
+    } catch { return false; }
   }, []);
   const registerCampusTarget: Runtime['registerCampusTarget'] = useCallback((owner,id) => {
     campusTargets.current.set(owner,id);
@@ -100,17 +144,22 @@ export function CopilotProvider({ children }: PropsWithChildren) {
     return { binding: current.current.binding, generation: generation.current, context: expected, targets };
   }, [context, find]);
   const takeOver = useCallback(() => {
-    const run = active.current, tool = execution.current?.tool, callId = execution.current?.callId;
-    generation.current++;clearDetail();
-    if (!run && !execution.current) { setActivity(null); return; }
-    execution.current?.controller.abort(); execution.current = null; active.current = null;
-    if (tool) lastResult.current = { tool, status: 'stopped', ...(callId ? { call_id:callId } : {}) };
+    const run = active.current, operation = execution.current, answering = !!detailAnswer.current;
+    generation.current++;
+    detailAnswer.current?.abort();
+    detailAnswer.current = null;
+    setPointer(null);
+    clearDetail();
+    if (!run && !operation && !answering) { setActivity(null); return; }
+    operation?.controller.abort(); execution.current = null; active.current = null;
+    if (operation?.tool) lastResult.current = { tool: operation.tool, status: operation.applied ? 'applied' : 'stopped',
+      ...(operation.callId ? { call_id: operation.callId } : {}) };
     setPending(null);
     setActivity(previous => previous ? { ...previous, phase: 'stopped' } : null);
   }, [clearDetail]);
   useLayoutEffect(() => {
     if (!mounted.current) return;
-    if (detailOwner.current && (!eligible || detailOwner.current.binding!==binding)) clearDetail();
+    if (detailOwner.current && (!eligible || detailOwner.current.binding!==binding)) { detailAnswer.current?.abort(); clearDetail(); }
     const expected = execution.current?.binding ?? active.current?.lease.binding;
     if (active.current && (!eligible || (expected !== binding && execution.current?.destinationPath !== pathname))) takeOver();
     else if (!active.current && !execution.current) setActivity(previous => previous?.phase === 'applied' ? null : previous);
@@ -119,15 +168,24 @@ export function CopilotProvider({ children }: PropsWithChildren) {
     mounted.current = true;
     const subscription = AppState.addEventListener('change', state => { if (state !== 'active') takeOver(); });
     return () => {
-      mounted.current = false; generation.current++; execution.current?.controller.abort();
+      mounted.current = false; generation.current++; execution.current?.controller.abort(); detailAnswer.current?.abort();
       active.current = null; execution.current = null; subscription.remove();
     };
   }, [takeOver]);
 
+  useEffect(() => {
+    if (activity?.phase !== 'applied') return;
+    const timer = setTimeout(() => {
+      setPointer(null);
+      setActivity(previous => previous===activity ? null : previous);
+    }, 2400);
+    return () => clearTimeout(timer);
+  }, [activity]);
+
   const follow = useCallback((run: Run) => {
     if (!current.current.eligible || run.lease.binding !== current.current.binding || run.lease.generation !== generation.current) return;
     if (active.current || execution.current) return;
-    active.current = run; setPending(run); setActivity({ label: 'Assistant is working', phase: 'preparing' });
+    active.current = run; setPointer(null); setPending(run); setActivity({ label: 'Assistant is working', phase: 'preparing' });
   }, []);
   const inspect = useCallback((id: string, revealApp: () => void) => {
     const run = active.current;
@@ -144,9 +202,9 @@ export function CopilotProvider({ children }: PropsWithChildren) {
       if (execution.current !== operation || active.current !== run) return;
       active.current = null; execution.current = null; setPending(null);
       if (result) lastResult.current = { ...result, ...(operation.callId ? { call_id:operation.callId } : {}) };
+      if (result?.status!=='applied') setPointer(null);
       setActivity(result && label ? { label, tool: result.tool, phase: result.status } : null);
     };
-    const delay = (ms:number) => new Promise<void>(resolve => setTimeout(resolve,ms));
     void (async () => {
       const endpoint = `/api/v1/agent/threads/${encodeURIComponent(run.threadId)}/runs/${encodeURIComponent(run.id)}/events`;
       try {
@@ -157,10 +215,11 @@ export function CopilotProvider({ children }: PropsWithChildren) {
         clearDetail();
         for (const [index,intent] of plan.entries()) {
           operation.tool = intent.name; operation.callId=copilotCallId(intent.id)?intent.id:undefined;
+          operation.applied = false;
           // React may still be mounting the next owning screen after navigation.
           let action=find(intent.name);
           for (let attempt=0; index>0&&!action&&currentLease()&&attempt<50; attempt++) {
-            await delay(100);action=find(intent.name);
+            await copilotWait(100,signal);action=find(intent.name);
           }
           if (!currentLease()) { finish(); return; }
           if (!action || !copilotToolAvailableOn(intent.name,current.current.screen) ||
@@ -169,48 +228,69 @@ export function CopilotProvider({ children }: PropsWithChildren) {
           }
           setActivity({label:action.label,tool:intent.name,phase:'applying',step:index+1,total:plan.length});
           if(index===0)revealApp();
-          await delay(180);
+          await copilotWait(140,signal);
+          const pointed = await showTarget(intent.name,'before',signal,currentLease);
+          if (pointed) await copilotWait(250,signal);
           if (!currentLease() || find(intent.name)!==action || current.current.binding!==operation.binding) {
             finish({tool:intent.name,status:'blocked'},'The screen changed before the step could run');return;
           }
           operation.destinationPath = action.destinationPath;
           const applied = await action.run(intent.args,signal);
+          operation.applied = applied;
           if (!currentLease()) { finish();return; }
           if (!applied) { finish({tool:intent.name,status:'blocked'},action.label);return; }
           operation.binding=current.current.binding;operation.destinationPath=undefined;
-          if(index===plan.length-1) {
-            if(intent.name==='prepare_campus_create' && intent.args.name===undefined && copilotCallId(intent.id)) {
-              const request={id:intent.id,threadId:run.threadId};
-              detailOwner.current={...request,binding:operation.binding,generation:generation.current,action};
-              setDetail(request);
-            }
-            finish({tool:intent.name,status:'applied'},action.label);
+          const final = index===plan.length-1;
+          if(final && intent.name==='prepare_campus_create' && intent.args.name===undefined && copilotCallId(intent.id)) {
+            const request={id:intent.id,threadId:run.threadId};
+            detailOwner.current={...request,binding:operation.binding,generation:generation.current,action};
+            setDetail(request);
+            // The detail surface expands the dock. Reveal the actual field in
+            // the resulting workspace viewport before positioning the pointer.
+            await copilotWait(120,signal);
           }
+          await showTarget(intent.name,'after',signal,currentLease);
+          if (!currentLease()) { finish();return; }
+          if(final) finish({tool:intent.name,status:'applied'},action.label);
         }
       } catch {
         if (currentLease() && operation.tool) finish({ tool: operation.tool, status: 'blocked' }, 'The control could not be updated');
         else finish();
       }
     })();
-  }, [find, clearDetail]);
+  }, [find, clearDetail, showTarget]);
   const answerDetail = useCallback(async (id:string,name:string) => {
     const request=detailOwner.current,args={name:name.trim()};
-    if (!request || request.id!==id || request.binding!==current.current.binding ||
+    if (execution.current || detailAnswer.current || !request || request.id!==id || request.binding!==current.current.binding ||
         request.generation!==generation.current || !current.current.eligible ||
         find('prepare_campus_create')!==request.action || !validCopilotArgs('prepare_campus_create',args)) return false;
     const transport=captureApiContext(), controller=new AbortController();
+    detailAnswer.current = controller;
+    const isCurrent = () => {
+      if (controller.signal.aborted || detailOwner.current!==request || current.current.binding!==request.binding ||
+          !current.current.eligible || find('prepare_campus_create')!==request.action) return false;
+      try { transport.assertCurrent(); return true; } catch { return false; }
+    };
     try {
-      transport.assertCurrent();
-      const applied=await request.action.run(args,controller.signal);
-      transport.assertCurrent();
-      if (!applied || detailOwner.current!==request || current.current.binding!==request.binding) return false;
+      setActivity({label:'Fill campus name',phase:'applying',tool:'prepare_campus_create'});
+      const pointed=await showTarget('prepare_campus_create','after',controller.signal,isCurrent);
+      if (pointed) await copilotWait(250,controller.signal);
+      if (!isCurrent() || !await request.action.run(args,controller.signal) || !isCurrent()) return false;
       clearDetail();setActivity({label:'Campus name added',phase:'applied',tool:'prepare_campus_create'});
       return true;
     } catch { return false; }
-  },[find,clearDetail]);
+    finally {
+      if (detailAnswer.current===controller) {
+        detailAnswer.current=null;
+        setActivity(previous=>previous?.phase==='applying'&&previous.tool==='prepare_campus_create'
+          ? { label:'Enter the campus name in the form', phase:'blocked', tool:'prepare_campus_create' } : previous);
+      }
+    }
+  },[find,clearDetail,showTarget]);
 
-  const value = useMemo(() => ({ register, registerCampusTarget, context, capture, follow, inspect, takeOver, answerDetail, detail, pending, activity }),
-    [register, registerCampusTarget, context, capture, follow, inspect, takeOver, answerDetail, detail, pending, activity]);
+  const currentPointer = eligible && pointer?.binding===binding ? pointer : null;
+  const value = useMemo(() => ({ register, registerTarget, pointer:currentPointer, registerCampusTarget, context, capture, follow, inspect, takeOver, answerDetail, detail, pending, activity }),
+    [register, registerTarget, currentPointer, registerCampusTarget, context, capture, follow, inspect, takeOver, answerDetail, detail, pending, activity]);
   return <RuntimeContext.Provider value={value}>{children}</RuntimeContext.Provider>;
 }
 
@@ -239,44 +319,15 @@ export function useCopilotActiveAction(tool: CopilotToolName) {
   return focused && activity?.tool === tool && (activity.phase === 'applying' || activity.phase === 'applied');
 }
 
-export function CopilotStatusBar() {
-  const { activity, detail, takeOver } = useCopilot(), { colors } = useTheme(), reduced = useReducedMotion();
-  const opacity = useRef(new Animated.Value(1)).current;
-  useEffect(() => {
-    if (!activity) return;
-    if (reduced) { opacity.setValue(1); return; }
-    opacity.setValue(0);
-    const animation = Animated.timing(opacity, { toValue: 1, duration: 160, useNativeDriver: Platform.OS !== 'web' });
-    animation.start();
-    return () => animation.stop();
-  }, [activity?.phase, opacity, reduced]);
-  useEffect(() => {
-    if (activity?.phase === 'applying' || activity?.phase === 'preparing') {
-      AccessibilityInfo.announceForAccessibility(activity.label);
-    }
-  }, [activity?.phase, activity?.label]);
-  useEffect(() => {
-    if (activity?.phase !== 'applied' || detail) return;
-    const timer = setTimeout(takeOver, 3000);
-    return () => clearTimeout(timer);
-  }, [activity?.phase, activity?.label, detail, takeOver]);
-  if (!activity || activity.phase === 'applied' && detail) return null;
-  const active = activity.phase === 'preparing' || activity.phase === 'applying';
-  return <View pointerEvents="box-none" style={styles.placement}>
-    <Animated.View style={[styles.bar, { opacity, backgroundColor: colors.surface, borderColor: colors.border }]}>
-      <View style={styles.copy} accessibilityLiveRegion="polite">
-        <Text style={[styles.title, { color: colors.ink }]}>{activity.label}</Text>
-        <Text style={[styles.status, { color: colors.muted }]}>{active ? (activity.total && activity.total > 1 ? `Step ${activity.step} of ${activity.total}` : 'Assistant') : activity.phase === 'applied' ? 'Ready for your review' : activity.phase === 'stopped' ? 'You are in control' : 'Make this change directly on the screen'}</Text>
-      </View>
-      <ControlButton title={active ? 'Take over' : 'Dismiss'} onPress={takeOver} />
-    </Animated.View>
-  </View>;
+/** A mounted owner can expose a visual anchor without adding an action or changing its permissions. */
+export function useCopilotTarget(tool: CopilotToolName, options: TargetOptions = {}): RefCallback<CopilotTargetNode> {
+  const { registerTarget } = useCopilot(), focused = useIsFocused(), stage = options.stage ?? 'before';
+  const node = useRef<CopilotTargetNode | null>(null);
+  const latest = useRef({ options, focused });
+  latest.current = { options, focused };
+  useLayoutEffect(() => registerTarget(tool, stage, {
+    node: () => latest.current.focused && latest.current.options.enabled!==false ? node.current : null,
+    reveal: (target, signal) => latest.current.options.reveal?.(target, signal),
+  }), [registerTarget, tool, stage]);
+  return useCallback(target => { node.current = target; }, []);
 }
-
-const styles = StyleSheet.create({
-  placement: { alignItems: 'center' },
-  bar: { width: '100%', maxWidth: 470, minHeight: 56, flexDirection: 'row', alignItems: 'center', gap: 8, paddingHorizontal: 12, paddingVertical: 5, borderWidth: 1, borderRadius: 14 },
-  copy: { flex: 1, minWidth: 0, gap: 2 },
-  title: { fontSize: 14, fontWeight: '600' },
-  status: { fontSize: 13 },
-});

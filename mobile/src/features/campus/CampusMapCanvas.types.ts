@@ -1,3 +1,5 @@
+import type { ComponentRef, RefCallback } from 'react';
+import type { View } from 'react-native';
 import type { CampusSceneDocument, CampusScenePoint } from '../../../../packages/contracts/src/campus-scenes/types';
 import type { SceneBounds, SceneViewMode } from '../../../../packages/contracts/src/campus-scenes/sceneGeometry';
 import type { SceneEvidenceMarker } from '../../../../packages/contracts/src/campus-scenes/sceneEvidence.types';
@@ -44,4 +46,5 @@ export interface CampusMapCanvasProps {
   viewBounds?: SceneBounds | null;
   outline?: readonly CampusScenePoint[] | null;
   focus?: SceneBounds | SceneViewportFocus | null;
+  focusTargetRef?: RefCallback<ComponentRef<typeof View>>;
 }

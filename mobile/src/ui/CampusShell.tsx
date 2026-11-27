@@ -19,6 +19,7 @@ import { CampusTabs } from './CampusTabs';
 import { NativeDockMetricsContext } from './campus-tabs-options';
 import { AssistantOverlayHost } from './AssistantOverlayHost';
 import { useCopilotAction, useCopilotTakeOver } from './CopilotProvider';
+import { CopilotPointer } from './CopilotPointer';
 import { copilotCallId } from '../lib/copilot';
 import { useAssistantPresentation } from './AssistantPresentation';
 import { NativeTabInsetsContext } from './native-tab-insets-context';
@@ -51,6 +52,18 @@ export function CampusShell() {
   const pathname = usePathname(), desktop = Platform.OS === 'web' ? width >= 960 : layout.sidebar, back = useHeaderBack();
   const { onNavigate, selectTab, tabHref, tabConfigurationBusy, tabSelectionBlocked } = useCampusNavigation();
   const takeOver = useCopilotTakeOver();
+  const workspaceInteraction = useRef<React.ComponentRef<typeof View>>(null);
+  useEffect(() => {
+    if (Platform.OS!=='web' || !assistantPresentation.active || fullscreen) return;
+    const element=workspaceInteraction.current as unknown as HTMLElement | null;
+    if (!element) return;
+    element.addEventListener('wheel',takeOver,{passive:true});
+    element.addEventListener('keydown',takeOver);
+    return () => {
+      element.removeEventListener('wheel',takeOver);
+      element.removeEventListener('keydown',takeOver);
+    };
+  },[assistantPresentation.active,fullscreen,takeOver,session.status]);
   const params=useGlobalSearchParams();
   const activeRoute = useRef({pathname,params});
   activeRoute.current={pathname,params};
@@ -92,7 +105,7 @@ export function CampusShell() {
   const follow = (href: string, tabRoot?: string) => (event: { preventDefault(): void; nativeEvent: unknown; button?: number; metaKey?: boolean; ctrlKey?: boolean; shiftKey?: boolean; altKey?: boolean }) => {
     const native = (event.nativeEvent ?? {}) as { button?: number; metaKey?: boolean; ctrlKey?: boolean; shiftKey?: boolean; altKey?: boolean };
     if (event.metaKey || event.ctrlKey || event.shiftKey || event.altKey || native.metaKey || native.ctrlKey || native.shiftKey || native.altKey || (event.button ?? native.button ?? 0) !== 0) return;
-    event.preventDefault(); if (tabRoot) selectTab(tabRoot); else onNavigate(href);
+    event.preventDefault(); takeOver(); if (tabRoot) selectTab(tabRoot); else onNavigate(href);
   };
   const workspace = useApi<unknown>(session.schoolId ? '/api/v1/workspace' : null);
   const notifications = useApi<{ unread_count: number }>('/api/v1/notifications/?limit=1');
@@ -112,7 +125,10 @@ export function CampusShell() {
   const assistant = assistantPresentationPermitted(assistantEntryAvailable(session.environment,true,assistantPerspective(session.user,session.memberships,session.schoolId)),preference.data,preference.error instanceof ApiError ? preference.error.status : undefined);
   const destinations = campusTabs.filter(item => item.name !== '(assistant)' || desktop && assistant), iosDock = Platform.OS === 'ios', physicalBottom = !(split && layout.axis === 'vertical');
   const dock = iosDockGeometry({ width: layout.app.width,height: dockHeight,bottom: safeInsets.bottom,left: safeInsets.left,right: safeInsets.right,count: destinations.length,physicalBottom,assistantBubble: !desktop && assistant,border: Platform.OS === 'web' ? 1 : 0 });
-  const toggleAssistant = () => { assistantPresentation.active ? assistantPresentation.close() : assistantPresentation.open(); };
+  const toggleAssistant = () => {
+    if (assistantPresentation.active) { takeOver(); assistantPresentation.close(); }
+    else assistantPresentation.open();
+  };
   const root = campusTabForHref(pathname)?.href ?? '/today', detail = back.visible;
   const destination = back.label.replace(/^Back to\s+/i, '').replace(/^./, letter => letter.toLocaleUpperCase());
   const brand = <View accessibilityLabel={institution} style={styles.brand}><View style={[styles.crest, { backgroundColor: colors.action }]}><Text style={{ color: colors.onAction, fontSize: 11, fontWeight: '800' }}>{crest}</Text></View>{!detail || desktop || width >= 600 ? <Text numberOfLines={2} style={[styles.institution, { color: colors.ink }]}>{institution}</Text> : null}</View>;
@@ -132,7 +148,7 @@ export function CampusShell() {
             <Glass style={styles.actions}><Link href="/more/notifications" onPress={follow('/more/notifications')} asChild><Pressable accessibilityRole="link" accessibilityLabel={`Notifications${unread > 0 ? `, ${unread} unread` : ''}`} style={styles.utility}><Icon name="notifications" size={24} />{unread > 0 ? <View accessibilityElementsHidden importantForAccessibility="no-hide-descendants" style={[styles.notificationBadge, { backgroundColor: colors.danger }]}><Text style={{ color: colors.onAction, fontSize: 10, fontWeight: '700' }}>{unread > 99 ? '99+' : unread}</Text></View> : null}</Pressable></Link><Link href="/more/account" onPress={follow('/more/account')} asChild><Pressable accessibilityRole="link" accessibilityLabel="Open account" style={styles.utility}><Icon name="profile" size={24} /></Pressable></Link></Glass>
           </View> : null}
           <View style={[styles.content, compactInset > 0 && { marginBottom: compactInset }]} onLayout={({ nativeEvent: { layout } }) => setPane(previous => previous.width === layout.width && previous.height === layout.height ? previous : { width: layout.width,height: layout.height })}>
-            <View onTouchStart={takeOver} {...(assistantPresentation.active && fullscreen && Platform.OS === 'web' ? { inert: true } : {})} pointerEvents={assistantPresentation.active && fullscreen ? 'none' : 'auto'} accessibilityElementsHidden={assistantPresentation.active && fullscreen} importantForAccessibility={assistantPresentation.active && fullscreen ? 'no-hide-descendants' : 'auto'} style={{ flex: 1,minHeight: 0 }}>
+            <View ref={workspaceInteraction} onTouchStart={Platform.OS==='web' ? undefined : takeOver} onPointerDown={Platform.OS==='web' ? takeOver : undefined} {...(assistantPresentation.active && fullscreen && Platform.OS === 'web' ? { inert: true } : {})} pointerEvents={assistantPresentation.active && fullscreen ? 'none' : 'auto'} accessibilityElementsHidden={assistantPresentation.active && fullscreen} importantForAccessibility={assistantPresentation.active && fullscreen ? 'no-hide-descendants' : 'auto'} style={{ flex: 1,minHeight: 0 }}>
               <OperatingPaneContext.Provider value={pane}><NativeTabInsetsContext.Provider value={!desktop && !fullscreen}>
                 <NativeDockMetricsContext.Provider value={setBarHeight}><CampusTabs key={session.scopeKey} hidden={fullscreen} sidebar={desktop} blocked={verifying || tabSelectionBlocked} assistant={assistant} workCount={workCount} activeRoot={root} onTabPress={selectTab} onAssistantPress={toggleAssistant} /></NativeDockMetricsContext.Provider>
               </NativeTabInsetsContext.Provider></OperatingPaneContext.Provider>
@@ -143,6 +159,7 @@ export function CampusShell() {
         <AssistantOverlayHost layout={layout} onCompactHeightChange={setCompactHeight} compactInsets={{ top: Platform.OS === 'web' ? headerHeight : 0,bottom: desktop ? 0 : barHeight }} />
 
       </View>
+      <CopilotPointer enabled={assistantPresentation.active && !verifying} />
     </View>
     {verifying ? <View style={{ position: 'absolute', top: 0, right: 0, bottom: 0, left: 0, backgroundColor: colors.canvas }}><Page title={tabConfigurationBusy ? 'Updating Assistant navigation' : session.status === 'error' ? 'Reconnect to your campus' : 'Confirming your campus'}>{session.status === 'error' ? <><Empty title="Your session could not be confirmed" message={session.error ?? undefined} onRetry={() => { void session.refresh(); }} /><Button title="Sign out" kind="secondary" onPress={() => { void session.logout().catch(() => {}); }} /></> : <Loading />}</Page></View> : null}
   </View>;

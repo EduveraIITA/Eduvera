@@ -447,6 +447,9 @@ export class AgentService implements OnModuleDestroy {
     });
     if(!reservation){await this.finish(id,'completed','Today’s public web lookup allowance has been reached.');return;}
     signal.throwIfAborted();
+    const progress = input.kind === 'search' ? 'Searching the web' : 'Reading the page';
+    await sql`UPDATE agent_runs SET progress=${progress} WHERE id=${id}::uuid AND status='running'`.execute(this.db);
+    signal.throwIfAborted();
     let sources;
     try { sources=(await lookupPublicWeb(input,signal)).map(source=>({id:randomUUID(),...source})); }
     catch { await this.finish(id,'completed','The public web lookup could not finish. Try again.');return; }
