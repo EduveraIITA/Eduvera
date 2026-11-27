@@ -458,6 +458,16 @@ needs a configured index provider.
 Indexed links require an authorized upload before the image is traced, and saved
 geometry remains subject to normal review and publication.
 
+The map recovery test reproduced the primary-provider timeout and used a configured
+regional source to produce 224 editable features, including 93 buildings, from a
+public IIM Lucknow sample. Browser recovery kept the exact selection across reload,
+replayed the original key, then offered a fresh key after a terminal failure.
+Where source coverage is unavailable, a draft shows the user's outline. A compact
+authenticated browser run opened the authorized facility setup in the same
+Assistant and returned to the retained map without regeneration. Assistant reports
+and decisions render through validated A2UI surfaces. The underlying capability
+catalogue remains the boundary for actions available directly from chat.
+
 The retained evidence covers reviewed floor-plan intake/publication, authored
 interiors, messaging/academic evidence repair and Care/Resources/Dining continuity.
 It does not close every old whole-system audit finding. Shared controls keep
