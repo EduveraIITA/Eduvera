@@ -174,8 +174,8 @@ jobs:
             process.exitCode = result.status ?? 1;
             const summary = JSON.parse(await readFile(report, 'utf8'));
             console.log(JSON.stringify({ postgresTests: summary.numTotalTests, passed: summary.numPassedTests, skipped: summary.numPendingTests, todo: summary.numTodoTests }));
-            if (summary.numTotalTests < 217 || summary.numPassedTests !== summary.numTotalTests || summary.numPendingTests !== 0 || summary.numTodoTests !== 0)
-              throw new Error('All 217 or more owned PostgreSQL cases must run and pass without skipped/todo tests.');
+            if (summary.numTotalTests < 224 || summary.numPassedTests !== summary.numTotalTests || summary.numPendingTests !== 0 || summary.numTodoTests !== 0)
+              throw new Error('All 224 or more owned PostgreSQL cases must run and pass without skipped/todo tests.');
           } finally { await rm(directory, { recursive: true, force: true }); }
           NODE
       - name: Universal application and release guard tests
