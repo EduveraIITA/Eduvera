@@ -35,3 +35,12 @@ test('a resting panel reserves the measured native dock outside its useful detai
  for(const dock of [NaN,-1,Infinity])assert.equal(campusPanelHeight(650,false,false,true,dock),170);
  assert.equal(campusPanelHeight(80,false,false,true,110),80,'a short host never overflows its actual bounds');
 });
+
+test('a short landscape floor panel keeps one full scroll target above the tray and compact reply', () => {
+  const host = 300, combinedDock = 180;
+  for (const expanded of [false, true]) {
+    const panel = campusPanelHeight(host, expanded, false, true, combinedDock);
+    assert.ok(panel - combinedDock - 56 >= 44);
+    assert.ok(panel < host);
+  }
+});

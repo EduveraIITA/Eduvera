@@ -88,12 +88,15 @@ export function ConversationComposer({ value, onChange, locked, busy, working, s
   const send = () => { if (canSend) onSend(); };
   return <View style={{ gap: 8 }}>
     {status && !running ? <Text accessibilityLiveRegion="polite" style={[styles.caption, { color: colors.muted, paddingHorizontal: 4 }]}>{status}</Text> : null}
-    <View style={[styles.composer, { borderColor: colors.border }]}>
+    <View style={[styles.composer, running && styles.composerRunning, { borderColor: colors.border }]}>
       <View pointerEvents="none" accessibilityElementsHidden importantForAccessibility="no-hide-descendants" style={StyleSheet.absoluteFill}><Glass material="assistant" style={[StyleSheet.absoluteFill, { borderRadius: 28 }]} /></View>
-      {working ? <Text accessibilityLiveRegion="polite" numberOfLines={2} style={[styles.working, { color: colors.muted }]}>{working}</Text> : null}
+      {working ? <View style={[styles.workingRow, Platform.OS === 'web' && styles.composerForeground]}>
+        <BrandLoadingIcon size={18} />
+        <Text accessibilityLiveRegion="polite" numberOfLines={2} style={[styles.workingLabel, { color: colors.muted }]}>{working}</Text>
+      </View> : null}
       <TextInput ref={input} accessibilityLabel="Ask Assistant" accessibilityHint={Platform.OS === 'web' ? 'Enter to send. Shift and Enter for a new line.' : 'Write your question, then use Send question.'} value={value} onChangeText={onChange} multiline maxLength={4000} editable={!locked && !running} accessibilityElementsHidden={running} importantForAccessibility={running ? 'no-hide-descendants' : 'auto'} placeholder={loading ? 'Loading conversation…' : 'Ask anything…'} placeholderTextColor={colors.muted} underlineColorAndroid="transparent" textAlignVertical="top" onLayout={running ? undefined : resizeWeb} onContentSizeChange={event => { if (Platform.OS !== 'web' && !running) setHeight(assistantComposerHeight(event.nativeEvent.contentSize.height)); }}
         {...(Platform.OS === 'web' ? { numberOfLines: 1, onKeyPress: (event: { nativeEvent: { key?: string; shiftKey?: boolean; isComposing?: boolean; keyCode?: number; repeat?: boolean }; preventDefault?: () => void }) => { if (assistantShouldSendKey(event.nativeEvent, canSend)) { event.preventDefault?.(); send(); } } } : {})}
-        style={[styles.input, { color: colors.ink, height, display: running ? 'none' : 'flex' }]} />
+        style={[styles.input, Platform.OS === 'web' && styles.composerForeground, { color: colors.ink, height, display: running ? 'none' : 'flex' }]} />
       {onExpand ? <UtilityButton label="Open conversation" onPress={onExpand} controlRef={openControl}>
         <ArrowsOutSimpleIcon size={18} color={colors.muted} />
       </UtilityButton> : null}
@@ -281,6 +284,10 @@ const styles = StyleSheet.create({
   bubbleDetails: { paddingHorizontal: 16, paddingVertical: 12 },
   compactReply: { minHeight: 44, justifyContent: 'center', paddingHorizontal: 16, paddingVertical: 8, borderRadius: 27, borderWidth: 2 },
   copyFeedback: { paddingHorizontal: 16, paddingBottom: 8 },
-  working: { flex: 1, minWidth: 0, fontSize: 16, lineHeight: 21 },
+  composerRunning: { alignItems: 'center' },
+  // Position browser text above the composited backdrop, which would otherwise cover a static textarea.
+  composerForeground: { position: 'relative', zIndex: 1 },
+  workingRow: { flex: 1, minWidth: 0, flexDirection: 'row', alignItems: 'center', gap: 8 },
+  workingLabel: { flex: 1, minWidth: 0, fontSize: 16, lineHeight: 21 },
   copyControl: { minHeight: 44, minWidth: 44, maxWidth: '100%', flexShrink: 1, paddingHorizontal: 8, borderRadius: 22, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 4 },
 });

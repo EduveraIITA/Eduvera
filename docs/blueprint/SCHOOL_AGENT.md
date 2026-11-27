@@ -85,10 +85,12 @@ conversation when activated and copies the full plain-text reply on a long
 press. A screen-reader copy action and full conversation copy control use the
 same acknowledged clipboard path. When there is no reply, the idle composer
 offers a small conversation control beside Send. It hides as soon as text is
-entered. While a request or local app action is working,
-the composer displays current progress in the input area and replaces Send with
-Stop. Stop interrupts local actions and asks the server to cancel a running
-request using its exact confirmed identity.
+entered. While a request or local app action is working, the composer centers
+current progress and its animated Assistant mark beside Stop. An idle reply
+shows its Assistant mark outside the top-left corner. During a mounted UI
+action, the pointer marks the relevant control. Stop interrupts local actions
+and asks the server to cancel a running request using its exact confirmed
+identity.
 
 On iPhone, the expanded conversation hides workspace navigation and header.
 iPad opens the conversation beside the app when the window can fit both and
@@ -142,7 +144,9 @@ stopped result.
 The global Assistant remains available across supported navigation. The shell
 measures the compact dock so app actions remain reachable. On iOS the UIKit
 tray retains its full-height navigator, and the active page reserves space for
-the compact Assistant. The Assistant itself sits above the measured tray. Campus setup renders
+the compact Assistant. The Assistant itself sits above the measured tray.
+Pages reserve the current compact height so their final controls can scroll
+fully above the chat. An Assistant reveal uses the current visible viewport. Campus setup renders
 A2UI controls inside the conversation and returns to the retained map for
 placement. The fullscreen backdrop uses supported UIKit Liquid Glass or browser
 blur and honors reduced transparency.

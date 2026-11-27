@@ -97,10 +97,11 @@ test('native copilot scroll reveals a field above the tray and the open mini tog
     measured(16, 600);
   } };
   const dependency = primitives(168);
+  let offset = 80;
   const usePageReveal = load('../src/ui/use-page-reveal.ts', {
     ...dependency, './Motion': { useReducedMotion: () => true },
     '../lib/copilot-target': {
-      measureCopilotTarget: async (node: object) => node === viewport ? frame : input,
+      measureCopilotTarget: async (node: object) => node === viewport ? frame : { ...input, y: input.y + 80 - offset },
       copilotWait: async () => undefined,
     },
   }).usePageReveal;
@@ -108,11 +109,86 @@ test('native copilot scroll reveals a field above the tray and the open mini tog
   const scrollRequests: unknown[] = [];
   scrollRef.current = {
     getNativeScrollRef: () => viewport, getInnerViewRef: () => contents,
-    scrollTo: (options: unknown) => scrollRequests.push(options),
+    scrollTo: (options: { y: number }) => { offset = options.y; scrollRequests.push(options); },
   };
   await reveal(inputNode, new AbortController().signal);
   assert.equal(scrollRequests.length, 1);
   const [{ y, animated }] = scrollRequests as { y: number; animated: boolean }[];
   assert.equal(y, 218);
   assert.equal(animated, false);
+});
+
+test('the same compact footer reports one-line and three-line heights without adding the tab twice', () => {
+  const measured: number[] = [];
+  const frame = components(0).PageBody({
+    children: 'Workspace', footer: React.createElement('button', null, 'Send'),
+    footerPadding: 16, footerSeparator: false, maxWidth: 440, passThrough: true,
+    onFooterHeightChange: (height: number) => measured.push(height),
+  });
+  const footer = nodes(frame).find(node => typeof node.props.onLayout === 'function' && node.props.style?.borderTopWidth === 0);
+  assert.ok(footer);
+  for (const height of [106.25, 151.2, 106.25]) {
+    footer.props.onLayout({ nativeEvent: { layout: { height } } });
+    const page = components(measured.at(-1)!).Page({ title: 'Workspace', children: 'Last action' });
+    const scroll = nodes(page).find(node => node.type === 'scroll');
+    assert.equal(flatten(scroll.props.contentContainerStyle).paddingBottom, 40 + Math.ceil(height));
+    assert.equal(scroll.props.contentInsetAdjustmentBehavior, 'automatic');
+  }
+  assert.deepEqual(measured, [107, 152, 107]);
+});
+
+test('an in-flight native reveal corrects when the open reply grows', async () => {
+  const frame = { x: 0, y: 100, width: 393, height: 700 };
+  const viewport = {}, contents = {};
+  const input = { measureLayout(_ancestor: object, measured: (x: number, y: number) => void) { measured(16, 600); } };
+  const latestDock = { current: { bar: 90, assistant: 88 } };
+  let offset = 80;
+  const dependency = primitives(88);
+  const makeRef = dependency.react.useRef;
+  dependency.react.useRef = (value: unknown) =>
+    typeof value === 'object' && value !== null && 'bar' in value ? latestDock : makeRef(value);
+  const usePageReveal = load('../src/ui/use-page-reveal.ts', {
+    ...dependency, './Motion': { useReducedMotion: () => true },
+    '../lib/copilot-target': {
+      measureCopilotTarget: async (node: object) => node === viewport ? frame
+        : { x: 16, y: frame.y + 600 - offset, width: 360, height: 44 },
+      copilotWait: async () => { if (latestDock.current.assistant === 88) latestDock.current = { bar: 90, assistant: 168 }; },
+    },
+  }).usePageReveal;
+  const { scrollRef, reveal } = usePageReveal();
+  const positions: number[] = [];
+  scrollRef.current = {
+    getNativeScrollRef: () => viewport, getInnerViewRef: () => contents,
+    scrollTo: ({ y }: { y: number }) => { offset = y; positions.push(y); },
+  };
+  await reveal(input, new AbortController().signal);
+  assert.deepEqual(positions, [138, 218]);
+});
+
+test('a long browser reveal completes before indicating a target still outside the viewport', async () => {
+  const frame = { x: 0, y: 0, width: 393, height: 350 };
+  let offset = 0;
+  const movements: string[] = [];
+  const viewport = { scrollBy({ top, behavior }: { top: number; behavior: string }) {
+    movements.push(behavior);
+    offset += behavior === 'smooth' ? top - 222 : top;
+  } };
+  const dependency = primitives(0);
+  dependency['react-native'].Platform.OS = 'web';
+  const dock = dependency['./campus-tabs-options'].NativeDockInsetsContext;
+  const useContext = dependency.react.useContext;
+  dependency.react.useContext = (context: unknown) => context === dock ? { bar: 0, assistant: 0 } : useContext(context);
+  const usePageReveal = load('../src/ui/use-page-reveal.ts', {
+    ...dependency, './Motion': { useReducedMotion: () => false },
+    '../lib/copilot-target': {
+      measureCopilotTarget: async (node: object) => node === viewport ? frame
+        : { x: 16, y: 1800 - offset, width: 360, height: 44 },
+      copilotWait: async () => undefined,
+    },
+  }).usePageReveal;
+  const { scrollRef, reveal } = usePageReveal();
+  scrollRef.current = { getNativeScrollRef: () => viewport };
+  await reveal({}, new AbortController().signal);
+  assert.deepEqual(movements, ['smooth', 'instant']);
+  assert.equal(offset, 1510);
 });

@@ -13,6 +13,11 @@ export function campusPanelHeight(height:number,expanded:boolean,keyboardVisible
   if(keyboardVisible)return Math.max(0,available-Math.min(64,available*.24));
   // A floor is the current destination. Its resting sheet leaves the drawing
   // usable below both toolbar rows; expanded details remain scrollable beside it.
-  if(interior){const resting=Math.min(170,available*.28);return bottom+(expanded?Math.max(resting,Math.min(available*.43,available-Math.min(380,available*.6))):resting);}
+  if(interior){
+    // Preserve the panel heading and one usable control when the floating
+    // dock leaves a short landscape viewport.
+    const resting=Math.min(available,Math.min(170,Math.max(100,available*.28)));
+    return bottom+(expanded?Math.max(resting,Math.min(available*.43,available-Math.min(380,available*.6))):resting);
+  }
   return bottom+Math.min(available,Math.max(170,available*(expanded?.64:.43)));
 }

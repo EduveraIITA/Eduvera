@@ -44,8 +44,8 @@ export function AssistantScreen(props: Props) {
   const { scopeKey, user, memberships, schoolId, environment } = useSession();
   const portal = assistantPerspective(user, memberships, schoolId);
   useAssistantPresentation({ available: environment.mode === 'simulation' || !portal ? false : undefined });
-  if (environment.mode === 'simulation') return <AssistantFrame><PresentationExit /><AssistantMark /><Notice message="Provider-backed conversations, memory and messaging account links stay in Live. This isolated world does not call a Live AI provider or execute its proposed changes." /><Button title="Open Simulation" kind="secondary" onPress={() => props.onNavigate('/more/simulation')} /><ControlButton title="Account preferences" onPress={() => props.onNavigate('/more/account')} /></AssistantFrame>;
-  if (!portal) return <AssistantFrame><PresentationExit /><AssistantMark /><Empty title="AI assistance is unavailable in this workspace" message="Your current campus relationship determines which assistance is available." /></AssistantFrame>;
+  if (environment.mode === 'simulation') return <AssistantFrame onCompactHeightChange={props.onCompactHeightChange}><PresentationExit /><AssistantMark /><Notice message="Provider-backed conversations, memory and messaging account links stay in Live. This isolated world does not call a Live AI provider or execute its proposed changes." /><Button title="Open Simulation" kind="secondary" onPress={() => props.onNavigate('/more/simulation')} /><ControlButton title="Account preferences" onPress={() => props.onNavigate('/more/account')} /></AssistantFrame>;
+  if (!portal) return <AssistantFrame onCompactHeightChange={props.onCompactHeightChange}><PresentationExit /><AssistantMark /><Empty title="AI assistance is unavailable in this workspace" message="Your current campus relationship determines which assistance is available." /></AssistantFrame>;
   return <AssistantAccess key={`${scopeKey}:${portal}:${new URLSearchParams(props.href.split('?')[1] ?? '').get('student_id') ?? ''}`} {...props} portal={portal} />;
 }
 /** The campus host owns the real background, chrome, scope and safe area. This
@@ -73,9 +73,9 @@ function AssistantAccess(props: Props & { portal: AssistantPortal }) {
   // The query key includes scopeKey. Retain this exact mounted conversation only
   // for a transient verification error with cached Pro=true in the same scope.
   if (state === 'ready' || state === 'paused') return <Conversation {...props} accessPaused={state === 'paused'} preferenceError={preference.error?.message} preferenceRefreshing={preference.isRefetching} onPreferenceRetry={() => void preference.refetch()} />;
-  if (state === 'loading') return <AssistantFrame><PresentationExit /><Loading /></AssistantFrame>;
-  if (state === 'denied' || state === 'error') return <AssistantFrame><PresentationExit /><Empty title={state === 'denied' ? 'AI access could not be confirmed' : 'AI preference could not load'} message={preference.error?.message ?? 'The current account preference could not be verified.'} onRetry={() => void preference.refetch()} /></AssistantFrame>;
-  return <AssistantFrame><PresentationExit /><AssistantMark /><Empty title="AI assistance is turned off" message="Enable Pro features in your account settings to continue. Remembered preferences can still be inspected or forgotten there." /><Button title="Account settings" kind="secondary" onPress={() => props.onNavigate('/more/account')} /></AssistantFrame>;
+  if (state === 'loading') return <AssistantFrame onCompactHeightChange={props.onCompactHeightChange}><PresentationExit /><Loading /></AssistantFrame>;
+  if (state === 'denied' || state === 'error') return <AssistantFrame onCompactHeightChange={props.onCompactHeightChange}><PresentationExit /><Empty title={state === 'denied' ? 'AI access could not be confirmed' : 'AI preference could not load'} message={preference.error?.message ?? 'The current account preference could not be verified.'} onRetry={() => void preference.refetch()} /></AssistantFrame>;
+  return <AssistantFrame onCompactHeightChange={props.onCompactHeightChange}><PresentationExit /><AssistantMark /><Empty title="AI assistance is turned off" message="Enable Pro features in your account settings to continue. Remembered preferences can still be inspected or forgotten there." /><Button title="Account settings" kind="secondary" onPress={() => props.onNavigate('/more/account')} /></AssistantFrame>;
 }
 
 function Conversation({ href, onNavigate, onCompactHeightChange, workspaceTask, portal, accessPaused, preferenceError, preferenceRefreshing, onPreferenceRetry }: Props & { portal: AssistantPortal; accessPaused: boolean; preferenceError?: string; preferenceRefreshing: boolean; onPreferenceRetry: () => void }) {
@@ -303,9 +303,9 @@ function Conversation({ href, onNavigate, onCompactHeightChange, workspaceTask, 
     attemptedRequest.current = linkedRequest.revision;
     void changeConversation(linkedRequest.id);
   }, [linkedRequest, presentation.active, threads.isSuccess, knownThreads]);
-  if (status.isPending) return <AssistantFrame><PresentationExit /><Loading /></AssistantFrame>;
-  if (status.isError || !status.data) return <AssistantFrame><PresentationExit /><AssistantMark /><Empty title={status.error instanceof ApiError && status.error.status === 403 ? 'AI access could not be confirmed' : 'AI assistance is unavailable'} message={status.error instanceof ApiError && status.error.status === 403 ? `${status.error.message} Staff need “Use AI assistance” and each underlying campus permission.` : status.error?.message} onRetry={() => void status.refetch()} /><ControlButton title="Account settings" onPress={() => onNavigate('/more/account')} /></AssistantFrame>;
-  if (!status.data.pro_features_enabled) return <AssistantFrame><PresentationExit /><AssistantMark /><Empty title="AI assistance is turned off" /><ControlButton title="Account settings" onPress={() => onNavigate('/more/account')} /></AssistantFrame>;
+  if (status.isPending) return <AssistantFrame onCompactHeightChange={onCompactHeightChange}><PresentationExit /><Loading /></AssistantFrame>;
+  if (status.isError || !status.data) return <AssistantFrame onCompactHeightChange={onCompactHeightChange}><PresentationExit /><AssistantMark /><Empty title={status.error instanceof ApiError && status.error.status === 403 ? 'AI access could not be confirmed' : 'AI assistance is unavailable'} message={status.error instanceof ApiError && status.error.status === 403 ? `${status.error.message} Staff need “Use AI assistance” and each underlying campus permission.` : status.error?.message} onRetry={() => void status.refetch()} /><ControlButton title="Account settings" onPress={() => onNavigate('/more/account')} /></AssistantFrame>;
+  if (!status.data.pro_features_enabled) return <AssistantFrame onCompactHeightChange={onCompactHeightChange}><PresentationExit /><AssistantMark /><Empty title="AI assistance is turned off" /><ControlButton title="Account settings" onPress={() => onNavigate('/more/account')} /></AssistantFrame>;
   const attention = accessPaused ? 'access-check' : pending && !busy ? `recovery:${pending.kind}:${pending.phase ?? 'unconfirmed'}` : error ? `error:${error}` : linkedRequest ? 'linked-conversation' : !canSendRequest ? 'provider-unavailable' : missingLinked && selected === null ? 'missing-conversation' : threads.isError ? 'history-error' : detail.isError ? 'conversation-error' : '';
   const currentCopyState = copyOwner.current === copyIdentity ? copyState : 'idle';
   const copyControl = <ResponseCopyControl onCopy={() => void copyResponse()} disabled={!copySnapshot} state={currentCopyState} />;
@@ -334,7 +334,7 @@ function Conversation({ href, onNavigate, onCompactHeightChange, workspaceTask, 
   const composer = <View style={{ gap: 8, minHeight: 0, flexShrink: 1, width: '100%', maxWidth: presentation.expanded ? 720 : 440, alignSelf: 'center' }}>
     {!presentation.expanded && hasCompactPreview ? <CompactConversation preview={preview} onExpand={expandConversation}
       onCopy={copySnapshot ? () => void copyResponse() : undefined} copyState={currentCopyState}
-      restoreFocus={restoreMiniFocus} attention={attention} pending={pending} /> : null}
+      restoreFocus={restoreMiniFocus} attention={attention} pending={pending} showReplyMark={hasAnswerPreview && !working && !busy && !copilot.pointer} /> : null}
     {campusDetail ? <CampusNameDetail key={campusDetail.id} id={campusDetail.id} locked={locked}
       onAnswer={copilot.answerDetail} onUseForm={copilot.takeOver} /> : null}
     {!campusDetail || working ? <ConversationComposer value={question} onChange={setQuestion} locked={locked} busy={busy} working={working}
@@ -370,9 +370,9 @@ function Conversation({ href, onNavigate, onCompactHeightChange, workspaceTask, 
   </AssistantFrame>;
 }
 
-function CompactConversation({ preview, onExpand, onCopy, copyState, restoreFocus, attention, pending }: {
+function CompactConversation({ preview, onExpand, onCopy, copyState, restoreFocus, attention, pending, showReplyMark }: {
   preview: ReturnType<typeof assistantCompactPresentation>; onExpand: () => void; onCopy?: () => void;
-  copyState: ConversationCopyState; restoreFocus?: () => void; attention: string; pending: Pending | null;
+  copyState: ConversationCopyState; restoreFocus?: () => void; attention: string; pending: Pending | null; showReplyMark: boolean;
 }) {
   const { mode, latest, action, chartSource } = preview;
   const chart = chartSource?.chart;
@@ -386,10 +386,14 @@ function CompactConversation({ preview, onExpand, onCopy, copyState, restoreFocu
     label = action?.status === 'pending' ? 'Review the proposed change.'
       : action?.status === 'executing' ? 'Verifying the result…' : 'Check the affected record.';
   }
-  return <ConversationBubble summary>
-    {label !== undefined ? <CompactAnswer text={label} onExpand={onExpand} restoreFocus={restoreFocus} />
-      : latest ? <AssistantReply run={latest} chart={chart} onExpand={onExpand} onCopy={onCopy} copyState={copyState} restoreFocus={restoreFocus} /> : null}
-  </ConversationBubble>;
+  return <>
+    {showReplyMark ? <View pointerEvents="none" accessibilityElementsHidden importantForAccessibility="no-hide-descendants"
+      style={{ alignSelf: 'flex-start', marginLeft: 16, marginBottom: -4 }}><AssistantMark size={20} /></View> : null}
+    <ConversationBubble summary>
+      {label !== undefined ? <CompactAnswer text={label} onExpand={onExpand} restoreFocus={restoreFocus} />
+        : latest ? <AssistantReply run={latest} chart={chart} onExpand={onExpand} onCopy={onCopy} copyState={copyState} restoreFocus={restoreFocus} /> : null}
+    </ConversationBubble>
+  </>;
 }
 
 function Run({ run, latest, reviewRef, locked, onNavigate, onDecision }: { run: AgentRun; latest: boolean; reviewRef?: React.RefObject<React.ComponentRef<typeof View> | null>; locked: boolean; onNavigate: (href: string) => void; onDecision: (actionId: string, decision: 'confirm' | 'reject') => void }) {
