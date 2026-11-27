@@ -545,6 +545,18 @@ still support the same review. A map-only Vertex window can be enabled by
 deployment without opening a new Assistant or image-analysis window, and
 continues to share the existing user and spending limits.
 
+The welcome sits on the usable full-screen map, so setup starts with search or
+location. Pan and zoom until the campus is in view, then enter boundary drawing
+mode. Generation opens the 2.5D layout preview. The **Set up facilities** action
+highlights one mapped outline at a time and lets the administrator confirm its
+name and use. Each answer updates the visible draft immediately. One save links
+the confirmed facilities through the existing revisioned place workflow; skipped
+outlines remain visual. The saved map draft reopens in the preview and supports
+resuming review without another provider request. The facilities interaction
+does not create equipment, rooms, access rules or operational records. Detailed
+manual editing and other sources are under setup options. Publication remains
+an explicit review of the campus drawing.
+
 The map uses attributed [OpenStreetMap raster tiles](https://operations.osmfoundation.org/policies/tiles/)
 for an interactive reference. Data import uses the separately configured
 [Overpass endpoint](https://overpass.private.coffee/) and preserves ODbL

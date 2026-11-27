@@ -2,8 +2,8 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import type { CampusSceneWorkspace } from '../../packages/contracts/src/campus-scenes/contracts';
 import type { CampusSceneDocument, CampusSceneElement } from '../../packages/contracts/src/campus-scenes/types';
-import { applyCampusMapHints, campusMapAssistance } from '../src/lib/campus-map-assistance';
-import { campusSceneActionAllowed, canStartCampusMapSetup } from '../src/lib/campus-scene-policy';
+import { applyCampusMapHints, assistedFacilityReview, campusMapAssistance } from '../src/lib/campus-map-assistance';
+import { campusSceneActionAllowed, canResumeCampusMapSetup, canStartCampusMapSetup } from '../src/lib/campus-scene-policy';
 import type { NativePendingAction, NativePendingScope } from '../src/lib/native-pending-action';
 
 const campusId = '77285488-ed78-4802-8ecb-c45b0d22a1e2';
@@ -47,10 +47,40 @@ test('A2UI hints only rename compatible unlinked draft features and never claim 
     [walk.id]: { label: 'Outdoor classroom', kind: 'classroom' },
     absent: { label: 'Made-up feature', kind: 'building' },
   });
-  assert.deepEqual(updated.elements, [{ ...building, label: 'Science library', review_state: 'needs_review' }, existing, other, walk]);
+  assert.deepEqual(updated.elements, [{ ...building, label: 'Science library', asset_key: 'library', review_state: 'needs_review' }, existing, other, walk]);
   assert.deepEqual([...kinds], [[building.id, 'library']]);
   assert.equal(campusMapAssistance({ status: 'ai', messages: [] }), null);
   assert.equal(campusMapAssistance({ status: 'simulation', messages: [{}] })?.status, 'simulation');
+});
+
+test('guided setup resumes only an unpublished map layout', () => {
+  const map: CampusSceneDocument = { ...document, source: { ...document.source, provider: 'OpenStreetMap / Overpass' } };
+  const scene = { id: campusId, revision: 2, draft: map, published_version: null, published: null, updated_at: '' };
+  const workspace = { campus, scene, spaces: [] };
+  assert.equal(canResumeCampusMapSetup(workspace, campusId, true), true);
+  assert.equal(canResumeCampusMapSetup(workspace, campusId, false), false);
+  assert.equal(canResumeCampusMapSetup(workspace, key, true), false);
+  assert.equal(canResumeCampusMapSetup({ ...workspace, scene: { ...scene, draft: document } }, campusId, true), false);
+  assert.equal(canResumeCampusMapSetup({ ...workspace, scene: { ...scene, published_version: 1 } }, campusId, true), false);
+});
+
+test('save facilities creates rows only for answered compatible outlines and reserves existing codes', () => {
+  const skipped = { ...building, id: 'skipped' };
+  const linked = { ...building, id: 'linked', space_id: key };
+  const original = { ...document, elements: [building, skipped, linked] };
+  const reviewed = assistedFacilityReview(original, {
+    [building.id]: { label: 'Science Library', kind: ['library'] },
+    [linked.id]: { label: 'Existing Library', kind: ['library'] },
+    absent: { label: 'Made up', kind: ['laboratory'] },
+  }, ['science_library_1']);
+  assert.deepEqual(reviewed.rows, [{
+    proposal_id: 'facility_1', element_ids: [building.id], action: 'create',
+    name: 'Science Library', kind: 'library', code: 'SCIENCE_LIBRARY_2',
+  }]);
+  assert.equal(reviewed.document.elements[0]?.asset_key, 'library');
+  assert.deepEqual(reviewed.document.elements[0]?.geometry, building.geometry);
+  assert.equal(reviewed.document.elements[0]?.review_state, 'needs_review');
+  assert.deepEqual(reviewed.document.elements.slice(1), [skipped, linked]);
 });
 
 test('the retained map import replays only its bounded polygon and exact campus scope', () => {

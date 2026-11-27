@@ -9,6 +9,8 @@ import {
   campusAreaCoordinates,
   campusAreaPointAt,
   campusAreaView,
+  campusAreaZoom,
+  campusAreaZoomPreview,
   panCampusArea,
 } from '../src/features/campus/CampusAreaMapPolicy';
 
@@ -48,4 +50,16 @@ test('the permission-free coordinate fallback accepts decimal coordinates withou
   assert.equal(campusAreaCoordinates('0, 181'), null);
   assert.equal(campusAreaCoordinates('0, 0, 0'), null);
   assert.equal(campusAreaCoordinates('12,'), null);
+});
+
+test('wheel zoom anchors the current cursor and pinch moves the anchored map point', () => {
+  const view = campusAreaView(CAMPUS_AREA_SIMULATION_CENTER);
+  const width = 390, height = 650;
+  const anchor = { x: 142, y: 250 }, newAnchor = { x: 170, y: 288 };
+  const point = campusAreaPointAt(view, width, height, anchor.x, anchor.y);
+  assert.deepEqual(campusAreaPointAt(campusAreaZoom(view, 1, width, height, anchor), width, height, anchor.x, anchor.y), point);
+  assert.deepEqual(campusAreaPointAt(campusAreaZoom(view, 1, width, height, anchor, newAnchor), width, height, newAnchor.x, newAnchor.y), point);
+  const preview = campusAreaZoomPreview(view, 2, width, height, anchor, newAnchor);
+  assert.equal(preview.x + width / 2 + 2 * (anchor.x - width / 2), newAnchor.x);
+  assert.equal(preview.y + height / 2 + 2 * (anchor.y - height / 2), newAnchor.y);
 });

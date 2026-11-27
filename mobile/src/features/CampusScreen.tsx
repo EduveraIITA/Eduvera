@@ -9,7 +9,7 @@ import { campusMapPresentationChanges,type CampusMapPresentation } from '../../.
 import { personalOutdoorScene,personalWalkingDestination } from '../../../packages/contracts/src/campus-scenes/personalJourney';
 import { boundCampusAssets,campusAssetUnavailable,campusBlockedLiftIds } from '../../../packages/contracts/src/campus-operation-presentation';
 import { CampusSceneEditorScreen } from './campus/CampusSceneEditorScreen';
-import { canStartCampusMapSetup } from '../lib/campus-scene-policy';
+import { canResumeCampusMapSetup, canStartCampusMapSetup } from '../lib/campus-scene-policy';
 import { useCampusPeople } from './campus/useCampusPeople';
 import type { SceneEvidenceLayer } from '../../../packages/contracts/src/campus-scenes/sceneEvidence.types';
 import { campusMemberMarkers,campusAdministratorMarkers } from '../lib/campus-member-presentation';
@@ -60,7 +60,8 @@ function CampusDirectory({ href, onNavigate, schoolId }: DomainScreenProps & { s
   const [finishedSetup, setFinishedSetup] = useState<string | null>(null);
   const setupCampus = useRef<string | null>(null);
   const startSetup = !editing && canEdit && !!selected && finishedSetup !== selected.id
-    && canStartCampusMapSetup(workspace.data, selected.id, workspace.isSuccess && !workspace.isFetching);
+    && (canStartCampusMapSetup(workspace.data, selected.id, workspace.isSuccess && !workspace.isFetching)
+      || canResumeCampusMapSetup(workspace.data, selected.id, workspace.isSuccess && !workspace.isFetching));
   const settingUp = !editing && !!selected && finishedSetup !== selected.id && (startSetup || setupCampus.current === selected.id);
   useLayoutEffect(() => {
     if (startSetup && selected) setupCampus.current = selected.id;

@@ -1,4 +1,4 @@
-const BASIC_CATALOG = 'https://a2ui.org/specification/v1_0/catalogs/basic/catalog.json';
+export const CAMPUS_A2UI_BASIC_CATALOG = 'https://a2ui.org/specification/v1_0/catalogs/basic/catalog.json';
 const MAX_MESSAGES = 32;
 const MAX_COMPONENTS = 128;
 const MAX_DEPTH = 12;
@@ -87,7 +87,7 @@ function validId(id: unknown): id is string {
 
 function a2uiComponent(value: unknown): value is CampusA2uiComponent {
   return a2uiRecord(value) && validId(value.id)
-    && (value['@catalogId'] === undefined || value['@catalogId'] === BASIC_CATALOG)
+    && (value['@catalogId'] === undefined || value['@catalogId'] === CAMPUS_A2UI_BASIC_CATALOG)
     && typeof value.component === 'string'
     && ['Column', 'Row', 'Card', 'Divider', 'Text', 'TextField', 'ChoicePicker', 'Button'].includes(value.component);
 }
@@ -134,7 +134,7 @@ export function readCampusA2uiSurfaces(messages: readonly unknown[]): CampusA2ui
     if (!a2uiRecord(message) || message.version !== '1.0' || Object.keys(message).length !== 2) return;
     if (a2uiRecord(message.createSurface)) {
       const { surfaceId, catalogId, sendDataModel, components, dataModel } = message.createSurface;
-      if (!validId(surfaceId) || surfaces.has(surfaceId) || catalogId !== BASIC_CATALOG || (sendDataModel !== undefined && sendDataModel !== false)
+      if (!validId(surfaceId) || surfaces.has(surfaceId) || catalogId !== CAMPUS_A2UI_BASIC_CATALOG || (sendDataModel !== undefined && sendDataModel !== false)
         || (dataModel !== undefined && !a2uiRecord(dataModel))) return;
       const surface = { id: surfaceId, components: new Map<string, CampusA2uiComponent>(), model: dataModel ?? {} };
       if (components !== undefined && !addComponents(surface, components)) return;

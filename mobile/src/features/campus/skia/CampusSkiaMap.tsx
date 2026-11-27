@@ -47,9 +47,9 @@ export default function CampusSkiaMap(props: CampusMapCanvasProps) {
   const unavailableKey = JSON.stringify([...new Set([...props.unavailable, ...assetStates.filter(state => state.suppressNightGlow).map(state => state.elementId)])].sort());
   const unavailable = useMemo(() => new Set<string>(JSON.parse(unavailableKey)), [unavailableKey]);
   const drawing = useMemo(() => compileCampusSceneDrawing(scene, { elements, floorId: floor, mode, lighting, sunlight: effectiveSunlight,
-    interiorOutline: activeOutline ?? undefined, includeSurroundings: !interior,
+    interiorOutline: activeOutline ?? undefined, includeSurroundings: !interior && props.includeSurroundings !== false,
     detail: 'full', interiorGroundColor: night ? '#202a31' : colors.row }),
-  [scene, elements, floor, mode, lighting, effectiveSunlight, activeOutline, interior, colors.row, night]);
+  [scene, elements, floor, mode, lighting, effectiveSunlight, activeOutline, interior, colors.row, night, props.includeSurroundings]);
   const mutableElements = useMemo(() => new Map(elements.filter(element => element.kind === 'fixture' && element.holding_id).map(element => [element.id, element])), [elements]);
   const retained = useMemo(() => createCampusSceneRetainedPictures(drawing, { mutableElementIds: new Set(mutableElements.keys()) }), [drawing, mutableElements]);
   const layers = useMemo(() => retained.resolve(unavailable, (id, isUnavailable) => compileCampusSceneDrawing(scene, {

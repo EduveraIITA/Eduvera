@@ -20,6 +20,7 @@ export interface CampusMapCanvasProps {
   assetStates?: readonly NativeCampusAssetRenderState[];
   people?: { compiled: ScenePeopleCompiled | null; clock: ScenePeopleClock; visibility: CampusPeopleVisibility };
   draftPreview?: boolean;
+  includeSurroundings?: boolean;
   editorInterior?: SceneFloorPlanContext;
   sourceImageUrl?: string;
   sourceImageBounds?: { x: number; y: number; width: number; height: number; rotationDeg?: number };

@@ -22,6 +22,15 @@ export function canStartCampusMapSetup(workspace: CampusSceneWorkspace | undefin
   && draft.source.kind === 'manual' && !draft.source.image_asset_id;
 }
 
+export function canResumeCampusMapSetup(workspace: CampusSceneWorkspace | undefined, campusId: string, confirmed: boolean): boolean {
+ if (!confirmed || workspace?.campus.id !== campusId) return false;
+ const scene = workspace.scene;
+ if (!scene || scene.published !== null || scene.published_version !== null || !nativeSceneDocument(scene.draft)) return false;
+ const source = scene.draft.source;
+ return (source.kind === 'open_map' && source.provider === 'OpenStreetMap / Overpass')
+  || (source.kind === 'manual' && source.label === 'Fictional campus map' && source.attribution === 'ThatCampus fictional Simulation map');
+}
+
 function campusMapBoundary(value: unknown): boolean {
  return Array.isArray(value) && value.length >= 3 && value.length <= 48 && value.every(raw => {
   const point=object(raw);

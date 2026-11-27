@@ -6,6 +6,8 @@ const MERCATOR_LATITUDE_LIMIT = 85.05112878;
 const MAX_BOUNDARY_SPAN_METRES = 4000;
 export const CAMPUS_AREA_MAX_POINTS = 48;
 export const CAMPUS_AREA_MIN_ZOOM = 14;
+export const CAMPUS_AREA_MIN_VIEW_ZOOM = 1;
+export const CAMPUS_AREA_MAX_VIEW_ZOOM = 19;
 export const CAMPUS_AREA_SIMULATION_CENTER: CampusAreaPoint = { latitude: 28.612, longitude: 77.231 };
 export const CAMPUS_AREA_WORLD_VIEW: DepartureMapViewport = { center: { latitude: 18, longitude: 0 }, zoom: 2 };
 
@@ -16,6 +18,27 @@ export function campusAreaView(point: CampusAreaPoint): DepartureMapViewport {
 export function panCampusArea(view: DepartureMapViewport, dx: number, dy: number): DepartureMapViewport {
   const point = projectDeparturePoint(view.center, view.zoom);
   return { ...view, center: unprojectDeparturePoint(point.x + dx, point.y + dy, view.zoom) };
+}
+
+export type CampusAreaPixel = { x: number; y: number };
+
+export function campusAreaZoom(view: DepartureMapViewport, change: number, width: number, height: number,
+  anchor = { x: width / 2, y: height / 2 }, destination = anchor): DepartureMapViewport {
+  const zoom = Math.max(CAMPUS_AREA_MIN_VIEW_ZOOM, Math.min(CAMPUS_AREA_MAX_VIEW_ZOOM, view.zoom + Math.round(change)));
+  const center = projectDeparturePoint(view.center, view.zoom);
+  const scale = 2 ** (zoom - view.zoom);
+  return { zoom, center: unprojectDeparturePoint(
+    (center.x + anchor.x - width / 2) * scale - destination.x + width / 2,
+    (center.y + anchor.y - height / 2) * scale - destination.y + height / 2,
+    zoom,
+  ) };
+}
+
+export function campusAreaZoomPreview(view: DepartureMapViewport, scale: number, width: number, height: number,
+  anchor: CampusAreaPixel, destination: CampusAreaPixel) {
+  const bounded = Math.max(2 ** (CAMPUS_AREA_MIN_VIEW_ZOOM - view.zoom), Math.min(2 ** (CAMPUS_AREA_MAX_VIEW_ZOOM - view.zoom), scale));
+  return { scale: bounded, x: destination.x - width / 2 - (anchor.x - width / 2) * bounded,
+    y: destination.y - height / 2 - (anchor.y - height / 2) * bounded };
 }
 
 export function campusAreaCoordinates(text: string): CampusAreaPoint | null {
