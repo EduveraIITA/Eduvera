@@ -16,6 +16,16 @@ export class InstitutionOnboardingController {
     return this.onboarding.provision(request.authUser, request.sessionHash, request.body, request);
   }
 
+  @Get("workspaces/")
+  workspaceCapacity(@Req() request: AuthenticatedRequest) {
+    return this.onboarding.workspaceCapacity(request.authUser, request);
+  }
+
+  @Post("workspaces/")
+  createWorkspace(@Req() request: AuthenticatedRequest) {
+    return this.onboarding.createWorkspace(request.authUser, request.body, request);
+  }
+
   @Put("goals/")
   goals(@Req() request: AuthenticatedRequest) {
     return this.onboarding.setGoals(request.authUser, request.body, request);

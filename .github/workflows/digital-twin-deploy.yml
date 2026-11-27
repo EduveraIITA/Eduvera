@@ -164,6 +164,7 @@ jobs:
               'assessments', 'academic-reports', 'academic-history-integrity', 'grading-policy-worlds',
               'assessment-evidence-integrity', 'assessment-result-worlds', 'assessment-correction-worlds',
             ].map(name => `test/${name}.integration.test.ts`);
+            files.push('test/self-service-onboarding.test.ts');
             const report = join(directory, 'postgres-results.json');
             const result = spawnSync(process.execPath, ['--import', 'tsx', 'node_modules/vitest/vitest.mjs', 'run', '--reporter=default', '--reporter=json', `--outputFile.json=${report}`, ...files], {
               stdio: 'inherit', env: { ...process.env, VISIT_ONBOARDING_HTTP_COMPILED_ROOT: join(directory, 'dist'), ACADEMIC_CATALOGUE_HTTP_COMPILED_ROOT: join(directory, 'dist'), ACCOUNT_MAIL_HTTP_COMPILED_ROOT: join(directory, 'dist'), ACADEMIC_OFFERING_HTTP_COMPILED_ROOT: join(directory, 'dist') },

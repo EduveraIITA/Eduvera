@@ -7,7 +7,7 @@ import type { AuthUser, RequestWithContext } from "../common/request.js";
 import { CAMPUS_MODEL_CORE_PORT, type CampusModelCorePort } from "../campus-model-core/campus-model-core.port.js";
 import { DatabaseService } from "../database/database.service.js";
 import type { Database } from "../database/types.js";
-import { ProgressiveWorkspaceProvisioner } from "./progressive-workspace.provisioner.js";
+import { ACCOUNT_CAMPUS_LIMIT, ProgressiveWorkspaceProvisioner } from "./progressive-workspace.provisioner.js";
 import { canonicalProgressiveGoalDestination } from "./progressive-goal-destination.js";
 import { HUMAN_AGENT_IDENTITY_PORT, type HumanAgentIdentityPort } from "../campus-model-core/human-agent-identity.port.js";
 import { executionEnvironmentStorage } from "../campus-model-core/execution-time.runtime.js";
@@ -222,6 +222,23 @@ export class InstitutionOnboardingService {
     await sql`INSERT INTO progressive_onboarding_audits(workspace_id,actor_id,action,revision,metadata)
       VALUES(${workspaceId}::uuid,${user.id}::uuid,'goals_selected',${state.revision},
         ${JSON.stringify({ goals: ordered, primary: ordered[0] })}::jsonb)`.execute(db);
+  }
+
+  async workspaceCapacity(user: AuthUser, request: FastifyRequest) {
+    this.requireLivePreferences(request);
+    const { count } = (await sql<{ count: number }>`SELECT count(*)::int AS count
+      FROM progressive_onboarding_workspaces WHERE provisioned_for_account_id=${user.id}::uuid`.execute(this.db)).rows[0]!;
+    return { count, limit: ACCOUNT_CAMPUS_LIMIT };
+  }
+
+  async createWorkspace(user: AuthUser, body: unknown, request: FastifyRequest) {
+    this.requireLivePreferences(request);
+    const input = z.object({ request_id: z.uuid(), name: z.string().trim().min(2).max(180) }).strict().parse(body);
+    const schoolId = await this.db.transaction().execute(async db => {
+      const previous = await this.selectedWorkspace(user, db);
+      return this.provisioner.createForAccount(db, user, previous?.timezone ?? "UTC", { requestId: input.request_id, name: input.name });
+    });
+    return { school_id: schoolId };
   }
 
   async provision(user: AuthUser, sessionHash: string, body: unknown, request: FastifyRequest) {

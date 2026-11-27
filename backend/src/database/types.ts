@@ -210,7 +210,7 @@ export interface ProgressiveOnboardingGoalCatalogTable {
   setup_capability: string | null; sort_order: number; is_active: Generated<boolean>;
 }
 export interface ProgressiveOnboardingWorkspaceTable {
-  id: Generated<string>; school_id: string; owner_user_id: string; provisioned_for_account_id: string | null;
+  id: Generated<string>; school_id: string; owner_user_id: string; provisioned_for_account_id: string | null; provisioned_account_slot: Generated<number>; provision_request_id: string | null; provision_request_name: string | null;
   profile_named: Generated<boolean>; status: Generated<"purpose_required" | "ready">;
   resume_step: Generated<"purpose" | "first_use" | "operating">; resume_goal_key: string | null;
   resume_path: Generated<string>; revision: Generated<number>; created_at: Timestamp; updated_at: Timestamp;

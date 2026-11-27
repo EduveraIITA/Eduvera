@@ -225,6 +225,14 @@ before asking for broad setup.
     Campus setup. Other capabilities remain visible as Add anytime; verification is a separate
     trust task, never a universal blocker.
 
+From **Profile → Your campuses**, an account can explicitly create up to ten
+private campus workspaces, including the one created during first-time
+onboarding. Invitations and campus locations within one workspace do not count
+against this limit. Retrying the initial onboarding or an explicit creation
+request returns the workspace already created for that request. Additional
+workspaces use the normal campus switcher and receive separate memberships and
+onboarding records.
+
 ## 7. Minimum paths by outcome
 
 | Starting outcome | Ask now | Do not ask yet | First accepted value |

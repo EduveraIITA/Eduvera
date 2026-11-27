@@ -134,6 +134,8 @@ suite("purpose-first progressive onboarding against PostgreSQL", () => {
     expect(repeated.data.workspace.timezone).toBe("Europe/London");
     expect((await pool.query("SELECT count(*)::int n FROM progressive_onboarding_workspaces WHERE provisioned_for_account_id=$1", [applicantId])).rows[0].n).toBe(1);
 
+    expect((await request("applicant", "onboarding/workspaces/")).data).toEqual({ count: 1, limit: 10 });
+
     const reprioritized = await request("applicant", "onboarding/goals/", {
       goals: ["attendance", "gate", "messages"], primary: "gate",
     }, "PUT");
@@ -192,4 +194,27 @@ suite("purpose-first progressive onboarding against PostgreSQL", () => {
     const profile = await request("legacy", "auth/me/");
     expect(profile.data).toMatchObject({ institution_setup_required: false, onboarding: { status: "ready", selected_goal_count: 0 } });
   });
+  it("creates up to ten private campus workspaces per account and replays a request at the limit", async () => {
+    const before = await request("legacy", "onboarding/workspaces/");
+    expect(before.data).toEqual({ count: 0, limit: 10 });
+    const intents = Array.from({ length: 10 }, (_, index) => ({ request_id: randomUUID(), name: `Campus ${index + 1}` }));
+    const results = [];
+    for (const intent of intents.slice(0, 9)) {
+      results.push(await request("legacy", "onboarding/workspaces/", intent));
+    }
+    const competing = await Promise.all([
+      request("legacy", "onboarding/workspaces/", intents[9]),
+      request("legacy", "onboarding/workspaces/", { request_id: randomUUID(), name: "One campus too many" }),
+    ]);
+    expect(competing.map(result => result.status).sort()).toEqual([201, 409]);
+    expect(results.every(result => result.status === 201)).toBe(true);
+    const replay = await request("legacy", "onboarding/workspaces/", intents[0]);
+    expect(replay.status).toBe(201);
+    expect(replay.data).toEqual(results[0]!.data);
+    expect((await request("legacy", "onboarding/workspaces/", { ...intents[0], name: "A different name" })).status).toBe(409);
+    expect((await request("legacy", "onboarding/workspaces/")).data).toEqual({ count: 10, limit: 10 });
+    expect((await request("legacy", "auth/active-school/", { school_id: results[0]!.data.school_id })).status).toBe(200);
+    expect((await request("legacy", "onboarding/workspace/")).data.workspace.display_name).toBe("Campus 1");
+  }, 30_000);
+
 });
