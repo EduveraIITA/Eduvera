@@ -178,6 +178,14 @@ describe('agent capability boundary',()=>{
     const data=compactModelData({summary:{percentage:93},ranking:{large:true},students:Array.from({length:45},(_,id)=>({id,avatar_url:'x'}))}) as any;
     expect(data.summary.percentage).toBe(93);expect(data).not.toHaveProperty('ranking');expect(data.students).toMatchObject({partial:true,total_items:45});expect(data.students.items).toHaveLength(40);
   });
+  it('routes a Virtual Campus request to the current authorized campus directory and a fixed in-app link',()=>{
+    const capability=findCapabilities('set up my campus map and floor layout',availableCapabilities(scope))[0]!;
+    expect(capability.name).toBe('virtual_campus_layout');
+    expect(capability.kind).toBe('read');
+    expect(capability.request?.({},scope)).toMatchObject({method:'GET',path:`/schools/${scope.schoolId}/campus-scenes/`});
+    expect(assertLocalScreen(capability.screen({},scope))).toBe('/more/virtual-campus');
+    expect(() => assertLocalScreen('/more/virtual-campus/admin')).toThrow();
+  });
   it('finds attendance tools despite a common spelling error',()=>expect(findCapabilities('attendence',availableCapabilities(scope)).some(cap=>cap.domain==='attendance')).toBe(true));
   it.each(['Can you mark his presence today','Mark Aarav present today','She is absent','Record him late','attendence'])('routes colloquial attendance: %s',question=>{
     const selected=findCapabilities(question,CAPABILITIES).map(cap=>cap.name);

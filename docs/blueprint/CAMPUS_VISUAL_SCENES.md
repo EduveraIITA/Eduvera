@@ -533,6 +533,13 @@ An administrator can deliberately start from the map in the draft editor after
 confirming replacement of a drawing or sourced draft.
 
 Bounded OpenStreetMap geometry is the source for editable outdoor features.
+The importer bounds the primary geometry request and can try one configured
+regional mirror when the entire selection falls inside its coverage. If the
+providers cannot finish or return no usable features, the editor keeps the exact
+drawn boundary as a labeled outline-only draft. It can issue a new source request
+after an exact earlier outcome is known. Neither the map nor Vertex estimates
+missing building footprints from an outline.
+
 The selected polygon restricts the import and remains available for adjustment.
 Vertex can assist with names, place types and the review prompt for a bounded
 set of those features. Geometry and place identity stay grounded in the source
@@ -547,7 +554,7 @@ The welcome sits on the usable full-screen map, so setup starts with search or
 location. Pan and zoom until the campus is in view, then enter boundary drawing
 mode. Generation opens the 2.5D layout preview. The **Set up facilities** action
 highlights one mapped outline at a time and lets the administrator confirm its
-name and use. Each answer updates the visible draft immediately. One save links
+name and use in the main Assistant when enabled. Each answer updates the visible draft immediately. One save links
 the confirmed facilities through the existing revisioned place workflow; skipped
 outlines remain visual. The saved map draft reopens in the preview and supports
 resuming review without another provider request. The facilities interaction
@@ -566,7 +573,7 @@ uploading an authorized PNG, JPEG or WebP. The existing trace flow converts
 visible geometry into editable proposals when floor-plan analysis is available.
 Public links alone grant no rights and trigger no downloads or layout changes.
 
-Without a plan, describe the floor to propose named rooms and resources. The
+Without a plan, describe the floor in the main Assistant to propose named rooms and resources. Return to the floor map for exact placement. The
 bounded [A2UI 1.0](https://a2ui.org/specification/v1.0-a2ui/) catalog renders
 the questions, editable input and continue/skip actions. The parser proposes
 only named details supplied by the person. The optional Vertex follow-up receives

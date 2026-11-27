@@ -16,7 +16,7 @@ import { scenePlaceFocus } from '../../../../packages/contracts/src/campus-scene
 import { useSession } from '../../auth/SessionProvider';
 import { apiFetch, getApiOrigin } from '../../lib/api';
 import { useApi } from '../../lib/query';
-import { canResumeCampusMapSetup, canStartCampusMapSetup, campusSceneEditorFocus, campusSceneGuideIntent, campusSceneSourceState, nativeSceneDocument } from '../../lib/campus-scene-policy';
+import { canResumeCampusMapSetup, canStartCampusMapSetup, campusSceneEditorFocus, campusSceneGuideIntent, campusSceneSourceState, nativeSceneDocument, retainedCampusMapBoundary } from '../../lib/campus-scene-policy';
 import { applyCampusMapHints, assistedFacilityReview, campusMapAssistance, type CampusMapAssistance } from '../../lib/campus-map-assistance';
 import { useSceneHistory } from '../../lib/campus-scene-history';
 import { useNativePendingAction, type NativePendingAction, type NativePendingFile, type NativePendingInput } from '../../lib/native-pending-action';
@@ -74,7 +74,8 @@ function NativeSceneEditor({href,onNavigate,schoolId,campusId,root,workspace,rel
  const [indoorBuilding,setIndoorBuilding]=useState<string|null>(null);
  const [floorplanReturn,setFloorplanReturn]=useState(false);
  const indoorReturn=useRef<'preview'|null>(null);
- const [mapBoundary,setMapBoundary]=useState<CampusAreaPoint[]>([]);
+ const [mapBoundary,setMapBoundary]=useState<CampusAreaPoint[]>(()=>document.source.drawn_boundary??[]);
+ const [mapAttempted,setMapAttempted]=useState(false);
  const [assistance,setAssistance]=useState<CampusMapAssistance|null>(null);
  const [confirmedFacilities,setConfirmedFacilities]=useState<CampusMapReviewHints>({});
  const [mapPlaceKinds,setMapPlaceKinds]=useState<ReadonlyMap<string,ScenePlaceKind>>(()=>new Map());
@@ -108,22 +109,25 @@ function NativeSceneEditor({href,onNavigate,schoolId,campusId,root,workspace,rel
     const mapResult=campusMapAssistance(receipt.assistance);
     const payload=action.payload.kind==='json' ? JSON.parse(action.payload.body) as {kind?:string;boundary?:CampusAreaPoint[]} : {};
     const fromBoundary=payload.kind==='map_area';
-    setMapBoundary(fromBoundary?(payload.boundary??[]):[]);
+    setMapBoundary(fromBoundary?(proposed.source.drawn_boundary??payload.boundary??[]):[]);
     setAssistance(mapResult);setMapPlaceKinds(new Map());setConfirmedFacilities({});
-    history.change(proposed);setFloor(null);setMode(proposed.elements.length?'2.5d':'2d');setPanel(fromBoundary?'preview':null);
+    history.change(proposed);setFloor(null);setMode(proposed.elements.length&&!proposed.source.map_coverage?'2.5d':'2d');setPanel(fromBoundary?'preview':null);
    }
    setSelected(null);setCamera(initialCampusCamera);setNotice('Layout prepared. Review names, positions and campus links before saving or publishing.');
   }
  };
  const write=useNativePendingAction<CampusSceneWorkspace>({scope,domain:'campus',ownerHref:href,refreshPath:root+'workspace/',captureOperation:capture,accepted});
+ const retainedBoundary=useMemo(()=>retainedCampusMapBoundary(write.action,root+'imports/'),[write.action,root]);
  const sourceState=campusSceneSourceState(revision,knownRevision.current,!!sourceError),locked=write.locked||preparing||!draftOpen||sourceState!=='current',dirty=history.dirty||!!drawing||!!floorPlan,formOpen=creating||panel==='map'||panel==='preview'||panel==='assisted'||panel==='publication'||panel==='indoor'||panel==='places'||panel==='source'||panel==='floorplan',controlsLocked=locked||formOpen;
  useScreenExitGuard({blocked:write.busy||preparing,dirty:dirty&&!write.action,title:'Leave this campus draft?',message:'Unsaved drawing changes will be discarded. Saved drafts and retained commands remain available.'});
  const select=document.elements.find(e=>e.id===selected),items=document.elements.filter(e=>(!onlyPending||e.review_state!=='reviewed')&&`${e.label} ${e.kind}`.toLocaleLowerCase().includes(search.trim().toLocaleLowerCase())),actualPage=Math.min(page,Math.max(1,Math.ceil(items.length/8)));
- const focus=useMemo(()=>scenePlaceFocus(document,selected,floorPlan?'2d':mode,floor),[document,selected,mode,floor,floorPlan]);
+ const outlineOnly=!!document.source.map_coverage&&document.elements.length===1&&document.elements[0]?.id==='map-boundary';
+ const focusElement=selected??(outlineOnly&&panel==='preview'?'map-boundary':null);
+ const focus=useMemo(()=>scenePlaceFocus(document,focusElement,floorPlan?'2d':mode,floor),[document,focusElement,mode,floor,floorPlan]);
  const change=(next:CampusSceneDocument)=>{if(locked)return;history.change(next);setError('');};
  const update=(next:CampusSceneElement)=>change({...document,elements:document.elements.map(e=>e.id===next.id?next:e)});
  const task=async(fn:(check:()=>void)=>Promise<void>)=>{if(working.current||write.locked||sourceState!=='current')return false;working.current=true;setPreparing(true);setError('');try{const check=capture();await fn(check);check();return true;}catch(cause){setError(cause instanceof Error?cause.message:'The layout action could not be completed.');return false;}finally{working.current=false;setPreparing(false);}};
- const reloadSource=async(adopt=false)=>{if(working.current||write.locked)return;working.current=true;setPreparing(true);setError('');try{const check=capture(),value=await reload();check();if(adopt){const next=value.scene?.draft??value.scene?.published?.document??emptyNativeScene(value.campus.name);if(!nativeSceneDocument(next))throw new Error('The current saved draft could not be read. Your local changes were retained.');history.acceptSaved(next);knownRevision.current=value.scene?.revision??0;setRevision(value.scene?.revision??0);setDraftOpen(!value.scene||value.scene.draft!==null);setPublished(value.scene?.published_version??null);setSpaces(value.spaces.map(p=>({...p,campus_id:campusId})));setFloorPlan(null);floorBase.current=null;setAssistance(null);setMapBoundary([]);setConfirmedFacilities({});setMapPlaceKinds(new Map());setFloorImageId(undefined);setDrawing(null);setSelected(null);setFloor(null);setPanel(null);setCreating(false);setCamera(initialCampusCamera);setNotice('Current saved campus draft loaded.');}}catch(cause){setError(cause instanceof Error?cause.message:'The current source could not be checked. Your local changes were retained.');}finally{working.current=false;setPreparing(false);}};
+ const reloadSource=async(adopt=false)=>{if(working.current||write.locked)return;working.current=true;setPreparing(true);setError('');try{const check=capture(),value=await reload();check();if(adopt){const next=value.scene?.draft??value.scene?.published?.document??emptyNativeScene(value.campus.name);if(!nativeSceneDocument(next))throw new Error('The current saved draft could not be read. Your local changes were retained.');history.acceptSaved(next);knownRevision.current=value.scene?.revision??0;setRevision(value.scene?.revision??0);setDraftOpen(!value.scene||value.scene.draft!==null);setPublished(value.scene?.published_version??null);setSpaces(value.spaces.map(p=>({...p,campus_id:campusId})));setFloorPlan(null);floorBase.current=null;setAssistance(null);setMapBoundary(next.source.drawn_boundary??[]);setConfirmedFacilities({});setMapPlaceKinds(new Map());setFloorImageId(undefined);setDrawing(null);setSelected(null);setFloor(null);setPanel(null);setCreating(false);setCamera(initialCampusCamera);setNotice('Current saved campus draft loaded.');}}catch(cause){setError(cause instanceof Error?cause.message:'The current source could not be checked. Your local changes were retained.');}finally{working.current=false;setPreparing(false);}};
  const loadCurrent=()=>{if(dirty||panel==='source'||panel==='floorplan'){const check=capture();Alert.alert('Discard unsaved layout changes?', 'Load the current saved campus draft. Unsaved drawing, floor-plan and source choices will be discarded.',[{text:'Keep editing',style:'cancel'},{text:'Load saved draft',style:'destructive',onPress:()=>{try{check();void reloadSource(true);}catch{}}}]);}else void reloadSource(true);};
  const input=(suffix:string,body:Record<string,unknown>,extra:Partial<NativePendingInput>={}):NativePendingInput=>({endpoint:root+suffix+'/',method:suffix==='draft'?'PUT':'POST',serverKey:'idempotency_key',body,source:{kind:'campus_scene',sourceId:campusId,revision},...extra});
  const send=async(suffix:string,body:Record<string,unknown>,extra:Partial<NativePendingInput>={})=>{const ok=await write.run(input(suffix,body,extra));if(!ok)throw new Error('The layout action is not yet confirmed. Recover its retained original request before continuing.');};
@@ -144,7 +148,17 @@ function NativeSceneEditor({href,onNavigate,schoolId,campusId,root,workspace,rel
    {text:'Open map',onPress:()=>{try{check();open();}catch{}}},
   ]);
  };
- const importMapArea=(boundary:CampusAreaPoint[])=>task(async()=>send('imports',{kind:'map_area',label:workspace.campus.name.slice(0,160),boundary}));
+ const importMapArea=(boundary:CampusAreaPoint[])=>task(async()=>{
+  setMapBoundary(boundary);
+  setMapAttempted(true);
+  await write.run(input('imports',{kind:'map_area',label:workspace.campus.name.slice(0,160),boundary}));
+ });
+ const recoverMapArea=()=>{
+  if(!retainedBoundary)return;
+  if(write.resumeHref){onNavigate(write.resumeHref);return;}
+  setError('');setPanel('map');setMapBoundary(retainedBoundary);setMapAttempted(true);
+  void write.recover();
+ };
  const continueMapReview=async(hints:CampusMapReviewHints)=>{
   if(locked)throw new Error('Wait until the current campus source is ready.');
   if(!Object.keys(hints).length){setSelected(null);setPanel('preview');return;}
@@ -212,14 +226,25 @@ function NativeSceneEditor({href,onNavigate,schoolId,campusId,root,workspace,rel
   onImportPlan={buildingId=>{setIndoorBuilding(buildingId);setFloorplanReturn(true);setPanel('floorplan');}}/>;
  const leaveSetup=()=>onNavigate('/more');
  const lockNavigation=write.busy||preparing;
+ const mapGenerationError=mapAttempted&&!write.action&&!lockNavigation ? write.error||error : '';
+ const mapRecovery=retainedBoundary ? {
+  message:write.action?.phase==='accepted'
+   ? 'Your layout is ready. Load it with the saved outline.'
+   : preparing ? 'Looking up features inside your outline.'
+   : 'Your outline is saved on this device. Check the result of the original request.',
+  label:write.resumeHref?'Open original layout request':write.action?.phase==='accepted'?'Open generated layout':'Check layout progress',
+  busyLabel:preparing?'Preparing your layout…':'Checking layout…',
+  disabled:write.blocked,onPress:recoverMapArea,
+ } : undefined;
  const traditional={label:'Traditional setup',run:()=>{setSelected(null);setPanel(null);}};
  const otherSource={label:'Use a site plan or map file',run:()=>setPanel('source')};
- if(panel==='map'&&sourceState==='current')return <CampusSetupWorkspace
-  campusName={workspace.campus.name} phase="boundary" feedback={mapFeedback} locked={lockNavigation} onClose={leaveSetup}
-  options={[otherSource,traditional,...(onChooseCampus?[{label:'Choose a different campus',run:()=>{setPanel(null);onChooseCampus();}}]:[])]}
-  map={capabilities.isPending?<Loading label="Opening the map…"/>:capabilities.data?.map_area?.available===true&&!capabilities.error
-   ? <CampusAreaMap fullscreen initialBoundary={mapBoundary} simulation={session.environment.mode==='simulation'}
-      busy={lockNavigation} disabled={locked} onSearch={capabilities.data.map_search.available?lookupCampus:undefined}
+ if((panel==='map'||draftOpen&&retainedBoundary)&&sourceState==='current')return <CampusSetupWorkspace
+  campusName={workspace.campus.name} phase="boundary" feedback={mapRecovery||mapGenerationError?undefined:mapFeedback} locked={lockNavigation} onClose={leaveSetup}
+  options={mapRecovery?[]:[otherSource,traditional,...(onChooseCampus?[{label:'Choose a different campus',run:()=>{setPanel(null);onChooseCampus();}}]:[])]}
+  map={!write.ready||(!mapRecovery&&capabilities.isPending)?<Loading label="Opening the map…"/>:mapRecovery||capabilities.data?.map_area?.available===true&&!capabilities.error
+   ? <CampusAreaMap fullscreen initialBoundary={retainedBoundary??mapBoundary} simulation={session.environment.mode==='simulation'}
+      busy={lockNavigation} disabled={locked} onSearch={capabilities.data?.map_search.available?lookupCampus:undefined}
+      recovery={mapRecovery} generation={mapGenerationError?{message:mapGenerationError,label:'Try generating again'}:undefined}
       onAreaSelected={boundary=>void importMapArea(boundary)}/>
    : <View style={{padding:24,gap:12}}><Notice message={capabilities.error?.message??capabilities.data?.map_area?.reason??'Map setup is unavailable. You can start from a site plan.'}/><Button title="Use another source" kind="secondary" onPress={otherSource.run}/>{capabilities.error?<Button title="Retry map" kind="secondary" onPress={()=>void capabilities.refetch()}/>:null}</View>}/>;
  if((panel==='preview'||panel==='assisted'||panel==='publication')&&sourceState==='current'){
@@ -231,6 +256,11 @@ function NativeSceneEditor({href,onNavigate,schoolId,campusId,root,workspace,rel
   const startIndoor={label:'Map building interiors',run:()=>openIndoor('preview')};
   const adjustBoundary={label:'Adjust boundary',run:()=>{setSelected(null);setPanel('map');}};
   const startFacilities={label:'Set up facilities',run:()=>{setSelected(null);setPanel('assisted');}};
+  const coverage=document.source.map_coverage;
+  const addFeatures={label:'Add map features',run:traditional.run};
+  const coverageMessage=coverage==='boundary_only_unavailable'
+   ? 'Map data is temporarily unavailable. Your draft starts with the boundary you drew.'
+   : coverage==='boundary_only_empty' ? 'The map source returned no features inside your selection. Your draft starts with the boundary you drew.' : '';
   const approvalChecks=['The outlines, entrances and paths match our campus.','I checked the names and floor counts.','The facilities are connected to the right places.'];
   const needsReview=document.elements.some(element=>element.review_state!=='reviewed');
   const publicationPane=<Section title="Confirm the campus layout">
@@ -251,20 +281,24 @@ function NativeSceneEditor({href,onNavigate,schoolId,campusId,root,workspace,rel
    </>}
   </Section>;
   return <CampusSetupWorkspace campusName={workspace.campus.name} phase={settingUpFacilities?'facilities':reviewingPublication?'publication':'layout'}
-   locked={lockNavigation} map={sceneCanvas} feedback={mapFeedback??(notice==='Facilities saved with your campus layout.'?<Notice message={notice}/>:undefined)}
-   featureCount={document.elements.length} onClose={settingUpFacilities||reviewingPublication?()=>{setSelected(null);setPanel('preview');}:leaveSetup}
+   locked={lockNavigation} map={sceneCanvas} feedback={mapFeedback??(coverageMessage?<Notice message={coverageMessage}/>:notice==='Facilities saved with your campus layout.'?<Notice message={notice}/>:undefined)}
+   featureCount={document.elements.filter(element=>!coverage||element.id!=='map-boundary').length}
+   layoutDetail={outlineOnly?'Boundary draft':undefined}
+   onClose={settingUpFacilities||reviewingPublication?()=>{setSelected(null);setPanel('preview');}:leaveSetup}
    options={settingUpFacilities||reviewingPublication?[]:[...(hasIndoorBuilding&&hasFacilities?[startIndoor]:[]),adjustBoundary,traditional]}
-   primary={hasFacilities?startFacilities:hasIndoorBuilding?startIndoor:dirty&&document.elements.length?saveDraft:document.elements.length?publishReview:adjustBoundary}
-   secondary={hasFacilities||hasIndoorBuilding?(dirty?saveDraft:publishReview):undefined}
+   primary={hasFacilities?startFacilities:hasIndoorBuilding?startIndoor:outlineOnly?(dirty?saveDraft:addFeatures):dirty&&document.elements.length?saveDraft:document.elements.length?publishReview:adjustBoundary}
+   secondary={hasFacilities||hasIndoorBuilding?(dirty?saveDraft:publishReview):outlineOnly?(dirty?addFeatures:adjustBoundary):undefined}
    mapTools={<>
     <CampusControl label="Zoom in" icon={PlusIcon} onPress={()=>setCamera(previous=>({...previous,zoom:Math.min(7,previous.zoom*1.35)}))}/>
     <CampusControl label="Zoom out" icon={MinusIcon} onPress={()=>setCamera(previous=>({...previous,zoom:Math.max(1,previous.zoom/1.35)}))}/>
     <CampusControl label="Fit campus" icon={CrosshairSimpleIcon} onPress={()=>setCamera(initialCampusCamera)}/>
    </>}
-   guidance={settingUpFacilities?<CampusMapAreaReview assistance={guidanceSource}
+   guidance={reviewingPublication?publicationPane:undefined}
+   autoOpenAssistant={settingUpFacilities}
+   assistantGuidance={settingUpFacilities?backToMap=><CampusMapAreaReview assistance={guidanceSource}
     document={document} disabled={locked} initialHints={confirmedFacilities}
     onFocus={featureId=>{setSelected(featureId);setCamera(initialCampusCamera);}}
-    onApply={applyMapHint} onContinue={continueMapReview}/>:reviewingPublication?publicationPane:undefined}/>;
+    onApply={applyMapHint} onContinue={async hints=>{await continueMapReview(hints);backToMap();}}/>:undefined}/>;
  }
  return <Page key="campus-editor" title="Campus layout" subtitle={`${workspace.campus.name} · ${dirty?'Unsaved changes':revision?'Saved draft':'New draft'}`} maxWidth={1400}>{!mapFirst?<ScreenBack title={guide?"Back to campus setup guide":"Back to virtual campus"} fallbackHref={guide?.href??viewHref}/>:null}{guide?<Notice message="Build your campus one part at a time. Save this draft to continue later; add detail when it helps your campus."/>:null}{!draftOpen?<Section title="Published campus view"><DomainText>Reopen this reviewed version to make a new draft. The published map stays available while you edit.</DomainText>{onViewPublished&&published?<Button title="View published campus" disabled={write.locked||preparing} onPress={onViewPublished}/>:null}<Button title="Reopen as a draft" disabled={write.locked||preparing} busy={write.busy} onPress={()=>void task(async()=>send('reopen',{expected_revision:revision}))}/></Section>:null}
  {sourceState!=='current'?<Section title={sourceState==='changed'?'The saved campus draft changed':'Current source unavailable'}><Notice tone="warning" message={sourceState==='changed'?'Your local drawing is retained. Review the current saved draft before making another layout change.':`Your local drawing is retained. Changes are paused until the saved source can be checked. ${sourceError}`}/><ControlButton title="Check saved source" disabled={write.locked||preparing} onPress={()=>void reloadSource()}/><ControlButton title="Load current saved draft" disabled={write.locked||preparing} onPress={loadCurrent}/></Section>:null}

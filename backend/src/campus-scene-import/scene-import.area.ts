@@ -142,7 +142,8 @@ export function prepareMapArea(boundary: SceneMapBoundary) {
       return [];
     }) };
   }
-  return { bounds, filter };
+  const outline = ring.map(point => ({ x: point.x + 20, y: extent.y - point.y + 20 }));
+  return { bounds, filter, outline, drawnBoundary: boundary };
 }
 
 export type PreparedMapArea = ReturnType<typeof prepareMapArea>;

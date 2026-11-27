@@ -151,6 +151,7 @@ describe.skipIf(!enabled || !target)(
             await expect(world.importer.import(f.borrower, f.schoolId, f.campusId, input)).rejects.toThrow(/administrator/);
             const result = await world.importer.import(f.user, f.schoolId, f.campusId, input);
             expect(result.assistance).toMatchObject({ status: "simulation", messages: [{ version: "1.0" }] });
+            expect(result.document.source.drawn_boundary).toEqual(input.boundary);
             expect(result.document.elements.map(element => element.label)).toEqual(["Learning block", "Library", "Campus walk", "Sports ground"]);
             expect(await world.importer.import(f.user, f.schoolId, f.campusId, input)).toEqual(result);
             await expect(world.importer.import(f.user, f.schoolId, f.campusId, { ...input, label: "Changed boundary proposal" })).rejects.toThrow(/already used/);

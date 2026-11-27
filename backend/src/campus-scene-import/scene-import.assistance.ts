@@ -19,6 +19,7 @@ export type AssistanceStatus = 'ai' | 'map_only' | 'simulation';
 
 export function mappedPlaceCandidates(document: SceneDocument) {
   return document.elements.flatMap(element => {
+    if (element.id === 'map-boundary' && document.source.map_coverage) return [];
     const allowedKinds = reviewedPlaceElementKinds(element);
     if (!allowedKinds.length) return [];
     const namedKind = allowedKinds.find(kind => identifiedPlaceNames[kind]?.test(element.label));

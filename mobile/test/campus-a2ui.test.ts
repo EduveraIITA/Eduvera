@@ -6,6 +6,7 @@ import { runInNewContext } from 'node:vm';
 import React, { act } from 'react';
 import ts from 'typescript';
 import * as a2ui from '../src/lib/campus-a2ui';
+import { assistantDecisionMessages, assistantReportMessages } from '../src/lib/assistant-a2ui';
 import {
   a2uiBindingPath, a2uiText, campusA2uiAction, readCampusA2uiSurfaces, writeA2uiValue,
 } from '../src/lib/campus-a2ui';
@@ -79,7 +80,7 @@ test('A2UI map review rejects inactive catalogs, recursive trees, functions and 
   }, surface.model), undefined);
 });
 
-test('the mounted review renders a heading and forwards the edited controls on Continue', async () => {
+test('the mounted renderer forwards map edits and the current Assistant report and decision controls', async () => {
   const require = createRequire(import.meta.url);
   const { JSDOM } = require('jsdom');
   const { createRoot } = require('react-dom/client');
@@ -115,7 +116,7 @@ test('the mounted review renders a heading and forwards the edited controls on C
           options.map(option => React.createElement('option', { key: option.value, value: option.value }, option.label))),
     },
   };
-  type SurfaceProps = { messages: readonly unknown[]; onAction: (action: a2ui.CampusA2uiActionMessage) => void };
+  type SurfaceProps = React.ComponentProps<typeof import('../src/features/campus/CampusA2uiSurface').CampusA2uiSurface>;
   const exports = {} as { CampusA2uiSurface: React.ComponentType<SurfaceProps> };
   const actions: a2ui.CampusA2uiActionMessage[] = [];
   try {
@@ -130,6 +131,26 @@ test('the mounted review renders a heading and forwards the edited controls on C
     });
     await act(async () => container.querySelector('button')?.click());
     assert.deepEqual(JSON.parse(JSON.stringify(actions.map(action => action.action.context))), [{ hints: { 'building/1': { label: 'Residence', kind: ['hostel'] } } }]);
+
+    await act(async () => renderer.render(React.createElement(exports.CampusA2uiSurface, {
+      catalog: a2ui.ASSISTANT_A2UI_CATALOG, messages: assistantReportMessages('attendance-source', { chart: true, source: true }),
+      onAction: action => actions.push(action),
+      renderReport: (component, id, onOpen) => component === 'ReportChart'
+        ? React.createElement('figure', null, id) : React.createElement('button', { onClick: onOpen }, 'Open attendance'),
+    })));
+    assert.equal(container.querySelector('figure')?.textContent, 'attendance-source');
+    await act(async () => container.querySelector('button')?.click());
+    assert.equal(actions.at(-1)?.action.name, 'open_assistant_source');
+    assert.equal(actions.at(-1)?.action.context.sourceId, 'attendance-source');
+
+    await act(async () => renderer.render(React.createElement(exports.CampusA2uiSurface, {
+      catalog: a2ui.ASSISTANT_A2UI_CATALOG, messages: assistantDecisionMessages('review-id', 'Confirm report', true),
+      onAction: action => actions.push(action),
+    })));
+    const [dismiss, confirm] = [...container.querySelectorAll('button')];
+    assert.equal(confirm.disabled, true);
+    await act(async () => { confirm.click(); dismiss.click(); });
+    assert.deepEqual(actions.map(action => action.action.name), ['review_places', 'open_assistant_source', 'dismiss_assistant_action']);
   } finally {
     await act(async () => renderer.unmount());
     Object.assign(globals, previous);

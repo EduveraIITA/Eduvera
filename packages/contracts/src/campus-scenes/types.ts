@@ -60,6 +60,8 @@ export interface CampusSceneDocument {
     provider?: string;
     generated_at?: string;
     notes?: string;
+    map_coverage?: 'boundary_only_unavailable' | 'boundary_only_empty';
+    drawn_boundary?: { latitude: number; longitude: number }[];
   };
   elements: CampusSceneElement[];
 }

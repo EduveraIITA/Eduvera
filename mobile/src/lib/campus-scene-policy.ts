@@ -1,6 +1,7 @@
 import type { CampusSceneWorkspace } from '../../../packages/contracts/src/campus-scenes/contracts';
 import type { CampusSceneDocument } from '../../../packages/contracts/src/campus-scenes/types';
 import type { NativePendingAction, NativePendingScope } from './native-pending-action';
+import type { CampusAreaPoint } from '../features/campus/CampusAreaMapPolicy';
 const uuid = (v:unknown):v is string => typeof v==='string' && /^[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}$/i.test(v);
 const elementId=(v:unknown):v is string=>typeof v==='string'&&/^[A-Za-z0-9][A-Za-z0-9_-]{0,79}$/.test(v);
 const object=(v:unknown):Record<string,unknown>|null=>v!==null&&typeof v==='object'&&!Array.isArray(v)?v as Record<string,unknown>:null;
@@ -10,6 +11,9 @@ const keys=(v:Record<string,unknown>,allowed:string[])=>Object.keys(v).every(k=>
 /** Structural byte boundary; the owning campus service still validates all geometry and authority. */
 export function nativeSceneDocument(v:unknown):v is CampusSceneDocument {
  const d=object(v),bounds=object(d?.bounds),source=object(d?.source);
+ if (source?.drawn_boundary !== undefined && !campusMapBoundary(source.drawn_boundary)) return false;
+ if (source?.map_coverage !== undefined && (source.kind !== 'open_map' || source.drawn_boundary === undefined ||
+  !['boundary_only_unavailable','boundary_only_empty'].includes(String(source.map_coverage)))) return false;
  return !!d&&d.schema_version===1&&text(d.name,160)&&!!bounds&&['width','height'].every(k=>typeof bounds[k]==='number'&&Number.isFinite(bounds[k])&&Number(bounds[k])>0)&&['relative','metres'].includes(String(bounds.unit))&&!!source&&['manual','aerial_image','site_plan','name_search','open_map'].includes(String(source.kind))&&text(source.label,200)&&Array.isArray(d.elements)&&d.elements.length<=2000&&new Set(d.elements.map((e:unknown)=>object(e)?.id)).size===d.elements.length&&d.elements.every((v:unknown)=>{const e=object(v),g=object(e?.geometry);return !!e&&elementId(e.id)&&typeof e.label==='string'&&e.label.length<=160&&['building','room','road','path','tree','fixture','surface'].includes(String(e.kind))&&['reviewed','needs_review'].includes(String(e.review_state))&&!!g&&['polygon','polyline','point'].includes(String(g.type))&&Array.isArray(g.points)&&g.points.length>0&&g.points.length<=500&&g.points.every((v:unknown)=>{const p=object(v);return p&&typeof p.x==='number'&&typeof p.y==='number'&&Number.isFinite(p.x)&&Number.isFinite(p.y);})&&[e.space_id,e.floor_id,e.holding_id].every(id=>id==null||uuid(id))&&(e.parent_element_id==null||elementId(e.parent_element_id));});
 }
 export function canStartCampusMapSetup(workspace: CampusSceneWorkspace | undefined, campusId: string, confirmed: boolean): boolean {
@@ -27,16 +31,25 @@ export function canResumeCampusMapSetup(workspace: CampusSceneWorkspace | undefi
  const scene = workspace.scene;
  if (!scene || scene.published !== null || scene.published_version !== null || !nativeSceneDocument(scene.draft)) return false;
  const source = scene.draft.source;
- return (source.kind === 'open_map' && source.provider === 'OpenStreetMap / Overpass')
+ return (source.kind === 'open_map' && (source.provider === 'OpenStreetMap / Overpass' || source.map_coverage !== undefined))
   || (source.kind === 'manual' && source.label === 'Fictional campus map' && source.attribution === 'ThatCampus fictional Simulation map');
 }
 
-function campusMapBoundary(value: unknown): boolean {
+function campusMapBoundary(value: unknown): value is CampusAreaPoint[] {
  return Array.isArray(value) && value.length >= 3 && value.length <= 48 && value.every(raw => {
   const point=object(raw);
   return !!point && keys(point,['latitude','longitude']) && typeof point.latitude==='number' && typeof point.longitude==='number'
    && Number.isFinite(point.latitude) && Number.isFinite(point.longitude) && Math.abs(point.latitude)<=85.05112878 && Math.abs(point.longitude)<=180;
  });
+}
+
+export function retainedCampusMapBoundary(action: NativePendingAction | null, endpoint: string): CampusAreaPoint[] | null {
+ if (action?.domain !== 'campus' || action.endpoint !== endpoint || action.payload.kind !== 'json') return null;
+ try {
+  const body = object(JSON.parse(action.payload.body));
+  return body?.kind === 'map_area' && body.idempotency_key === action.clientId && campusMapBoundary(body.boundary)
+   ? body.boundary : null;
+ } catch { return null; }
 }
 
 /** A last-known query can lag an exact accepted receipt. It never downgrades it. */

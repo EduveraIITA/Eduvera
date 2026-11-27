@@ -1,4 +1,4 @@
-import { useState, type ReactNode } from 'react';
+import { useLayoutEffect, useRef, useState, type ReactNode } from 'react';
 import { KeyboardAvoidingView, Platform, Pressable, ScrollView, StyleSheet, Text, useWindowDimensions, View } from 'react-native';
 import { useIsFocused } from 'expo-router';
 import { SafeAreaProvider, SafeAreaView } from 'react-native-safe-area-context';
@@ -9,29 +9,81 @@ import { ControlButton } from '../../ui/DomainControls';
 import { ExecutionBanner } from '../../ui/ExecutionBanner';
 import { MotionModal } from '../../ui/Motion';
 import { useTheme } from '../../ui/theme';
+import { useSession } from '../../auth/SessionProvider';
+import { assistantEntryAvailable, assistantPerspective } from '../../lib/assistant-access';
+import { assistantPresentationPermitted } from '../../lib/assistant-presentation-policy';
+import { ApiError } from '../../lib/api';
+import { useApi } from '../../lib/query';
+import { useAssistantPresentation } from '../../ui/AssistantPresentation';
+import { CAMPUS_ASSISTANT_TASK_HREF, clearAssistantWorkspaceTask, showAssistantWorkspaceTask } from '../../ui/assistant-workspace-task';
 
 type SetupAction = { label: string; run: () => void };
 type SetupProps = {
   campusName: string; phase: 'boundary' | 'layout' | 'facilities' | 'publication' | 'interior';
   map: ReactNode; feedback?: ReactNode; guidance?: ReactNode; mapTools?: ReactNode;
-  featureCount?: number; onClose: () => void; locked?: boolean;
+  assistantGuidance?: (backToMap: () => void, inAssistant: boolean) => ReactNode; autoOpenAssistant?: boolean;
+  featureCount?: number; layoutDetail?: string; onClose: () => void; locked?: boolean;
   options: SetupAction[]; primary?: SetupAction; secondary?: SetupAction;
 };
 
-export function CampusSetupWorkspace({ campusName, phase, map, feedback, guidance, mapTools, featureCount = 0,
+export function CampusSetupWorkspace({ campusName, phase, map, feedback, guidance, mapTools, featureCount = 0, layoutDetail, assistantGuidance, autoOpenAssistant,
   onClose, locked, options, primary, secondary }: SetupProps) {
   const focused = useIsFocused();
   const { colors } = useTheme();
   const { width } = useWindowDimensions();
   const [menu, setMenu] = useState(false);
   const wide = width >= 840;
+  const session = useSession(), assistant = useAssistantPresentation();
+  const taskEligible = !!assistantGuidance && assistantEntryAvailable(session.environment, true,
+    assistantPerspective(session.user, session.memberships, session.schoolId));
+  const preference = useApi<unknown>(taskEligible ? '/api/v1/auth/pro-features/' : null);
+  const canUseAssistant = assistantPresentationPermitted(taskEligible, preference.data,
+    preference.error instanceof ApiError ? preference.error.status : undefined);
+  const [taskRequested, setTaskRequested] = useState(false);
+  const taskOwner = useRef(Symbol('campus-workspace')), autoOpened = useRef(false), viewedTask = useRef(false);
+  const taskVisible = !!assistantGuidance && focused && canUseAssistant && taskRequested && assistant.active && assistant.href === CAMPUS_ASSISTANT_TASK_HREF;
+  const closeAssistant = () => {
+    clearAssistantWorkspaceTask(taskOwner.current);
+    setTaskRequested(false);
+    if (assistant.active && assistant.href === CAMPUS_ASSISTANT_TASK_HREF) assistant.close();
+  };
+  const launchAssistant = () => {
+    if (!focused || !canUseAssistant) return;
+    setTaskRequested(true);
+    assistant.requestCanonical(CAMPUS_ASSISTANT_TASK_HREF);
+  };
   const title = phase === 'facilities' ? 'Set up facilities' : phase === 'publication' ? 'Review and publish' : phase === 'interior' ? 'Map building interiors' : 'Virtual campus';
+  useLayoutEffect(() => {
+    if (taskVisible && assistantGuidance) {
+      viewedTask.current=true;
+      showAssistantWorkspaceTask({ owner:taskOwner.current, scopeKey:session.scopeKey, title:`${title} · ${campusName}`,
+        content:assistantGuidance(closeAssistant,true), onReturn:closeAssistant });
+    } else {
+      clearAssistantWorkspaceTask(taskOwner.current);
+      if (viewedTask.current) { viewedTask.current=false;setTaskRequested(false); }
+    }
+  });
+  useLayoutEffect(() => {
+    const owner=taskOwner.current;
+    return () => clearAssistantWorkspaceTask(owner);
+  },[]);
+  useLayoutEffect(() => {
+    if (!autoOpenAssistant) { autoOpened.current=false; return; }
+    if (!autoOpened.current && focused && canUseAssistant) {
+      autoOpened.current=true;
+      launchAssistant();
+    }
+  },[autoOpenAssistant,focused,canUseAssistant]);
+  const workspaceGuidance = <>{guidance}{assistantGuidance ? canUseAssistant
+    ? <Button title="Continue in Assistant" disabled={locked} onPress={launchAssistant} />
+    : assistantGuidance(() => {},false) : null}</>;
+  const hasGuidance = !!guidance || !!assistantGuidance;
   const close = () => {
     if (menu) { setMenu(false); return; }
     if (!locked) onClose();
   };
-  const backLabel = guidance ? 'Back to campus layout' : 'Close campus setup';
-  return <MotionModal visible={focused} animationType="fade" presentationStyle="fullScreen" onRequestClose={close}>
+  const backLabel = hasGuidance ? 'Back to campus layout' : 'Close campus setup';
+  return <MotionModal visible={focused && !taskVisible} animationType="fade" presentationStyle="fullScreen" onRequestClose={close}>
     <SafeAreaProvider>
       <SafeAreaView style={[styles.shell, { backgroundColor: colors.canvas }]} edges={['top', 'left', 'right', 'bottom']}>
         <KeyboardAvoidingView style={styles.shell} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
@@ -53,19 +105,19 @@ export function CampusSetupWorkspace({ campusName, phase, map, feedback, guidanc
                 onPress={() => { setMenu(false); option.run(); }} />)}
             </View> : null}
             {feedback ? <View style={styles.feedback}>{feedback}</View> : null}
-            <View style={[styles.body, wide && guidance ? styles.split : null]}>
+            <View style={[styles.body, wide && hasGuidance ? styles.split : null]}>
               <View style={styles.map}>
                 {map}
                 {mapTools ? <View pointerEvents="box-none" style={[styles.tools, { backgroundColor: colors.surface, borderColor: colors.border }]}>{mapTools}</View> : null}
               </View>
-              {guidance ? <ScrollView style={[styles.guide, wide ? styles.guideWide : styles.guideCompact,
+              {hasGuidance ? <ScrollView style={[styles.guide, wide ? styles.guideWide : styles.guideCompact,
                 { backgroundColor: colors.surface, borderColor: colors.border }]}
-                keyboardShouldPersistTaps="handled" contentContainerStyle={styles.guideContent}>{guidance}</ScrollView> : null}
+                keyboardShouldPersistTaps="handled" contentContainerStyle={styles.guideContent}>{workspaceGuidance}</ScrollView> : null}
             </View>
             {phase === 'layout' ? <View style={[styles.footer, { backgroundColor: colors.surface, borderColor: colors.border }, wide && styles.footerWide]}>
               <View style={styles.titleGroup}>
                 <Text accessibilityRole="header" aria-level={2} style={[styles.layoutTitle, { color: colors.ink }]}>Your campus layout</Text>
-                <Text style={[styles.subtitle, { color: colors.muted }]}>{featureCount ? `${featureCount} mapped ${featureCount === 1 ? 'feature' : 'features'}` : 'No features were found inside this boundary'}</Text>
+                <Text style={[styles.subtitle, { color: colors.muted }]}>{layoutDetail ?? (featureCount ? `${featureCount} mapped ${featureCount === 1 ? 'feature' : 'features'}` : 'No features were found inside this boundary')}</Text>
               </View>
               <View style={[styles.actions, wide && styles.actionsWide]}>
                 {secondary ? <Button title={secondary.label} kind="secondary" disabled={locked} onPress={secondary.run} /> : null}

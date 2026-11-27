@@ -82,6 +82,36 @@ describe.skipIf(!enabled)('Campus source proposals and durable cloud allowance',
       expect((await f.scenes.workspace(f.user, f.schoolId, f.campusId)).scene).toBeNull();
     });
   });
+  it('retains the exact boundary receipt and rechecks the same area under a fresh key after an outage', async () => {
+    const f=await createCampusSceneFixture(db),provider=new CampusSceneImportProvider(),service=new CampusSceneImportService(db,f.scenes,provider);
+    vi.stubEnv('CAMPUS_OVERPASS_FALLBACK_URL','');
+    vi.stubEnv('CAMPUS_OVERPASS_URL','https://primary.example.test/api/interpreter');
+    vi.stubEnv('CAMPUS_MAP_IMPORT_ENABLED','true');
+    vi.stubEnv('AGENT_ENABLED','false');
+    const fetch=vi.fn().mockResolvedValueOnce(new Response(null,{status:503})).mockResolvedValueOnce(Response.json({
+      elements:[{ type:'way', id:70, tags:{building:'yes',name:'Recovered library'}, geometry:[
+        {lat:12.0003,lon:77.0003},{lat:12.0003,lon:77.001},{lat:12.001,lon:77.001},{lat:12.0003,lon:77.0003},
+      ] }],
+    }));
+    vi.stubGlobal('fetch',fetch);
+    await f.run(async()=>{
+      const input={ kind:'map_area', idempotency_key:randomUUID(), label:'Outage recovery campus', boundary:[
+        {latitude:12,longitude:77}, {latitude:12,longitude:77.002}, {latitude:12.002,longitude:77.002},
+      ] };
+      const unavailable = await service.import(f.user,f.schoolId,f.campusId,input);
+      expect(unavailable.document.source).toMatchObject({map_coverage:'boundary_only_unavailable',drawn_boundary:input.boundary});
+      expect(unavailable.document.elements).toEqual([expect.objectContaining({id:'map-boundary',kind:'surface'})]);
+      expect(await service.import(f.user,f.schoolId,f.campusId,input)).toEqual(unavailable);
+      const retry={...input,idempotency_key:randomUUID()};
+      const recovered = await service.import(f.user,f.schoolId,f.campusId,retry);
+      expect(recovered.document.elements).toEqual([expect.objectContaining({kind:'building',label:'Recovered library'})]);
+      expect(recovered.document.source).not.toHaveProperty('map_coverage');
+      expect(await service.import(f.user,f.schoolId,f.campusId,input)).toEqual(unavailable);
+      expect(await service.import(f.user,f.schoolId,f.campusId,retry)).toEqual(recovered);
+      expect(fetch).toHaveBeenCalledTimes(2);
+      expect((await f.scenes.workspace(f.user,f.schoolId,f.campusId)).scene).toBeNull();
+    });
+  });
   it('serializes image reservations with the Assistant budget and retains failed-call allowance',async()=>{
     const f=await createCampusSceneFixture(db),provider=new CampusSceneImportProvider(),service=new CampusSceneImportService(db,f.scenes,provider);
     vi.stubEnv('AGENT_ENABLED','true');vi.stubEnv('AGENT_PROVIDER','vertex');vi.stubEnv('AGENT_ENABLED_UNTIL','2099-01-01T00:00:00Z');

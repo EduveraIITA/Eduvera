@@ -14,6 +14,7 @@ const topics: Record<string,string[]> = {
   leave: ['leave','leave_request'], staff: ['staff','teacher','teachers','cover','responsibility'],
   events: ['event','events','activity','activities','rsvp','excursion'],
   insights: ['insights','analytics','trend','trends','average','averages','compare','comparison','decline','declines','ageing','deadlines','coverage','performance'],
+  virtual_campus: ['layout','map','floorplan','floorplans','interior','interiors'],
   overview: ['overview','summary','dashboard'],
 };
 const stop = new Set('the and for can what how today please show with record check read get first current this that now need want only all you about his her their him them it mark date'.split(' '));
@@ -38,6 +39,7 @@ export function conversationRoutingQuery(question:string,previousUserQuestions:r
   return prior?`${prior}\n${question}`:question;
 }
 export const domainStarters: Record<string,string[]> = {
+  virtual_campus:['virtual_campus_layout'],
   insights:['principal_analytics','principal_review','insights','school_insights','find_students'],
   attendance: ['student_attendance','record_student_attendance','my_attendance','subject_attendance','class_registers','attendance_register','record_attendance'],
   records: ['find_students','student_attendance','enrollment_options','school_records'],

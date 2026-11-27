@@ -31,6 +31,8 @@ type CampusAreaMapProps = {
   simulation?: boolean;
   fullscreen?: boolean;
   onSearch?: (query: string) => Promise<readonly CampusAreaSearchResult[]>;
+  generation?: { message: string; label: string };
+  recovery?: { message: string; label: string; busyLabel: string; disabled: boolean; onPress: () => void };
 };
 
 async function getDevicePosition(): Promise<CampusAreaPoint> {
@@ -47,7 +49,7 @@ async function getDevicePosition(): Promise<CampusAreaPoint> {
   return (await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.High, mayShowUserSettingsDialog: false })).coords;
 }
 
-export function CampusAreaMap({ onAreaSelected, busy = false, disabled = false, initialCenter, initialBoundary = [], simulation = false, fullscreen = false, onSearch }: CampusAreaMapProps) {
+export function CampusAreaMap({ onAreaSelected, busy = false, disabled = false, initialCenter, initialBoundary = [], simulation = false, fullscreen = false, onSearch, generation, recovery }: CampusAreaMapProps) {
   const { colors } = useTheme();
   const locked = busy || disabled;
   const focused = useIsFocused();
@@ -147,19 +149,23 @@ export function CampusAreaMap({ onAreaSelected, busy = false, disabled = false, 
       onLayout={event => setTrayHeight(event.nativeEvent.layout.height)}>
       {!drawing ? <Text accessibilityRole="header" aria-level={2} style={[styles.heading, { color: colors.ink }]}>Create your virtual campus</Text> : null}
       <Text accessibilityLiveRegion="polite" style={[styles.copy, { color: colors.muted }]}>
-        {drawing && boundary.length > 0 ? `${boundary.length} ${boundary.length === 1 ? 'point' : 'points'} · ` : ''}{context}
+        {drawing && boundary.length > 0 ? `${boundary.length} ${boundary.length === 1 ? 'point' : 'points'} · ` : ''}{recovery ? 'Saved outline' : context}
       </Text>
-      {drawing ? <>
+      {recovery ? <>
+        <Notice tone="warning" message={recovery.message} />
+        <Button title={busy ? recovery.busyLabel : recovery.label} disabled={busy || recovery.disabled} busy={busy} onPress={recovery.onPress} />
+      </> : drawing ? <>
         <View style={styles.editActions}>
           {boundary.length ? <ControlButton title="Undo point" disabled={locked}
             onPress={() => setBoundary(previous => previous.slice(0, -1))} /> : null}
           {boundary.length > 1 ? <ControlButton title="Clear outline" disabled={locked} onPress={() => setBoundary([])} /> : null}
           {!boundary.length ? <ControlButton title="Stop drawing" disabled={locked} onPress={() => setDrawing(false)} /> : null}
         </View>
-        <Button title={busy ? 'Preparing your layout…' : 'Generate campus layout'} disabled={locked || !!boundaryIssue} busy={busy}
+        {generation ? <Notice tone="warning" message={generation.message} /> : null}
+        <Button title={busy ? 'Preparing your layout…' : generation?.label ?? 'Generate campus layout'} disabled={locked || !!boundaryIssue} busy={busy}
           onPress={() => { if (!boundaryIssue && !locked) onAreaSelected(boundary); }} />
       </> : <Button title="Draw boundary" disabled={locked || !canDraw} onPress={() => setDrawing(true)} />}
-      <Disclosure title="Map controls">
+      {!recovery ? <Disclosure title="Map controls">
         <View style={styles.editActions}>
           <ControlButton title="Move north" disabled={locked} onPress={() => nudge(0, -40)} />
           <ControlButton title="Move south" disabled={locked} onPress={() => nudge(0, 40)} />
@@ -168,7 +174,7 @@ export function CampusAreaMap({ onAreaSelected, busy = false, disabled = false, 
           {drawing ? <ControlButton title="Add point at map center" disabled={locked || !canDraw || boundary.length >= CAMPUS_AREA_MAX_POINTS}
             onPress={() => addPoint(campusAreaPointAt(viewport, 0, 0, 0, 0))} /> : null}
         </View>
-      </Disclosure>
+      </Disclosure> : null}
     </View>
   </View>;
   return <View style={fullscreen ? styles.fullscreen : styles.compact} onLayout={event => setMapHeight(event.nativeEvent.layout.height)}>

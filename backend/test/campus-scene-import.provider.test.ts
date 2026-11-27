@@ -2,8 +2,18 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import { CampusSceneImportProvider, imageDraft, imageSceneBounds } from '../src/campus-scene-import/scene-import.provider.js';
 import { boundMapFeatures } from '../src/campus-scene-import/scene-import.bounds.js';
 import { sceneImportSchema, sceneLookupSchema } from '../src/campus-scene-import/scene-import.contracts.js';
+import { publicSceneDocument } from '../src/campus-scenes/campus-scenes.contracts.js';
+import { mappedPlaceCandidates } from '../src/campus-scene-import/scene-import.assistance.js';
 import { prepareMapArea } from '../src/campus-scene-import/scene-import.area.js';
 import { discoverPublicFloorPlans, floorPlanSearchSettings, officialSchoolHost } from '../src/campus-scene-import/scene-import.floor-plan-discovery.js';
+const testBoundary = [
+  { latitude:12, longitude:77 }, { latitude:12, longitude:77.002 },
+  { latitude:12.002, longitude:77.002 }, { latitude:12.002, longitude:77 },
+];
+const fixtureBuilding = { type:'way', id:120, tags:{ building:'yes', name:'Library' }, geometry:[
+  { lat:12.0004, lon:77.0004 }, { lat:12.0004, lon:77.0008 },
+  { lat:12.0008, lon:77.0008 }, { lat:12.0004, lon:77.0004 },
+] };
 const image = {label:'Synthetic plan',imageId:'10e8534c-477a-4bcc-b65e-83f64700c405',width:1200,height:600,sourceKind:'site_plan' as const};
 afterEach(()=>{vi.unstubAllGlobals();vi.unstubAllEnvs();});
 describe('Campus import boundaries',()=>{
@@ -88,6 +98,53 @@ describe('Campus import boundaries',()=>{
     expect(fetch.mock.calls[0]![1]).toMatchObject({redirect:'error',method:'POST'});
     fetch.mockResolvedValue(new Response(JSON.stringify({elements:[],remark:'runtime timeout'})));
     await expect(provider.lookup('Test School')).rejects.toThrow(/could not finish/);
+  });
+  it('uses at most one reviewed regional mirror for a timed-out primary and trusts existing footprints only', async () => {
+    vi.stubEnv('CAMPUS_OVERPASS_URL','https://primary.example.test/api/interpreter');
+    vi.stubEnv('CAMPUS_OVERPASS_FALLBACK_URL','https://regional.example.test/api-as/interpreter');
+    vi.stubEnv('CAMPUS_OVERPASS_FALLBACK_BOUNDS','5,68,38,98');
+    const fetch = vi.fn().mockRejectedValueOnce(new DOMException('timed out','TimeoutError'))
+      .mockResolvedValueOnce(Response.json({ elements:[fixtureBuilding] }));
+    vi.stubGlobal('fetch',fetch);
+    const scene = await new CampusSceneImportProvider().area('Test campus',prepareMapArea(testBoundary));
+    expect(fetch.mock.calls.map(([target]) => String(target))).toEqual([
+      'https://primary.example.test/api/interpreter','https://regional.example.test/api-as/interpreter',
+    ]);
+    for (const [,request] of fetch.mock.calls) expect(request).toMatchObject({ method:'POST', redirect:'error', signal:expect.any(AbortSignal) });
+    expect(String(fetch.mock.calls[0]![1].body)).toBe(String(fetch.mock.calls[1]![1].body));
+    expect(scene.elements).toEqual([expect.objectContaining({label:'Library',kind:'building',space_id:null,review_state:'needs_review'})]);
+    expect(scene.source.drawn_boundary).toEqual(testBoundary);
+    expect(scene.source).not.toHaveProperty('map_coverage');
+    expect(publicSceneDocument(scene).source).not.toHaveProperty('drawn_boundary');
+  });
+  it('returns only the exact entered outline after unavailable or empty map data and keeps regional requests in range', async () => {
+    vi.stubEnv('CAMPUS_OVERPASS_URL','https://primary.example.test/api/interpreter');
+    vi.stubEnv('CAMPUS_OVERPASS_FALLBACK_URL','https://regional.example.test/api-as/interpreter');
+    vi.stubEnv('CAMPUS_OVERPASS_FALLBACK_BOUNDS','5,68,38,98');
+    const area=prepareMapArea(testBoundary);
+    const outside=prepareMapArea(testBoundary.map(point=>({...point,longitude:point.longitude-20})));
+    const fetch=vi.fn().mockResolvedValueOnce(Response.json({elements:[fixtureBuilding],remark:'runtime timeout'}))
+      .mockResolvedValueOnce(new Response(null,{status:503}))
+      .mockResolvedValueOnce(new Response(null,{status:503}))
+      .mockResolvedValueOnce(Response.json({elements:[]}));
+    vi.stubGlobal('fetch',fetch);
+    const provider=new CampusSceneImportProvider();
+    const unavailable=await provider.area('Test campus',area);
+    const outsideUnavailable=await provider.area('Other region',outside);
+    const empty=await provider.area('Test campus',area);
+    expect(fetch.mock.calls.map(([target]) => (target as URL).hostname)).toEqual([
+      'primary.example.test','regional.example.test','primary.example.test','primary.example.test',
+    ]);
+    expect(unavailable.source).toMatchObject({map_coverage:'boundary_only_unavailable',drawn_boundary:testBoundary});
+    expect(outsideUnavailable.source.map_coverage).toBe('boundary_only_unavailable');
+    expect(empty.source).toMatchObject({map_coverage:'boundary_only_empty',drawn_boundary:testBoundary});
+    for(const scene of [unavailable,empty]) {
+      expect(scene.elements).toEqual([expect.objectContaining({
+        id:'map-boundary',kind:'surface',space_id:null,review_state:'needs_review',
+        geometry:{type:'polygon',points:area.outline},
+      })]);
+      expect(mappedPlaceCandidates(scene)).toEqual([]);
+    }
   });
   it('rejects oversized campus bounds before contacting the map provider',async()=>{
     const fetch=vi.fn();vi.stubGlobal('fetch',fetch);

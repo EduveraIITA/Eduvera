@@ -149,6 +149,11 @@ export const sceneSourceSchema = z
     provider: boundedText(100).optional(),
     generated_at: z.string().datetime({ offset: true }).optional(),
     notes: boundedText(1000).optional(),
+    map_coverage: z.enum(["boundary_only_unavailable", "boundary_only_empty"]).optional(),
+    drawn_boundary: z.array(z.object({
+      latitude: z.number().finite().min(-85).max(85),
+      longitude: z.number().finite().min(-180).max(180),
+    }).strict()).min(3).max(48).optional(),
   })
   .strict();
 

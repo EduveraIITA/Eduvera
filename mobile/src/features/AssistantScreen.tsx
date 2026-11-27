@@ -6,7 +6,7 @@ import * as Crypto from 'expo-crypto';
 import * as Clipboard from 'expo-clipboard';
 import * as SecureStore from '../lib/device-storage';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
-import type { AgentAction, AgentChartData, AgentRun, AgentThread } from '../../../packages/contracts/src/wire/features/assistant/agentApi';
+import type { AgentAction, AgentChartData, AgentRun, AgentSource, AgentThread } from '../../../packages/contracts/src/wire/features/assistant/agentApi';
 import type { AssistantPortal } from '../../../packages/contracts/src/wire/features/assistant/context';
 import { useSession } from '../auth/SessionProvider';
 import { assistantPerspective } from '../lib/assistant-access';
@@ -18,11 +18,14 @@ import { AssistantMark } from '../ui/AssistantMark';
 import { useAssistantOperationContext, useAssistantPresentation } from '../ui/AssistantPresentation';
 import { assistantDefinitiveRefusal, bindAssistantConversation, clearAssistantCommand, dispatchAssistantCommand, restoreAssistantCommand, type AssistantCommand } from '../lib/assistant-command';
 import { assistantChartKind, assistantChartValue, assistantLineSegments, parseAssistantStatus, parseAssistantThread, parseAssistantThreads } from '../lib/assistant-policy';
+import { assistantActionRecordMessages, assistantActionRecordSelected, assistantDecisionMessages, assistantDecisionSelected, assistantReportMessages, assistantReplyMessages, assistantReportSourceSelected } from '../lib/assistant-a2ui';
+import { ASSISTANT_A2UI_CATALOG } from '../lib/campus-a2ui';
 import { ControlButton, Disclosure, Facts, InfoDisclosure } from '../ui/DomainControls';
 import { Alert } from '../ui/Alert';
 import { AssistantAnswer, CompactAnswer, ConversationBubble, ConversationCanvas, ConversationComposer, ConversationEmpty, ConversationHistory, ConversationSource, ConversationToolbar, ConversationTurn, ResponseCopyControl } from './assistant/AssistantConversationUI';
 import { assertAssistantWriteReady, assistantChartDisplayPoints, assistantCompactPresentation, assistantLinkedThreadRequest, assistantPreferenceState, assistantRunAnswer, assistantSourceLabel, prepareAssistantConversationChange } from './assistant/conversation-presentation';
 import { assistantCopySnapshot, copyAssistantResponse } from './assistant/assistant-copy';
+import { CampusA2uiSurface } from './campus/CampusA2uiSurface';
 
 type Props = { href: string; onNavigate: (href: string) => void };
 type Pending = AssistantCommand;
@@ -279,15 +282,14 @@ function CompactConversation({ visible, runs, onExpand, onClose, onNavigate, att
                 : attention === 'provider-unavailable' ? { title: 'AI provider unavailable', message: 'Saved authorized conversations and existing review remain available. New questions wait for the configured provider or allowance.' } : null;
   const { mode, latest, action, chartSource, source } = assistantCompactPresentation(runs, { attention: !!problem, loading });
   const showAction = mode === 'review', chart = chartSource?.chart;
-  const target = action?.receipt?.href ?? action?.href;
   const compactSource = !problem && !loading ? showAction || action?.status === 'succeeded'
-    ? target && isInternalHref(target) ? <ControlButton title={action?.status === 'succeeded' ? 'Verify in campus record' : 'Open affected screen'} onPress={() => onNavigate(target)} /> : undefined
-    : source ? <ConversationSource source={source} title={source.chart ? assistantSourceLabel(source.chart.title) : source.title} onNavigate={onNavigate} /> : undefined : undefined;
+    ? action ? <AssistantActionRecord action={action} onNavigate={onNavigate} /> : undefined
+    : source ? <AssistantReport source={source} showSource onNavigate={onNavigate} /> : undefined : undefined;
   return <ConversationBubble visible={visible} onExpand={onExpand} onClose={onClose} hasChart={!!chart} source={compactSource} copyControl={copyControl} availableHeight={availableHeight} minimizedLabel={problem?.title ?? (showAction ? action?.status === 'pending' ? 'Review needed' : 'Check the result' : undefined)}>
     {!visible ? null : problem ? <View style={{ gap: 8 }}><Text accessibilityRole="header" aria-level={2} style={[styles.chartTitle, { color: colors.ink }]}>{problem.title}</Text><Notice tone="warning" message={problem.message} /><ControlButton title="Open full conversation" onPress={onExpand} /></View>
       : loading ? <Loading label="Loading conversation…" />
         : showAction && action ? <View style={{ gap: 8 }}><Text accessibilityRole="header" aria-level={2} style={[styles.chartTitle, { color: colors.ink }]}>{action.status === 'pending' ? 'Review needed' : action.status === 'executing' ? 'Verifying result' : 'Check the affected record'}</Text><Text style={[styles.body, { color: colors.ink }]}>{action.title}</Text>{action.preview ? <Text style={[styles.caption, { color: colors.muted }]}>{[action.preview.student, action.preview.class_name, action.preview.date].filter(Boolean).join(' · ')}</Text> : null}{action.contract?.summary ? <Text style={[styles.caption, { color: colors.muted }]}>{action.contract.summary}</Text> : null}<Notice tone="warning" message={action.status === 'pending' ? Date.parse(action.expires_at) <= Date.now() ? 'This preview has expired. Ask for a fresh preview before changing the record.' : `Nothing has changed. Review the complete proposal before confirmation. Expires ${new Date(action.expires_at).toLocaleTimeString()}.` : action.receipt?.message || (action.status === 'executing' ? 'The server is verifying the result. No additional change has been confirmed here.' : 'The result needs verification. Check the affected record before another attempt.')} /><ControlButton title={action.status === 'pending' ? 'Expand to review' : 'Open full conversation'} onPress={onExpand} /></View>
-          : latest ? <><CompactAnswer text={assistantRunAnswer(latest)} chart={chart} onExpand={onExpand} />{latest.status === 'failed' ? <Notice tone="warning" message="The request stopped. No action was automatically retried." /> : null}{chart ? <AssistantChart chart={chart} compact /> : null}</>
+          : latest ? <><AssistantReply run={latest} chart={chart} onExpand={onExpand} />{latest.status === 'failed' ? <Notice tone="warning" message="The request stopped. No action was automatically retried." /> : null}{chartSource && chart ? <AssistantReport source={chartSource} showChart compact onNavigate={onNavigate} /> : null}</>
             : <CompactAnswer text="What would you like to know? Ask about your campus or prepare a change for review." onExpand={onExpand} />}
   </ConversationBubble>;
 }
@@ -295,12 +297,40 @@ function CompactConversation({ visible, runs, onExpand, onClose, onNavigate, att
 function Run({ run, latest, reviewRef, locked, onNavigate, onDecision }: { run: AgentRun; latest: boolean; reviewRef?: React.RefObject<React.ComponentRef<typeof View> | null>; locked: boolean; onNavigate: (href: string) => void; onDecision: (actionId: string, decision: 'confirm' | 'reject') => void }) {
   const chartSources = run.evidence.filter(source => source.chart), otherSources = run.evidence.filter(source => !source.chart);
   return <ConversationTurn question={run.question} latest={latest}>
-    <AssistantAnswer text={assistantRunAnswer(run)} chart={run.status !== 'running' && chartSources.length === 1 ? chartSources[0]!.chart : undefined} />
-    {chartSources.map(source => <View key={source.id} style={{ gap: 12 }}><AssistantChart chart={source.chart!} /><ConversationSource source={source} title={assistantSourceLabel(source.chart!.title)} onNavigate={onNavigate} /></View>)}
+    <AssistantReply run={run} chart={run.status !== 'running' && chartSources.length === 1 ? chartSources[0]!.chart : undefined} />
+    {chartSources.map(source => <AssistantReport key={source.id} source={source} showChart showSource onNavigate={onNavigate} />)}
     {run.status === 'failed' ? <Notice tone="warning" message="The request stopped. No action was automatically retried." /> : null}
     {run.action ? <View ref={reviewRef} collapsable={false}><ActionReview action={run.action} locked={locked} onNavigate={onNavigate} onDecision={onDecision} /></View> : null}
-    {otherSources.length ? <InfoDisclosure title={otherSources.length === 1 ? 'Source checked' : `${otherSources.length} sources checked`}>{otherSources.map(source => <ConversationSource key={source.id} source={source} onNavigate={onNavigate} />)}</InfoDisclosure> : null}
+    {otherSources.length ? <InfoDisclosure title={otherSources.length === 1 ? 'Source checked' : `${otherSources.length} sources checked`}>{otherSources.map(source => <AssistantReport key={source.id} source={source} showSource onNavigate={onNavigate} />)}</InfoDisclosure> : null}
   </ConversationTurn>;
+}
+
+function AssistantReply({ run, chart, onExpand }: { run: AgentRun; chart?: AgentChartData; onExpand?: () => void }) {
+  const answer = assistantRunAnswer(run);
+  const messages = useMemo(() => assistantReplyMessages(run.id, answer), [run.id, answer]);
+  return <CampusA2uiSurface catalog={ASSISTANT_A2UI_CATALOG} messages={messages} onAction={() => {}}
+    renderAssistantText={text => onExpand ? <CompactAnswer text={text} chart={chart} onExpand={onExpand} /> : <AssistantAnswer text={text} chart={chart} />}/>;
+}
+
+function AssistantReport({ source, showChart = false, showSource = false, compact = false, onNavigate }: {
+  source: AgentSource; showChart?: boolean; showSource?: boolean; compact?: boolean; onNavigate: (href: string) => void;
+}) {
+  const messages = useMemo(() => assistantReportMessages(source.id, { chart: showChart, source: showSource }), [source.id, showChart, showSource]);
+  return <CampusA2uiSurface catalog={ASSISTANT_A2UI_CATALOG} messages={messages}
+    onAction={event => { if (assistantReportSourceSelected(event, source.id) && isInternalHref(source.href)) onNavigate(source.href); }}
+    renderReport={(component, sourceId, onOpen) => {
+      if (sourceId !== source.id) return null;
+      if (component === 'ReportChart') return source.chart ? <AssistantChart chart={source.chart} compact={compact} /> : null;
+      return <ConversationSource source={source} title={source.chart ? assistantSourceLabel(source.chart.title) : source.title} onNavigate={onOpen} />;
+    }} />;
+}
+
+function AssistantActionRecord({ action, onNavigate }: { action: AgentAction; onNavigate: (href: string) => void }) {
+  const target = action.receipt?.href ?? action.href;
+  if (!isInternalHref(target)) return null;
+  return <CampusA2uiSurface catalog={ASSISTANT_A2UI_CATALOG}
+    messages={assistantActionRecordMessages(action.id, action.status === 'succeeded' ? 'Verify in campus record' : 'Open affected screen')}
+    onAction={event => { if (assistantActionRecordSelected(event, action.id)) onNavigate(target); }} />;
 }
 
 function AssistantChart({ chart, compact = false }: { chart: AgentChartData; compact?: boolean }) {
@@ -324,7 +354,6 @@ function AssistantChart({ chart, compact = false }: { chart: AgentChartData; com
 function ActionReview({ action, locked, onNavigate, onDecision }: { action: AgentAction; locked: boolean; onNavigate: (href: string) => void; onDecision: (actionId: string, decision: 'confirm' | 'reject') => void }) {
   const { colors } = useTheme();
   const pending = action.status === 'pending', expired = Date.parse(action.expires_at) <= Date.now(), preview = action.preview;
-  const target = action.receipt?.href ?? action.href;
   const summary = useMemo(() => Object.entries(action.input.body ?? {}).filter(([key]) => !['expected_revision', 'basis_id'].includes(key)).map(([key, value]) => ({ label: label(key), value: formatActionValue(value, action.labels) })), [action.input.body, action.labels]);
   return <View style={[styles.review, { backgroundColor: colors.surface, borderColor: colors.border }]}>
     <View style={{ gap: 4 }}><Text style={[styles.caption, { color: colors.muted }]}>{pending ? 'Review required' : action.status === 'succeeded' ? 'Recorded change' : label(action.status)}</Text><Text accessibilityRole="header" aria-level={3} style={[styles.chartTitle, { color: colors.ink }]}>{action.title}</Text>{action.contract?.summary ? <Text style={[styles.caption, { color: colors.muted }]}>{action.contract.summary}</Text> : null}</View>
@@ -336,9 +365,14 @@ function ActionReview({ action, locked, onNavigate, onDecision }: { action: Agen
       <Text style={[styles.caption, { color: colors.muted }]}>{preview.register_note}</Text>
     </> : <Facts items={summary} />}
       <Notice tone={expired ? 'warning' : 'info'} message={expired ? 'This preview has expired. Ask for a fresh preview before changing the record.' : `Nothing has changed. This proposed change has not been confirmed. Expires ${new Date(action.expires_at).toLocaleTimeString()}.`} />
-      <View style={styles.actions}><ControlButton title="Dismiss" disabled={locked} onPress={() => onDecision(action.id, 'reject')} /><ControlButton title={action.contract?.confirmation_label ?? 'Confirm change'} kind="primary" disabled={locked || expired} onPress={() => onDecision(action.id, 'confirm')} /></View>
+      <CampusA2uiSurface catalog={ASSISTANT_A2UI_CATALOG} disabled={locked}
+        messages={assistantDecisionMessages(action.id, action.contract?.confirmation_label ?? 'Confirm change', expired)}
+        onAction={event => {
+          const decision = assistantDecisionSelected(event, action.id, locked, Date.parse(action.expires_at) <= Date.now());
+          if (decision) onDecision(action.id, decision);
+        }} />
     </> : action.receipt?.message ? <Notice tone={action.status === 'succeeded' ? 'success' : action.status === 'uncertain' ? 'warning' : 'info'} message={action.receipt.message} /> : <Notice message={action.status === 'executing' ? 'The server is verifying the result.' : action.status === 'uncertain' ? 'The result is uncertain. Verify the affected record before another attempt.' : 'Review the current record before requesting another change.'} />}
-    {isInternalHref(target) ? <ControlButton title={action.status === 'succeeded' ? 'Verify in campus record' : 'Open affected screen'} onPress={() => onNavigate(target)} /> : null}
+    <AssistantActionRecord action={action} onNavigate={onNavigate} />
     {action.receipt?.request_id ? <InfoDisclosure title="Action receipt"><Text selectable style={[styles.caption, { color: colors.ink }]}>{action.receipt.request_id}</Text>{action.receipt.completed_at ? <Text style={[styles.caption, { color: colors.muted }]}>{new Date(action.receipt.completed_at).toLocaleString()}</Text> : null}</InfoDisclosure> : null}
   </View>;
 }
@@ -352,6 +386,6 @@ function formatActionValue(value: unknown, labels: Record<string, string>): stri
 }
 
 const styles = StyleSheet.create({
-  chartTitle: { fontSize: 16, lineHeight: 23, fontWeight: '600' }, caption: { fontSize: 14, lineHeight: 21 }, body: { fontSize: 16, lineHeight: 25 }, actions: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
+  chartTitle: { fontSize: 16, lineHeight: 23, fontWeight: '600' }, caption: { fontSize: 14, lineHeight: 21 }, body: { fontSize: 16, lineHeight: 25 },
   review: { borderWidth: StyleSheet.hairlineWidth, borderRadius: 20, padding: 16, gap: 12 }, change: { flexDirection: 'row', flexWrap: 'wrap', alignItems: 'center', gap: 12, padding: 12, borderRadius: 16 }, reviewRecord: { flexDirection: 'row', alignItems: 'center', gap: 12, paddingVertical: 8, borderBottomWidth: StyleSheet.hairlineWidth },
 });

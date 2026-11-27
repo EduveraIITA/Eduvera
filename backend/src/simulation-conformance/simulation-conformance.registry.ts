@@ -5,7 +5,7 @@ import type { EXECUTION_EFFECT_KINDS } from "../campus-model-core/execution-effe
  * rewrite a stale lock unless this number is increased first, so accepting
  * platform drift always leaves a reviewed Simulation change in the diff.
  */
-export const SIMULATION_CONFORMANCE_REVISION = 235 as const;
+export const SIMULATION_CONFORMANCE_REVISION = 236 as const;
 
 export const SIMULATION_DATA_PLANE_CAPABILITIES = Object.freeze([
   "snapshot",
@@ -78,7 +78,7 @@ export const SIMULATION_CONFORMANCE_EVIDENCE = Object.freeze([
     proves: "The ordinary import, topology, scene and Facilities owners create one reviewed floor/room hierarchy atomically, preserve exact retries and refuse stale/cross-building parents. Live indoor guidance reserves the scoped allowance for exact authorized building progress; a real COW branch captures one guided-only substitute across exact retries while making no Live AI call. That branch reuses a captured proposal, creates and publishes its own interiors and exact tagged resource, then reports, waits for parts, completes, independently verifies and reopens its repair through native Core commands. Complete source and sibling place/holding/scene/repair/receipt/audit/command/outcome/outbox rows remain unchanged. Illustration does not become inventory and native availability is independent. This is bounded native/COW evidence; one separately recorded fictional Vertex/browser check is not proof for arbitrary plans, surveyed scale or approved routes." },
   { id: "world:campus-map-onboarding", kind: "real_postgres", test_file: "backend/test/campus-scenes-worlds.integration.test.ts",
     module_classes: ["CampusSceneImportModule", "CampusScenesModule"], capabilities: ["snapshot", "queries", "commands", "events"],
-    proves: "The ordinary map import accepts a drawn boundary in a real COW branch, clips the fictional local map and returns a review surface without calling either Live provider. An unprivileged member is refused, an exact proposal and the reviewed place command replay, and the proposed map saves only after the administrator connects a reviewed place. Live and a sibling retain their empty layout and place state." },
+    proves: "The ordinary map import accepts a drawn boundary in a real COW branch, retains the exact selected outline, clips the fictional local map and returns a review surface without calling either Live provider. An unprivileged member is refused, an exact proposal and the reviewed place command replay, and the proposed map saves only after the administrator connects a reviewed place. Live and a sibling retain their empty layout and place state." },
   { id: "world:campus-important-dates", kind: "real_postgres", test_file: "backend/test/campus-dates-simulation.test.ts",
     module_classes: ["CampusDatesModule"], capabilities: ["snapshot", "queries", "commands", "events", "realtime"],
     proves: "The same native informational-date owner retains exact term/provenance and immutable history while an actual COW branch publishes, corrects and cancels dates through run-local actor commands. Source and sibling rows, teaching overrides and operational structure remain unchanged; lost identity, stale revisions and forged refresh envelopes refuse. The ordinary publisher, replay and final SSE serializer emit only exact branch-bound safe source references without private prose or Tasks. This is native publisher/replay/serialization evidence, not an authenticated network-stream handshake, rendered amber UI or proof that planned campus activities occurred." },
@@ -584,7 +584,7 @@ export const SIMULATION_SAFETY_EVIDENCE = Object.freeze([
   { id: "safety:campus-floor-plan-discovery", kind: "real_postgres", test_file: "backend/test/floor-plan-onboarding-lifecycle.integration.test.ts",
     proves: "Current administration and exact mapped building revision gate indexed official links. Only a capped allowance receipt is retained in Live. A real COW world records one guided substitute for an exact search and contacts no network, even when a provider key and daily cap are configured." },
   { id: "safety:campus-scene-import-allowance", kind: "real_postgres", test_file: "backend/test/campus-scene-import.integration.test.ts",
-    proves: "Proposals require current administrative access, replay their exact source request, and do not save a scene. Image inference reservations share the Assistant's durable global allowance; provider failure retains its reservation and blocks a competing Assistant reservation. No live provider generation occurs in this test." },
+    proves: "Proposals require current administrative access, replay their exact source request, and do not save a scene. A fresh key can retry a completed boundary-only map after an upstream outage while the original key retains the exact selection and original result. Image inference reservations share the Assistant's durable global allowance; provider failure retains its reservation and blocks a competing Assistant reservation. No live provider generation occurs in this test." },
   {
     id: "safety:resource-quantity-atomic-replay", kind: "real_postgres",
     test_file: "backend/test/resource-item-quantity.integration.test.ts",

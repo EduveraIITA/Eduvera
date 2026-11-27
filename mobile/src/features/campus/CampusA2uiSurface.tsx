@@ -1,9 +1,9 @@
-import { useMemo, useState, type ReactNode } from 'react';
+import { Fragment, useMemo, useState, type ReactNode } from 'react';
 import { StyleSheet, Text, View } from 'react-native';
 import {
-  a2uiBindingPath, a2uiRecord, a2uiText, campusA2uiAction, campusA2uiChildren,
+  ASSISTANT_A2UI_CATALOG, a2uiBindingPath, a2uiRecord, a2uiText, campusA2uiAction, campusA2uiChildren,
   readCampusA2uiSurfaces, resolveA2uiValue, writeA2uiValue,
-  type CampusA2uiActionMessage, type CampusA2uiSurfaceState,
+  type CampusA2uiActionMessage, type CampusA2uiCatalog, type CampusA2uiSurfaceState,
 } from '../../lib/campus-a2ui';
 import { Button, Field, Notice } from '../../ui/components';
 import { ChoiceMenu, ControlButton } from '../../ui/DomainControls';
@@ -17,15 +17,19 @@ interface CampusA2uiSurfaceProps {
   onValueChange?: (path: string, value: string | string[]) => void;
   disabled?: boolean;
   fallback?: ReactNode;
+  catalog?: CampusA2uiCatalog;
+  renderAssistantText?: (text: string) => ReactNode;
+  renderReport?: (component: 'ReportChart' | 'ReportSource', sourceId: string, onOpen: () => void) => ReactNode;
 }
 
-export function CampusA2uiSurface({ messages, onAction, onValueChange, disabled, fallback }: CampusA2uiSurfaceProps) {
-  const surfaces = useMemo(() => readCampusA2uiSurfaces(messages), [messages]);
-  if (!surfaces?.length) return fallback ?? (surfaces ? null : <Notice tone="warning" message="The setup assistant could not load. You can continue in the campus editor." />);
-  return surfaces.map(surface => <MapAssistanceSurface key={surface.id} surface={surface} onAction={onAction} onValueChange={onValueChange} disabled={disabled} />);
+export function CampusA2uiSurface({ messages, onAction, onValueChange, disabled, fallback, catalog, renderAssistantText, renderReport }: CampusA2uiSurfaceProps) {
+  const surfaces = useMemo(() => readCampusA2uiSurfaces(messages, catalog), [messages, catalog]);
+  if (!surfaces?.length) return fallback ?? (surfaces ? null : <Notice tone="warning" message={catalog === ASSISTANT_A2UI_CATALOG
+    ? 'The report or review could not load.' : 'The setup assistant could not load. You can continue in the campus editor.'} />);
+  return surfaces.map(surface => <LocalA2uiSurface key={surface.id} surface={surface} onAction={onAction} onValueChange={onValueChange} disabled={disabled} renderAssistantText={renderAssistantText} renderReport={renderReport} />);
 }
 
-function MapAssistanceSurface({ surface, onAction, onValueChange, disabled }: Pick<CampusA2uiSurfaceProps, 'onAction' | 'onValueChange' | 'disabled'> & { surface: CampusA2uiSurfaceState }) {
+function LocalA2uiSurface({ surface, onAction, onValueChange, disabled, renderAssistantText, renderReport }: Pick<CampusA2uiSurfaceProps, 'onAction' | 'onValueChange' | 'disabled' | 'renderAssistantText' | 'renderReport'> & { surface: CampusA2uiSurfaceState }) {
   const { colors } = useTheme();
   const [local, setLocal] = useState(() => ({ source: surface.model, model: surface.model }));
   const model = local.source === surface.model ? local.model : surface.model;
@@ -38,6 +42,13 @@ function MapAssistanceSurface({ surface, onAction, onValueChange, disabled }: Pi
   const render = (id: string): ReactNode => {
     const component = surface.components.get(id);
     if (!component) return null;
+    const assistant = surface.catalogId === ASSISTANT_A2UI_CATALOG;
+    const locked = disabled || (assistant && component.disabled === true);
+    const dispatch = () => {
+      if (locked) return;
+      const action = campusA2uiAction(surface.id, component, model, undefined, surface.catalogId);
+      if (action) onAction(action);
+    };
     switch (component.component) {
       case 'Column':
       case 'Row':
@@ -48,6 +59,7 @@ function MapAssistanceSurface({ surface, onAction, onValueChange, disabled }: Pi
         return <View key={id} style={[component.axis === 'vertical' ? styles.verticalDivider : styles.divider, { backgroundColor: colors.border }]} />;
       case 'Text': {
         const text = a2uiText(component.text, model);
+        if (assistant && renderAssistantText) return renderAssistantText(text);
         const heading = /^(#{1,6})\s+([^\n]+)$/.exec(text);
         const caption = component.variant === 'caption';
         return <Text key={id} accessibilityRole={heading ? 'header' : undefined} aria-level={heading ? Math.max(2, heading[1].length) : undefined}
@@ -86,14 +98,16 @@ function MapAssistanceSurface({ surface, onAction, onValueChange, disabled }: Pi
       case 'Button': {
         const labelComponent = surface.components.get(String(component.child));
         const title = a2uiText(labelComponent?.text, model);
-        if (!title || !campusA2uiAction(surface.id, component, model, '')) return null;
-        const press = () => {
-          if (disabled) return;
-          const action = campusA2uiAction(surface.id, component, model);
-          if (action) onAction(action);
-        };
-        if (component.variant === 'borderless') return <ControlButton key={id} title={title} onPress={press} disabled={disabled} />;
-        return <Button key={id} title={title} kind={component.variant === 'primary' ? 'primary' : 'secondary'} onPress={press} disabled={disabled} />;
+        if (!title || !campusA2uiAction(surface.id, component, model, '', surface.catalogId)) return null;
+        const kind = component.variant === 'primary' ? 'primary' : 'secondary';
+        if (assistant || component.variant === 'borderless') return <ControlButton key={id} title={title} kind={kind} onPress={dispatch} disabled={locked} />;
+        return <Button key={id} title={title} kind={kind} onPress={dispatch} disabled={locked} />;
+      }
+      case 'ReportChart':
+      case 'ReportSource': {
+        const sourceId = a2uiText(component.sourceId, model);
+        if (!sourceId || !renderReport) return null;
+        return <Fragment key={id}>{renderReport(component.component, sourceId, dispatch)}</Fragment>;
       }
     }
   };

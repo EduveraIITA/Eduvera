@@ -103,6 +103,16 @@ successful write for the current response. Close reveals the retained workspace;
 it must not invent a destination or silently discard a draft. This records the owner's
 29 October clarification; platform rendering and recovery need their own evidence.
 
+Assistant replies, report charts, source links and approval controls in the
+conversation use a bounded A2UI 1.0 catalog. The renderer binds report source and
+decision events to the exact current server-owned evidence or action. Chart
+data, available routes and authority still come from the existing owners.
+Virtual Campus facility review and room description open as a task inside the same
+Assistant surface when enabled. Map pins are placed on the exact retained map
+and the app can resume the task without choosing a new campus or floor.
+The Assistant can use the current authorized Virtual Campus directory to open
+setup. Further settings and actions need their own contract, scope and review.
+
 ### Bounded long-term personalization
 
 Only an explicit durable statement in the current user message can change a

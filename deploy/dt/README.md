@@ -65,7 +65,13 @@ The pre-migration candidate check assumes an application/schema change that can 
 
 The automatic workflow deploys the backend and Expo web application. The fixed domain bridge is infrastructure; changes to its Worker code or custom-domain binding require a separately reviewed Wrangler deployment, and the pipeline does not imply that such a change was activated.
 
-The approved Vertex allowance expired at `2026-11-08T00:00:00Z`; no renewed cloud inference is claimed. Telegram, payment and photo external delivery remain disabled. Existing ERP provider secrets are not reused.
+The hosted test allowance for Assistant and Virtual Campus uses the same USD
+$10 per UTC day reservation ledger and expires at `2026-12-04T13:22:00Z`.
+The current regional Overpass fallback is the optional Dresel Asia mirror for
+selections within `south=5,west=68,north=38,east=98`. It is a public test
+fallback. The reviewed geometry path still has an editable boundary-only outcome
+where verified map geometry is unavailable. Telegram, payment and photo external
+delivery remain disabled. Existing ERP provider secrets are not reused.
 
 The approved Resend domain and three DNS-only records are verified. The user-created sending key is stored as numeric version1 of `thatcampus-dt-resend-api-key`; only `dt-runtime` receives the new secret-specific accessor grant. The sender is `noreply@thatcampus.com`. Do not print, commit or paste credential values into commands/logs. The release guard rejects literal keys, another secret, `latest`, or an enabled sender/provider that differs from this approved binding. Routine deployment preserves configuration and never enables email by default.
 

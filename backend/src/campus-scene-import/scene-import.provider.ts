@@ -14,6 +14,54 @@ import type { PreparedMapArea } from './scene-import.area.js';
 import { CAMPUS_MAP_HINT_INSTRUCTION, campusMapHintResponse, campusMapHintsSchema, type mappedPlaceCandidates } from './scene-import.assistance.js';
 
 const MAX_MAP_ELEMENTS = 1800;
+const MAX_OVERPASS_RESPONSE_BYTES = 8 * 1024 * 1024;
+const OVERPASS_LOOKUP_DEADLINE_MS = 12_000;
+const OVERPASS_AREA_DEADLINE_MS = 10_000;
+const OVERPASS_AREA_TIMEOUT_SECONDS = 7;
+
+class MapProviderUnavailable extends ServiceUnavailableException {
+  constructor() {
+    super('The open map provider could not finish this request. Try again later, import GeoJSON, or trace an authorized plan.');
+  }
+}
+
+// Endpoints are owned by the deployment. Regions are explicit because a
+// healthy regional mirror can return an empty result outside its coverage.
+function overpassEndpoint(value: string | undefined) {
+  if (!value?.trim()) return;
+  try {
+    const endpoint = new URL(value);
+    if (endpoint.protocol === 'https:' && !endpoint.username && !endpoint.password &&
+        !endpoint.hash && !endpoint.search) return endpoint;
+  } catch { /* Invalid configuration cannot become a provider request. */ }
+}
+function overpassFallback(bounds: PreparedMapArea['bounds']) {
+  const endpoint = overpassEndpoint(process.env.CAMPUS_OVERPASS_FALLBACK_URL);
+  const region = process.env.CAMPUS_OVERPASS_FALLBACK_BOUNDS?.split(',').map(value => value.trim());
+  if (!endpoint || region?.length !== 4 || region.some(value => !value || !Number.isFinite(Number(value)))) return;
+  const [south, west, north, east] = region.map(Number) as [number, number, number, number];
+  if (south < -85 || north > 85 || west < -180 || east > 180 || south >= north || west >= east) return;
+  return bounds.south >= south && bounds.west >= west && bounds.north <= north && bounds.east <= east ? endpoint : undefined;
+}
+
+function boundaryDraft(document: SceneDocument, area: PreparedMapArea, coverage: NonNullable<SceneDocument['source']['map_coverage']>) {
+  return sceneDocumentSchema.parse({
+    ...document,
+    source: {
+      ...document.source,
+      label: 'Drawn campus boundary',
+      provider: undefined,
+      map_coverage: coverage,
+      notes: coverage === 'boundary_only_unavailable'
+        ? 'The map providers could not supply a complete response. This draft contains only your selected boundary. Retry to import existing map features, or add outlines from your own source.'
+        : 'No usable outlines were found inside this selection. This draft contains only your selected boundary. Add outlines from your own source.',
+    },
+    elements: [{
+      id: 'map-boundary', kind: 'surface', label: 'Drawn campus boundary', asset_key: 'generic', material: 'neutral',
+      geometry: { type: 'polygon', points: area.outline }, space_id: null, floor_id: null, review_state: 'needs_review',
+    }],
+  });
+}
 export const CAMPUS_MAP_HINT_OUTPUT_TOKENS = 1024;
 const indoorGuidanceInstruction = 'You are a campus mapping guide. The input contains progress counts only. Ask one short optional question to help the administrator choose the next step. Prefer placing rooms before pinning their contents. Ask about one uncertain quantity at a time if helpful. If everything is placed, let the administrator decide whether to add detail or stop. Do not assume what a room or item is. Never ask for people, access codes, or personal details. Do not include links, formatting, or coordinates.';
 const promptText = (length: number) => z.string().trim().min(1).max(length)
@@ -84,35 +132,47 @@ export class CampusSceneImportProvider {
       max_image_bytes: 4 * 1024 * 1024 };
   }
 
-  private async overpass(query: string): Promise<unknown> {
+  private async overpass(query: string, bounds?: PreparedMapArea['bounds']): Promise<unknown> {
     assertLiveExternalEffect('Campus map import');
     if (!this.capabilities().map_search.available) throw new ServiceUnavailableException('Map search needs a configured provider. Import a GeoJSON file or trace your plan.');
-    const endpoint = new URL(process.env.CAMPUS_OVERPASS_URL ?? 'https://overpass.private.coffee/api/interpreter');
-    if (endpoint.protocol !== 'https:' || endpoint.username || endpoint.password) throw new ServiceUnavailableException('The campus map provider needs a valid HTTPS endpoint.');
-    const signal = AbortSignal.timeout(25_000);
-    try {
-      const response = await fetch(endpoint, { method: 'POST', signal,
-        headers: { 'Content-Type': 'application/x-www-form-urlencoded', 'User-Agent': 'ThatCampus-CampusImporter/1.0 (+https://thatcampus.com)' },
-        body: new URLSearchParams({ data: query }), redirect: 'error' });
-      if (!response.ok || !response.body) throw new Error('unavailable');
-      const reader = response.body.getReader(); const chunks: Uint8Array[] = []; let bytes = 0;
-      for (;;) { const chunk = await reader.read(); if (chunk.done) break; bytes += chunk.value.byteLength;
-        if (bytes > 8 * 1024 * 1024) { await reader.cancel(); throw new BadRequestException('This map area is too large. Choose a smaller campus area.'); }
-        chunks.push(chunk.value); }
-      const value: unknown = JSON.parse(Buffer.concat(chunks).toString('utf8'));
-      if (value && typeof value === 'object' && 'remark' in value) throw new Error('partial');
-      return value;
-    } catch (error) {
-      if (error instanceof BadRequestException) throw error;
-      throw new ServiceUnavailableException('The open map provider could not finish this request. Try again later, upload GeoJSON, or trace an aerial image.');
+    const primary = overpassEndpoint(process.env.CAMPUS_OVERPASS_URL ?? 'https://overpass.private.coffee/api/interpreter');
+    if (!primary) throw new ServiceUnavailableException('The campus map provider needs a valid HTTPS endpoint.');
+    const fallback = bounds ? overpassFallback(bounds) : undefined;
+    const endpoints = fallback && fallback.href !== primary.href ? [primary, fallback] : [primary];
+    const deadlineMs = bounds ? OVERPASS_AREA_DEADLINE_MS : OVERPASS_LOOKUP_DEADLINE_MS;
+    for (const endpoint of endpoints) {
+      try {
+        const signal = AbortSignal.timeout(deadlineMs);
+        const response = await fetch(endpoint, { method: 'POST', signal,
+          headers: { 'Content-Type': 'application/x-www-form-urlencoded', 'User-Agent': 'ThatCampus-CampusImporter/1.0 (+https://thatcampus.com)' },
+          body: new URLSearchParams({ data: query }), redirect: 'error' });
+        if (!response.ok || !response.body) { await response.body?.cancel(); continue; }
+        const reader = response.body.getReader(); const chunks: Uint8Array[] = []; let bytes = 0;
+        for (;;) {
+          const chunk = await reader.read(); if (chunk.done) break;
+          bytes += chunk.value.byteLength;
+          if (bytes > MAX_OVERPASS_RESPONSE_BYTES) {
+            await reader.cancel();
+            throw new BadRequestException('This map area is too large. Choose a smaller campus area.');
+          }
+          chunks.push(chunk.value);
+        }
+        const value: unknown = JSON.parse(Buffer.concat(chunks).toString('utf8'));
+        if (value && typeof value === 'object' && 'elements' in value && Array.isArray(value.elements)
+            && !('remark' in value)) return value;
+      } catch (error) {
+        if (error instanceof BadRequestException) throw error;
+        // A transient response never becomes a partially trusted campus map.
+      }
     }
+    throw new MapProviderUnavailable();
   }
 
   async lookup(query: string): Promise<SceneLocation[]> {
     // Exact campus-name lookup; no autocomplete, fuzzy location guesses or user query syntax.
     const escaped = query.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
     const match = JSON.stringify(`^${escaped}$`);
-    const raw = await this.overpass(`[out:json][timeout:20][maxsize:16777216];(nwr[amenity~"^(school|college|university)$"][name~${match},i];nwr[amenity~"^(school|college|university)$"]["name:en"~${match},i];);out center bb 12;`);
+    const raw = await this.overpass(`[out:json][timeout:8][maxsize:16777216];(nwr[amenity~"^(school|college|university)$"][name~${match},i];nwr[amenity~"^(school|college|university)$"]["name:en"~${match},i];);out center bb 12;`);
     const value = z.object({ elements: z.array(z.object({ type: z.enum(['node','way','relation']), id: z.number().int(),
       lat: z.number().optional(), lon: z.number().optional(), center: z.object({lat:z.number(),lon:z.number()}).optional(),
       bounds: z.object({minlat:z.number(),minlon:z.number(),maxlat:z.number(),maxlon:z.number()}).optional(),
@@ -146,7 +206,7 @@ export class CampusSceneImportProvider {
   private async mapFeatures(bounds: PreparedMapArea['bounds'], includeGates = false) {
     const box = [bounds.south, bounds.west, bounds.north, bounds.east].join(',');
     const gates = includeGates ? `node[barrier=gate](${box});` : '';
-    const raw = await this.overpass(`[out:json][timeout:20][maxsize:16777216];(way[building](${box});way[highway](${box});way[leisure~"^(pitch|track|garden|park)$"](${box});way[amenity=parking](${box});way[natural=water](${box});way[landuse=grass](${box});node[natural=tree](${box});${gates});out geom ${MAX_MAP_ELEMENTS};`);
+    const raw = await this.overpass(`[out:json][timeout:${OVERPASS_AREA_TIMEOUT_SECONDS}][maxsize:16777216];(way[building](${box});way[highway](${box});way[leisure~"^(pitch|track|garden|park)$"](${box});way[amenity=parking](${box});way[natural=water](${box});way[landuse=grass](${box});node[natural=tree](${box});${gates});out geom ${MAX_MAP_ELEMENTS};`,bounds);
     // Overpass's output limit silently truncates without a remark. At the cap
     // we cannot prove completeness, so do not present it as a campus proposal.
     if(raw && typeof raw==='object' && 'elements' in raw && Array.isArray(raw.elements) && raw.elements.length>=MAX_MAP_ELEMENTS)
@@ -155,10 +215,22 @@ export class CampusSceneImportProvider {
   }
 
   async area(label: string, area: PreparedMapArea): Promise<SceneDocument> {
-    const features = await this.mapFeatures(area.bounds, true);
-    return sceneFromGeoJson(area.filter(features), label, { kind: 'open_map', label,
+    const source: SceneDocument['source'] = { kind: 'open_map', label,
       reference_url: 'https://www.openstreetmap.org/copyright', attribution: '© OpenStreetMap contributors · ODbL', provider: 'OpenStreetMap / Overpass',
-      notes: 'Paths are clipped to your drawn boundary. Partial buildings are omitted. Check the map for missing or neighbouring features.' }, area.bounds);
+      notes: 'Paths are clipped to your drawn boundary. Partial buildings are omitted. Check the map for missing or neighbouring features.',
+      drawn_boundary: area.drawnBoundary,
+    };
+    let features: ReturnType<typeof osmToGeoJson>;
+    try {
+      features = await this.mapFeatures(area.bounds, true);
+    } catch (error) {
+      if (!(error instanceof MapProviderUnavailable)) throw error;
+      this.logger.warn('Campus map providers unavailable; returning the selected boundary only.');
+      const blank = sceneFromGeoJson({ type: 'FeatureCollection', features: [] }, label, source, area.bounds);
+      return boundaryDraft(blank, area, 'boundary_only_unavailable');
+    }
+    const document = sceneFromGeoJson(area.filter(features), label, source, area.bounds);
+    return document.elements.length ? document : boundaryDraft(document, area, 'boundary_only_empty');
   }
 
   async mapHints(candidates: ReturnType<typeof mappedPlaceCandidates>, reserve: (inputTokens: number, outputTokens: number) => Promise<void>) {

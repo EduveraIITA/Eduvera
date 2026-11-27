@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import { NativePendingActionJournal, validateNativePendingAction, type NativePendingAction, type NativePendingScope } from '../src/lib/native-pending-action';
-import { campusSceneActionAllowed, definitiveCampusImportFailure, nativeSceneDocument, campusSceneSourceState, campusSceneEditorFocus } from '../src/lib/campus-scene-policy';
+import { campusSceneActionAllowed, definitiveCampusImportFailure, nativeSceneDocument, campusSceneSourceState, campusSceneEditorFocus, retainedCampusMapBoundary } from '../src/lib/campus-scene-policy';
 import type { CampusSceneDocument } from '../../packages/contracts/src/campus-scenes/types';
 const campus='10000000-0000-4000-8000-000000000001',sceneId='10000000-0000-4000-8000-000000000002',key='10000000-0000-4000-8000-000000000003';
 const scope:NativePendingScope={actorId:'actor',schoolId:'school',mode:'simulation',namespaceId:'world',origin:'https://campus.test'},root=`/api/v1/schools/school/campus-scenes/${campus}/`;
@@ -13,6 +13,42 @@ test('accepted campus receipts are bounded to their actual operation; other doma
 test('an acknowledged draft retains its exact server document across relaunch and only refreshes',async()=>{let raw:string|null=null,sends=0,reads=0;const storage={read:async()=>raw,write:async(v:string)=>{raw=v;},clear:async()=>{raw=null;}},make=(fail:boolean)=>new NativePendingActionJournal({scope,domain:'campus',storage,randomId:()=>key,send:async()=>{sends++;return{id:campus,revision:8,document};},read:async()=>{reads++;if(fail)throw new Error('lost refresh');return{campus:{id:campus}};}}),a=action(),context={ownerHref:a.ownerHref,refreshPath:a.refreshPath,assertActive(){}};const first=make(true);await first.hydrate();assert.equal(await first.run({endpoint:a.endpoint,method:'PUT',serverKey:'idempotency_key',source:a.source,body:{expected_revision:7,document}},context),false);assert.deepEqual(JSON.parse(raw!).receipt.document,document);const next=make(false);await next.hydrate();let restored:unknown;assert.equal(await next.recover({...context,accepted:(_v,_assert,saved)=>{restored=saved.receipt;}}),true);assert.deepEqual(restored,{id:campus,revision:8,document});assert.equal(sends,1);assert.equal(reads,2);assert.equal(raw,null);});
 test('interrupted import retains the original source and floor context, never rebuilds it from current choices',async()=>{let raw:string|null=null,dispatches:NativePendingAction[]=[];const storage={read:async()=>raw,write:async(v:string)=>{raw=v;},clear:async()=>{raw=null;}},make=(fail:boolean)=>new NativePendingActionJournal({scope,domain:'campus',storage,randomId:()=>key,send:async a=>{dispatches.push(a);if(fail)throw new Error('lost');return{document};},read:async()=>({})}),a=action(),context={ownerHref:a.ownerHref,refreshPath:a.refreshPath,assertActive(){}};const input={endpoint:root+'imports/',serverKey:'idempotency_key' as const,source:a.source,body:{kind:'image',image_asset_id:sceneId,label:'Owned plan',source_kind:'site_plan',instructions:'',purpose:'floor_plan',target:{building_id:sceneId,expected_building_revision:3}},continuation:{kind:'floor_plan',buildingId:sceneId,floorId:null,newFloor:{name:'Ground floor',code:'G'},baseDocument:document}};const first=make(true);await first.hydrate();await first.run(input,context);const second=make(false);await second.hydrate();assert.equal(await second.recover(context),true);assert.equal(dispatches.length,2);assert.deepEqual(dispatches[1]?.payload,dispatches[0]?.payload);assert.deepEqual(dispatches[1]?.continuation,input.continuation);assert.equal(dispatches[1]?.clientId,key);});
 test('only an owning durable failed import permits a fresh attempt; ordinary rate-limit/network errors retain intent',()=>{const a={domain:'campus' as const,endpoint:root+'imports/'};assert.ok(definitiveCampusImportFailure({details:{error:{code:'campus_import_failed'}}},a));for(const e of [{status:429},{status:500},{details:{error:{code:'generic'}}}])assert.equal(definitiveCampusImportFailure(e,a),false);assert.equal(definitiveCampusImportFailure({details:{error:{code:'campus_import_failed'}}},{...a,endpoint:root+'draft/'}),false);});
+test('boundary generation restores the exact outline and releases a failed attempt before generating with a fresh key', async () => {
+ const boundary = [
+  { latitude: 19, longitude: 73 },
+  { latitude: 19, longitude: 73.001 },
+  { latitude: 19.001, longitude: 73.001 },
+ ];
+ const endpoint = root+'imports/';
+ const senderInputs: NativePendingAction[] = [];
+ let raw: string|null = null;
+ const storage = {read:async()=>raw,write:async(value:string)=>{raw=value;},clear:async()=>{raw=null;}};
+ const context = {ownerHref:action().ownerHref,refreshPath:root+'workspace/',assertActive(){}};
+ const serviceFailure = Object.assign(new Error('The map source could not finish the layout.'), {
+  status: 503, details: { error: { code: 'campus_import_failed' } },
+ });
+ const make = (keyForNewAttempt: string, send: () => unknown) => new NativePendingActionJournal({
+  scope, domain:'campus', storage, randomId:()=>keyForNewAttempt,
+  send:async command=>{senderInputs.push(command);return send();},read:async()=>({}),
+ });
+ const first = make(key,()=>{throw new Error('The connection was interrupted.');});
+ const body={kind:'map_area',label:'A mapped campus',boundary};
+ const input={endpoint, serverKey:'idempotency_key' as const, source:action().source, body};
+ await first.hydrate();
+ assert.equal(await first.run(input,context),false);
+ const next = make(sceneId,()=>{if(senderInputs.length===2)throw serviceFailure;return {document};});
+ await next.hydrate();
+ const restored = retainedCampusMapBoundary(next.snapshot().action,endpoint);
+ assert.deepEqual(restored,boundary);
+ assert.equal(retainedCampusMapBoundary(next.snapshot().action,endpoint.replace(campus,sceneId)),null);
+ assert.equal(await next.recover(context),false);
+ assert.deepEqual(senderInputs[1]?.payload,senderInputs[0]?.payload);
+ assert.equal(next.snapshot().action,null);
+ assert.equal(next.snapshot().error,serviceFailure.message);
+ assert.equal(await next.run({...input,body:{...body,boundary:restored}},context),true);
+ assert.equal(senderInputs[2]?.clientId,sceneId);
+ assert.deepEqual(retainedCampusMapBoundary(senderInputs[2]!,endpoint),boundary);
+});
 test('source failure and newer revision lock edits while an older query never downgrades an accepted receipt',()=>{
  assert.equal(campusSceneSourceState(7,7,false),'current');assert.equal(campusSceneSourceState(8,7,false),'current');
  assert.equal(campusSceneSourceState(7,8,false),'changed');assert.equal(campusSceneSourceState(7,7,true),'failed');

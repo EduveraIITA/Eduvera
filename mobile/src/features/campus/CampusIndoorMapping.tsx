@@ -110,7 +110,7 @@ function IndoorFloor({building,floor,selector,...props}: Props & {
       if (request===promptRequest.current && result.prompt) setAiPrompt({id:`follow-up-${request}`,...result.prompt,optional:true});
     } catch { /* The local guide already has a current prompt. */ }
   }
-  function parse(text:string) {
+  function parse(text:string, inAssistant:boolean) {
     if (describedRoom) {
       const result=parseCampusIndoorRoomResources(text);
       if (!result.resources.length) throw new Error(result.warnings[0]??'Describe an item in this room, such as two fans or a bookshelf.');
@@ -139,7 +139,7 @@ function IndoorFloor({building,floor,selector,...props}: Props & {
     }
     setRooms(next);setWarnings(reminders.slice(0,5));setAnswer('');
     setAiPrompt(undefined);
-    void askNext(next,++promptRequest.current).catch(()=>{});
+    if (inAssistant) void askNext(next,++promptRequest.current).catch(()=>{});
   }
   function placePoint(point:CampusScenePoint) {
     if (!pin || props.disabled) return;
@@ -232,10 +232,14 @@ function IndoorFloor({building,floor,selector,...props}: Props & {
       {feedback?<Notice tone="warning" message={feedback}/>:null}
       {warnings.map((warning,index)=><Notice key={index} message={warning}/>)}
       {pin&&!pin.itemId?<Notice message={corner?`Tap the opposite corner of ${tapTarget?.name??'the room'}.`:'Tap the first of two opposite room corners.'}/>:null}
-      <CampusIndoorCounselor floorName={name} answer={answer} onAnswerChange={value=>{
+      {pin?<Button title="Finish pin placement" kind="secondary" onPress={()=>{setPin(null);setCorner(null);setFeedback('');}}/>:null}
+      {!pin&&selectedElement?.kind==='fixture'?<CampusSceneResourcePicker schoolId={props.schoolId} campusId={props.campusId}
+        holdingId={selectedElement.holding_id??null} linkedElsewhere={linksInUse} disabled={props.disabled} onChange={changeHolding}/>:null}
+    </>}
+    assistantGuidance={pin?undefined:(backToMap,inAssistant)=><CampusIndoorCounselor floorName={name} answer={answer} onAnswerChange={value=>{
           if(value && !answer)++promptRequest.current;
           setAnswer(value);
-        }} onAnswer={parse}
+        }} onAnswer={text=>parse(text,inAssistant)}
         prompt={describedRoom?{id:`describe-room-${describedRoom.id}`,question:`What is in ${describedRoom.name}?`,
           hint:'Describe any items you want to pin, such as two fans, a bookshelf, or four ceiling lights.',optional:true}:aiPrompt??{id:'describe-floor',question:rooms.length?'What else should we map on this floor?':'What rooms are on this floor?',
           hint:rooms.length?'Mention the room name and any details, such as two fans, a light, or 30 books.':'For example: The ground floor has a library and an office. The library has two fans.'}}
@@ -247,9 +251,6 @@ function IndoorFloor({building,floor,selector,...props}: Props & {
           if(patch.name)renameElements(item.elementIds,patch.name);
           reviseRoom(roomId,{items:room.items.map(value=>value.id===itemId?{...value,...patch,...(value.elementIds.length?{quantity:value.quantity}:{})}:value)});
         }}
-        activePin={pin} onPin={value=>{setPin(value);setCorner(null);setFeedback('');if(value)setSelected(value.roomId);}}
-        canSave={dirty} onSave={save} onPause={close} disabled={props.disabled} busy={props.busy}/>
-      {!pin&&selectedElement?.kind==='fixture'?<CampusSceneResourcePicker schoolId={props.schoolId} campusId={props.campusId}
-        holdingId={selectedElement.holding_id??null} linkedElsewhere={linksInUse} disabled={props.disabled} onChange={changeHolding}/>:null}
-    </>}/>;
+        activePin={pin} onPin={value=>{setPin(value);setCorner(null);setFeedback('');if(value){setSelected(value.roomId);backToMap();}}}
+        canSave={dirty} onSave={async()=>{await save();backToMap();}} onPause={()=>{backToMap();close();}} disabled={props.disabled} busy={props.busy}/>}/>;
 }

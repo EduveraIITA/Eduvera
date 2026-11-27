@@ -1,11 +1,14 @@
 export const CAMPUS_A2UI_BASIC_CATALOG = 'https://a2ui.org/specification/v1_0/catalogs/basic/catalog.json';
+export const ASSISTANT_A2UI_CATALOG = 'https://thatcampus.com/a2ui/catalogs/assistant/v1';
+export type CampusA2uiCatalog = typeof CAMPUS_A2UI_BASIC_CATALOG | typeof ASSISTANT_A2UI_CATALOG;
 const MAX_MESSAGES = 32;
 const MAX_COMPONENTS = 128;
 const MAX_DEPTH = 12;
 const ACTION_NAMES = ['focus_feature', 'accept_place_hint', 'review_places', 'answer_indoor_question', 'skip_indoor_question'] as const;
+const ASSISTANT_ACTION_NAMES = ['open_assistant_source', 'open_assistant_action', 'confirm_assistant_action', 'dismiss_assistant_action'] as const;
 
 type DataModel = Record<string, unknown>;
-type ActionName = typeof ACTION_NAMES[number];
+type ActionName = typeof ACTION_NAMES[number] | typeof ASSISTANT_ACTION_NAMES[number];
 
 export interface CampusA2uiActionMessage {
   version: '1.0';
@@ -21,11 +24,12 @@ export interface CampusA2uiActionMessage {
 
 export interface CampusA2uiComponent extends Record<string, unknown> {
   id: string;
-  component: 'Column' | 'Row' | 'Card' | 'Divider' | 'Text' | 'TextField' | 'ChoicePicker' | 'Button';
+  component: 'Column' | 'Row' | 'Card' | 'Divider' | 'Text' | 'TextField' | 'ChoicePicker' | 'Button' | 'ReportChart' | 'ReportSource';
 }
 
 export interface CampusA2uiSurfaceState {
   id: string;
+  catalogId: CampusA2uiCatalog;
   components: Map<string, CampusA2uiComponent>;
   model: DataModel;
 }
@@ -85,11 +89,12 @@ function validId(id: unknown): id is string {
   return typeof id === 'string' && id.length > 0 && id.length <= 180;
 }
 
-function a2uiComponent(value: unknown): value is CampusA2uiComponent {
+function a2uiComponent(value: unknown, catalogId: CampusA2uiCatalog): value is CampusA2uiComponent {
   return a2uiRecord(value) && validId(value.id)
-    && (value['@catalogId'] === undefined || value['@catalogId'] === CAMPUS_A2UI_BASIC_CATALOG)
+    && (value['@catalogId'] === undefined || value['@catalogId'] === catalogId)
     && typeof value.component === 'string'
-    && ['Column', 'Row', 'Card', 'Divider', 'Text', 'TextField', 'ChoicePicker', 'Button'].includes(value.component);
+    && (['Column', 'Row', 'Card', 'Divider', 'Text', 'TextField', 'ChoicePicker', 'Button'].includes(value.component)
+      || (catalogId === ASSISTANT_A2UI_CATALOG && ['ReportChart', 'ReportSource'].includes(value.component)));
 }
 
 export function campusA2uiChildren(component: CampusA2uiComponent): string[] | undefined {
@@ -120,23 +125,23 @@ function hasRenderableTree(components: Map<string, CampusA2uiComponent>): boolea
 function addComponents(surface: CampusA2uiSurfaceState, components: unknown): boolean {
   if (!Array.isArray(components) || !components.length || components.length > MAX_COMPONENTS) return false;
   for (const candidate of components) {
-    if (!a2uiComponent(candidate)) return false;
+    if (!a2uiComponent(candidate, surface.catalogId)) return false;
     surface.components.set(candidate.id, candidate);
   }
   return surface.components.size <= MAX_COMPONENTS;
 }
 
-/** Applies the ordered messages from one map-assistance response. Only the local, display-only catalog subset is available. */
-export function readCampusA2uiSurfaces(messages: readonly unknown[]): CampusA2uiSurfaceState[] | undefined {
+/** Each owner opts into one local catalog. A map message cannot activate Assistant controls. */
+export function readCampusA2uiSurfaces(messages: readonly unknown[], catalog: CampusA2uiCatalog = CAMPUS_A2UI_BASIC_CATALOG): CampusA2uiSurfaceState[] | undefined {
   if (!Array.isArray(messages) || messages.length > MAX_MESSAGES) return;
   const surfaces = new Map<string, CampusA2uiSurfaceState>();
   for (const message of messages) {
     if (!a2uiRecord(message) || message.version !== '1.0' || Object.keys(message).length !== 2) return;
     if (a2uiRecord(message.createSurface)) {
       const { surfaceId, catalogId, sendDataModel, components, dataModel } = message.createSurface;
-      if (!validId(surfaceId) || surfaces.has(surfaceId) || catalogId !== CAMPUS_A2UI_BASIC_CATALOG || (sendDataModel !== undefined && sendDataModel !== false)
+      if (!validId(surfaceId) || surfaces.has(surfaceId) || catalogId !== catalog || (sendDataModel !== undefined && sendDataModel !== false)
         || (dataModel !== undefined && !a2uiRecord(dataModel))) return;
-      const surface = { id: surfaceId, components: new Map<string, CampusA2uiComponent>(), model: dataModel ?? {} };
+      const surface = { id: surfaceId, catalogId: catalog, components: new Map<string, CampusA2uiComponent>(), model: dataModel ?? {} };
       if (components !== undefined && !addComponents(surface, components)) return;
       surfaces.set(surfaceId, surface);
     } else if (a2uiRecord(message.updateComponents)) {
@@ -156,8 +161,9 @@ export function readCampusA2uiSurfaces(messages: readonly unknown[]): CampusA2ui
   return result.every(surface => hasRenderableTree(surface.components)) ? result : undefined;
 }
 
-function isActionName(name: unknown): name is ActionName {
-  return ACTION_NAMES.some(allowed => allowed === name);
+function isActionName(name: unknown, catalog: CampusA2uiCatalog): name is ActionName {
+  const actions = catalog === ASSISTANT_A2UI_CATALOG ? ASSISTANT_ACTION_NAMES : ACTION_NAMES;
+  return actions.some(allowed => allowed === name);
 }
 
 export function campusA2uiAction(
@@ -165,10 +171,12 @@ export function campusA2uiAction(
   component: CampusA2uiComponent,
   model: DataModel,
   timestamp = new Date().toISOString(),
+  catalog: CampusA2uiCatalog = CAMPUS_A2UI_BASIC_CATALOG,
 ): CampusA2uiActionMessage | undefined {
-  if (component.component !== 'Button' || !a2uiRecord(component.action) || !a2uiRecord(component.action.event)) return;
+  const source = catalog === ASSISTANT_A2UI_CATALOG && component.component === 'ReportSource';
+  if ((!source && component.component !== 'Button') || !a2uiRecord(component.action) || !a2uiRecord(component.action.event)) return;
   const { name, context = {}, userMessage } = component.action.event;
-  if (!isActionName(name) || !a2uiRecord(context)) return;
+  if (!isActionName(name, catalog) || !a2uiRecord(context) || (source && name !== 'open_assistant_source')) return;
   const entries = Object.entries(context).map(([key, value]) => [key, resolveA2uiValue(value, model)] as const);
   if (entries.some(([, value]) => value === undefined)) return;
   const messageText = a2uiText(userMessage, model);

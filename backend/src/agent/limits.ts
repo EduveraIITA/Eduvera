@@ -18,24 +18,38 @@ export function agentLimits() {
     until: z.string().optional(),
     hourly: z.coerce.number().int().min(1).max(60).default(10),
     daily: z.coerce.number().int().min(1).max(100).default(30),
-    dailyMicros: z.coerce.number().int().min(1).max(2_000_000).default(500_000),
-    monthlyMicros: z.coerce.number().int().min(1).max(20_000_000).default(5_000_000),
+    dailyMicros: z.coerce.number().int().min(1).max(10_000_000).default(500_000),
+    monthlyMicros: z.coerce.number().int().min(1).max(70_000_000).default(5_000_000),
   }).parse({ enabled: process.env.AGENT_ENABLED !== 'false', until: process.env.AGENT_ENABLED_UNTIL,
     hourly: process.env.AGENT_USER_HOURLY_LIMIT, daily: process.env.AGENT_USER_DAILY_LIMIT,
     dailyMicros: process.env.AGENT_DAILY_BUDGET_MICROS, monthlyMicros: process.env.AGENT_MONTHLY_BUDGET_MICROS });
 }
 
+const campusTrialBudget = z.object({
+  dailyMicros: z.coerce.number().int().min(1).max(10_000_000),
+  monthlyMicros: z.coerce.number().int().min(1).max(70_000_000),
+});
+
 export function assertAgentEnabled(scope?: 'campus_map_review') {
   const limits = agentLimits();
   if (!limits.enabled) throw new ForbiddenException('AI assistance is switched off. You can still use the app directly.');
-  if (process.env.AGENT_PROVIDER === 'vertex') {
-    const mapExpiry = scope === 'campus_map_review' ? process.env.CAMPUS_MAP_AI_ENABLED_UNTIL : undefined;
-    if (mapExpiry !== undefined && !z.iso.datetime({ offset: true }).safeParse(mapExpiry).success)
-      throw new ForbiddenException('Campus map AI review has an invalid trial expiry.');
-    const expiry = Date.parse(mapExpiry ?? limits.until ?? '');
-    if (!Number.isFinite(expiry) || expiry <= Date.now()) throw new ForbiddenException('Cloud AI is paused until its trial allowance is reviewed.');
-  }
-  return limits;
+  if (process.env.AGENT_PROVIDER !== 'vertex') return limits;
+
+  const mapExpiry = scope === 'campus_map_review' ? process.env.CAMPUS_MAP_AI_ENABLED_UNTIL : undefined;
+  if (mapExpiry !== undefined && !z.iso.datetime({ offset: true }).safeParse(mapExpiry).success)
+    throw new ForbiddenException('Campus map AI review has an invalid trial expiry.');
+  const expiry = Date.parse(mapExpiry ?? limits.until ?? '');
+  if (!Number.isFinite(expiry) || expiry <= Date.now())
+    throw new ForbiddenException('Cloud AI is paused until its trial allowance is reviewed.');
+  if (mapExpiry === undefined) return limits;
+
+  // The campus trial uses the same durable shared reservation ledger. Only
+  // requests under its explicit, active window can use its higher ceiling.
+  const budget = campusTrialBudget.parse({
+    dailyMicros: process.env.CAMPUS_MAP_AI_DAILY_BUDGET_MICROS ?? limits.dailyMicros,
+    monthlyMicros: process.env.CAMPUS_MAP_AI_MONTHLY_BUDGET_MICROS ?? limits.monthlyMicros,
+  });
+  return { ...limits, ...budget };
 }
 
 export class AgentLimitError extends HttpException {

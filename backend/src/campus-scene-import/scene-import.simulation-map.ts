@@ -18,6 +18,7 @@ function rectangle(id: number, name: string, west: number, south: number, east: 
 export function simulationMapArea(label: string, area: PreparedMapArea) {
   return sceneFromGeoJson(area.filter(schematic), label, {
     kind: 'manual', label: 'Fictional campus map', attribution: 'ThatCampus fictional Simulation map',
+    drawn_boundary: area.drawnBoundary,
     notes: 'This schematic supports rehearsal. No external map or AI provider was contacted.',
   }, area.bounds);
 }

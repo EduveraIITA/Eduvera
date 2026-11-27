@@ -7,6 +7,7 @@ import { runInNewContext } from 'node:vm';
 import test from 'node:test';
 import React, { act, createContext, useContext, useEffect, useState } from 'react';
 import ts from 'typescript';
+import * as workspaceTask from '../src/ui/assistant-workspace-task';
 import { assistantLayout } from '../src/lib/assistant-layout';
 import type { AssistantLayout } from '../src/lib/assistant-layout';
 const require = createRequire(import.meta.url);
@@ -25,9 +26,12 @@ test('the actual global host retains one body, draft and journal across full/com
   const View = ({ children,style,...props }: { children?: React.ReactNode; style?: React.CSSProperties; [key: string]: unknown }) => React.createElement('div',{ style: { ...(Array.isArray(style) ? Object.assign({},...style) : style),flexDirection: undefined },'data-modal': props.accessibilityViewIsModal },children);
   const dependencies: Record<string,unknown> = {
     'react': React,'react/jsx-runtime': require('react/jsx-runtime'),
-    'react-native': { View,Platform: { OS: 'web' },BackHandler: { addEventListener() { return { remove() {} }; } } },
+    'react-native': { View,ScrollView: View,Text: View,Platform: { OS: 'web' },BackHandler: { addEventListener() { return { remove() {} }; } } },
     'react-native-safe-area-context': { SafeAreaView: View },
     '../features/AssistantScreen': { AssistantScreen: Body },
+    '../auth/SessionProvider': { useSession: () => ({ scopeKey:'school:live' }) },
+    './assistant-workspace-task': workspaceTask,
+    './components': { Button: ({ title,onPress }:{ title:string; onPress:()=>void }) => React.createElement('button',{onClick:onPress},title) },
     './AssistantPresentation': { useAssistantPresentation: () => ({ collapse() {},close() {},canClose: true,onNavigate() {} }) },
     './assistant-presentation-context': { useAssistantPresentationState: () => useContext(presentation) },
     './assistant-overlay-context': { AssistantOverlayOwnerContext: owner,AssistantOverlayActivityContext: activity },
@@ -52,6 +56,21 @@ test('the actual global host retains one body, draft and journal across full/com
       assert.equal(dom.window.document.querySelector('[data-modal]')?.getAttribute('data-modal'),'false','both operating app and chat remain available to VoiceOver');
       assert.equal(mounts,1); assert.equal(unmounts,0);
     }
+    const ownerKey=Symbol('map');
+    let returned=0;
+    await act(async()=>workspaceTask.showAssistantWorkspaceTask({owner:ownerKey,scopeKey:'other:live',title:'Campus setup',
+      content:React.createElement('p',null,'Place a map pin'),onReturn:()=>{returned++;}}));
+    const taskScreen={...base,mode:'fullscreen' as const,expanded:true,href:workspaceTask.CAMPUS_ASSISTANT_TASK_HREF};
+    await render(taskScreen);
+    assert.equal(dom.window.document.body.textContent?.includes('Place a map pin'),false);
+    await act(async()=>workspaceTask.showAssistantWorkspaceTask({owner:ownerKey,scopeKey:'school:live',title:'Campus setup',
+      content:React.createElement('p',null,'Place a map pin'),onReturn:()=>{returned++;workspaceTask.clearAssistantWorkspaceTask(ownerKey);}}));
+    assert.equal(dom.window.document.body.textContent?.includes('Place a map pin'),true);
+    assert.equal(dom.window.document.querySelector('input'),input);
+    assert.equal(input.value,'Unsent question');
+    await act(async()=>dom.window.document.querySelector('button')?.click());
+    assert.equal(returned,1);
+    assert.equal(dom.window.document.querySelector('input'),input);
     await render({ ...base,mounted: false,active: false }); assert.equal(unmounts,1,'only the owning scope teardown removes the global body');
   } finally { await act(async () => renderer.unmount()); Object.assign(globalThis,{ window: oldWindow,document: oldDocument,IS_REACT_ACT_ENVIRONMENT: false }); dom.window.close(); }
 });

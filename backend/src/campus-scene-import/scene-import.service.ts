@@ -82,7 +82,9 @@ export class CampusSceneImportService {
       }
       if (!transientLookup) {
         const reusable=(await sql<ImportRun>`SELECT * FROM campus_scene_import_runs WHERE school_id=${school}::uuid AND campus_id=${campus}::uuid AND actor_user_id=${user.id}::uuid
-          AND request_hash=${digest} AND status='completed' AND (kind='image' OR created_at>${new Date(at.getTime()-86400000)}) ORDER BY created_at DESC LIMIT 1`.execute(tx)).rows[0];
+          AND request_hash=${digest} AND status='completed' AND (kind='image' OR created_at>${new Date(at.getTime()-86400000)})
+          AND coalesce(result #>> '{document,source,map_coverage}', '') NOT IN ('boundary_only_unavailable', 'boundary_only_empty')
+          ORDER BY created_at DESC LIMIT 1`.execute(tx)).rows[0];
         if(reusable) return {kind:'cached',result:reusable.result as T};
       }
       const recent=(await sql<{own:number;global:number}>`SELECT count(*) FILTER(WHERE actor_user_id=${user.id}::uuid)::int AS own,count(*) FILTER(WHERE created_at>${new Date(at.getTime()-60000)} AND kind IN('lookup','location'))::int AS global
