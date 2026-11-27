@@ -3,9 +3,56 @@ import { CampusSceneImportProvider, imageDraft, imageSceneBounds } from '../src/
 import { boundMapFeatures } from '../src/campus-scene-import/scene-import.bounds.js';
 import { sceneImportSchema, sceneLookupSchema } from '../src/campus-scene-import/scene-import.contracts.js';
 import { prepareMapArea } from '../src/campus-scene-import/scene-import.area.js';
+import { discoverPublicFloorPlans, floorPlanSearchSettings, officialSchoolHost } from '../src/campus-scene-import/scene-import.floor-plan-discovery.js';
 const image = {label:'Synthetic plan',imageId:'10e8534c-477a-4bcc-b65e-83f64700c405',width:1200,height:600,sourceKind:'site_plan' as const};
 afterEach(()=>{vi.unstubAllGlobals();vi.unstubAllEnvs();});
 describe('Campus import boundaries',()=>{
+  it('requests public floor plans only through the fixed search API and filters for the exact school, building and floor', async () => {
+    const host = 'willow-research.edu';
+    const matching = 'Learning block Ground floor plan';
+    const result = (url: string, title = matching, description = '') => ({ url, title, description });
+    const valid = `https://www.${host}/spaces/learning-block/ground-floor-plan.pdf`;
+    const fetch = vi.fn().mockResolvedValue(Response.json({ web: { results: [
+      result(`https://${host}.spoof.com/ground-floor-plan`),
+      result('https://127.0.0.1/ground-floor-plan.pdf'),
+      result(`https://${host}/redirect?url=https://untrusted.invalid`),
+      result(`https://username:password@${host}/ground-floor-plan.pdf`),
+      result(`https://${host}/places/arts-ground-floor-plan.pdf`, 'Arts block Ground floor plan'),
+      result(`https://${host}/places/learning-first-floor-plan.pdf`, 'Learning block First floor plan'),
+      result(`https://${host}/places/learning-building-profile`, 'Learning block building information', 'Ground floor plan mentioned'),
+      result(valid),
+      result(valid + '#page=1'),
+    ] } }));
+    vi.stubGlobal('fetch', fetch);
+    await expect(discoverPublicFloorPlans({ apiKey: 'mock', maximumDailyLookups: 2 },
+      { host, building: 'Learning block', floor: 'Ground floor' })).resolves.toEqual({
+      status: 'found', candidates: [{ title: matching, url: valid, source_host: `www.${host}` }],
+    });
+    expect(fetch).toHaveBeenCalledTimes(1);
+    const [endpoint, request] = fetch.mock.calls[0]!;
+    expect((endpoint as URL).origin).toBe('https://api.search.brave.com');
+    expect((endpoint as URL).searchParams.get('q')).toBe(`site:${host} "learning block" "ground floor" "floor plan"`);
+    expect(request).toMatchObject({ redirect: 'error', headers: { 'X-Subscription-Token': 'mock' } });
+  });
+  it('requires a safe HTTPS school host and explicit daily public-search allowance', async () => {
+    for (const website of ['http://school.edu', 'https://school.edu:8443', 'https://127.0.0.1', 'https://0x7f000001', 'https://[::1]', 'https://school.local', 'https://school.edu@evil.internal'])
+      expect(officialSchoolHost(website)).toBeNull();
+    expect(officialSchoolHost('https://www.Willow-Research.edu/about')).toBe('willow-research.edu');
+    vi.stubEnv('CAMPUS_FLOOR_PLAN_SEARCH_API_KEY', 'mock');
+    vi.stubEnv('CAMPUS_FLOOR_PLAN_SEARCH_MAX_DAILY', '');
+    expect(floorPlanSearchSettings()).toBeNull();
+    vi.stubEnv('CAMPUS_FLOOR_PLAN_SEARCH_MAX_DAILY', '3');
+    const settings = floorPlanSearchSettings();
+    expect(settings).toEqual({ apiKey: 'mock', maximumDailyLookups: 3 });
+    const fetch = vi.fn().mockResolvedValueOnce(new Response(new Uint8Array(128 * 1024 + 1)))
+      .mockResolvedValueOnce(Response.json({ web: { results: [] } }));
+    vi.stubGlobal('fetch', fetch);
+    await expect(discoverPublicFloorPlans(settings!, { host: 'willow-research.edu', building: 'Learning block' }))
+      .resolves.toMatchObject({ status: 'unavailable', candidates: [] });
+    await expect(discoverPublicFloorPlans(settings!, { host: 'willow-research.edu', building: 'Learning block' }))
+      .resolves.toEqual({ status: 'not_found', candidates: [] });
+    expect(fetch).toHaveBeenCalledTimes(2);
+  });
   it('preserves image aspect ratio and never turns generated outlines into verified places',()=>{
     const scene=imageDraft({elements:[{kind:'building',label:'Building 1',asset_key:'generic',points:[{x:100,y:100},{x:300,y:100},{x:300,y:400},{x:100,y:400}]}]},image);
     expect(scene.bounds).toEqual({width:1000,height:500,unit:'relative'});

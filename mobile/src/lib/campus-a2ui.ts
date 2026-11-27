@@ -2,7 +2,7 @@ export const CAMPUS_A2UI_BASIC_CATALOG = 'https://a2ui.org/specification/v1_0/ca
 const MAX_MESSAGES = 32;
 const MAX_COMPONENTS = 128;
 const MAX_DEPTH = 12;
-const ACTION_NAMES = ['focus_feature', 'accept_place_hint', 'review_places'] as const;
+const ACTION_NAMES = ['focus_feature', 'accept_place_hint', 'review_places', 'answer_indoor_question', 'skip_indoor_question'] as const;
 
 type DataModel = Record<string, unknown>;
 type ActionName = typeof ACTION_NAMES[number];

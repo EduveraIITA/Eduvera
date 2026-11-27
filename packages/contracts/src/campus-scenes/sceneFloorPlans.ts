@@ -68,9 +68,10 @@ export function floorPlanReviewedRows(context: SceneFloorPlanContext, rows: read
     if (!selected || selected.revision === undefined) errors.push("Refresh the selected floor before continuing.");
     else floor = { proposal_id: proposalId, action: "reuse", space_id: selected.id, expected_space_revision: selected.revision, element_ids: [], floor_element_ids: context.elementIds };
   } else if (building?.revision !== undefined && context.newFloor) {
-    const name = context.newFloor.name.trim(), code = context.newFloor.code.trim().toUpperCase() || scenePlaceCode(`${building.code}_${name}`, 0, new Set(spaces.map(space => space.code.toUpperCase())));
+    const usedCodes = new Set([...spaces.map(space => space.code.toUpperCase()), ...rows.flatMap(row => row.action === 'create' && row.code ? [row.code.toUpperCase()] : [])]);
+    const name = context.newFloor.name.trim(), code = context.newFloor.code.trim().toUpperCase() || scenePlaceCode(`${building.code}_${name}`, 0, usedCodes);
     if (name.length < 2 || name.length > 160) errors.push("Give the new floor a name of 2–160 characters.");
-    if (!/^[A-Z0-9][A-Z0-9_-]{0,39}$/.test(code) || spaces.some(space => space.code.toUpperCase() === code)) errors.push("Choose an unused floor code made from letters and numbers.");
+    if (!/^[A-Z0-9][A-Z0-9_-]{0,39}$/.test(code) || usedCodes.has(code) && !!context.newFloor.code.trim()) errors.push("Choose an unused floor code made from letters and numbers.");
     floor = { proposal_id: proposalId, action: "create", kind: "floor", name, code, parent_space_id: building.id, expected_parent_revision: building.revision, element_ids: [], floor_element_ids: context.elementIds };
   }
   if (!floor) errors.push("Choose the floor that will contain this plan.");

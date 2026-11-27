@@ -14,23 +14,25 @@ export type { CampusA2uiActionMessage } from '../../lib/campus-a2ui';
 interface CampusA2uiSurfaceProps {
   messages: readonly unknown[];
   onAction: (action: CampusA2uiActionMessage) => void;
+  onValueChange?: (path: string, value: string | string[]) => void;
   disabled?: boolean;
   fallback?: ReactNode;
 }
 
-export function CampusA2uiSurface({ messages, onAction, disabled, fallback }: CampusA2uiSurfaceProps) {
+export function CampusA2uiSurface({ messages, onAction, onValueChange, disabled, fallback }: CampusA2uiSurfaceProps) {
   const surfaces = useMemo(() => readCampusA2uiSurfaces(messages), [messages]);
   if (!surfaces?.length) return fallback ?? (surfaces ? null : <Notice tone="warning" message="The setup assistant could not load. You can continue in the campus editor." />);
-  return surfaces.map(surface => <MapAssistanceSurface key={surface.id} surface={surface} onAction={onAction} disabled={disabled} />);
+  return surfaces.map(surface => <MapAssistanceSurface key={surface.id} surface={surface} onAction={onAction} onValueChange={onValueChange} disabled={disabled} />);
 }
 
-function MapAssistanceSurface({ surface, onAction, disabled }: Pick<CampusA2uiSurfaceProps, 'onAction' | 'disabled'> & { surface: CampusA2uiSurfaceState }) {
+function MapAssistanceSurface({ surface, onAction, onValueChange, disabled }: Pick<CampusA2uiSurfaceProps, 'onAction' | 'onValueChange' | 'disabled'> & { surface: CampusA2uiSurfaceState }) {
   const { colors } = useTheme();
   const [local, setLocal] = useState(() => ({ source: surface.model, model: surface.model }));
   const model = local.source === surface.model ? local.model : surface.model;
   const change = (path: string, value: string | string[]) => {
     if (disabled) return;
     setLocal(current => ({ source: surface.model, model: writeA2uiValue(current.source === surface.model ? current.model : surface.model, path, value) }));
+    onValueChange?.(path, value);
   };
 
   const render = (id: string): ReactNode => {
@@ -56,10 +58,11 @@ function MapAssistanceSurface({ surface, onAction, disabled }: Pick<CampusA2uiSu
       case 'TextField': {
         const label = a2uiText(component.label, model);
         const path = a2uiBindingPath(component.value);
-        if (!label || !path || (component.variant !== undefined && component.variant !== 'shortText')) return null;
+        const multiline = component.variant === 'longText';
+        if (!label || !path || (!multiline && component.variant !== undefined && component.variant !== 'shortText')) return null;
         return <Field key={id} label={label} placeholder={a2uiText(component.placeholder, model)}
-          value={a2uiText(component.value, model)} maxLength={160} editable={!disabled}
-          autoCapitalize="words" onChangeText={value => change(path, value)} />;
+          value={a2uiText(component.value, model)} maxLength={multiline ? 2400 : 160} multiline={multiline} editable={!disabled}
+          autoCapitalize={multiline ? 'sentences' : 'words'} onChangeText={value => change(path, value)} />;
       }
       case 'ChoicePicker': {
         const label = a2uiText(component.label, model);

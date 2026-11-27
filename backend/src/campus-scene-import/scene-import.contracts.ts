@@ -29,6 +29,21 @@ export const floorPlanTargetSchema = z.object({
     context.addIssue({ code: 'custom', path: ['floor_id'], message: 'Choose the exact current floor and its revision, or review a new floor.' });
 });
 export type FloorPlanTarget = z.infer<typeof floorPlanTargetSchema>;
+export const floorPlanDiscoverySchema = z.object({
+  idempotency_key: identifier,
+  target: floorPlanTargetSchema,
+  official_website: z.string().trim().min(1).max(240).optional(),
+}).strict();
+export const indoorGuidanceSchema = z.object({
+  idempotency_key: identifier,
+  target: floorPlanTargetSchema,
+  progress: z.object({
+    rooms: z.number().int().min(0).max(40),
+    unplaced_rooms: z.number().int().min(0).max(40),
+    unplaced_items: z.number().int().min(0).max(1280),
+    uncertain_counts: z.number().int().min(0).max(1280),
+  }).strict().refine(progress => progress.unplaced_rooms <= progress.rooms),
+}).strict();
 export const sceneImportSchema = z.discriminatedUnion('kind', [
   sceneMapAreaSchema,
   z.object({ kind: z.literal('image'), idempotency_key: identifier, image_asset_id: identifier,

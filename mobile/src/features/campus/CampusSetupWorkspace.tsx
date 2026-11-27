@@ -12,7 +12,7 @@ import { useTheme } from '../../ui/theme';
 
 type SetupAction = { label: string; run: () => void };
 type SetupProps = {
-  campusName: string; phase: 'boundary' | 'layout' | 'facilities' | 'publication';
+  campusName: string; phase: 'boundary' | 'layout' | 'facilities' | 'publication' | 'interior';
   map: ReactNode; feedback?: ReactNode; guidance?: ReactNode; mapTools?: ReactNode;
   featureCount?: number; onClose: () => void; locked?: boolean;
   options: SetupAction[]; primary?: SetupAction; secondary?: SetupAction;
@@ -25,7 +25,7 @@ export function CampusSetupWorkspace({ campusName, phase, map, feedback, guidanc
   const { width } = useWindowDimensions();
   const [menu, setMenu] = useState(false);
   const wide = width >= 840;
-  const title = phase === 'facilities' ? 'Set up facilities' : phase === 'publication' ? 'Review and publish' : 'Virtual campus';
+  const title = phase === 'facilities' ? 'Set up facilities' : phase === 'publication' ? 'Review and publish' : phase === 'interior' ? 'Map building interiors' : 'Virtual campus';
   const close = () => {
     if (menu) { setMenu(false); return; }
     if (!locked) onClose();

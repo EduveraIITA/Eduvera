@@ -447,6 +447,17 @@ journey. Resolve truthful venue identity and capability composition before
 claiming general facility support; prove an empty mall fixture without academic
 records, including recovery and isolated Simulation.
 
+The [guided interior flow](CAMPUS_VISUAL_SCENES.md#guided-interior-mapping)
+feeds confirmed room outlines and item pins through the same floor review and
+saved-draft commands. Focused checks cover exact plan targets, bounded source
+filtering, isolated Simulation effects, A2UI actions, described resource counts
+and pin geometry. Browser runs from both a guided draft and a published campus
+placed one room and four items, saved them in an atomic draft and verified them
+after reload. They left the member publication unchanged. Public-plan discovery
+needs a configured index provider.
+Indexed links require an authorized upload before the image is traced, and saved
+geometry remains subject to normal review and publication.
+
 The retained evidence covers reviewed floor-plan intake/publication, authored
 interiors, messaging/academic evidence repair and Care/Resources/Dining continuity.
 It does not close every old whole-system audit finding. Shared controls keep

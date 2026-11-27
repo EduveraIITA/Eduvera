@@ -541,9 +541,7 @@ never filled in by the model. The native app renders a bounded component
 catalog, data bindings and validated actions using [A2UI 1.0](https://a2ui.org/specification/v1.0-a2ui/).
 Place choices go through the existing campus-place review and layout publication
 commands. If the AI allowance or provider is unavailable, source-backed controls
-still support the same review. A map-only Vertex window can be enabled by
-deployment without opening a new Assistant or image-analysis window, and
-continues to share the existing user and spending limits.
+still support the same review. A Virtual Campus Vertex window can cover layout review, optional indoor follow-up questions and floor-plan tracing under the existing user and spending limits. The window does not unlock the general Assistant or other image analysis.
 
 The welcome sits on the usable full-screen map, so setup starts with search or
 location. Pan and zoom until the campus is in view, then enter boundary drawing
@@ -556,6 +554,35 @@ resuming review without another provider request. The facilities interaction
 does not create equipment, rooms, access rules or operational records. Detailed
 manual editing and other sources are under setup options. Publication remains
 an explicit review of the campus drawing.
+
+### Guided interior mapping
+
+Authorized editors can open **Map building interiors** after linking a building
+or from a published campus. Select the building and floor, or name a new floor.
+The guide checks for matching public plans on the institution's official site
+when the bounded search provider is configured. It displays links for review.
+The administrator must confirm the correct building, floor and reuse rights before
+uploading an authorized PNG, JPEG or WebP. The existing trace flow converts
+visible geometry into editable proposals when floor-plan analysis is available.
+Public links alone grant no rights and trigger no downloads or layout changes.
+
+Without a plan, describe the floor to propose named rooms and resources. The
+bounded [A2UI 1.0](https://a2ui.org/specification/v1.0-a2ui/) catalog renders
+the questions, editable input and continue/skip actions. The parser proposes
+only named details supplied by the person. The optional Vertex follow-up receives
+progress counts, never the description, plan URLs or map coordinates. To place
+geometry, tap two room corners within the linked building or an item position
+inside its room. Details are optional. Larger same-item batches may use one
+labelled group marker. Mapped fixtures are illustrations unless the editor
+explicitly links an exact existing holding through Resources.
+
+Save confirmed edits through the existing revisioned review and draft commands.
+Reopening restores the saved floor, room and fixture geometry and allows map
+corrections. Unplaced proposals and unsaved inputs are local to the current
+editing session. Publication, measured positioning, and operational resource
+registration use their existing owners. In Simulation, external discovery and
+AI use a run-local guided substitute. Manual descriptions and exact mapping
+commands operate against the selected world.
 
 The map uses attributed [OpenStreetMap raster tiles](https://operations.osmfoundation.org/policies/tiles/)
 for an interactive reference. Data import uses the separately configured

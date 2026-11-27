@@ -38,7 +38,7 @@ beforeAll(() => {
   process.env.AGENT_DAILY_BUDGET_MICROS = '2000000';
   process.env.AGENT_MONTHLY_BUDGET_MICROS = '20000000';
 });
-afterEach(() => vi.restoreAllMocks());
+afterEach(() => { vi.restoreAllMocks(); vi.unstubAllEnvs(); });
 afterAll(() => db.destroy());
 const command = (revision: number) => ({ command_id: randomUUID(), expected_revision: revision });
 
@@ -141,6 +141,84 @@ async function reportAndVerify(f: FloorPlanFixture, holdingId: string, roomId: s
 }
 
 describe.skipIf(!enabled)('Floor-plan onboarding to exact asset repair lifecycle on a fresh campus', () => {
+  it('finds official indexed links for the exact mapped building, retaining only a bounded search receipt', async () => {
+    const f = await createFloorPlanFixture(db);
+    const site = 'https://willow-research.edu';
+    const url = site + '/buildings/learning-and-research-block-floor-plan.pdf';
+    const todayCount = (await sql<{ count: number }>`SELECT count(*)::int AS count FROM campus_scene_import_runs
+      WHERE kind='lookup' AND created_at>=date_trunc('day', now() AT TIME ZONE 'UTC') AT TIME ZONE 'UTC'`.execute(db)).rows[0]!.count;
+    vi.stubEnv('CAMPUS_FLOOR_PLAN_SEARCH_API_KEY', 'disposable-fixture-key');
+    vi.stubEnv('CAMPUS_FLOOR_PLAN_SEARCH_MAX_DAILY', String(todayCount + 1));
+    const fetch = vi.spyOn(globalThis, 'fetch').mockImplementation(() => Promise.resolve(Response.json({ web: { results: [
+      { title: 'Learning and research block floor plan', url },
+      { title: 'Learning and research block floor plan', url: 'https://unrelated.edu/floor-plan.pdf' },
+    ] } })));
+    await f.run(async () => {
+      const input = { idempotency_key: randomUUID(), official_website: site,
+        target: { building_id: f.buildingId, expected_building_revision: f.buildingRevision } };
+      const before = await state(db, f.schoolId);
+      await expect(f.importer.discoverFloorPlan(f.borrower, f.schoolId, f.campusId, input)).rejects.toThrow(/administrator/);
+      await expect(f.importer.discoverFloorPlan(f.user, f.schoolId, f.campusId, { ...input,
+        target: { ...input.target, expected_building_revision: f.buildingRevision + 1 } })).rejects.toThrow(/building changed/);
+      await expect(f.importer.discoverFloorPlan(f.user, f.schoolId, f.campusId, { ...input, official_website: 'https://127.0.0.1/plan' }))
+        .resolves.toMatchObject({ status: 'unavailable', candidates: [] });
+      expect(fetch).not.toHaveBeenCalled();
+      expect(await f.importer.capabilities(f.user, f.schoolId, f.campusId)).toMatchObject({ floor_plan_discovery: { available: true } });
+      await expect(f.importer.discoverFloorPlan(f.user, f.schoolId, f.campusId, input)).resolves.toEqual({
+        status: 'found', candidates: [{ title: 'Learning and research block floor plan', url, source_host: 'willow-research.edu' }],
+      });
+      const receipt = (await sql<{ result: unknown }>`SELECT result FROM campus_scene_import_runs WHERE id=${input.idempotency_key}::uuid`.execute(db)).rows[0]!.result;
+      expect(receipt).toMatchObject({ status: 'unavailable', candidates: [] });
+      expect(JSON.stringify(receipt)).not.toContain(site);
+      await expect(f.importer.discoverFloorPlan(f.user, f.schoolId, f.campusId, input)).resolves.toEqual(receipt);
+      await expect(f.importer.discoverFloorPlan(f.user, f.schoolId, f.campusId, { ...input, idempotency_key: randomUUID() })).rejects.toMatchObject({ status: 429 });
+      expect(fetch).toHaveBeenCalledTimes(1);
+      expect(await state(db, f.schoolId)).toEqual(before);
+    });
+  }, 60_000);
+
+  it('reserves scoped indoor guidance once for an authorized current building and retains the exact prompt', async () => {
+    const f = await createFloorPlanFixture(db);
+    const prompt = { question: 'Where would you place the rooms you described?' };
+    vi.stubEnv('AGENT_ENABLED_UNTIL', '2000-01-01T00:00:00Z');
+    vi.stubEnv('CAMPUS_MAP_AI_ENABLED_UNTIL', '2099-01-01T00:00:00Z');
+    vi.stubEnv('AGENT_GOOGLE_PROJECT', 'floor-plan-test');
+    vi.stubEnv('AGENT_GOOGLE_LOCATION', 'global');
+    vi.stubEnv('AGENT_MODEL', 'gemini-3.1-flash-lite');
+    vi.stubEnv('AGENT_API_KEY', '');
+    vi.stubEnv('AGENT_BASE_URL', '');
+    const guide = vi.spyOn(f.provider, 'indoorGuidance').mockImplementation(async (_progress, reserve) => {
+      await reserve(70, 1024);
+      return prompt;
+    });
+    await f.run(async () => {
+      const input = {
+        idempotency_key: randomUUID(),
+        target: { building_id: f.buildingId, expected_building_revision: f.buildingRevision },
+        progress: { rooms: 2, unplaced_rooms: 2, unplaced_items: 1, uncertain_counts: 1 },
+      };
+      const before = await state(db, f.schoolId);
+      expect(await f.importer.capabilities(f.user, f.schoolId, f.campusId)).toMatchObject({
+        indoor_guidance: { available: true }, image_analysis: { available: false },
+      });
+      await expect(f.importer.guideIndoors(f.borrower, f.schoolId, f.campusId, input)).rejects.toThrow(/administrator/);
+      await expect(f.importer.guideIndoors(f.user, f.schoolId, f.campusId, { ...input,
+        target: { ...input.target, expected_building_revision: f.buildingRevision + 1 } })).rejects.toThrow(/building changed/);
+      expect(guide).not.toHaveBeenCalled();
+      await expect(f.importer.guideIndoors(f.user, f.schoolId, f.campusId, input)).resolves.toEqual({ prompt });
+      await expect(f.importer.guideIndoors(f.user, f.schoolId, f.campusId, input)).resolves.toEqual({ prompt });
+      await expect(f.importer.guideIndoors(f.user, f.schoolId, f.campusId, { ...input,
+        progress: { ...input.progress, unplaced_rooms: 1 } })).rejects.toThrow(/already used/);
+      expect(guide).toHaveBeenCalledTimes(1);
+      expect(guide.mock.calls[0]![0]).toEqual(input.progress);
+      expect((await sql<{status:string;input_tokens:number;max_output_tokens:number}>`SELECT status,input_tokens,max_output_tokens
+        FROM campus_scene_import_runs WHERE id=${input.idempotency_key}::uuid`.execute(db)).rows[0]).toEqual({
+        status: 'completed', input_tokens: 70, max_output_tokens: 1024,
+      });
+      expect(await state(db, f.schoolId)).toEqual(before);
+    });
+  }, 60_000);
+
   it('reviews one plan into a native floor and three rooms once, preserves illustration versus inventory, then reports and verifies the exact mapped light', async () => {
     const f = await createFloorPlanFixture(db);
     await f.run(async () => {
@@ -158,6 +236,8 @@ describe.skipIf(!enabled)('Floor-plan onboarding to exact asset repair lifecycle
       for (const key of ['places', 'holdings', 'scenes', 'scene_revisions']) expect(afterProposal[key]).toEqual(before[key]);
       await expect(f.importer.import(f.borrower, f.schoolId, f.campusId, input)).rejects.toThrow(/administrator/);
       const review = floorPlanReview(f, result.document, opened.revision);
+      const roomFixture = review.document.elements.find(element => element.id === 'plan-door')!;
+      roomFixture.parent_element_id = 'plan-laboratory';
       const saved = await f.scenes.saveReviewedPlaces(f.user, f.schoolId, f.campusId, review, resourceLoanRequest(f.user));
       const after = await state(db, f.schoolId);
       const replay = await f.scenes.saveReviewedPlaces(f.user, f.schoolId, f.campusId, review, resourceLoanRequest(f.user));
@@ -173,6 +253,10 @@ describe.skipIf(!enabled)('Floor-plan onboarding to exact asset repair lifecycle
       expect(spaces.filter(row => row.parent_space_id === floorId)).toHaveLength(3);
       expect(saved.document.elements.filter(element => element.id.startsWith('plan-')).every(element => element.floor_id === floorId)).toBe(true);
       expect(saved.document.elements.filter(element => element.kind === 'room').map(element => element.space_id).filter(Boolean)).toHaveLength(3);
+      expect(saved.document.elements.find(element => element.id === roomFixture.id)).toMatchObject({
+        parent_element_id: 'plan-laboratory', floor_id: floorId, space_id: null,
+      });
+      expect(saved.document.elements.find(element => element.id === 'plan-laboratory')?.space_id).toBe(roomId);
       await expect(f.scenes.publish(f.user, f.schoolId, f.campusId, {
         idempotency_key: randomUUID(), expected_revision: saved.revision,
       })).rejects.toThrow(/Review every/);
@@ -302,13 +386,33 @@ describe.skipIf(!enabled)('Floor-plan onboarding to exact asset repair lifecycle
         bindSimulationResources({ environment, artifacts, effects, effectReplay: artifacts });
         const services = campusOperationsServices(database), provider = new CampusSceneImportProvider();
         const generate = vi.spyOn(provider, 'image').mockRejectedValue(new Error('Simulation must not contact an image provider.'));
-        return { ...f, ...services, db: database, provider, generate,
+        const guide = vi.spyOn(provider, 'indoorGuidance').mockRejectedValue(new Error('Simulation must not contact indoor AI.'));
+        return { ...f, ...services, db: database, provider, generate, guide, effectResources: artifacts,
           importer: new CampusSceneImportService(database, services.scenes, provider), namespace,
           run: <T>(operation: () => Promise<T>) => executionEnvironmentStorage.run(environment, operation) };
       };
       const world = await open(), sibling = await open();
       const siblingBefore = await sibling.run(() => state(sibling.db, f.schoolId));
       await world.run(async () => {
+        vi.stubEnv('CAMPUS_FLOOR_PLAN_SEARCH_API_KEY', 'simulation-forbidden-key');
+        vi.stubEnv('CAMPUS_FLOOR_PLAN_SEARCH_MAX_DAILY', '3');
+        const fetch = vi.spyOn(globalThis, 'fetch').mockRejectedValue(new Error('Simulation must not fetch public floor plans.'));
+        try {
+          const discovery = { idempotency_key: randomUUID(), official_website: 'https://willow-research.edu', target: captured.input.target };
+          const guidance = { idempotency_key: randomUUID(), target: captured.input.target,
+            progress: { rooms: 2, unplaced_rooms: 2, unplaced_items: 1, uncertain_counts: 1 } };
+          expect(await world.importer.capabilities(f.user, f.schoolId, f.campusId)).toMatchObject({
+            floor_plan_discovery: { available: false }, indoor_guidance: { available: false },
+          });
+          const unavailable = await world.importer.discoverFloorPlan(f.user, f.schoolId, f.campusId, discovery);
+          expect(unavailable).toMatchObject({ status: 'unavailable', reason: expect.stringContaining('guided room setup'), candidates: [] });
+          expect(await world.importer.discoverFloorPlan(f.user, f.schoolId, f.campusId, discovery)).toEqual(unavailable);
+          expect(await world.importer.guideIndoors(f.user, f.schoolId, f.campusId, guidance)).toEqual({ prompt: null });
+          expect(await world.importer.guideIndoors(f.user, f.schoolId, f.campusId, guidance)).toEqual({ prompt: null });
+          expect((await world.effectResources.list(1, 20)).counts.effects).toMatchObject({ connector_call: 1, external_compute_call: 1 });
+          expect(fetch).not.toHaveBeenCalled();
+          expect(world.guide).not.toHaveBeenCalled();
+        } finally { fetch.mockRestore(); }
         const proposal = await world.importer.import(f.user, f.schoolId, f.campusId, captured.input);
         expect(proposal.document.elements).toEqual(captured.result.document.elements);
         expect(world.generate).not.toHaveBeenCalled();

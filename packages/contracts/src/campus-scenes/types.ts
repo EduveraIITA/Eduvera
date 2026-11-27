@@ -92,6 +92,8 @@ export type CampusSceneImportRequest =
   | { kind: 'geojson'; text: string; label: string; attribution: string; rightsConfirmed: boolean };
 
 export interface CampusSceneImportCapabilities {
+  indoor_guidance?: { available: boolean };
+  floor_plan_analysis?: { available: boolean };
   image_analysis: { available: boolean; reason?: string };
   map_search: { available: boolean; reason?: string };
   map_area?: { available: boolean; reason?: string; ai_available: boolean };
