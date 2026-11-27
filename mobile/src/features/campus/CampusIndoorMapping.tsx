@@ -20,7 +20,7 @@ import { CampusMapCanvas, initialCampusCamera } from './CampusMapCanvas';
 import { CampusSetupWorkspace } from './CampusSetupWorkspace';
 import { CampusSceneResourcePicker } from './CampusSceneResourcePicker';
 
-type IndoorItem = CampusIndoorItemReview & { elementIds: string[] };
+type IndoorItem = CampusIndoorItemReview & { elementIds: string[]; individualPins?: boolean };
 type IndoorRoom = Omit<CampusIndoorRoomReview, 'items'> & { items: IndoorItem[] };
 export type CampusIndoorSave = { document: CampusSceneDocument; rows: ReviewedScenePlaceRow[] };
 type Props = {
@@ -162,7 +162,7 @@ function IndoorFloor({building,floor,selector,...props}: Props & {
       }
       const item=proposed.items.find(value=>value.id===pin.itemId),room=draft.elements.find(element=>element.id===proposed.id);
       if(!item||!room||!item.name.trim())throw new Error('Name the item and outline its room before pinning it.');
-      const count=item.quantity??1,group=count>20,required=group?1:count;
+      const count=item.quantity??1,individualPins=pin.individually||item.individualPins,group=count>20&&!individualPins,required=group?1:count;
       const replacing=item.elementIds.length>=required;
       const id=replacing?item.elementIds[0]!:Crypto.randomUUID();
       const label=group?`${count} × ${item.name}`:required>1?`${item.name} ${replacing?1:item.elementIds.length+1}`:item.name;
@@ -170,7 +170,7 @@ function IndoorFloor({building,floor,selector,...props}: Props & {
       const element=indoorResourcePin(draft,building,floorId,room,point,label,id);
       storeElement(prior?{...prior,label:element.label,geometry:element.geometry,review_state:'needs_review'}:element);
       const elementIds=replacing?item.elementIds:[...item.elementIds,id],pinned=elementIds.length>=required;
-      reviseRoom(proposed.id,{items:proposed.items.map(value=>value.id===item.id?{...value,elementIds,pinned}:value)});
+      reviseRoom(proposed.id,{items:proposed.items.map(value=>value.id===item.id?{...value,elementIds,pinned,individualPins}:value)});
       if(pinned){setPin(null);setCorner(null);}
       else setFeedback(`Placed ${elementIds.length} of ${required}. Tap the next location in this room.`);
     } catch(cause) { setFeedback(cause instanceof Error ? cause.message : 'This point could not be mapped.'); }
@@ -227,8 +227,8 @@ function IndoorFloor({building,floor,selector,...props}: Props & {
     guidance={<>
       {!pin&&!dirty?selector:null}
       {!pin&&!floor?<Field label="Floor name" value={name} onChangeText={setName} maxLength={160} editable={!props.disabled}/>:null}
-      {!pin&&!dirty?<CampusIndoorPlanDiscovery {...{schoolId:props.schoolId,campusId:props.campusId,building,floor,spaces:props.spaces}}
-        disabled={props.disabled} onImportPlan={importPlan}/>:null}
+      <CampusIndoorPlanDiscovery {...{schoolId:props.schoolId,campusId:props.campusId,building,floor,spaces:props.spaces}}
+        hidden={!!pin||dirty} disabled={props.disabled} onImportPlan={importPlan}/>
       {feedback?<Notice tone="warning" message={feedback}/>:null}
       {warnings.map((warning,index)=><Notice key={index} message={warning}/>)}
       {pin&&!pin.itemId?<Notice message={corner?`Tap the opposite corner of ${tapTarget?.name??'the room'}.`:'Tap the first of two opposite room corners.'}/>:null}

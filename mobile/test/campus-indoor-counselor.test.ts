@@ -113,6 +113,15 @@ test('indoor guidance resumes a draft answer, forwards optional actions and wait
     assert.equal(container.querySelector('textarea'), null);
     await act(async () => button('Cancel placement').click());
     assert.equal(pins.at(-1), null);
+
+    props.activePin = null;
+    props.rooms = [{ id: 'lab', name: 'Lab', kind: 'laboratory', pinned: true,
+      items: [{ id: 'books', name: 'Books', quantity: 30 }] }];
+    await render();
+    await act(async () => button('Place as one group').click());
+    assert.equal(pins.at(-1)?.individually, undefined);
+    await act(async () => button('Place each item individually').click());
+    assert.equal(pins.at(-1)?.individually, true);
   } finally {
     await act(async () => renderer.unmount());
     Object.assign(globals, previous);

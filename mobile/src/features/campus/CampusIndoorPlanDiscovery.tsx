@@ -17,9 +17,9 @@ function safeCandidate(candidate:PlanCandidate):boolean {
   } catch { return false; }
 }
 
-export function CampusIndoorPlanDiscovery({schoolId,campusId,building,floor,spaces,disabled,onImportPlan}:{
+export function CampusIndoorPlanDiscovery({schoolId,campusId,building,floor,spaces,disabled,hidden,onImportPlan}:{
   schoolId:string; campusId:string; building:CampusSceneElement; floor?:CampusSceneSpace;
-  spaces:readonly CampusSceneSpace[]; disabled:boolean; onImportPlan:()=>void;
+  spaces:readonly CampusSceneSpace[]; disabled:boolean; hidden:boolean; onImportPlan:()=>void;
 }) {
   const buildingPlace=spaces.find(place=>place.id===building.space_id);
   const capture=useOperationContext(JSON.stringify([schoolId,campusId,building.id,floor?.id,'public-plan-lookup']));
@@ -44,8 +44,9 @@ export function CampusIndoorPlanDiscovery({schoolId,campusId,building,floor,spac
     finally{request.current=false;setPending(false);}
   }
   useEffect(()=>{
-    if(!first.current&&!disabled&&buildingPlace?.revision){first.current=true;void find();}
-  },[disabled,buildingPlace?.revision]);
+    if(!first.current&&!hidden&&!disabled&&buildingPlace?.revision){first.current=true;void find();}
+  },[disabled,hidden,buildingPlace?.revision]);
+  if (hidden) return null;
   return <Disclosure key={result?.candidates.length?'found':'sources'} defaultOpen={!!result?.candidates.length} title={result?.candidates.length?'Public floor plans found':'Floor-plan sources'}>
     <Section title="Plans for this building">
       {pending?<Notice message="Checking for a public floor plan…"/>:null}

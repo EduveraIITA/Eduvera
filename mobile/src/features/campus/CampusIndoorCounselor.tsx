@@ -7,7 +7,7 @@ import { ChoiceMenu, ControlButton, Disclosure } from '../../ui/DomainControls';
 import { useTheme } from '../../ui/theme';
 import { CampusA2uiSurface, type CampusA2uiActionMessage } from './CampusA2uiSurface';
 
-export type CampusIndoorPin = { roomId: string; itemId?: string };
+export type CampusIndoorPin = { roomId: string; itemId?: string; individually?: boolean };
 export type CampusIndoorItemReview = {
   id: string;
   name: string;
@@ -161,8 +161,10 @@ export function CampusIndoorCounselor(props: CampusIndoorCounselorProps) {
                   }
                 }} />
             </> : null}
-            <ControlButton title={item.pinned ? 'Move item on floor' : 'Place item on floor'}
+            <ControlButton title={item.pinned ? 'Move item on floor' : (item.quantity??0)>20 && !item.quantityLocked ? 'Place as one group' : 'Place item on floor'}
               disabled={locked || !room.pinned || !item.name.trim()} onPress={() => props.onPin({ roomId: room.id, itemId: item.id })} />
+            {(item.quantity??0)>20 && !item.quantityLocked && !item.pinned ? <ControlButton title="Place each item individually"
+              disabled={locked || !room.pinned || !item.name.trim()} onPress={() => props.onPin({ roomId: room.id, itemId: item.id, individually: true })} /> : null}
             {!room.pinned ? <Text style={[styles.copy, { color: colors.muted }]}>Place this room before adding its items.</Text> : null}
           </Disclosure>)}
         </Disclosure>)}
