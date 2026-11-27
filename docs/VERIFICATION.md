@@ -501,6 +501,21 @@ recovery gap and needs a separate test and repair.
 
 `https://app2.thatcampus.com` serves the isolated DT backend and sole Expo web app through dedicated edge/Cloud Run resources, identities, separate Live/Simulation databases on shared PostgreSQL 17 and private persistent files. The owner chose to retain the shared server and existing limits: no new server, resize or pool/concurrency increase. Old ERP and maintained Mac development remain separate targets. Operations and code-versus-data rollback belong to the [DT runbook](../deploy/dt/README.md).
 
+Conformance **241** serves app2 from `519afb470687404a4a70094ba38400a8539738cc`
+and Cloud Run revision `thatcampus-dt-r-519afb470687-46060541268-1`. The
+release smoke verified readiness, Expo delivery, deep links, WebAssembly and
+anonymous access boundaries. [Actions run 46060541268](https://github.com/EduveraIITA/Eduvera/actions/runs/46060541268).
+
+In the authenticated phone-width browser, tap opened the full conversation,
+long press copied the reply, and Stop interrupted the server request or a
+pending local command. The Assistant pointed to real form controls after
+scrolling. Manual browser scrolling exposed the final form control with a short
+reply, a multiline draft and the working composer. The iPhone 15 simulator
+rendered the original campus-setup screen with the UIKit tray below the chat
+and its final control and note above the reply after scrolling. Signed iPhone
+build **16** installed and launched on the connected physical phone. The
+physical screen check was blocked by the device display and Mirroring state.
+
 Conformance **240** serves app2 from `1a8e08c7c5c05c25c895a3b02c6bb2dcf60e7e1e`
 and Cloud Run revision `thatcampus-dt-r-1a8e08c7c5c0-46049750671-1`. Candidate
 and public smoke verified the release, readiness, Expo web, deep links,
