@@ -26,7 +26,8 @@ export function usePageReveal() {
       const animated = !reduced && pass === 0;
       if (Platform.OS === 'web') {
         const element = viewport as unknown as HTMLElement;
-        element.scrollBy({ top: delta, behavior: animated ? 'smooth' : 'instant' });
+        if (pass === 0) element.scrollBy({ top: delta, behavior: animated ? 'smooth' : 'instant' });
+        else element.scrollTo({ top: element.scrollTop + delta, behavior: 'instant' });
       } else {
         const content = scroll.getInnerViewRef();
         if (!content) return;
@@ -43,8 +44,15 @@ export function usePageReveal() {
         if (!moved) return;
       }
       await copilotWait(animated ? 330 : 30,signal);
-      // A long smooth scroll can still be settling, and the compact reply can
-      // change height. Remeasure once and correct only a remaining overlap.
+      if (Platform.OS === 'web' && animated && !signal.aborted) {
+        const element = viewport as unknown as HTMLElement;
+        // Freeze the compositor before measuring a residual offset. Otherwise
+        // a long smooth scroll can advance between measurement and correction.
+        element.scrollTo({ top: element.scrollTop, behavior: 'instant' });
+        await copilotWait(34,signal);
+      }
+      // The compact reply can change height while scrolling. Remeasure once
+      // and correct only a remaining overlap.
     }
   }, [reduced]);
   return { scrollRef, reveal };

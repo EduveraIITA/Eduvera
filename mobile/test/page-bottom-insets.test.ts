@@ -169,10 +169,23 @@ test('a long browser reveal completes before indicating a target still outside t
   const frame = { x: 0, y: 0, width: 393, height: 350 };
   let offset = 0;
   const movements: string[] = [];
-  const viewport = { scrollBy({ top, behavior }: { top: number; behavior: string }) {
-    movements.push(behavior);
-    offset += behavior === 'smooth' ? top - 222 : top;
-  } };
+  const viewport = {
+    get scrollTop() { return offset; },
+    scrollBy({ top, behavior }: { top: number; behavior: string }) {
+      movements.push(behavior);
+      offset += top - 222;
+    },
+    scrollTo({ top, behavior }: { top: number; behavior: string }) {
+      if (top === offset) {
+        movements.push('freeze');
+        // A final compositor tick can land before the freeze takes effect.
+        offset += 80;
+      } else {
+        movements.push(behavior);
+        offset = top;
+      }
+    },
+  };
   const dependency = primitives(0);
   dependency['react-native'].Platform.OS = 'web';
   const dock = dependency['./campus-tabs-options'].NativeDockInsetsContext;
@@ -189,6 +202,6 @@ test('a long browser reveal completes before indicating a target still outside t
   const { scrollRef, reveal } = usePageReveal();
   scrollRef.current = { getNativeScrollRef: () => viewport };
   await reveal({}, new AbortController().signal);
-  assert.deepEqual(movements, ['smooth', 'instant']);
+  assert.deepEqual(movements, ['smooth', 'freeze', 'instant']);
   assert.equal(offset, 1510);
 });
