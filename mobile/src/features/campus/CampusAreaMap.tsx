@@ -111,6 +111,8 @@ export function CampusAreaMap({ onAreaSelected, busy = false, initialCenter, ini
     </Text>
     {focused ? <CampusAreaMapSurface viewport={viewport} boundary={boundary} point={marker} simulation={simulation}
       disabled={busy} drawing={canDraw} onViewport={setViewport} onPoint={addPoint} onReady={setMapReady} /> : null}
+    <Button title={busy ? 'Preparing your layout…' : 'Generate campus layout'} disabled={!!boundaryIssue} busy={busy}
+      onPress={() => { if (!boundaryIssue && !busy) onAreaSelected(boundary); }} />
     <View style={styles.controls}>
       <ControlButton title="Zoom in" disabled={busy || viewport.zoom >= 19} onPress={() => zoom(1)} />
       <ControlButton title="Zoom out" disabled={busy || viewport.zoom <= 1} onPress={() => zoom(-1)} />
@@ -133,8 +135,6 @@ export function CampusAreaMap({ onAreaSelected, busy = false, initialCenter, ini
       {boundaryIssue ? ` · ${boundaryIssue}` : ''}
     </Text> : null}
     {boundary.length === CAMPUS_AREA_MAX_POINTS ? <Notice message="The outline has reached 48 points. Use it as drawn or undo a point." /> : null}
-    <Button title={busy ? 'Preparing your layout…' : 'Generate campus layout'} disabled={!!boundaryIssue} busy={busy}
-      onPress={() => { if (!boundaryIssue && !busy) onAreaSelected(boundary); }} />
   </View>;
 }
 

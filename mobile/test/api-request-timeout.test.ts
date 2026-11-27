@@ -73,3 +73,12 @@ test('Google ceremony failures never expire the existing authenticated account',
   }
   assert.equal(expired, 0);
 });
+
+test('campus draft imports allow sequential bounded map and AI providers', () => {
+  const id = '77285488-ed78-4802-8ecb-c45b0d22a1e2';
+  const importPath = `/api/v1/schools/${id}/campus-scenes/${id}/imports/`;
+  assert.equal(campusRequestTimeoutMs(importPath, 'POST', 30_000), 70_000);
+  assert.equal(campusRequestTimeoutMs(importPath, 'POST', 90_000), 90_000);
+  assert.equal(campusRequestTimeoutMs(importPath, 'GET', 30_000), 30_000);
+  assert.equal(campusRequestTimeoutMs(importPath + 'lookup/', 'POST', 30_000), 30_000);
+});

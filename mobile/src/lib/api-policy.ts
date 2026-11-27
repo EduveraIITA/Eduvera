@@ -26,12 +26,18 @@ export function isExecutionRequest(path: string): boolean {
 }
 
 const apiUuid = '[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}';
+const campusImportPath = new RegExp(`^/api/v1/schools/${apiUuid}/campus-scenes/${apiUuid}/imports/?$`, 'i');
 const simulationCapturePath = new RegExp(`^/api/v1/schools/${apiUuid}/simulation/runs(?:/${apiUuid}/duplicate)?/?$`, 'i');
 /** A cold isolated campus capture can outlast ordinary reads. Recovery uses
  * these same keyed endpoints, so its deadline must not depend on UI state. */
 export function campusRequestTimeoutMs(path: string, method: string, ordinaryTimeoutMs: number): number {
-  return method.toUpperCase() === 'POST' && simulationCapturePath.test(path.split('?')[0]!)
-    ? Math.max(ordinaryTimeoutMs, 120_000) : ordinaryTimeoutMs;
+  if (method.toUpperCase() !== 'POST') return ordinaryTimeoutMs;
+  const pathname = path.split('?')[0]!;
+  if (simulationCapturePath.test(pathname)) return Math.max(ordinaryTimeoutMs, 120_000);
+  // Map drafts can need both a bounded Overpass read and one Vertex response.
+  // The same import endpoint also accepts bounded image analysis.
+  if (campusImportPath.test(pathname)) return Math.max(ordinaryTimeoutMs, 70_000);
+  return ordinaryTimeoutMs;
 }
 
 export function scopeIdentity(actor: string, school: string | null, environment: { mode: string; namespace_id?: string | null }): string {
