@@ -24,7 +24,7 @@ import { ASSISTANT_A2UI_CATALOG } from '../lib/campus-a2ui';
 import { ControlButton, Disclosure, Facts, InfoDisclosure } from '../ui/DomainControls';
 import { Alert } from '../ui/Alert';
 import { AssistantAnswer, CompactAnswer, ConversationBubble, ConversationCanvas, ConversationComposer, ConversationEmpty, ConversationHistory, ConversationSource, ConversationToolbar, ConversationTurn, ResponseCopyControl } from './assistant/AssistantConversationUI';
-import { assertAssistantWriteReady, assistantChartDisplayPoints, assistantCompactPresentation, assistantLinkedThreadRequest, assistantPreferenceState, assistantRunAnswer, assistantSourceLabel, prepareAssistantConversationChange } from './assistant/conversation-presentation';
+import { assertAssistantWriteReady, assistantChartDisplayPoints, assistantCompactPresentation, assistantCompactText, assistantInline, assistantLinkedThreadRequest, assistantPreferenceState, assistantRunAnswer, assistantSourceLabel, prepareAssistantConversationChange } from './assistant/conversation-presentation';
 import { assistantCopySnapshot, copyAssistantResponse } from './assistant/assistant-copy';
 import { CampusA2uiSurface } from './campus/CampusA2uiSurface';
 import { useCopilot, useCopilotTarget } from '../ui/CopilotProvider';
@@ -323,20 +323,28 @@ function Conversation({ href, onNavigate, onCompactHeightChange, workspaceTask, 
         : copilot.activity?.phase === 'stopped' ? 'Assistant stopped.'
           : copilot.activity?.phase === 'blocked' ? copilot.activity.label
             : !status.data.ready ? webAvailable ? 'Public web is available. Try “Search the web for…”' : 'AI provider unavailable. Saved conversations remain available.' : undefined;
+  const loadingConversation = !!threadId && detail.isPending || threads.isPending;
+  const preview = assistantCompactPresentation(runs, { attention: !!attention, loading: loadingConversation });
+  const hasAnswerPreview = preview.mode === 'answer' && !!preview.latest && preview.latest.status !== 'running'
+    && assistantInline(assistantCompactText(assistantRunAnswer(preview.latest), preview.chartSource?.chart)).some(part => !!part.text.trim());
+  const hasCompactPreview = preview.mode === 'attention' || preview.mode === 'review' || hasAnswerPreview;
+  const openFromComposer = !hasCompactPreview && !loadingConversation && !working && !busy && !question && !campusDetail;
+  const expandConversation = () => { setReplyFocus('full'); presentation.expand(); };
+  const restoreMiniFocus = replyFocus === 'mini' ? () => setReplyFocus(null) : undefined;
   const composer = <View style={{ gap: 8, minHeight: 0, flexShrink: 1, width: '100%', maxWidth: presentation.expanded ? 720 : 440, alignSelf: 'center' }}>
-    {!presentation.expanded ? <CompactConversation runs={runs} onExpand={() => { setReplyFocus('full'); presentation.expand(); }}
+    {!presentation.expanded && hasCompactPreview ? <CompactConversation preview={preview} onExpand={expandConversation}
       onCopy={copySnapshot ? () => void copyResponse() : undefined} copyState={currentCopyState}
-      restoreFocus={replyFocus === 'mini' ? () => setReplyFocus(null) : undefined} attention={attention} pending={pending}
-      loading={!!threadId && detail.isPending || threads.isPending} working={!!working} /> : null}
+      restoreFocus={restoreMiniFocus} attention={attention} pending={pending} /> : null}
     {campusDetail ? <CampusNameDetail key={campusDetail.id} id={campusDetail.id} locked={locked}
       onAnswer={copilot.answerDetail} onUseForm={copilot.takeOver} /> : null}
     {!campusDetail || working ? <ConversationComposer value={question} onChange={setQuestion} locked={locked} busy={busy} working={working}
-      stopDisabled={stopDisabled} status={composerStatus} onStop={() => void cancelRun()}
+      stopDisabled={stopDisabled} status={composerStatus} onStop={() => void cancelRun()} loading={loadingConversation}
+      onExpand={!presentation.expanded && openFromComposer ? expandConversation : undefined} restoreOpenFocus={restoreMiniFocus}
       onSend={() => void perform({ kind: 'send', threadId, question: question.trim(), clientId: Crypto.randomUUID(), uiContext: copilot.context() })} /> : null}
   </View>;
   return <AssistantFrame canvas maxWidth={720} footer={composer} footerPadding={16} footerSeparator={false} onCompactHeightChange={onCompactHeightChange}>
     <View style={{ flex: presentation.expanded ? 1 : 0, minHeight: 0, display: presentation.expanded ? 'flex' : 'none' }} accessibilityElementsHidden={!presentation.expanded} importantForAccessibility={presentation.expanded ? 'auto' : 'no-hide-descendants'}>
-    <ConversationToolbar onHistory={() => setHistory(true)} onNew={createConversation} historyDisabled={busy} newDisabled={locked} onCollapse={() => { setReplyFocus('mini'); presentation.collapse(); }} copyControl={copyControl} availableWidth={presentation.frame.width} focusTitle={presentation.expanded && replyFocus === 'full' ? () => setReplyFocus(null) : undefined} />
+    <ConversationToolbar onHistory={() => setHistory(true)} onNew={createConversation} historyDisabled={busy} newDisabled={locked} onCollapse={() => { setReplyFocus(hasCompactPreview || openFromComposer ? 'mini' : null); presentation.collapse(); }} copyControl={copyControl} availableWidth={presentation.frame.width} focusTitle={presentation.expanded && replyFocus === 'full' ? () => setReplyFocus(null) : undefined} />
     {workspaceTask ? <View ref={workspaceHeading} collapsable={false} style={{ flexDirection: 'row', alignItems: 'center', gap: 12, paddingHorizontal: 16, paddingVertical: 8, borderBottomWidth: StyleSheet.hairlineWidth, borderColor: colors.border }}>
       <Text accessibilityRole="header" aria-level={2} style={{ flex: 1, color: colors.ink, fontSize: 16, fontWeight: '600' }}>{workspaceTask.title}</Text>
       <ControlButton title="Back to map" onPress={workspaceTask.onReturn} />
@@ -362,11 +370,11 @@ function Conversation({ href, onNavigate, onCompactHeightChange, workspaceTask, 
   </AssistantFrame>;
 }
 
-function CompactConversation({ runs, onExpand, onCopy, copyState, restoreFocus, attention, pending, loading, working }: {
-  runs: readonly AgentRun[]; onExpand: () => void; onCopy?: () => void; copyState: ConversationCopyState;
-  restoreFocus?: () => void; attention: string; pending: Pending | null; loading: boolean; working: boolean;
+function CompactConversation({ preview, onExpand, onCopy, copyState, restoreFocus, attention, pending }: {
+  preview: ReturnType<typeof assistantCompactPresentation>; onExpand: () => void; onCopy?: () => void;
+  copyState: ConversationCopyState; restoreFocus?: () => void; attention: string; pending: Pending | null;
 }) {
-  const { mode, latest, action, chartSource } = assistantCompactPresentation(runs, { attention: !!attention, loading });
+  const { mode, latest, action, chartSource } = preview;
   const chart = chartSource?.chart;
   let label: string | undefined;
   if (mode === 'attention') {
@@ -377,12 +385,6 @@ function CompactConversation({ runs, onExpand, onCopy, copyState, restoreFocus, 
   } else if (mode === 'review') {
     label = action?.status === 'pending' ? 'Review the proposed change.'
       : action?.status === 'executing' ? 'Verifying the result…' : 'Check the affected record.';
-  } else if (mode === 'loading') {
-    label = 'Loading conversation…';
-  } else if (!latest || latest.status === 'running') {
-    // While a run is active the composer owns working status. The reply remains
-    // an entry point for history, source details and the full transcript.
-    label = working ? 'Open conversation' : latest ? 'Request in progress. Open conversation.' : 'Open conversation';
   }
   return <ConversationBubble summary>
     {label !== undefined ? <CompactAnswer text={label} onExpand={onExpand} restoreFocus={restoreFocus} />

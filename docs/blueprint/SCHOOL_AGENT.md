@@ -83,7 +83,9 @@ With Pro enabled, the Assistant control in shared navigation toggles the compact
 conversation over the retained workspace. The latest reply opens the full
 conversation when activated and copies the full plain-text reply on a long
 press. A screen-reader copy action and full conversation copy control use the
-same acknowledged clipboard path. While a request or local app action is working,
+same acknowledged clipboard path. When there is no reply, the idle composer
+offers a small conversation control beside Send. It hides as soon as text is
+entered. While a request or local app action is working,
 the composer displays current progress in the input area and replaces Send with
 Stop. Stop interrupts local actions and asks the server to cancel a running
 request using its exact confirmed identity.

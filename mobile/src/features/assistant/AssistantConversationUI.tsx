@@ -9,6 +9,7 @@ import { SquareIcon } from 'phosphor-react-native/src/icons/Square';
 import { XIcon } from 'phosphor-react-native/src/icons/X';
 import { ArrowRightIcon } from 'phosphor-react-native/src/icons/ArrowRight';
 import { ArrowsInSimpleIcon } from 'phosphor-react-native/src/icons/ArrowsInSimple';
+import { ArrowsOutSimpleIcon } from 'phosphor-react-native/src/icons/ArrowsOutSimple';
 import { CopyIcon } from 'phosphor-react-native/src/icons/Copy';
 import { CheckIcon } from 'phosphor-react-native/src/icons/Check';
 import type { AgentSource, ThreadSummary } from '../../../../packages/contracts/src/wire/features/assistant/agentApi';
@@ -52,12 +53,23 @@ function UtilityButton({ label, hint, children, onPress, disabled, controlRef }:
   return <Pressable ref={controlRef} accessibilityRole="button" accessibilityLabel={label} accessibilityHint={hint} accessibilityState={{ disabled }} disabled={disabled} onPress={onPress} style={({ pressed }) => [styles.utilityButton, { opacity: disabled ? .4 : pressed ? .6 : 1 }]}>{children}</Pressable>;
 }
 
-export function ConversationComposer({ value, onChange, locked, busy, working, stopDisabled, onSend, onStop, status }: {
+export function ConversationComposer({ value, onChange, locked, busy, working, stopDisabled, onSend, onStop, status, loading, onExpand, restoreOpenFocus }: {
   value: string; onChange: (value: string) => void; locked: boolean; busy: boolean;
   working?: string; stopDisabled: boolean; onSend: () => void; onStop: () => void; status?: string;
+  loading?: boolean; onExpand?: () => void; restoreOpenFocus?: () => void;
 }) {
   const { colors } = useTheme(), [height, setHeight] = useState(36), input = useRef<ComponentRef<typeof TextInput>>(null);
   const running = !!working;
+  const openControl = useRef<ComponentRef<typeof Pressable>>(null);
+  useEffect(() => {
+    if (!onExpand || !restoreOpenFocus) return;
+    if (Platform.OS === 'web') openControl.current?.focus();
+    else {
+      const node = findNodeHandle(openControl.current);
+      if (typeof node === 'number') AccessibilityInfo.setAccessibilityFocus(node);
+    }
+    restoreOpenFocus();
+  }, [onExpand, restoreOpenFocus]);
   const resizeWeb = () => {
     if (Platform.OS !== 'web') return;
     // RN-web exposes the textarea host here. Reset its height before reading
@@ -79,9 +91,12 @@ export function ConversationComposer({ value, onChange, locked, busy, working, s
     <View style={[styles.composer, { borderColor: colors.border }]}>
       <View pointerEvents="none" accessibilityElementsHidden importantForAccessibility="no-hide-descendants" style={StyleSheet.absoluteFill}><Glass material="assistant" style={[StyleSheet.absoluteFill, { borderRadius: 28 }]} /></View>
       {working ? <Text accessibilityLiveRegion="polite" numberOfLines={2} style={[styles.working, { color: colors.muted }]}>{working}</Text> : null}
-      <TextInput ref={input} accessibilityLabel="Ask Assistant" accessibilityHint={Platform.OS === 'web' ? 'Enter to send. Shift and Enter for a new line.' : 'Write your question, then use Send question.'} value={value} onChangeText={onChange} multiline maxLength={4000} editable={!locked && !running} accessibilityElementsHidden={running} importantForAccessibility={running ? 'no-hide-descendants' : 'auto'} placeholder="Ask anything…" placeholderTextColor={colors.muted} underlineColorAndroid="transparent" textAlignVertical="top" onLayout={running ? undefined : resizeWeb} onContentSizeChange={event => { if (Platform.OS !== 'web' && !running) setHeight(assistantComposerHeight(event.nativeEvent.contentSize.height)); }}
+      <TextInput ref={input} accessibilityLabel="Ask Assistant" accessibilityHint={Platform.OS === 'web' ? 'Enter to send. Shift and Enter for a new line.' : 'Write your question, then use Send question.'} value={value} onChangeText={onChange} multiline maxLength={4000} editable={!locked && !running} accessibilityElementsHidden={running} importantForAccessibility={running ? 'no-hide-descendants' : 'auto'} placeholder={loading ? 'Loading conversation…' : 'Ask anything…'} placeholderTextColor={colors.muted} underlineColorAndroid="transparent" textAlignVertical="top" onLayout={running ? undefined : resizeWeb} onContentSizeChange={event => { if (Platform.OS !== 'web' && !running) setHeight(assistantComposerHeight(event.nativeEvent.contentSize.height)); }}
         {...(Platform.OS === 'web' ? { numberOfLines: 1, onKeyPress: (event: { nativeEvent: { key?: string; shiftKey?: boolean; isComposing?: boolean; keyCode?: number; repeat?: boolean }; preventDefault?: () => void }) => { if (assistantShouldSendKey(event.nativeEvent, canSend)) { event.preventDefault?.(); send(); } } } : {})}
         style={[styles.input, { color: colors.ink, height, display: running ? 'none' : 'flex' }]} />
+      {onExpand ? <UtilityButton label="Open conversation" onPress={onExpand} controlRef={openControl}>
+        <ArrowsOutSimpleIcon size={18} color={colors.muted} />
+      </UtilityButton> : null}
       <Pressable accessibilityRole="button" accessibilityLabel={running ? 'Stop request' : 'Send question'} accessibilityState={{ disabled: running ? stopDisabled : !canSend, busy }} disabled={running ? stopDisabled : !canSend} onPress={running ? onStop : send} style={({ pressed }) => [styles.sendButton, { backgroundColor: running ? colors.row : colors.action, opacity: (running ? stopDisabled : !canSend) ? .55 : pressed ? .7 : 1 }]}>
         {running ? <SquareIcon size={17} weight="fill" color={colors.ink} /> : busy ? <BrandLoadingIcon size={20} onFilledAction /> : <ArrowUpIcon size={22} color={colors.onAction} weight="bold" />}
       </Pressable>
@@ -200,7 +215,7 @@ export function CompactAnswer({ text, chart, onExpand, onCopy, copyState, restor
   copyState?: CopyState; restoreFocus?: () => void;
 }) {
   const { colors } = useTheme(), keyboardVisible = useReplyKeyboard();
-  const value = assistantCompactText(text, chart) || 'Open conversation', parts = assistantInline(value);
+  const parts = assistantInline(assistantCompactText(text, chart));
   const reply = useRef<ComponentRef<typeof Pressable>>(null), held = useRef(false);
   const [focused, setFocused] = useState(false);
   const copyMessage = copyState === 'copied' ? 'Copied' : copyState === 'failed' ? 'Couldn’t copy. Try again.' : '';
