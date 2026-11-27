@@ -468,6 +468,16 @@ Assistant and returned to the retained map without regeneration. Assistant repor
 and decisions render through validated A2UI surfaces. The underlying capability
 catalogue remains the boundary for actions available directly from chat.
 
+The [AG-UI copilot binding](SCHOOL_AGENT.md#app-copilot-protocol) uses the normal
+owned Assistant run and a reusable current-screen tool registry. Isolated
+PostgreSQL tests verify exact tool-call replay, access revocation and the
+Simulation refusal. Authenticated compact and wide browser runs use the live
+application controls with a controlled agent response. They prove navigation,
+the campus picker, an editable search, visible published-place focus and
+Take over suppressing a late command. A phone-width and desktop-width repeat
+also verified the reused map graphics context. The current registry adopts
+Virtual Campus first. Saved changes continue through each owning approval.
+
 The retained evidence covers reviewed floor-plan intake/publication, authored
 interiors, messaging/academic evidence repair and Care/Resources/Dining continuity.
 It does not close every old whole-system audit finding. Shared controls keep
