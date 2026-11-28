@@ -1,3 +1,5 @@
+import { AG_UI_WORKFLOW_STEP_EVENT } from '../../../packages/contracts/src/agent-workflow';
+
 export const copilotToolNames = [
   'open_virtual_campus', 'campus_search_places', 'campus_focus_place', 'campus_open_picker',
   'open_campus_create', 'prepare_campus_create', 'open_campus_interiors', 'open_campus_layout',
@@ -28,7 +30,7 @@ export function copilotRouteContext(pathname: string, href: string) {
 }
 
 export type CopilotResult = { tool: CopilotToolName; status: 'applied' | 'blocked' | 'stopped'; call_id?: string };
-export type CopilotContext = { screen: CopilotScreen; tools: CopilotToolName[]; campus_id?: string; last_result?: CopilotResult };
+export type CopilotContext = { screen: CopilotScreen; tools: CopilotToolName[]; campus_id?: string; last_result?: CopilotResult; workflow_steps?: true };
 export type CopilotIntent = { id: string; name: CopilotToolName; args: Record<string, unknown> };
 
 const record = (value: unknown): Record<string, unknown> | undefined =>
@@ -46,7 +48,8 @@ const cleanText = (value: unknown, min: number, max: number): value is string =>
 
 export function parseCopilotContext(value: unknown): CopilotContext | null {
   const input = record(value);
-  if (!input || !exact(input, ['screen', 'tools', 'campus_id', 'last_result']) || !knownScreen(input.screen) || !Array.isArray(input.tools) ||
+  if (!input || !exact(input, ['screen', 'tools', 'campus_id', 'last_result', 'workflow_steps']) || !knownScreen(input.screen) || !Array.isArray(input.tools) ||
+      (input.workflow_steps !== undefined && input.workflow_steps !== true) ||
       input.tools.length > copilotToolNames.length || !input.tools.every(knownTool) || new Set(input.tools).size !== input.tools.length)
     return null;
   const { screen, campus_id: campusId } = input;
@@ -54,7 +57,8 @@ export function parseCopilotContext(value: unknown): CopilotContext | null {
       (campusId !== undefined && (screen !== 'virtual_campus' || !copilotCallId(campusId)))) return null;
   const result = record(input.last_result);
   if (input.last_result !== undefined && (!result || !exact(result,['tool', 'status', 'call_id']) || !knownTool(result.tool) || !knownResult(result.status) || (result.call_id !== undefined && !copilotCallId(result.call_id)))) return null;
-  return { screen, tools: [...input.tools], ...(typeof campusId === 'string' ? { campus_id: campusId } : {}), ...(result ? { last_result: result as CopilotResult } : {}) };
+  return { screen, tools: [...input.tools], ...(typeof campusId === 'string' ? { campus_id: campusId } : {}),
+    ...(result ? { last_result: result as CopilotResult } : {}), ...(input.workflow_steps === true ? { workflow_steps: true } : {}) };
 }
 
 export function validCopilotArgs(name: CopilotToolName, value: unknown): value is Record<string, unknown> {
@@ -79,7 +83,7 @@ export function copilotCanContinue(previous: CopilotToolName, next: CopilotToolN
 }
 
 /** A complete ordered batch is required before any action can affect the workspace. */
-export function readCopilotPlan(value: unknown, threadId: string, runId: string): CopilotIntent[] | null {
+export function readCopilotBatch(value: unknown, threadId: string, runId: string) {
   const frame = record(value);
   if (!frame || frame.version !== '1.0' || !Array.isArray(frame.events) || frame.events.length > 64) return null;
   const rows = frame.events.map(record);
@@ -89,10 +93,28 @@ export function readCopilotPlan(value: unknown, threadId: string, runId: string)
       last?.type !== 'RUN_FINISHED' || last.threadId !== threadId || last.runId !== runId ||
       (last.outcome !== undefined && record(last.outcome)?.type !== 'success')) return null;
   let call: { id: string; name: CopilotToolName; payload: string } | undefined;
+  let workflowCallId: string | undefined;
   const plan: CopilotIntent[] = [];
+  const receipts = new Map<string, CopilotResult['status']>();
   for (const row of rows.slice(1, -1)) {
     if (!row || typeof row.type !== 'string') return null;
     if (row.type === 'RUN_STARTED' || row.type === 'RUN_FINISHED' || row.type === 'RUN_ERROR') return null;
+    if (row.type === 'CUSTOM' && row.name === AG_UI_WORKFLOW_STEP_EVENT) {
+      const step = record(row.value);
+      if (workflowCallId || !step || !exact(step, ['version', 'call_id']) || step.version !== 1 || !copilotCallId(step.call_id)) return null;
+      workflowCallId = step.call_id;
+    }
+    if (row.type === 'TOOL_CALL_RESULT') {
+      if (call || plan.length || receipts.size >= 2 || !copilotCallId(row.toolCallId) || receipts.has(row.toolCallId) ||
+          row.role !== 'tool' || row.messageId !== `${row.toolCallId}:result` ||
+          typeof row.content !== 'string' || row.content.length > 128) return null;
+      let result: unknown;
+      try { result = JSON.parse(row.content); } catch { return null; }
+      const outcome = record(result);
+      if (!outcome || !exact(outcome, ['status']) || !knownResult(outcome.status)) return null;
+      receipts.set(row.toolCallId, outcome.status);
+      continue;
+    }
     if (!row.type.startsWith('TOOL_CALL_')) continue;
     if (row.type === 'TOOL_CALL_START' && !call && plan.length < 3 && typeof row.toolCallId === 'string' &&
         /^[A-Za-z0-9_-]{1,128}$/.test(row.toolCallId) && !plan.some(step=>step.id===row.toolCallId) && knownTool(row.toolCallName)) {
@@ -108,9 +130,28 @@ export function readCopilotPlan(value: unknown, threadId: string, runId: string)
       call = undefined;
     } else return null;
   }
-  if (call || !plan.length) return null;
+  if (call || plan.some(intent=>receipts.has(intent.id))) return null;
   const pendingIds = record(last.outcome)?.pendingToolCallIds;
   if (pendingIds !== undefined && (!Array.isArray(pendingIds) || pendingIds.length !== plan.length ||
       pendingIds.some((id,index)=>id!==plan[index]?.id))) return null;
-  return plan.every((step,index)=>index===0 || copilotCanContinue(plan[index-1]!.name,step.name)) ? plan : null;
+  if (workflowCallId && (plan.length !== 1 || plan[0]?.id !== workflowCallId || !Array.isArray(pendingIds) ||
+      (plan[0].name !== 'open_campus_create' && plan[0].name !== 'prepare_campus_create'))) return null;
+  if (!plan.every((step,index)=>index===0 || copilotCanContinue(plan[index-1]!.name,step.name))) return null;
+  return { plan, workflowCallId, receipts, status: record(last.result)?.status };
+}
+
+export function readCopilotPlan(value: unknown, threadId: string, runId: string): CopilotIntent[] | null {
+  const batch = readCopilotBatch(value, threadId, runId);
+  return batch?.plan.length ? batch.plan : null;
+}
+
+/** A receipt reply can continue the exact run once, through a declared route transition. */
+export function readCopilotWorkflowReply(value: unknown, threadId: string, runId: string, previous: CopilotIntent) {
+  const batch = readCopilotBatch(value, threadId, runId);
+  if (!batch) return null;
+  const next = batch.plan[0];
+  const status = batch.receipts.get(previous.id);
+  if (!next) return batch.status === 'completed' ? { kind: 'finished' as const, status } : null;
+  return batch.workflowCallId === next.id && batch.receipts.size === 1 && status === 'applied' && next.id !== previous.id
+    && copilotCanContinue(previous.name, next.name) ? { kind: 'step' as const, intent: next } : null;
 }

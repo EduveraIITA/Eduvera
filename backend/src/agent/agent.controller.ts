@@ -15,6 +15,8 @@ export class AgentController {
   @Get('threads/:id') detail(@Req() r:AuthenticatedRequest,@Param('id') id:string) { return this.agent.detail(r,id); }
   @Get('threads/:id/runs/:runId/events') @Header('Cache-Control','private, no-store')
   runEvents(@Req() r:AuthenticatedRequest,@Param('id') id:string,@Param('runId') runId:string) { return this.agent.runEvents(r,id,runId); }
+  @Post('threads/:id/runs/:runId/ui-receipt') @HttpCode(200) @Header('Cache-Control','private, no-store')
+  acknowledgeUiStep(@Req() r:AuthenticatedRequest,@Param('id') id:string,@Param('runId') runId:string) { return this.agent.acknowledgeUiStep(r,id,runId); }
   @Post('threads/:id/messages') @HttpCode(202) send(@Req() r:AuthenticatedRequest,@Param('id') id:string) { return this.agent.send(r,id); }
   @Post('threads/:id/runs/:runId/cancel') @HttpCode(200) cancel(@Req() r:AuthenticatedRequest,@Param('id') id:string,@Param('runId') runId:string) { return this.agent.cancel(r,id,runId); }
   @Post('threads/:id/actions/:actionId') @HttpCode(200) decide(@Req() r:AuthenticatedRequest,@Param('id') id:string,@Param('actionId') actionId:string) { return this.agent.decide(r,id,actionId); }

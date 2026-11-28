@@ -31,6 +31,7 @@ export const clientUiContextSchema = z.object({
   screen,
   tools:z.array(toolName).max(6),
   campus_id:z.uuid().optional(),
+  workflow_steps:z.literal(true).optional(),
   last_result:z.object({tool:toolName,status:z.enum(['applied','blocked','stopped']),call_id:z.uuid().optional()}).strict().optional(),
 }).strict().refine(context => new Set(context.tools).size === context.tools.length &&
   context.tools.every(tool => screenTools[context.screen].includes(tool)) && (!context.campus_id || context.screen==='virtual_campus'),
@@ -79,6 +80,9 @@ export function clientUiPrompt(context: ClientUiContext | undefined) {
 
 export const CLIENT_UI_CONTEXT_STEP = 'assistant_client_ui_context';
 export const CLIENT_UI_CALL_STEP = 'assistant_client_ui_call';
+export const AG_UI_WORKFLOW_STEP_EVENT='thatcampus.workflow-step';
+export const clientWorkflowReceiptSchema=z.object({call_id:z.uuid(),status:z.enum(['applied','blocked','stopped'])}).strict();
+export type ClientWorkflowReceipt=z.infer<typeof clientWorkflowReceiptSchema>;
 
 type RunStatus = 'running'|'completed'|'confirmation'|'failed'|'cancelled';
 type UiIntentKind = 'view_source'|'view_report'|'review_action';
@@ -90,6 +94,8 @@ export type AssistantAgUiEvent =
   | {type:'TEXT_MESSAGE_END';messageId:string}
   | {type:'CUSTOM';name:'thatcampus.ui-intent';value:{version:1;kind:UiIntentKind;subjectId:string}}
   | {type:'CUSTOM';name:'thatcampus.public-web-source';value:{version:1;source:PublicWebSource}}
+  | {type:'CUSTOM';name:typeof AG_UI_WORKFLOW_STEP_EVENT;value:{version:1;call_id:string}}
+  | {type:'TOOL_CALL_RESULT';messageId:string;toolCallId:string;content:string;role:'tool'}
   | {type:'TOOL_CALL_START';toolCallId:string;toolCallName:ClientToolName}
   | {type:'TOOL_CALL_ARGS';toolCallId:string;delta:string}
   | {type:'TOOL_CALL_END';toolCallId:string}
@@ -103,8 +109,9 @@ type AgUiProjection = {
   actionId?:string; clientCall?:NonNullable<ReturnType<typeof restoreClientUiCall>>;
   clientCalls?:readonly NonNullable<ReturnType<typeof restoreClientUiCall>>[];
   publicWebSources?:readonly PublicWebSource[];
+  workflow?:{pending?:string;receipts:readonly ClientWorkflowReceipt[]};
 };
-export function projectAssistantAgUi({threadId,runId,status,progress,answer,evidence,actionId,clientCall,clientCalls,publicWebSources}:AgUiProjection) {
+export function projectAssistantAgUi({threadId,runId,status,progress,answer,evidence,actionId,clientCall,clientCalls,publicWebSources,workflow}:AgUiProjection) {
   const ids={threadId,runId}, messageId=`${runId}:assistant`;
   const event=(kind:UiIntentKind,subjectId:string):AssistantAgUiEvent => ({type:'CUSTOM', name:'thatcampus.ui-intent', value:{version:1,kind,subjectId}});
   const events:AssistantAgUiEvent[]=[
@@ -126,6 +133,12 @@ export function projectAssistantAgUi({threadId,runId,status,progress,answer,evid
   for (const source of publicWebSources??[]) events.push({type:'CUSTOM',name:'thatcampus.public-web-source',value:{version:1,source}});
   if (status==='confirmation' && actionId) events.push(event('review_action',actionId));
   const calls=status==='completed' ? clientCalls ?? (clientCall ? [clientCall] : []) : [];
+  for(const receipt of workflow?.receipts??[])events.push({
+    type:'TOOL_CALL_RESULT',messageId:`${receipt.call_id}:result`,toolCallId:receipt.call_id,
+    content:JSON.stringify({status:receipt.status}),role:'tool',
+  });
+  if(workflow?.pending&&calls.length===1&&calls[0]?.id===workflow.pending)
+    events.push({type:'CUSTOM',name:AG_UI_WORKFLOW_STEP_EVENT,value:{version:1,call_id:workflow.pending}});
   for (const call of calls) {
     events.push({type:'TOOL_CALL_START',toolCallId:call.id,toolCallName:call.tool},
       {type:'TOOL_CALL_ARGS',toolCallId:call.id,delta:JSON.stringify(call.arguments)},{type:'TOOL_CALL_END',toolCallId:call.id});

@@ -506,6 +506,13 @@ recoverable invalid tool decision can trigger one High call in the same run,
 using the signed conversation and the existing tool, time and spending limits.
 Campus image and map inference retain their current provider model.
 
+The first [durable Assistant workflow](SCHOOL_AGENT.md#app-copilot-protocol)
+uses LangGraph TypeScript with PostgreSQL checkpoints for campus creation.
+The app acknowledges navigation to the account screen before the Assistant
+opens or prefills the registered form. The verification targets are reload and
+restart between acknowledgements, duplicate receipts, Stop, revoked authority
+and explicit creation in the form.
+
 Compact Assistant replies now open the full conversation on tap and copy the
 full reply on a long press. A compact browser test exercised both gestures,
 keyboard copy, the tray toggle and provider cancellation. Working status and

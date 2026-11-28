@@ -137,6 +137,18 @@ same chat and fills the owned form. The user confirms creation in that form.
 Additional modules register scoped handlers with their owning route and source.
 A later tool in the same run can cross a route only through a declared handoff.
 
+The first durable handoff uses LangGraph TypeScript and PostgreSQL checkpoints
+for `open_campus_create` followed by `prepare_campus_create`. A client that
+advertises acknowledgement support receives one step at a time and returns its
+result for the exact owned run and tool call. The server rechecks current
+authority before releasing the next step. Only an applied navigation receipt
+can unlock form preparation. Duplicate acknowledgements resolve to the
+recorded result. Stop or a blocked step ends the remaining plan. Clients that
+have not negotiated acknowledgements continue to receive the ordered batch.
+A2UI collects the name in the conversation and fills the registered form,
+where the user confirms creation. Checkpoints cover this client handoff.
+Gemini model turns continue through the existing provider adapter.
+
 Common campus requests run through the app-owned setup workflow without an
 inference call. The model can also request the same workflow for natural-language
 variants. The workflow checks the current directory or workspace capacity, binds
@@ -321,10 +333,21 @@ Private agent tables retain RLS and revoked direct browser/PUBLIC grants; a
 non-owner production runtime/RLS validation remains a separate gate, not implied
 by successful application permission tests.
 
-Use the official SDK, typed schemas and PostgreSQL state unless measured golden
-multi-turn traces justify another orchestration framework. ADK/LangGraph cannot
-repair business contracts; pgvector and MCP require a specific approved retrieval/
-external-integration need, not implementation for appearance.
+Use LangGraph TypeScript with PostgreSQL for the campus creation handoff.
+Its [checkpoints](https://docs.langchain.com/oss/javascript/langgraph/checkpointers)
+and [interrupts](https://docs.langchain.com/oss/javascript/langgraph/interrupts)
+fit the existing database and support continuation across calls to separate
+server instances. LangGraph exposes a
+[TypeScript AG-UI adapter](https://www.npmjs.com/package/@ag-ui/langgraph).
+Google ADK has a
+[native Node AG-UI adapter](https://docs.ag-ui.com/integrations/google-adk-js),
+[TypeScript A2A and MCP tools](https://adk.dev/api-reference/typescript/), and a
+[model adapter interface](https://adk.dev/api-reference/typescript/classes/BaseLlm.html).
+The decision favors the established PostgreSQL checkpoint path and retaining our
+existing provider implementations. The app continues to own tool negotiation,
+authority checks, evidence, spending and confirmation. The existing MCP-backed
+search stays behind its scoped adapter. External A2A peers require their own
+identity and authority review.
 
 ## External messaging transport
 

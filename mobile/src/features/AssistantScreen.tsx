@@ -197,8 +197,11 @@ function Conversation({ href, onNavigate, onCompactHeightChange, workspaceTask, 
           assertAssistantWriteReady(accessPausedRef.current);
           if (value.kind === 'decision') return apiFetch(`${root}/threads/${encodeURIComponent(value.threadId)}/actions/${encodeURIComponent(value.actionId)}`, { method: 'POST', body: JSON.stringify({ decision: value.decision }) });
           const lease = !recovering && value.uiContext ? copilot.capture(value.uiContext) : undefined;
+          const {workflow_steps,...wireUiContext}=value.uiContext??{};
           const receipt = await apiFetch<{run_id?: string}>(`${root}/threads/${encodeURIComponent(value.threadId)}/messages`, {
-            method:'POST',body:JSON.stringify({question:value.question,client_id:value.clientId,...(value.uiContext?{ui_context:value.uiContext}:{})}),
+            method:'POST',
+            ...(workflow_steps?{headers:{'X-ThatCampus-Workflow-Steps':'1'}}:{}),
+            body:JSON.stringify({question:value.question,client_id:value.clientId,...(value.uiContext?{ui_context:wireUiContext}:{})}),
           });
           assertCurrent?.();
           if (copilotCallId(receipt?.run_id)) {

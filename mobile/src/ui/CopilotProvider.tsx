@@ -2,9 +2,10 @@ import { createContext, useCallback, useContext, useEffect, useLayoutEffect, use
 import { AppState } from 'react-native';
 import { useIsFocused, usePathname, useRootNavigationState } from 'expo-router';
 import { useSession } from '../auth/SessionProvider';
-import { apiFetch, captureApiContext } from '../lib/api';
+import { ApiError, apiFetch, captureApiContext } from '../lib/api';
+import { ApiConnectionError } from '../lib/api-client';
 import { campusHrefForRoute, focusedCampusRoute, type CampusNavigationState } from '../lib/back-policy';
-import { copilotCallId, copilotRouteContext, copilotToolNames, copilotToolAvailableOn, readCopilotPlan, validCopilotArgs, type CopilotContext, type CopilotResult, type CopilotToolName } from '../lib/copilot';
+import { copilotCallId, copilotRouteContext, copilotToolNames, copilotToolAvailableOn, readCopilotBatch, readCopilotWorkflowReply, validCopilotArgs, type CopilotContext, type CopilotResult, type CopilotToolName } from '../lib/copilot';
 import { copilotWait, measureCopilotTarget, type CopilotRect, type CopilotTargetNode } from '../lib/copilot-target';
 
 type ActionRegistration = {
@@ -22,7 +23,7 @@ type Run = { id: string; threadId: string; lease: Lease };
 type Activity = { label: string; phase: 'preparing' | 'applying' | 'applied' | 'blocked' | 'stopped'; tool?: CopilotToolName; step?: number; total?: number };
 type Detail = { id: string; threadId: string };
 type OwnedDetail = Detail & { binding: string; action: RegisteredAction; generation: number };
-type Execution = { run: Run; controller: AbortController; binding: string; tool?: CopilotToolName; callId?: string; destinationPath?: string; applied?: boolean };
+type Execution = { run: Run; controller: AbortController; binding: string; tool?: CopilotToolName; callId?: string; destinationPath?: string; applied?: boolean; reportWorkflowOutcome?: (status: CopilotResult['status']) => Promise<unknown> };
 type TargetStage = 'before' | 'after';
 type TargetOptions = {
   enabled?: boolean;
@@ -65,7 +66,8 @@ export function CopilotProvider({ children }: PropsWithChildren) {
   // controls are given to the owning module and do not change this lease.
   const binding = JSON.stringify([session.scopeKey, route?.key, pathname, ...identity]);
   const eligible = session.status === 'authenticated' && session.environment.mode === 'live' && !session.environment.unavailable;
-  const current = useRef({ binding, eligible, screen, pathname }); current.current = { binding, eligible, screen, pathname };
+  const current = useRef({ binding, eligible, screen, pathname, scopeKey: session.scopeKey });
+  current.current = { binding, eligible, screen, pathname, scopeKey: session.scopeKey };
   const byTool = useRef(new Map<CopilotToolName, Set<Parameters<Runtime['register']>[0]>>());
   const targets = useRef(new Map<string, Set<TargetRegistration>>());
   const active = useRef<Run | null>(null), generation = useRef(0), lastResult = useRef<CopilotResult | undefined>(undefined);
@@ -130,7 +132,7 @@ export function CopilotProvider({ children }: PropsWithChildren) {
     const tools = copilotToolNames.filter(name => copilotToolAvailableOn(name,current.current.screen) && find(name));
     if (!tools.length && !lastResult.current) return;
     const mapped = current.current.screen==='virtual_campus' ? [...new Set(campusTargets.current.values())] : [];
-    return { screen: current.current.screen, tools, ...(mapped.length===1?{campus_id:mapped[0]}:{}),
+    return { screen: current.current.screen, tools, workflow_steps: true, ...(mapped.length===1?{campus_id:mapped[0]}:{}),
       ...(lastResult.current ? { last_result: lastResult.current } : {}) };
   }, [find]);
   const capture = useCallback((expected: CopilotContext): Lease | undefined => {
@@ -153,6 +155,7 @@ export function CopilotProvider({ children }: PropsWithChildren) {
     clearDetail();
     if (!run && !operation && !answering) { setActivity(null); return; }
     operation?.controller.abort(); execution.current = null; active.current = null;
+    void operation?.reportWorkflowOutcome?.('stopped').catch(noop);
     if (operation?.tool) lastResult.current = { tool: operation.tool, status: operation.applied ? 'applied' : 'stopped',
       ...(operation.callId ? { call_id: operation.callId } : {}) };
     setPending(null);
@@ -193,30 +196,57 @@ export function CopilotProvider({ children }: PropsWithChildren) {
     if (!run || run.id !== id || execution.current || !current.current.eligible || current.current.binding !== run.lease.binding) return;
     const operation:Execution = { run, controller: new AbortController(), binding:run.lease.binding };
     execution.current = operation;
-    const signal = operation.controller.signal, transport = captureApiContext();
+    const signal = operation.controller.signal, transport = captureApiContext(), scopeKey = current.current.scopeKey;
     const currentLease = () => {
-      if (!mounted.current || signal.aborted || !current.current.eligible || active.current !== run) return false;
+      if (!mounted.current || signal.aborted || !current.current.eligible || current.current.scopeKey !== scopeKey ||
+          active.current !== run || run.lease.generation !== generation.current) return false;
       try { transport.assertCurrent(); } catch { return false; }
       return current.current.binding === operation.binding || operation.destinationPath === current.current.pathname;
     };
     const finish = (result?: CopilotResult, label?: string) => {
       if (execution.current !== operation || active.current !== run) return;
+      if (result?.status === 'blocked') void operation.reportWorkflowOutcome?.('blocked').catch(noop);
       active.current = null; execution.current = null; setPending(null);
       if (result) lastResult.current = { ...result, ...(operation.callId ? { call_id:operation.callId } : {}) };
       if (result?.status!=='applied') setPointer(null);
       setActivity(result && label ? { label, tool: result.tool, phase: result.status } : null);
     };
     void (async () => {
-      const endpoint = `/api/v1/agent/threads/${encodeURIComponent(run.threadId)}/runs/${encodeURIComponent(run.id)}/events`;
+      const endpoint = `/api/v1/agent/threads/${encodeURIComponent(run.threadId)}/runs/${encodeURIComponent(run.id)}`;
       try {
-        const events = await apiFetch<unknown>(endpoint, { signal });
+        const events = await apiFetch<unknown>(`${endpoint}/events`, { signal });
         if (!currentLease()) { finish(); return; }
-        const plan = readCopilotPlan(events, run.threadId, run.id);
-        if (!plan || !run.lease.context.tools.includes(plan[0]!.name)) { finish(); return; }
+        const batch = readCopilotBatch(events, run.threadId, run.id);
+        const first = batch?.plan[0];
+        if (!batch || !first || !run.lease.context.tools.includes(first.name)) { finish(); return; }
+        const staged = !!batch.workflowCallId;
+        if (staged && (run.lease.context.workflow_steps !== true || first.name !== 'open_campus_create' || batch.receipts.size)) { finish(); return; }
+        const plan = batch.plan;
         clearDetail();
-        for (const [index,intent] of plan.entries()) {
+        for (let index=0; index<plan.length; index++) {
+          const intent = plan[index]!;
           operation.tool = intent.name; operation.callId=copilotCallId(intent.id)?intent.id:undefined;
           operation.applied = false;
+          if (staged) {
+            let submitted = false;
+            operation.reportWorkflowOutcome = async status => {
+              if (submitted || !mounted.current || !current.current.eligible || current.current.scopeKey!==scopeKey) return;
+              if (status==='applied' && !currentLease()) return;
+              transport.assertCurrent();
+              submitted = true;
+              const acknowledge = () => apiFetch<unknown>(`${endpoint}/ui-receipt`, {
+                method: 'POST', body: JSON.stringify({call_id:intent.id,status}), ...(status==='applied' ? { signal } : {}),
+              });
+              try { return await acknowledge(); }
+              catch (error) {
+                const transient = error instanceof ApiConnectionError || (error instanceof ApiError && [502,503,504].includes(error.status));
+                if (status!=='applied'||!transient||!currentLease()) throw error;
+                // The owner deduplicates the exact receipt. Retrying it never runs the native control again.
+                await copilotWait(200,signal);
+                if (currentLease()) return acknowledge();
+              }
+            };
+          }
           // React may still be mounting the next owning screen after navigation.
           let action=find(intent.name);
           for (let attempt=0; index>0&&!action&&currentLease()&&attempt<50; attempt++) {
@@ -227,7 +257,7 @@ export function CopilotProvider({ children }: PropsWithChildren) {
               index===0 && action!==run.lease.targets.get(intent.name)) {
             finish({tool:intent.name,status:'blocked'},'That control isn’t available on this screen');return;
           }
-          setActivity({label:action.label,tool:intent.name,phase:'applying',step:index+1,total:plan.length});
+          setActivity({label:action.label,tool:intent.name,phase:'applying',step:index+1,total:staged ? 2 : plan.length});
           if(index===0)revealApp(action.isAtDestination?.(intent.args) === true);
           await copilotWait(140,signal);
           const pointed = await showTarget(intent.name,'before',signal,currentLease);
@@ -241,6 +271,24 @@ export function CopilotProvider({ children }: PropsWithChildren) {
           if (!currentLease()) { finish();return; }
           if (!applied) { finish({tool:intent.name,status:'blocked'},action.label);return; }
           operation.binding=current.current.binding;operation.destinationPath=undefined;
+          if (staged) {
+            // Only a fresh, authorized response to the first receipt may supply the second step.
+            if (index===0) await showTarget(intent.name,'after',signal,currentLease);
+            if (!currentLease()) { finish(); return; }
+            const reply = await operation.reportWorkflowOutcome?.('applied');
+            if (!currentLease()) { finish(); return; }
+            const next = readCopilotWorkflowReply(reply,run.threadId,run.id,intent);
+            if (!next || (index!==0 && next.kind==='step')) {
+              finish({tool:intent.name,status:'blocked'},'The next campus setup step could not be confirmed');return;
+            }
+            if (next.kind==='step') {
+              plan.push(next.intent);
+              continue;
+            }
+            if (next.status!=='applied'||index===0) {
+              finish({tool:intent.name,status:'blocked'},'The campus form could not be prepared');return;
+            }
+          }
           const final = index===plan.length-1;
           if(final && intent.name==='prepare_campus_create' && intent.args.name===undefined && copilotCallId(intent.id)) {
             const request={id:intent.id,threadId:run.threadId};

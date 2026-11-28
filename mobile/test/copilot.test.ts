@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { copilotRouteContext, parseCopilotContext, readCopilotPlan } from '../src/lib/copilot';
+import { copilotRouteContext, parseCopilotContext, readCopilotBatch, readCopilotPlan, readCopilotWorkflowReply } from '../src/lib/copilot';
 
 const threadId = 'thread', runId = 'run', toolCallId = 'call_1';
 const event = (type: string, body: Record<string, unknown> = {}) => ({ type, ...body });
@@ -64,4 +64,48 @@ test('campus creation uses the declared route then opens its form in order', () 
   assert.deepEqual(parseCopilotContext({ screen: 'virtual_campus', tools: ['open_campus_interiors'], campus_id }),
     { screen: 'virtual_campus', tools: ['open_campus_interiors'], campus_id });
   assert.equal(parseCopilotContext({ screen: 'workspace', tools: [], campus_id }), null);
+});
+
+
+test('staged workspace creation binds each graph marker and receipt to the exact action', () => {
+  const first = '169fadb6-a106-41b2-9ba3-792ea74cdbe6', second = '839a86d0-4f4c-4d8c-aafe-c0943305357e';
+  const navigate = { id: first, name: 'open_campus_create' as const, args: {} };
+  const prepare = { id: second, name: 'prepare_campus_create' as const, args: {name:'North Campus'} };
+  const workflow = (id: string) => event('CUSTOM', { name:'thatcampus.workflow-step',value:{version:1,call_id:id} });
+  const receipt = (id: string, status: string) => event('TOOL_CALL_RESULT', {
+    role:'tool',messageId:`${id}:result`,toolCallId:id,content:JSON.stringify({status}),
+  });
+  const packet = (events: Record<string,unknown>[], pending?: string) => ({ version: '1.0', events: [
+    ...head,...events,event('RUN_FINISHED',{ threadId,runId,result:{status:'completed'},
+      ...(pending ? {outcome:{type:'success',pendingToolCallIds:[pending]}} : {}) }),
+  ] });
+  const tool = ({id,name,args}: typeof navigate | typeof prepare) => [
+    event('TOOL_CALL_START',{toolCallName:name,toolCallId:id}),
+    event('TOOL_CALL_ARGS',{toolCallId:id,delta:JSON.stringify(args)}),
+    event('TOOL_CALL_END',{toolCallId:id}),
+  ];
+  assert.deepEqual(parseCopilotContext({screen:'workspace',tools:['open_campus_create'],workflow_steps:true}),
+    {screen:'workspace',tools:['open_campus_create'],workflow_steps:true});
+  assert.equal(parseCopilotContext({screen:'workspace',tools:['open_campus_create'],workflow_steps:false}),null);
+  assert.equal(readCopilotBatch(packet([workflow(first),...tool(navigate)],first),threadId,runId)?.workflowCallId,first);
+  for (const bad of [
+    packet([workflow(second),...tool(navigate)],first),
+    packet([workflow(first),workflow(first),...tool(navigate)],first),
+    packet([workflow(first),...tool(navigate)]),
+    packet([workflow(first)]),
+    packet([workflow(first),...tool(navigate),...tool(prepare)],first),
+  ]) assert.equal(readCopilotBatch(bad,threadId,runId),null);
+  const continued = packet([receipt(first,'applied'),workflow(second),...tool(prepare)],second);
+  assert.deepEqual(readCopilotWorkflowReply(continued,threadId,runId,navigate),{kind:'step',intent:prepare});
+  assert.equal(readCopilotWorkflowReply(continued,threadId,'wrong',navigate),null);
+  assert.equal(readCopilotWorkflowReply(continued,threadId,runId,prepare),null);
+  for (const bad of [
+    packet([workflow(second),...tool(prepare)],second),
+    packet([receipt(first,'blocked'),workflow(second),...tool(prepare)],second),
+    packet([receipt(first,'applied'),...tool(prepare)],second),
+    packet([receipt(second,'applied'),workflow(second),...tool(prepare)],second),
+    packet([receipt(first,'applied'),receipt(first,'applied'),workflow(second),...tool(prepare)],second),
+  ]) assert.equal(readCopilotWorkflowReply(bad,threadId,runId,navigate),null);
+  assert.deepEqual(readCopilotWorkflowReply(packet([receipt(first,'applied'),receipt(second,'applied')]),threadId,runId,prepare),
+    {kind:'finished',status:'applied'});
 });

@@ -158,7 +158,7 @@ jobs:
               'teaching-sessions', 'teaching-sessions-files-worlds',
               'academic-catalogue-recovery', 'academic-catalogue-recovery-http', 'learning-assignment-handover', 'learning-assignment-handover-worlds',
               'domain-message-supersession', 'learning-assignments', 'learning-assignment-files-worlds', 'exam-schedule-amendments', 'exam-operations',
-              'simulation-branch-concurrency', 'floor-plan-onboarding-lifecycle', 'agent-ui',
+              'simulation-branch-concurrency', 'floor-plan-onboarding-lifecycle', 'agent-ui', 'agent-campus-graph',
               'account-mail-delivery', 'account-mail-http', 'invitation-queue', 'native-google-locks',
               'learning-elective-change', 'learning-elective-change-worlds',
               'academic-offering-cycle', 'academic-offering-worlds', 'academic-offering-http',

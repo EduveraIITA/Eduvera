@@ -24,13 +24,14 @@ import { AGENT_PROMPT_VERSION,agentSystemPrompt,basicAgentPrompt,responsePrompt,
 import { conversationRoutingQuery } from './tool-routing.js';
 import { AgentMemoryService,agentMemoryLimits,longTermMemoryPrompt,userIdentityPrompt,userMemoryTool,AGENT_MEMORY_CONTRACT_VERSION } from './long-term-memory.js';
 import {
-  CLIENT_UI_CALL_STEP, CLIENT_UI_CONTEXT_STEP, advertisedClientTools, clientUiContextSchema, clientUiPrompt, draftCampusName, isCampusWorkflowTool,
+  AG_UI_WORKFLOW_STEP_EVENT, CLIENT_UI_CALL_STEP, CLIENT_UI_CONTEXT_STEP, advertisedClientTools, clientUiContextSchema, clientUiPrompt, clientWorkflowReceiptSchema, draftCampusName, isCampusWorkflowTool,
   isClientUiTool, parseClientUiCall, projectAssistantAgUi, restoreClientUiCall, type ClientUiCall, type ClientUiContext,
 } from './agent-ui.js';
 import { authorizedCampusDirectory, campusWorkflowDirection, campusWorkflowRequest, canPrepareCampus, isCampusFloorPlanWebFollowup, isCampusSetupContinuation, resumeCampusWorkflow, type CampusRequest } from './agent-campus-workflow.js';
 import { freePublicWebEnabled, FREE_PUBLIC_WEB_DAILY_LIMIT, PUBLIC_WEB_LOOKUP_STEP, publicWebLookupsSince } from '../common/public-web-lookup.js';
 import { lookupPublicWeb, publicWebRequest, publicWebSourceSchema, type PublicWebRequest } from '../campus-scene-import/scene-import.floor-plan-discovery.js';
 import { executionNow } from '../campus-model-core/execution-time.runtime.js';
+import { AgentCampusWorkflow } from './agent-campus-graph.js';
 
 const portalSchema = z.enum(['principal','teacher','parent','student']);
 const threadInput = z.object({ portal: portalSchema, student_id: z.string().uuid().optional() }).strict();
@@ -71,6 +72,7 @@ const deeperReasoning:ToolDefinition={
 };
 type ReasoningEscalation=z.infer<typeof reasoningRequest>['reason'] | 'unverified_action' | 'mixed_ui_actions' | 'invalid_tool_arguments';
 const promptVersion=AGENT_PROMPT_VERSION;
+const clientUiStepOrder=z.object({position:z.number().int().min(0).max(2),workflow:z.literal(true).optional()}).strict();
 const publicWebSourcesSchema=z.array(publicWebSourceSchema.omit({description:true})).max(3);
 function clientUiActionCopy(tool:ClientUiCall['tool']) {
   if(tool==='open_virtual_campus')return 'I’ll open Virtual Campus.';
@@ -135,10 +137,15 @@ function conversationOutcome(turn:ConversationTurn,answerVisible:boolean) {
 @Injectable()
 export class AgentService implements OnModuleDestroy {
   private readonly running = new Map<string,AbortController>();
+  private readonly campusWorkflow=new AgentCampusWorkflow();
   private readonly recentPublicExcerpts=new Map<string,{until:number;descriptions:Map<string,string>}>();
   constructor(private readonly db: DatabaseService, private readonly roles: RolesService, private readonly school: SchoolService,
     private readonly gateway: AgentGateway,private readonly memory:AgentMemoryService) {}
-  onModuleDestroy() { for (const controller of this.running.values()) controller.abort(); this.recentPublicExcerpts.clear(); }
+  async onModuleDestroy() {
+    for(const controller of this.running.values())controller.abort();
+    this.recentPublicExcerpts.clear();
+    await this.campusWorkflow.close();
+  }
 
   private credentials(request: AuthenticatedRequest): AgentCredentials {
     if (request.executionEnvironmentView?.mode === 'simulation' || request.executionEnvironment?.kind === 'simulation') {
@@ -361,23 +368,81 @@ export class AgentService implements OnModuleDestroy {
       WHERE run_id=${run.id}::uuid AND status='pending' AND expires_at>now()`.execute(this.db)).rows[0]:undefined;
     const directory=currentReads.find(read=>read.capability==='virtual_campus_layout')?.data;
     const capacity=currentReads.find(read=>read.capability==='campus_workspace_capacity')?.data;
-    const clientCalls=!thread.archived && run.is_latest && run.status==='completed'
-      ? this.authorizedClientUiCalls(steps,directory,capacity) : [];
-    if(!thread.archived && run.is_latest && run.status==='completed' && !clientCalls.length &&
-        steps.some(step=>step.kind==='handoff'&&step.capability===CLIENT_UI_CALL_STEP)) {
+    const isCurrent=!thread.archived&&run.is_latest&&run.status==='completed';
+    const planned=isCurrent?this.authorizedClientUiCalls(steps,directory,capacity):[];
+    const journaledWorkflow=isCurrent?this.journaledCampusWorkflow(steps):undefined;
+    const workflow=journaledWorkflow?.length ? await this.campusWorkflow.current(runId) : undefined;
+    const workflowMatches=workflow&&journaledWorkflow?.every((callId,index)=>workflow.steps[index]===callId)
+      &&workflow.steps.length===journaledWorkflow.length;
+    const clientCalls=journaledWorkflow===undefined?planned:
+      workflowMatches&&workflow.pending?planned.filter(call=>call.id===workflow.pending):[];
+    if(isCurrent&&!clientCalls.length&&steps.some(step=>step.kind==='handoff'&&step.capability===CLIENT_UI_CALL_STEP)
+        &&!(workflowMatches&&!workflow.pending&&!workflow.recovering)) {
       return projectAssistantAgUi({...ids,status:run.status,progress:'Setup changed',
         answer:'This setup step is no longer available. Check the current campus and try again.',evidence});
     }
+    const lastReceipt=workflowMatches?workflow.receipts.at(-1):undefined;
+    const outcome=lastReceipt?.status==='blocked' ? 'The campus form couldn’t open. You can continue in Your campuses.'
+      : lastReceipt?.status==='stopped' ? 'Campus setup stopped.' : undefined;
     const publicSources=run.status==='completed' ? this.publicWebSources(run.id,steps) : undefined;
-    return projectAssistantAgUi({...ids,status:run.status,progress:run.progress,answer:run.answer,evidence,clientCalls,
+    return projectAssistantAgUi({...ids,status:run.status,progress:lastReceipt?.status==='blocked'?'Setup blocked':lastReceipt?.status==='stopped'?'Setup stopped':run.progress,answer:outcome??run.answer,evidence,clientCalls,
+      ...(workflowMatches?{workflow}:{}),
       ...(publicSources?.length ? {publicWebSources:publicSources} : {}),
       ...(action&&available.has(action.capability)?{actionId:action.id}:{})});
   }
+
+  private journaledCampusWorkflow(steps:readonly Step[]) {
+    const calls=steps.filter(step=>step.kind==='handoff'&&step.capability===CLIENT_UI_CALL_STEP)
+      .map(step=>({step,order:clientUiStepOrder.safeParse(step.result).data}));
+    if(!calls.some(call=>call.order?.workflow))return undefined;
+    const ordered=calls.sort((left,right)=>(left.order?.position??-1)-(right.order?.position??-1));
+    if(ordered.length!==2||ordered.some(({step,order},index)=>!order?.workflow||order.position!==index||step.snapshot_hash!==stableHash(step.input)))return [];
+    const [first,second]=ordered;
+    if(!first||!second||restoreClientUiCall(first.step.id,first.step.input)?.tool!=='open_campus_create'
+      ||restoreClientUiCall(second.step.id,second.step.input)?.tool!=='prepare_campus_create')return [];
+    return [first.step.id,second.step.id];
+  }
+
+  async acknowledgeUiStep(request:AuthenticatedRequest,threadId:string,runId:string) {
+    const receipt=clientWorkflowReceiptSchema.parse(request.body);
+    const original=await this.runEvents(request,threadId,runId);
+    const authorized=original.events.some(event=>event.type==='CUSTOM'&&event.name===AG_UI_WORKFLOW_STEP_EVENT&&event.value.call_id===receipt.call_id);
+    await this.db.transaction().execute(async tx=>{
+      await sql`SELECT pg_advisory_xact_lock(hashtextextended(${`assistant-ui:${runId}`},0))`.execute(tx);
+      const current=(await sql<{id:string}>`SELECT run.id FROM agent_runs run JOIN agent_threads thread ON thread.id=run.thread_id
+        WHERE run.id=${runId}::uuid AND run.thread_id=${threadId}::uuid AND run.status='completed' AND NOT thread.archived
+          AND NOT EXISTS (SELECT 1 FROM agent_runs newer WHERE newer.thread_id=run.thread_id
+            AND (newer.created_at,newer.id)>(run.created_at,run.id))`.execute(tx)).rows[0];
+      if(!current)throw new ConflictException('This campus setup step is no longer current.');
+      const steps=(await sql<Step>`SELECT * FROM agent_tool_steps WHERE run_id=${runId}::uuid AND kind='handoff'
+        AND capability=${CLIENT_UI_CALL_STEP}`.execute(tx)).rows;
+      const ids=this.journaledCampusWorkflow(steps);
+      if(!ids?.includes(receipt.call_id))throw new NotFoundException('Campus setup step not found.');
+      const workflow=await this.campusWorkflow.current(runId);
+      if(!workflow||ids.length!==workflow.steps.length||ids.some((id,index)=>workflow.steps[index]!==id))
+        throw new ConflictException('This campus setup could not be resumed.');
+      const previous=workflow.receipts.find(item=>item.call_id===receipt.call_id);
+      if(previous&&(previous.reported_status??previous.status)!==receipt.status)
+        throw new ConflictException('This campus setup step already has a different result.');
+      if(!previous&&workflow.pending!==receipt.call_id)throw new ConflictException('This campus setup step is no longer pending.');
+      const admitted=previous??(receipt.status==='applied'&&!authorized
+        ? {...receipt,status:'blocked' as const,reported_status:'applied' as const} : receipt);
+      // An identical retry can finish interrupted graph advancement without
+      // reapplying the client action.
+      const next=await this.campusWorkflow.acknowledge(runId,admitted);
+      const last=next.receipts.at(-1);
+      if(!next.pending&&last?.status==='blocked')await sql`UPDATE agent_runs SET progress='Setup blocked',
+        answer='The campus form couldn’t open. You can continue in Your campuses.' WHERE id=${runId}::uuid`.execute(tx);
+      if(!next.pending&&last?.status==='stopped')await sql`UPDATE agent_runs SET progress='Setup stopped',
+        answer='Campus setup stopped.' WHERE id=${runId}::uuid`.execute(tx);
+    });
+    return this.runEvents(request,threadId,runId);
+  }
+
   private authorizedClientUiCalls(steps: readonly Step[], directory: unknown, capacity: unknown) {
     const raw=steps.filter(step=>step.kind==='handoff'&&step.capability===CLIENT_UI_CALL_STEP);
     if(raw.length>3)return [];
-    const order=z.object({position:z.number().int().min(0).max(2)}).strict();
-    const ordered=raw.map(step=>({step,position:order.safeParse(step.result).data?.position??(raw.length===1?0:-1)}))
+    const ordered=raw.map(step=>({step,position:clientUiStepOrder.safeParse(step.result).data?.position??(raw.length===1?0:-1)}))
       .sort((left,right)=>left.position-right.position);
     const calls=[];
     for(const [index,{step,position}] of ordered.entries()) {
@@ -446,7 +511,11 @@ export class AgentService implements OnModuleDestroy {
       if (recent.hour>=limits.hourly || recent.day>=limits.daily) throw new AgentLimitError('Your AI message allowance has been reached. Please use the app directly for now.');
       const pending = (await sql`SELECT action.id FROM agent_actions action JOIN agent_runs run ON run.id=action.run_id WHERE run.thread_id=${id}::uuid AND action.status IN ('pending','executing') LIMIT 1`.execute(tx)).rows;
       if (pending.length) throw new ConflictException('Confirm or dismiss the pending action before sending another message.');
-      const uiContext=await this.admittedUiContext(tx,id,input.ui_context);
+      const admitted=await this.admittedUiContext(tx,id,input.ui_context);
+      // Negotiate separately from the message hash so older deployments can
+      // accept and replay requests from upgraded clients during rollback.
+      const uiContext=admitted&&request.headers['x-thatcampus-workflow-steps']==='1'
+        ? {...admitted,workflow_steps:true as const} : admitted;
       const run = (await sql<{ id:string }>`INSERT INTO agent_runs(thread_id,client_id,question,status,provider,model) VALUES
         (${id}::uuid,${input.client_id}::uuid,${input.question},'running',${settings.provider},${settings.model}) RETURNING id`.execute(tx)).rows[0]!;
       if(input.ui_context)await sql`INSERT INTO agent_tool_steps(run_id,capability,kind,input,result,snapshot_hash)
@@ -512,13 +581,17 @@ export class AgentService implements OnModuleDestroy {
     await sql`UPDATE agent_runs SET status=${status},answer=${answer.slice(0,12000)},evidence=${JSON.stringify(evidence)}::jsonb,progress=${status === 'confirmation' ? 'Review your action' : status === 'completed' ? 'Complete' : 'Stopped'},finished_at=now()
       WHERE id=${id}::uuid AND status='running'`.execute(this.db);
   }
-  private async finishClientUiCalls(id:string,calls:readonly ClientUiCall[],evidence:Evidence[],answer:string) {
+  private async finishClientUiCalls(id:string,calls:readonly ClientUiCall[],evidence:Evidence[],answer:string,workflowSteps=false) {
+    const staged=workflowSteps&&calls.length===2&&calls[0]?.tool==='open_campus_create'&&calls[1]?.tool==='prepare_campus_create';
+    const callIds=calls.map(()=>randomUUID());
+    if(staged)await this.campusWorkflow.start(id,[callIds[0]!,callIds[1]!]);
     await this.db.transaction().execute(async tx=>{
       const claimed=(await sql`UPDATE agent_runs SET status='completed',answer=${answer},progress='Ready in the app',
         evidence=${JSON.stringify(evidence)}::jsonb,finished_at=now() WHERE id=${id}::uuid AND status='running' RETURNING id`.execute(tx)).rows;
       if(!claimed.length)return;
-      for(const [position,call] of calls.entries())await sql`INSERT INTO agent_tool_steps(run_id,capability,kind,input,result,snapshot_hash)
-        VALUES(${id}::uuid,${CLIENT_UI_CALL_STEP},'handoff',${JSON.stringify(call)}::jsonb,${JSON.stringify({position})}::jsonb,${stableHash(call)})`.execute(tx);
+      for(const [position,call] of calls.entries())await sql`INSERT INTO agent_tool_steps(id,run_id,capability,kind,input,result,snapshot_hash)
+        VALUES(${callIds[position]}::uuid,${id}::uuid,${CLIENT_UI_CALL_STEP},'handoff',${JSON.stringify(call)}::jsonb,
+          ${JSON.stringify({position,...(staged?{workflow:true}:{})})}::jsonb,${stableHash(call)})`.execute(tx);
     });
   }
   private async preparedCampusForm(threadId:string,context:ClientUiContext|undefined):Promise<{name?:string}|undefined> {
@@ -661,7 +734,7 @@ export class AgentService implements OnModuleDestroy {
       await requireProFeatures(this.db,scope.userId);
       const direction=campusWorkflowDirection(request,admittedUi,checked.data);
       if(direction.href)checked.source.href=assertLocalScreen(direction.href);
-      if(direction.calls.length)await this.finishClientUiCalls(id,direction.calls,evidence,direction.answer);
+      if(direction.calls.length)await this.finishClientUiCalls(id,direction.calls,evidence,direction.answer,admittedUi?.workflow_steps);
       else await this.finish(id,'completed',direction.answer,evidence);
     };
     try {

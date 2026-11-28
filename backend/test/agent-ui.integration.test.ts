@@ -149,6 +149,126 @@ describe.skipIf(!enabled)('authorized Assistant AG-UI event read and client tool
     expect(actions?.count).toBe(0);
   },20000);
 
+  describe('checkpointed campus form handoff',()=>{
+    const services=new Set<AgentService>();
+    afterEach(async()=>{
+      await Promise.all([...services].map(service=>service.onModuleDestroy()));
+      services.clear();
+    });
+
+    async function harness(negotiatesByHeader=false) {
+      complete.mockClear();
+      const fixture=await createClassPracticeFixture(db);
+      await db.updateTable('users').set({pro_features_enabled:true}).where('id','=',fixture.owner.id).execute();
+      let count=2;
+      const gateway={dispatch:(capability:{name:string})=>{
+        if(capability.name!=='campus_workspace_capacity')throw new Error('Unexpected fixture tool');
+        return Promise.resolve({count,limit:10});
+      }} as unknown as AgentGateway;
+      const memory=new AgentMemoryService(db);
+      function serviceInstance() {
+        const service=new AgentService(db,new RolesService(db),fixture.school,gateway,memory);
+        services.add(service);
+        return {http:new AgentController(service,memory),close:async()=>{
+          services.delete(service);
+          await service.onModuleDestroy();
+        }};
+      }
+      const original=serviceInstance();
+      const {id:threadId}=await original.http.create(request(fixture.owner,{portal:'principal'}));
+      async function effects() {
+        return (await sql<{runs:number;actions:number;memberships:number;campuses:number}>`SELECT
+          (SELECT count(*)::int FROM agent_runs WHERE thread_id=${threadId}::uuid) AS runs,
+          (SELECT count(*)::int FROM agent_actions action JOIN agent_runs run ON run.id=action.run_id
+            WHERE run.thread_id=${threadId}::uuid) AS actions,
+          (SELECT count(*)::int FROM school_memberships WHERE user_id=${fixture.owner.id}::uuid) AS memberships,
+          (SELECT count(*)::int FROM institution_campuses WHERE school_id=${fixture.schoolId}::uuid) AS campuses`.execute(db)).rows[0];
+      }
+      const before=await effects();
+      const body={
+        question:'I want to setup new campus',client_id:randomUUID(),
+        ui_context:{screen:'workspace',tools:['open_campus_create'],...(negotiatesByHeader?{}:{workflow_steps:true})},
+      };
+      const submission=request(fixture.owner,body);
+      if(negotiatesByHeader)submission.headers['x-thatcampus-workflow-steps']='1';
+      const {run_id:runId}=await original.http.send(submission,threadId);
+      const events=()=>original.http.runEvents(request(fixture.owner),threadId,runId);
+      await vi.waitFor(async()=>expect((await events()).events.at(-1)).toMatchObject({type:'RUN_FINISHED'}),{timeout:5000});
+      const first=await events();
+      const firstCalls=first.events.filter(event=>event.type==='TOOL_CALL_START');
+      expect(firstCalls.map(call=>call.toolCallName)).toEqual(['open_campus_create']);
+      const firstId=firstCalls[0]!.toolCallId;
+      expect(first.events).toContainEqual({type:'CUSTOM',name:'thatcampus.workflow-step',value:{version:1,call_id:firstId}});
+      expect(first.events.at(-1)).toMatchObject({type:'RUN_FINISHED',outcome:{pendingToolCallIds:[firstId]}});
+      return {fixture,threadId,runId,firstId,body,original,serviceInstance,fillCapacity:()=>{count=10;},
+        expectNoWrites:async()=>{
+          expect(await effects()).toEqual({...before,runs:1,actions:0});
+          expect(complete).not.toHaveBeenCalled();
+        }};
+    }
+
+    function result(callId:string,status:'applied'|'blocked'|'stopped') {
+      return {type:'TOOL_CALL_RESULT',messageId:`${callId}:result`,toolCallId:callId,content:JSON.stringify({status}),role:'tool'};
+    }
+
+    it('resumes navigation in a fresh service and releases the form exactly once for the owning client',async()=>{
+      const {fixture,threadId,runId,firstId,body,original,serviceInstance,expectNoWrites}=await harness(true);
+      const secondStep=(await sql<{id:string}>`SELECT id FROM agent_tool_steps WHERE run_id=${runId}::uuid
+        AND kind='handoff' AND result->>'workflow'='true' AND result->>'position'='1'`.execute(db)).rows[0]!;
+      await original.close();
+
+      const {http}=serviceInstance();
+      expect(await http.send(request(fixture.owner,body),threadId)).toEqual({run_id:runId});
+      const acknowledge=(call_id:string,status:'applied'|'blocked'|'stopped'='applied')=>
+        http.acknowledgeUiStep(request(fixture.owner,{call_id,status}),threadId,runId);
+      await expect(http.acknowledgeUiStep(request(fixture.learner.actor,{call_id:firstId,status:'applied'}),threadId,runId))
+        .rejects.toThrow('Conversation not found');
+      await expect(acknowledge(randomUUID())).rejects.toThrow('step not found');
+      await expect(acknowledge(secondStep.id)).rejects.toThrow('no longer pending');
+
+      const next=await acknowledge(firstId);
+      const call=next.events.find(event=>event.type==='TOOL_CALL_START');
+      expect(next.events.filter(event=>event.type==='TOOL_CALL_START')).toEqual([
+        {type:'TOOL_CALL_START',toolCallId:secondStep.id,toolCallName:'prepare_campus_create'},
+      ]);
+      expect(next.events.indexOf(call!)).toBeGreaterThan(
+        next.events.findIndex(event=>event.type==='TOOL_CALL_RESULT'&&event.toolCallId===firstId));
+      expect(next.events).toContainEqual(result(firstId,'applied'));
+      expect(next.events).toContainEqual({type:'CUSTOM',name:'thatcampus.workflow-step',value:{version:1,call_id:secondStep.id}});
+      expect(next.events.at(-1)).toMatchObject({type:'RUN_FINISHED',outcome:{pendingToolCallIds:[secondStep.id]}});
+      expect(await acknowledge(firstId)).toEqual(next);
+      await expect(acknowledge(firstId,'stopped')).rejects.toThrow('different result');
+
+      const terminal=await acknowledge(secondStep.id);
+      expect(terminal.events.filter(event=>event.type==='TOOL_CALL_RESULT')).toEqual([
+        result(firstId,'applied'),result(secondStep.id,'applied'),
+      ]);
+      expect(terminal.events.some(event=>event.type==='TOOL_CALL_START'||(event.type==='CUSTOM'&&event.name==='thatcampus.workflow-step'))).toBe(false);
+      expect(terminal.events.at(-1)).toEqual({type:'RUN_FINISHED',threadId,runId,result:{status:'completed'}});
+      expect(await acknowledge(secondStep.id)).toEqual(terminal);
+      await expectNoWrites();
+    },15000);
+
+    it.each(['revoked','stopped'] as const)('ends the remaining plan when the prior step is %s',async reason=>{
+      const {fixture,threadId,runId,firstId,original,serviceInstance,fillCapacity,expectNoWrites}=await harness();
+      await original.close();
+      const {http}=serviceInstance();
+      if(reason==='revoked')fillCapacity();
+      const status=reason==='revoked'?'applied':'stopped';
+      const body={call_id:firstId,status};
+      const response=await http.acknowledgeUiStep(request(fixture.owner,body),threadId,runId);
+      expect(response.events.filter(event=>event.type==='TOOL_CALL_RESULT')).toEqual([
+        result(firstId,reason==='revoked'?'blocked':'stopped'),
+      ]);
+      expect(response.events.some(event=>event.type==='TOOL_CALL_START'||(event.type==='CUSTOM'&&event.name==='thatcampus.workflow-step'))).toBe(false);
+      expect(response.events.at(-1)).toEqual({type:'RUN_FINISHED',threadId,runId,result:{status:'completed'}});
+      expect(await http.acknowledgeUiStep(request(fixture.owner,body),threadId,runId)).toEqual(response);
+      if(reason==='revoked')await expect(http.acknowledgeUiStep(request(fixture.owner,{...body,status:'blocked'}),threadId,runId))
+        .rejects.toThrow('different result');
+      await expectNoWrites();
+    },15000);
+  });
+
   it('recovers a mixed model batch, opens an empty map, and binds a paraphrased editor request to a permitted campus',async()=>{
     complete.mockReset();
     const fixture=await createClassPracticeFixture(db);
