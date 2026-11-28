@@ -4,7 +4,7 @@ import type { CampusSceneDirectory, CampusScenePublished } from '../../packages/
 import type { CampusSceneDocument, CampusSceneElement } from '../../packages/contracts/src/campus-scenes/types';
 import type { CampusMapAsset } from '../../packages/contracts/src/campus-operation';
 import { nativeCampusRoutePath, nativeCampusBuildingPage, nativeCampusSceneInstant, nativeCampusDisplay, nativeCampusPage, nativeCampusPlacePage, nativeCampusPlaceSelection, nativeCampusProjectionMatches, nativeCampusPublicationMatches, selectNativeCampus } from '../src/lib/native-campus';
-import { campusCopilotFocusTarget, campusCopilotQuery } from '../src/features/campus/campus-copilot-targets';
+import { campusCopilotBuildingSelection, campusCopilotFocusTarget, campusCopilotQuery } from '../src/features/campus/campus-copilot-targets';
 
 const building: CampusSceneElement = { id: 'building-a', kind: 'building', label: 'Learning building', space_id: 'place-a', floor_id: null,
   review_state: 'reviewed', geometry: { type: 'polygon', points: [{ x: 50, y: 80 }, { x: 130, y: 80 }, { x: 130, y: 140 }, { x: 50, y: 140 }] } };
@@ -90,6 +90,24 @@ test('campus Assistant resolves a single reviewed map feature or floor without a
   assert.equal(campusCopilotQuery('  Research lab  '), 'Research lab');
   for (const value of ['', '   ', 'two\nlines', 'x'.repeat(121), 42, { query: 'Library' }])
     assert.equal(campusCopilotQuery(value), null);
+});
+
+test('only an explicit reviewed building choice can resume campus interior setup', () => {
+  const byElement = (id: string) => ({kind: 'element' as const, id});
+  const byPlace = (id: string) => ({kind: 'place' as const, id});
+  assert.equal(campusCopilotBuildingSelection(scene, places, byElement(building.id))?.id, building.id);
+  assert.equal(campusCopilotBuildingSelection(scene, places, byPlace('place-a'))?.id, building.id);
+  assert.equal(campusCopilotBuildingSelection(scene, places, byElement(room.id)), undefined);
+  assert.equal(campusCopilotBuildingSelection(scene, places, byPlace('floor-a')), undefined);
+  assert.equal(campusCopilotBuildingSelection(scene, places.filter(place => place.id !== 'place-a'), byElement(building.id)), undefined);
+  const inactivePlaces = places.map(place => place.id === 'place-a' ? {...place, status: 'inactive' as const} : place);
+  assert.equal(campusCopilotBuildingSelection(scene, inactivePlaces, byElement(building.id)), undefined);
+  const draftOutline = {...building, id: 'draft-outline', review_state: 'needs_review' as const};
+  const secondOutline = {...building, id: 'osm-building-outline'};
+  const twoOutlines = {...scene, elements: [...scene.elements, draftOutline, secondOutline]};
+  assert.equal(campusCopilotBuildingSelection(twoOutlines, places, byElement(draftOutline.id)), undefined);
+  assert.equal(campusCopilotBuildingSelection(twoOutlines, places, byPlace('place-a')), undefined);
+  assert.equal(campusCopilotBuildingSelection(twoOutlines, places, byElement(secondOutline.id))?.id, secondOutline.id);
 });
 
 test('interior uses shared global-coordinate crop and connector landings without mutating publication', () => {

@@ -506,12 +506,19 @@ recoverable invalid tool decision can trigger one High call in the same run,
 using the signed conversation and the existing tool, time and spending limits.
 Campus image and map inference retain their current provider model.
 
-The first [durable Assistant workflow](SCHOOL_AGENT.md#app-copilot-protocol)
-uses LangGraph TypeScript with PostgreSQL checkpoints for campus creation.
+The [durable Assistant workflows](SCHOOL_AGENT.md#app-copilot-protocol)
+use LangGraph TypeScript with PostgreSQL checkpoints for campus creation and
+selection of an ambiguous building for interior setup.
 The app acknowledges navigation to the account screen before the Assistant
 opens or prefills the registered form. The verification targets are reload and
 restart between acknowledgements, duplicate receipts, Stop, revoked authority
 and explicit creation in the form.
+
+In the [phone-width browser journey](../../artifacts/assistant-interior-handoff/evidence.json),
+the Assistant resolves CC3 across two authorized campuses and starts its A2UI
+interior task in the original conversation. A deliberate map selection resumes
+the pending request when a name cannot be resolved. A building-name correction
+also carries forward the goal. The journey left both scene revisions unchanged.
 
 Compact Assistant replies now open the full conversation on tap and copy the
 full reply on a long press. A compact browser test exercised both gestures,

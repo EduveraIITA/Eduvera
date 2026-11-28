@@ -24,14 +24,15 @@ import { AGENT_PROMPT_VERSION,agentSystemPrompt,basicAgentPrompt,responsePrompt,
 import { conversationRoutingQuery } from './tool-routing.js';
 import { AgentMemoryService,agentMemoryLimits,longTermMemoryPrompt,userIdentityPrompt,userMemoryTool,AGENT_MEMORY_CONTRACT_VERSION } from './long-term-memory.js';
 import {
-  AG_UI_WORKFLOW_STEP_EVENT, CLIENT_UI_CALL_STEP, CLIENT_UI_CONTEXT_STEP, advertisedClientTools, clientUiContextSchema, clientUiPrompt, clientWorkflowReceiptSchema, draftCampusName, isCampusWorkflowTool,
-  isClientUiTool, parseClientUiCall, projectAssistantAgUi, restoreClientUiCall, type ClientUiCall, type ClientUiContext,
+  AG_UI_WORKFLOW_STEP_EVENT, CLIENT_INTERIOR_STEP, CLIENT_UI_CALL_STEP, CLIENT_UI_CONTEXT_STEP, advertisedClientTools, clientUiContextSchema, clientUiPrompt, clientWorkflowReceiptSchema, buildingSelectionOptionSchema, campusBuildingElementId, indoorBuildingName, validateClientUiCall, draftCampusName, isCampusWorkflowTool,
+  isClientUiTool, parseClientUiCall, projectAssistantAgUi, restoreClientUiCall, type BuildingSelectionOption, type ClientUiCall, type ClientUiContext,
 } from './agent-ui.js';
-import { authorizedCampusDirectory, campusWorkflowDirection, campusWorkflowRequest, canPrepareCampus, isCampusFloorPlanWebFollowup, isCampusSetupContinuation, resumeCampusWorkflow, type CampusRequest } from './agent-campus-workflow.js';
+import { authorizedCampusDirectory, campusWorkflowDirection, campusWorkflowRequest, campusBuildingClarification, campusInteriorBuildingCampusId, campusInteriorBuildingTarget, canPrepareCampus, isCampusFloorPlanWebFollowup, isCampusSetupContinuation, resumeCampusWorkflow, type CampusRequest } from './agent-campus-workflow.js';
 import { freePublicWebEnabled, FREE_PUBLIC_WEB_DAILY_LIMIT, PUBLIC_WEB_LOOKUP_STEP, publicWebLookupsSince } from '../common/public-web-lookup.js';
 import { lookupPublicWeb, publicWebRequest, publicWebSourceSchema, type PublicWebRequest } from '../campus-scene-import/scene-import.floor-plan-discovery.js';
 import { executionNow } from '../campus-model-core/execution-time.runtime.js';
 import { AgentCampusWorkflow } from './agent-campus-graph.js';
+import { campusInteriorBuildingChoices, matchCampusInteriorBuildings, readCampusInteriorBuildings } from './agent-campus-building.js';
 
 const portalSchema = z.enum(['principal','teacher','parent','student']);
 const threadInput = z.object({ portal: portalSchema, student_id: z.string().uuid().optional() }).strict();
@@ -44,19 +45,20 @@ interface Action { id: string; run_id: string; capability: string; input: Record
 const discover: ToolDefinition = { name: 'find_tools', description: 'Find app tools by topic or action, e.g. homework, attendance, send message, timetable. Use this when you lack a needed tool. Empty query lists available domains.',
   parameters: { type: 'object', properties: { query: { type: 'string', maxLength: 120 } }, required: ['query'], additionalProperties: false } };
 const campusSetupInput=z.object({
+  building:indoorBuildingName.optional(),
   goal:z.enum(['create_workspace','open_map','set_up_layout','map_interiors','find_floor_plan']),
   name:draftCampusName.optional(),
 }).strict();
 const campusSetupTool:ToolDefinition={
   name:'prepare_campus_setup',
-  description:'Take the next visible app step for a requested Virtual Campus task. Use create_workspace for a separate campus workspace, open_map to view the map, set_up_layout to draw or edit a boundary or layout, map_interiors for rooms and floors, and find_floor_plan to open the floor-plan workflow. Include the existing campus/building name or requested new workspace name when known. The app resolves the exact destination and uses its own forms and review.',
+  description:'Take the next visible app step for a requested Virtual Campus task. Use create_workspace for a separate campus workspace, open_map to view the map, set_up_layout to draw or edit a boundary or layout, map_interiors for rooms and floors, and find_floor_plan to open the floor-plan workflow. Use building for a building target. Use name for a known campus or new workspace name. The app resolves the exact destination and uses its own forms and review.',
   parameters:z.toJSONSchema(campusSetupInput,{io:'input'}),
 };
 function parseCampusSetup(input:unknown):CampusRequest {
-  const {goal,name}=campusSetupInput.parse(input);
+  const {goal,name,building}=campusSetupInput.parse(input);
   if(goal==='create_workspace')return {kind:'create',...(name?{name}:{})};
   if(goal==='open_map'||goal==='set_up_layout')return {kind:'layout',mode:goal==='open_map'?'open':'setup',...(name?{campus:name}:{})};
-  return {kind:'interiors',...(name?{campus:name}:{}),...(goal==='find_floor_plan'?{floorPlan:true}:{})};
+  return {kind:'interiors',...(name?{campus:name}:{}),...(building?{building}:{}),...(goal==='find_floor_plan'?{floorPlan:true}:{})};
 }
 function mayOpenVirtualCampus(data:unknown) {
   const directory=authorizedCampusDirectory(data);
@@ -73,6 +75,13 @@ const deeperReasoning:ToolDefinition={
 type ReasoningEscalation=z.infer<typeof reasoningRequest>['reason'] | 'unverified_action' | 'mixed_ui_actions' | 'invalid_tool_arguments';
 const promptVersion=AGENT_PROMPT_VERSION;
 const clientUiStepOrder=z.object({position:z.number().int().min(0).max(2),workflow:z.literal(true).optional()}).strict();
+const interiorWaitSchema=z.object({
+  editor_id:z.uuid(),target:indoorBuildingName.optional(),options:z.array(buildingSelectionOptionSchema).max(8),
+}).strict();
+const chooseInteriorSchema=z.union([
+  z.object({step_id:z.uuid(),selection:z.object({campus_id:z.uuid(),element_id:campusBuildingElementId.optional()}).strict()}).strict(),
+  z.object({step_id:z.uuid(),cancel:z.literal(true)}).strict(),
+]);
 const publicWebSourcesSchema=z.array(publicWebSourceSchema.omit({description:true})).max(3);
 function clientUiActionCopy(tool:ClientUiCall['tool']) {
   if(tool==='open_virtual_campus')return 'I’ll open Virtual Campus.';
@@ -343,7 +352,7 @@ export class AgentService implements OnModuleDestroy {
           expires_at:action.expires_at, receipt:action.receipt, href:assertLocalScreen(verificationScreen(capability,action.input,scope,undefined,basis?.result)) } : null };
     })) };
   }
-  async runEvents(request: AuthenticatedRequest, threadId: string, runId: string) {
+  async runEvents(request: AuthenticatedRequest, threadId: string, runId: string, selectionOptions?:readonly BuildingSelectionOption[]) {
     const credentials=this.credentials(request);
     const {thread,scope}=await this.owned(request,threadId);
     z.string().uuid().parse(runId);
@@ -355,7 +364,7 @@ export class AgentService implements OnModuleDestroy {
       FROM agent_runs run WHERE run.thread_id=${threadId}::uuid AND run.id=${runId}::uuid`.execute(this.db)).rows[0];
     if(!run)throw new NotFoundException('Request not found.');
     const steps=(await sql<Step>`SELECT * FROM agent_tool_steps WHERE run_id=${run.id}::uuid
-      AND (kind='read' OR (kind='handoff' AND capability IN (${CLIENT_UI_CALL_STEP},${PUBLIC_WEB_LOOKUP_STEP})))`.execute(this.db)).rows;
+      AND (kind='read' OR (kind='handoff' AND capability IN (${CLIENT_UI_CALL_STEP},${CLIENT_INTERIOR_STEP},${PUBLIC_WEB_LOOKUP_STEP})))`.execute(this.db)).rows;
     const reads=steps.filter(step=>step.kind==='read');
     const ids={threadId,runId:run.id};
     const available=new Set(availableCapabilities(scope).map(cap=>cap.name));
@@ -370,25 +379,131 @@ export class AgentService implements OnModuleDestroy {
     const capacity=currentReads.find(read=>read.capability==='campus_workspace_capacity')?.data;
     const isCurrent=!thread.archived&&run.is_latest&&run.status==='completed';
     const planned=isCurrent?this.authorizedClientUiCalls(steps,directory,capacity):[];
-    const journaledWorkflow=isCurrent?this.journaledCampusWorkflow(steps):undefined;
+    const interiorWait=isCurrent?this.journaledInteriorSelection(steps):undefined;
+    const journaledWorkflow=interiorWait?[interiorWait.step_id,interiorWait.editor_id]:isCurrent?this.journaledCampusWorkflow(steps):undefined;
     const workflow=journaledWorkflow?.length ? await this.campusWorkflow.current(runId) : undefined;
     const workflowMatches=workflow&&journaledWorkflow?.every((callId,index)=>workflow.steps[index]===callId)
       &&workflow.steps.length===journaledWorkflow.length;
-    const clientCalls=journaledWorkflow===undefined?planned:
+    const campusDirectory=authorizedCampusDirectory(directory);
+    const waiting=workflowMatches&&interiorWait&&workflow.pending===interiorWait.step_id&&campusDirectory?.can_edit
+      &&campusDirectory.campuses.length ? {step_id:interiorWait.step_id,...(interiorWait.target?{target:interiorWait.target}:{}),
+        options:(selectionOptions??interiorWait.options).filter(option=>campusDirectory.campuses.some(campus=>campus.id===option.campus_id))} : undefined;
+    let clientCalls=journaledWorkflow===undefined?planned:
+      waiting ? selectionOptions?[]:planned.filter(call=>call.tool==='open_virtual_campus'||call.tool==='campus_open_picker'):
       workflowMatches&&workflow.pending?planned.filter(call=>call.id===workflow.pending):[];
-    if(isCurrent&&!clientCalls.length&&steps.some(step=>step.kind==='handoff'&&step.capability===CLIENT_UI_CALL_STEP)
+    const exactEditor=clientCalls.find(call=>call.tool==='open_campus_interiors'&&'building_id' in call.arguments);
+    if(exactEditor&&campusDirectory&&'campus_id' in exactEditor.arguments&&'building_id' in exactEditor.arguments) {
+      const {campus_id,building_id}=exactEditor.arguments;
+      const current=await readCampusInteriorBuildings(this.gateway,scope,credentials,campusDirectory,campus_id).catch(()=>undefined);
+      if(!current?.some(building=>building.element_id===building_id))clientCalls=clientCalls.filter(call=>call!==exactEditor);
+    }
+    if(isCurrent&&!waiting&&!clientCalls.length&&(interiorWait||steps.some(step=>step.kind==='handoff'&&step.capability===CLIENT_UI_CALL_STEP))
         &&!(workflowMatches&&!workflow.pending&&!workflow.recovering)) {
       return projectAssistantAgUi({...ids,status:run.status,progress:'Setup changed',
         answer:'This setup step is no longer available. Check the current campus and try again.',evidence});
     }
     const lastReceipt=workflowMatches?workflow.receipts.at(-1):undefined;
-    const outcome=lastReceipt?.status==='blocked' ? 'The campus form couldn’t open. You can continue in Your campuses.'
+    const outcome=lastReceipt?.status==='blocked' ? interiorWait?'The building editor couldn’t open. You can continue on the map.':'The campus form couldn’t open. You can continue in Your campuses.'
       : lastReceipt?.status==='stopped' ? 'Campus setup stopped.' : undefined;
     const publicSources=run.status==='completed' ? this.publicWebSources(run.id,steps) : undefined;
     return projectAssistantAgUi({...ids,status:run.status,progress:lastReceipt?.status==='blocked'?'Setup blocked':lastReceipt?.status==='stopped'?'Setup stopped':run.progress,answer:outcome??run.answer,evidence,clientCalls,
       ...(workflowMatches?{workflow}:{}),
+      ...(waiting?{buildingSelection:waiting}:{}),
       ...(publicSources?.length ? {publicWebSources:publicSources} : {}),
       ...(action&&available.has(action.capability)?{actionId:action.id}:{})});
+  }
+
+  private journaledInteriorSelection(steps:readonly Step[]) {
+    const entry=steps.find(step=>step.kind==='handoff'&&step.capability===CLIENT_INTERIOR_STEP);
+    if(!entry||entry.snapshot_hash!==stableHash(entry.input))return undefined;
+    const parsed=interiorWaitSchema.safeParse(entry.input);
+    return parsed.success ? {step_id:entry.id,...parsed.data} : undefined;
+  }
+
+  private async currentUiSteps(tx:Transaction<Database>,threadId:string,runId:string) {
+    await sql`SELECT pg_advisory_xact_lock(hashtextextended(${`assistant-ui:${runId}`},0))`.execute(tx);
+    const current=(await sql<{id:string}>`SELECT run.id FROM agent_runs run JOIN agent_threads thread ON thread.id=run.thread_id
+      WHERE run.id=${runId}::uuid AND run.thread_id=${threadId}::uuid AND run.status='completed' AND NOT thread.archived
+        AND NOT EXISTS (SELECT 1 FROM agent_runs newer WHERE newer.thread_id=run.thread_id
+          AND (newer.created_at,newer.id)>(run.created_at,run.id))`.execute(tx)).rows[0];
+    if(!current)throw new ConflictException('This campus setup step is no longer current.');
+    return (await sql<Step>`SELECT * FROM agent_tool_steps WHERE run_id=${runId}::uuid AND kind='handoff'
+      AND capability IN (${CLIENT_UI_CALL_STEP},${CLIENT_INTERIOR_STEP})`.execute(tx)).rows;
+  }
+
+  async selectInteriorBuilding(request:AuthenticatedRequest,threadId:string,runId:string) {
+    const input=chooseInteriorSchema.parse(request.body);
+    z.uuid().parse(runId);
+    const {scope}=await this.owned(request,threadId);
+    const credentials=this.credentials(request);
+    const readSelection=async(tx:Transaction<Database>)=>{
+      const steps=await this.currentUiSteps(tx,threadId,runId);
+      const wait=this.journaledInteriorSelection(steps);
+      if(!wait||wait.step_id!==input.step_id)throw new NotFoundException('Building selection not found.');
+      const workflow=await this.campusWorkflow.current(runId);
+      if(workflow?.steps[0]!==wait.step_id||workflow.steps[1]!==wait.editor_id)
+        throw new ConflictException('This building selection could not be resumed.');
+      const previous=workflow.receipts[0];
+      if(!previous&&workflow.pending!==wait.step_id)
+        throw new ConflictException('This building selection is no longer pending.');
+      return {steps,wait,previous,workflow};
+    };
+    if('cancel' in input) {
+      await this.db.transaction().execute(async tx=>{
+        const {wait,previous,workflow}=await readSelection(tx);
+        if(previous?.status==='applied'&&workflow.receipts[1]&&workflow.receipts[1].status!=='stopped')
+          throw new ConflictException('The building editor already has a result.');
+        const stepId=previous?.status==='applied'?wait.editor_id:wait.step_id;
+        await this.campusWorkflow.acknowledge(runId,{call_id:stepId,status:'stopped'});
+        await sql`UPDATE agent_runs SET progress='Setup stopped',answer='Campus setup stopped.' WHERE id=${runId}::uuid`.execute(tx);
+      });
+      return this.runEvents(request,threadId,runId);
+    }
+    const {wait}=await this.db.transaction().execute(readSelection);
+    const {campus_id,element_id}=input.selection;
+    const capability=availableCapabilities(scope).find(cap=>cap.name==='virtual_campus_layout'&&cap.kind==='read');
+    const checked=capability&&await this.currentSourceRead(capability,{},scope,credentials);
+    const directory=authorizedCampusDirectory(checked?.data);
+    if(!directory?.can_edit||!directory.campuses.some(campus=>campus.id===campus_id))
+      throw new ForbiddenException('This campus is unavailable for interior mapping.');
+    const candidates=await readCampusInteriorBuildings(this.gateway,scope,credentials,directory,campus_id).catch(()=>undefined);
+    if(!candidates)throw new ConflictException('The map couldn’t check its current buildings. Try selecting again.');
+    const matches=wait.target?matchCampusInteriorBuildings(candidates,wait.target):[];
+    const chosen=element_id?candidates.find(candidate=>candidate.element_id===element_id):matches.length===1?matches[0]:undefined;
+    if(!chosen) {
+      if(element_id)throw new ConflictException('The selected building is no longer available in this campus editor.');
+      return this.runEvents(request,threadId,runId,campusInteriorBuildingChoices(matches.length?matches:candidates));
+    }
+
+    // Persist the exact editor action before advancing the independent graph
+    // checkpoint. A retry can finish advancing without picking a new target.
+    await this.db.transaction().execute(async tx=>{
+      const {wait:current,steps,previous}=await readSelection(tx);
+      if(previous&&previous.status!=='applied')throw new ConflictException('This building selection has stopped.');
+      const editor=steps.find(step=>step.id===current.editor_id);
+      if(editor) {
+        const stored=editor.snapshot_hash===stableHash(editor.input)?restoreClientUiCall(editor.id,editor.input):undefined;
+        const args=stored?.arguments;
+        if(stored?.tool!=='open_campus_interiors'||!args||!('campus_id' in args)||args.campus_id!==campus_id
+          ||!('building_id' in args)||args.building_id!==chosen.element_id)
+          throw new ConflictException('This step already has a different building selection.');
+        return;
+      }
+      if(previous)throw new ConflictException('The building editor step could not be recovered.');
+      const call=validateClientUiCall('open_campus_interiors',{campus_id,building_id:chosen.element_id});
+      if(!call)throw new ConflictException('This building cannot open in the campus editor.');
+      const position=steps.filter(step=>step.capability===CLIENT_UI_CALL_STEP).length;
+      await sql`INSERT INTO agent_tool_steps(id,run_id,capability,kind,input,result,snapshot_hash)
+        VALUES(${current.editor_id}::uuid,${runId}::uuid,${CLIENT_UI_CALL_STEP},'handoff',${JSON.stringify(call)}::jsonb,
+          ${JSON.stringify({position})}::jsonb,${stableHash(call)})`.execute(tx);
+      await sql`UPDATE agent_runs SET progress='Opening building',answer=${`I’ll open ${chosen.label} and start with its floors.`}
+        WHERE id=${runId}::uuid`.execute(tx);
+    });
+    await this.db.transaction().execute(async tx=>{
+      const {wait:current}=await readSelection(tx);
+      await this.campusWorkflow.acknowledge(runId,{call_id:current.step_id,status:'applied'});
+    });
+    return this.runEvents(request,threadId,runId);
   }
 
   private journaledCampusWorkflow(steps:readonly Step[]) {
@@ -408,15 +523,9 @@ export class AgentService implements OnModuleDestroy {
     const original=await this.runEvents(request,threadId,runId);
     const authorized=original.events.some(event=>event.type==='CUSTOM'&&event.name===AG_UI_WORKFLOW_STEP_EVENT&&event.value.call_id===receipt.call_id);
     await this.db.transaction().execute(async tx=>{
-      await sql`SELECT pg_advisory_xact_lock(hashtextextended(${`assistant-ui:${runId}`},0))`.execute(tx);
-      const current=(await sql<{id:string}>`SELECT run.id FROM agent_runs run JOIN agent_threads thread ON thread.id=run.thread_id
-        WHERE run.id=${runId}::uuid AND run.thread_id=${threadId}::uuid AND run.status='completed' AND NOT thread.archived
-          AND NOT EXISTS (SELECT 1 FROM agent_runs newer WHERE newer.thread_id=run.thread_id
-            AND (newer.created_at,newer.id)>(run.created_at,run.id))`.execute(tx)).rows[0];
-      if(!current)throw new ConflictException('This campus setup step is no longer current.');
-      const steps=(await sql<Step>`SELECT * FROM agent_tool_steps WHERE run_id=${runId}::uuid AND kind='handoff'
-        AND capability=${CLIENT_UI_CALL_STEP}`.execute(tx)).rows;
-      const ids=this.journaledCampusWorkflow(steps);
+      const steps=await this.currentUiSteps(tx,threadId,runId);
+      const interior=this.journaledInteriorSelection(steps);
+      const ids=interior&&receipt.call_id===interior.editor_id?[interior.step_id,interior.editor_id]:this.journaledCampusWorkflow(steps);
       if(!ids?.includes(receipt.call_id))throw new NotFoundException('Campus setup step not found.');
       const workflow=await this.campusWorkflow.current(runId);
       if(!workflow||ids.length!==workflow.steps.length||ids.some((id,index)=>workflow.steps[index]!==id))
@@ -432,7 +541,7 @@ export class AgentService implements OnModuleDestroy {
       const next=await this.campusWorkflow.acknowledge(runId,admitted);
       const last=next.receipts.at(-1);
       if(!next.pending&&last?.status==='blocked')await sql`UPDATE agent_runs SET progress='Setup blocked',
-        answer='The campus form couldn’t open. You can continue in Your campuses.' WHERE id=${runId}::uuid`.execute(tx);
+        answer=${interior?'The building editor couldn’t open. You can continue on the map.':'The campus form couldn’t open. You can continue in Your campuses.'} WHERE id=${runId}::uuid`.execute(tx);
       if(!next.pending&&last?.status==='stopped')await sql`UPDATE agent_runs SET progress='Setup stopped',
         answer='Campus setup stopped.' WHERE id=${runId}::uuid`.execute(tx);
     });
@@ -514,8 +623,10 @@ export class AgentService implements OnModuleDestroy {
       const admitted=await this.admittedUiContext(tx,id,input.ui_context);
       // Negotiate separately from the message hash so older deployments can
       // accept and replay requests from upgraded clients during rollback.
-      const uiContext=admitted&&request.headers['x-thatcampus-workflow-steps']==='1'
-        ? {...admitted,workflow_steps:true as const} : admitted;
+      const uiContext=admitted?{...admitted,
+        ...(request.headers['x-thatcampus-workflow-steps']==='1'?{workflow_steps:true as const}:{}),
+        ...(request.headers['x-thatcampus-building-selection']==='1'?{building_selection:true as const}:{}),
+      }:undefined;
       const run = (await sql<{ id:string }>`INSERT INTO agent_runs(thread_id,client_id,question,status,provider,model) VALUES
         (${id}::uuid,${input.client_id}::uuid,${input.question},'running',${settings.provider},${settings.model}) RETURNING id`.execute(tx)).rows[0]!;
       if(input.ui_context)await sql`INSERT INTO agent_tool_steps(run_id,capability,kind,input,result,snapshot_hash)
@@ -581,14 +692,20 @@ export class AgentService implements OnModuleDestroy {
     await sql`UPDATE agent_runs SET status=${status},answer=${answer.slice(0,12000)},evidence=${JSON.stringify(evidence)}::jsonb,progress=${status === 'confirmation' ? 'Review your action' : status === 'completed' ? 'Complete' : 'Stopped'},finished_at=now()
       WHERE id=${id}::uuid AND status='running'`.execute(this.db);
   }
-  private async finishClientUiCalls(id:string,calls:readonly ClientUiCall[],evidence:Evidence[],answer:string,workflowSteps=false) {
+  private async finishClientUiCalls(id:string,calls:readonly ClientUiCall[],evidence:Evidence[],answer:string,workflowSteps=false,
+    selection?:{target?:string;options:BuildingSelectionOption[]}) {
     const staged=workflowSteps&&calls.length===2&&calls[0]?.tool==='open_campus_create'&&calls[1]?.tool==='prepare_campus_create';
     const callIds=calls.map(()=>randomUUID());
+    const wait=selection?{id:randomUUID(),input:interiorWaitSchema.parse({editor_id:randomUUID(),...selection})}:undefined;
     if(staged)await this.campusWorkflow.start(id,[callIds[0]!,callIds[1]!]);
+    if(wait)await this.campusWorkflow.start(id,[wait.id,wait.input.editor_id]);
     await this.db.transaction().execute(async tx=>{
-      const claimed=(await sql`UPDATE agent_runs SET status='completed',answer=${answer},progress='Ready in the app',
+      const claimed=(await sql`UPDATE agent_runs SET status='completed',answer=${answer},progress=${wait?'Choose a building':'Ready in the app'},
         evidence=${JSON.stringify(evidence)}::jsonb,finished_at=now() WHERE id=${id}::uuid AND status='running' RETURNING id`.execute(tx)).rows;
       if(!claimed.length)return;
+      if(wait)await sql`INSERT INTO agent_tool_steps(id,run_id,capability,kind,input,result,snapshot_hash)
+        VALUES(${wait.id}::uuid,${id}::uuid,${CLIENT_INTERIOR_STEP},'handoff',${JSON.stringify(wait.input)}::jsonb,
+          '{}'::jsonb,${stableHash(wait.input)})`.execute(tx);
       for(const [position,call] of calls.entries())await sql`INSERT INTO agent_tool_steps(id,run_id,capability,kind,input,result,snapshot_hash)
         VALUES(${callIds[position]}::uuid,${id}::uuid,${CLIENT_UI_CALL_STEP},'handoff',${JSON.stringify(call)}::jsonb,
           ${JSON.stringify({position,...(staged?{workflow:true}:{})})}::jsonb,${stableHash(call)})`.execute(tx);
@@ -613,12 +730,14 @@ export class AgentService implements OnModuleDestroy {
 
   private async previousCampusRequest(threadId:string,runId:string,question:string,prepared: {name?:string}|undefined) {
     const floorPlanFollowup=isCampusFloorPlanWebFollowup(question);
-    if(!floorPlanFollowup&&!isCampusSetupContinuation(question))return;
+    const building=campusBuildingClarification(question);
+    if(!floorPlanFollowup&&!building&&!isCampusSetupContinuation(question))return;
     const prior=(await sql<Pick<Run,'question'|'status'>>`SELECT question,status FROM agent_runs
       WHERE thread_id=${threadId}::uuid AND id<>${runId}::uuid ORDER BY created_at DESC,id DESC LIMIT 1`.execute(this.db)).rows[0];
     if(prior?.status!=='completed')return;
     const request=campusWorkflowRequest(prior.question);
     if(floorPlanFollowup)return request?.kind==='interiors'&&request.floorPlan?request:undefined;
+    if(building&&request?.kind==='interiors')return resumeCampusWorkflow(request,question,prepared);
     return resumeCampusWorkflow(prepared?{kind:'create'}:request,question,prepared);
   }
 
@@ -732,9 +851,16 @@ export class AgentService implements OnModuleDestroy {
       const checked=await rememberRead(owner,{});
       controller.signal.throwIfAborted();
       await requireProFeatures(this.db,scope.userId);
-      const direction=campusWorkflowDirection(request,admittedUi,checked.data);
+      const directory=request.kind==='interiors'?authorizedCampusDirectory(checked.data):undefined;
+      const target=directory&&campusInteriorBuildingTarget(request,directory);
+      const campusId=directory&&campusInteriorBuildingCampusId(request,directory);
+      const missingExplicitCampus=request.kind==='interiors'&&request.building&&request.campus&&!campusId;
+      const buildings=directory&&target&&!missingExplicitCampus
+        ? await readCampusInteriorBuildings(this.gateway,scope,credentials,directory,campusId).catch(()=>undefined) : undefined;
+      controller.signal.throwIfAborted();
+      const direction=campusWorkflowDirection(request,admittedUi,checked.data,buildings);
       if(direction.href)checked.source.href=assertLocalScreen(direction.href);
-      if(direction.calls.length)await this.finishClientUiCalls(id,direction.calls,evidence,direction.answer,admittedUi?.workflow_steps);
+      if(direction.calls.length||direction.selection)await this.finishClientUiCalls(id,direction.calls,evidence,direction.answer,admittedUi?.workflow_steps,direction.selection);
       else await this.finish(id,'completed',direction.answer,evidence);
     };
     try {

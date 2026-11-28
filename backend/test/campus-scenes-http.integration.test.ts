@@ -37,6 +37,8 @@ describe.skipIf(!enabled)("Campus scenes through the ordinary authenticated app"
     expect(await member.json(directory)).toMatchObject({ can_edit: false, campuses: expect.arrayContaining([expect.objectContaining({ id: f.campusId })]) });
     expect(await member.json(`${base}/published`)).toMatchObject({ scene: null, places: [], can_edit: false });
     expect((await member.request(`${base}/workspace`)).status).toBe(403);
+    expect((await member.request(`${base}/interior-buildings`)).status).toBe(403);
+    expect(await admin.json(`${base}/interior-buildings`)).toEqual([]);
     expect((await member.request(`${base}/imports/capabilities`)).status).toBe(403);
     expect((await admin.request(`${directory}/not-a-campus/published`)).status).toBe(400);
     expect((await admin.request(`${directory}/${randomUUID()}/published`)).status).toBe(404);
@@ -72,12 +74,18 @@ describe.skipIf(!enabled)("Campus scenes through the ordinary authenticated app"
     const publicScene = await member.json<Publication>(`${base}/published`);
     expect(publicScene.scene?.document.elements[0]?.space_id).toBe(building.id);
     expect(publicScene.places).toContainEqual(expect.objectContaining({ id: building.id, name: "Library" }));
+    const indexRow = { element_id: "building-one", space_id: building.id, name: "Library", code: "LIB" };
+    expect(await admin.json(`${base}/interior-buildings`)).toEqual([{ ...indexRow, label: "Library" }]);
     expect(JSON.stringify(publicScene)).not.toMatch(/PRIVATE|private\.example|image_asset_id|provider|notes/);
 
     const reopen = command(2);
     expect(await admin.json(`${base}/reopen`, "POST", reopen)).toMatchObject({ revision: 3, published_version: 2 });
     expect(await admin.json(`${base}/reopen`, "POST", reopen)).toMatchObject({ revision: 3, replayed: true });
-    expect(await admin.json(`${base}/draft`, "PUT", { ...command(3), document: { ...document, name: "Private next version" } })).toMatchObject({ revision: 4 });
+    const revised = { ...document, name: "Private next version", elements: document.elements.map(element =>
+      element.id === "building-one" ? { ...element, label: "Library East" } : element
+    ) };
+    expect(await admin.json(`${base}/draft`, "PUT", { ...command(3), document: revised })).toMatchObject({ revision: 4 });
+    expect(await admin.json(`${base}/interior-buildings`)).toEqual([{ ...indexRow, label: "Library East" }]);
     expect((await member.json<Publication>(`${base}/published`)).scene?.document.name).toBe("Fictional campus");
     await db.updateTable("school_memberships").set({ is_active: false }).where("school_id", "=", f.schoolId).where("user_id", "=", f.borrower.id).execute();
     expect((await member.request(`${base}/published`)).status).toBe(403);

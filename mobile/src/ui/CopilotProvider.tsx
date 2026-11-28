@@ -5,7 +5,7 @@ import { useSession } from '../auth/SessionProvider';
 import { ApiError, apiFetch, captureApiContext } from '../lib/api';
 import { ApiConnectionError } from '../lib/api-client';
 import { campusHrefForRoute, focusedCampusRoute, type CampusNavigationState } from '../lib/back-policy';
-import { copilotCallId, copilotRouteContext, copilotToolNames, copilotToolAvailableOn, readCopilotBatch, readCopilotWorkflowReply, validCopilotArgs, type CopilotContext, type CopilotResult, type CopilotToolName } from '../lib/copilot';
+import { copilotCallId, copilotRouteContext, copilotToolNames, copilotToolAvailableOn, readCopilotBatch, readCopilotBuildingSelectionReply, readCopilotWorkflowReply, validCopilotArgs, validInteriorTarget, type CopilotContext, type CopilotResult, type CopilotToolName, type InteriorCheckpoint, type InteriorTarget } from '../lib/copilot';
 import { copilotWait, measureCopilotTarget, type CopilotRect, type CopilotTargetNode } from '../lib/copilot-target';
 
 type ActionRegistration = {
@@ -20,8 +20,14 @@ type ActionRegistration = {
 type RegisteredAction = Omit<ActionRegistration, 'available'> & { available(): boolean };
 type Lease = { binding: string; generation: number; context: CopilotContext; targets: ReadonlyMap<CopilotToolName, RegisteredAction> };
 type Run = { id: string; threadId: string; lease: Lease };
-type Activity = { label: string; phase: 'preparing' | 'applying' | 'applied' | 'blocked' | 'stopped'; tool?: CopilotToolName; step?: number; total?: number };
+type Activity = { label: string; phase: 'preparing' | 'applying' | 'applied' | 'blocked' | 'stopped'; tool?: CopilotToolName; threadId?: string; step?: number; total?: number };
 type Detail = { id: string; threadId: string };
+type InteriorSelection = InteriorCheckpoint & { threadId: string; submitting?: boolean; error?: string };
+type OwnedInteriorSelection = {
+  run: Run; checkpoint: InteriorCheckpoint; scopeKey: string; transport: ReturnType<typeof captureApiContext>;
+};
+type CopilotBatch = NonNullable<ReturnType<typeof readCopilotBatch>>;
+type RevealApp = (atDestination: boolean) => void;
 type OwnedDetail = Detail & { binding: string; action: RegisteredAction; generation: number };
 type Execution = { run: Run; controller: AbortController; binding: string; tool?: CopilotToolName; callId?: string; destinationPath?: string; applied?: boolean; reportWorkflowOutcome?: (status: CopilotResult['status']) => Promise<unknown> };
 type TargetStage = 'before' | 'after';
@@ -43,7 +49,11 @@ type Runtime = {
   context(): CopilotContext | undefined;
   capture(context: CopilotContext): Lease | undefined;
   follow(run: Run): void;
-  inspect(id: string, revealApp: (atDestination: boolean) => void): void;
+  inspect(id: string, revealApp: RevealApp): void;
+  selectInteriorTarget(selection: InteriorTarget, stepId?: string, revealApp?: RevealApp): boolean;
+  cancelInteriorSelection(threadId: string, stepId?: string): void;
+  interiorSelection: InteriorSelection | null;
+  interiorMapActive: boolean;
   takeOver(): void;
   answerDetail(id: string, name: string): Promise<boolean>;
   detail: Detail | null;
@@ -53,8 +63,11 @@ type Runtime = {
 const noop = () => {};
 const RuntimeContext = createContext<Runtime>({
   register: () => noop, registerTarget: () => noop, pointer: null, registerCampusTarget: () => noop, context: () => undefined, capture: () => undefined,
-  follow: noop, inspect: noop, takeOver: noop, answerDetail: async () => false, detail: null, pending: null, activity: null,
+  follow: noop, inspect: noop, selectInteriorTarget: () => false, cancelInteriorSelection: noop, interiorSelection: null, interiorMapActive: false, takeOver: noop, answerDetail: async () => false, detail: null, pending: null, activity: null,
 });
+
+const runEndpoint = ({ id, threadId }: Run) => `/api/v1/agent/threads/${encodeURIComponent(threadId)}/runs/${encodeURIComponent(id)}`;
+const transientFailure = (error: unknown) => error instanceof ApiConnectionError || (error instanceof ApiError && [502,503,504].includes(error.status));
 
 export function CopilotProvider({ children }: PropsWithChildren) {
   const session = useSession(), pathname = usePathname();
@@ -66,14 +79,17 @@ export function CopilotProvider({ children }: PropsWithChildren) {
   // controls are given to the owning module and do not change this lease.
   const binding = JSON.stringify([session.scopeKey, route?.key, pathname, ...identity]);
   const eligible = session.status === 'authenticated' && session.environment.mode === 'live' && !session.environment.unavailable;
-  const current = useRef({ binding, eligible, screen, pathname, scopeKey: session.scopeKey });
-  current.current = { binding, eligible, screen, pathname, scopeKey: session.scopeKey };
+  const current = useRef({ binding, eligible, screen, pathname, campusId: identity[0], scopeKey: session.scopeKey });
+  current.current = { binding, eligible, screen, pathname, campusId: identity[0], scopeKey: session.scopeKey };
   const byTool = useRef(new Map<CopilotToolName, Set<Parameters<Runtime['register']>[0]>>());
   const targets = useRef(new Map<string, Set<TargetRegistration>>());
   const active = useRef<Run | null>(null), generation = useRef(0), lastResult = useRef<CopilotResult | undefined>(undefined);
   const execution = useRef<Execution | null>(null);
   const campusTargets = useRef(new Map<symbol, string>());
   const detailOwner = useRef<OwnedDetail | null>(null);
+  const interiorOwner = useRef<OwnedInteriorSelection | null>(null);
+  const interiorExchange = useRef<AbortController | null>(null);
+  const [interiorSelection, setInteriorSelection] = useState<InteriorSelection | null>(null);
   const detailAnswer = useRef<AbortController | null>(null);
   const [pointer, setPointer] = useState<Pointer | null>(null);
   const [detail, setDetail] = useState<Detail | null>(null);
@@ -127,12 +143,32 @@ export function CopilotProvider({ children }: PropsWithChildren) {
     if (!detailOwner.current) return;
     detailOwner.current=null;setDetail(null);
   },[]);
+  const clearInteriorSelection = useCallback(() => {
+    interiorExchange.current?.abort();
+    interiorExchange.current = null;
+    interiorOwner.current = null;
+    setInteriorSelection(null);
+  }, []);
+  const showInteriorSelection = useCallback((owner: OwnedInteriorSelection, state: Pick<InteriorSelection, 'submitting' | 'error'> = {}) => {
+    interiorOwner.current = owner;
+    setInteriorSelection({ ...owner.checkpoint, threadId: owner.run.threadId, ...state });
+  }, []);
+  const cancelInteriorSelection: Runtime['cancelInteriorSelection'] = useCallback((threadId, stepId) => {
+    const owner = interiorOwner.current;
+    if (!owner || owner.run.threadId !== threadId || stepId && owner.checkpoint.step_id !== stepId) return;
+    clearInteriorSelection();
+    if (!current.current.eligible || current.current.scopeKey !== owner.scopeKey) return;
+    try { owner.transport.assertCurrent(); } catch { return; }
+    void apiFetch(`${runEndpoint(owner.run)}/interior-selection`, {
+      method: 'POST', body: JSON.stringify({ step_id: owner.checkpoint.step_id, cancel: true }),
+    }).catch(noop);
+  }, [clearInteriorSelection]);
   const context = useCallback((): CopilotContext | undefined => {
     if (!current.current.eligible || AppState.currentState !== 'active') return;
     const tools = copilotToolNames.filter(name => copilotToolAvailableOn(name,current.current.screen) && find(name));
     if (!tools.length && !lastResult.current) return;
     const mapped = current.current.screen==='virtual_campus' ? [...new Set(campusTargets.current.values())] : [];
-    return { screen: current.current.screen, tools, workflow_steps: true, ...(mapped.length===1?{campus_id:mapped[0]}:{}),
+    return { screen: current.current.screen, tools, workflow_steps: true, building_selection: true, ...(mapped.length===1?{campus_id:mapped[0]}:{}),
       ...(lastResult.current ? { last_result: lastResult.current } : {}) };
   }, [find]);
   const capture = useCallback((expected: CopilotContext): Lease | undefined => {
@@ -163,17 +199,18 @@ export function CopilotProvider({ children }: PropsWithChildren) {
   }, [clearDetail]);
   useLayoutEffect(() => {
     if (!mounted.current) return;
+    if (interiorOwner.current && (!eligible || interiorOwner.current.scopeKey !== session.scopeKey)) clearInteriorSelection();
     if (detailOwner.current && (!eligible || detailOwner.current.binding!==binding)) { detailAnswer.current?.abort(); clearDetail(); }
     const expected = execution.current?.binding ?? active.current?.lease.binding;
     if (active.current && (!eligible || (expected !== binding && execution.current?.destinationPath !== pathname))) takeOver();
     else if (!active.current && !execution.current) setActivity(previous => previous?.phase === 'applied' ? null : previous);
-  }, [binding, eligible, pathname, takeOver, clearDetail]);
+  }, [binding, eligible, pathname, session.scopeKey, takeOver, clearDetail, clearInteriorSelection]);
   useEffect(() => {
     mounted.current = true;
     const subscription = AppState.addEventListener('change', state => { if (state !== 'active') takeOver(); });
     return () => {
       mounted.current = false; generation.current++; execution.current?.controller.abort(); detailAnswer.current?.abort();
-      active.current = null; execution.current = null; subscription.remove();
+      active.current = null; execution.current = null; interiorExchange.current?.abort(); interiorOwner.current = null; subscription.remove();
     };
   }, [takeOver]);
 
@@ -191,7 +228,7 @@ export function CopilotProvider({ children }: PropsWithChildren) {
     if (active.current || execution.current) return;
     active.current = run; setPointer(null); setPending(run); setActivity({ label: 'Assistant is working', phase: 'preparing' });
   }, []);
-  const inspect = useCallback((id: string, revealApp: (atDestination: boolean) => void) => {
+  const inspect = useCallback((id: string, revealApp: RevealApp, resumed?: CopilotBatch) => {
     const run = active.current;
     if (!run || run.id !== id || execution.current || !current.current.eligible || current.current.binding !== run.lease.binding) return;
     const operation:Execution = { run, controller: new AbortController(), binding:run.lease.binding };
@@ -209,18 +246,23 @@ export function CopilotProvider({ children }: PropsWithChildren) {
       active.current = null; execution.current = null; setPending(null);
       if (result) lastResult.current = { ...result, ...(operation.callId ? { call_id:operation.callId } : {}) };
       if (result?.status!=='applied') setPointer(null);
-      setActivity(result && label ? { label, tool: result.tool, phase: result.status } : null);
+      setActivity(result && label ? { label, tool: result.tool, threadId: run.threadId, phase: result.status } : null);
     };
     void (async () => {
-      const endpoint = `/api/v1/agent/threads/${encodeURIComponent(run.threadId)}/runs/${encodeURIComponent(run.id)}`;
+      const endpoint = runEndpoint(run);
       try {
-        const events = await apiFetch<unknown>(`${endpoint}/events`, { signal });
-        if (!currentLease()) { finish(); return; }
-        const batch = readCopilotBatch(events, run.threadId, run.id);
-        const first = batch?.plan[0];
-        if (!batch || !first || !run.lease.context.tools.includes(first.name)) { finish(); return; }
+        const batch = resumed ?? readCopilotBatch(await apiFetch(`${endpoint}/events`, { signal }), run.threadId, run.id);
+        if (!currentLease() || !batch) { finish(); return; }
+        if (batch.interiorCheckpoint) {
+          if (run.lease.context.building_selection !== true) { finish(); return; }
+          showInteriorSelection({ run, checkpoint: batch.interiorCheckpoint, scopeKey, transport });
+        }
+        const first = batch.plan[0];
+        if (!first || !run.lease.context.tools.includes(first.name)) { finish(); return; }
         const staged = !!batch.workflowCallId;
-        if (staged && (run.lease.context.workflow_steps !== true || first.name !== 'open_campus_create' || batch.receipts.size)) { finish(); return; }
+        const stagedInterior = staged && !!resumed && first.name === 'open_campus_interiors';
+        if (staged && !stagedInterior && (run.lease.context.workflow_steps !== true || first.name !== 'open_campus_create' || batch.receipts.size)) { finish(); return; }
+        if (first.name === 'open_campus_interiors' && first.args.building_id !== undefined && !run.lease.context.building_selection) { finish(); return; }
         const plan = batch.plan;
         clearDetail();
         for (let index=0; index<plan.length; index++) {
@@ -239,8 +281,7 @@ export function CopilotProvider({ children }: PropsWithChildren) {
               });
               try { return await acknowledge(); }
               catch (error) {
-                const transient = error instanceof ApiConnectionError || (error instanceof ApiError && [502,503,504].includes(error.status));
-                if (status!=='applied'||!transient||!currentLease()) throw error;
+                if (status!=='applied'||!transientFailure(error)||!currentLease()) throw error;
                 // The owner deduplicates the exact receipt. Retrying it never runs the native control again.
                 await copilotWait(200,signal);
                 if (currentLease()) return acknowledge();
@@ -257,7 +298,7 @@ export function CopilotProvider({ children }: PropsWithChildren) {
               index===0 && action!==run.lease.targets.get(intent.name)) {
             finish({tool:intent.name,status:'blocked'},'That control isn’t available on this screen');return;
           }
-          setActivity({label:action.label,tool:intent.name,phase:'applying',step:index+1,total:staged ? 2 : plan.length});
+          setActivity({label:action.label,tool:intent.name,phase:'applying',step:index+1,total:staged && !stagedInterior ? 2 : plan.length});
           if(index===0)revealApp(action.isAtDestination?.(intent.args) === true);
           await copilotWait(140,signal);
           const pointed = await showTarget(intent.name,'before',signal,currentLease);
@@ -273,20 +314,20 @@ export function CopilotProvider({ children }: PropsWithChildren) {
           operation.binding=current.current.binding;operation.destinationPath=undefined;
           if (staged) {
             // Only a fresh, authorized response to the first receipt may supply the second step.
-            if (index===0) await showTarget(intent.name,'after',signal,currentLease);
+            if (index===0 && !stagedInterior) await showTarget(intent.name,'after',signal,currentLease);
             if (!currentLease()) { finish(); return; }
             const reply = await operation.reportWorkflowOutcome?.('applied');
             if (!currentLease()) { finish(); return; }
             const next = readCopilotWorkflowReply(reply,run.threadId,run.id,intent);
-            if (!next || (index!==0 && next.kind==='step')) {
+            if (!next || next.kind==='step' && (stagedInterior || index!==0)) {
               finish({tool:intent.name,status:'blocked'},'The next campus setup step could not be confirmed');return;
             }
             if (next.kind==='step') {
               plan.push(next.intent);
               continue;
             }
-            if (next.status!=='applied'||index===0) {
-              finish({tool:intent.name,status:'blocked'},'The campus form could not be prepared');return;
+            if (next.status!=='applied' || index===0 && !stagedInterior) {
+              finish({tool:intent.name,status:'blocked'},stagedInterior ? 'Opening the building could not be confirmed' : 'The campus form could not be prepared');return;
             }
           }
           const final = index===plan.length-1;
@@ -307,7 +348,66 @@ export function CopilotProvider({ children }: PropsWithChildren) {
         else finish();
       }
     })();
-  }, [find, clearDetail, showTarget]);
+  }, [find, clearDetail, showTarget, showInteriorSelection]);
+  const selectInteriorTarget: Runtime['selectInteriorTarget'] = useCallback((selection, stepId, revealApp = noop) => {
+    const owner = interiorOwner.current;
+    if (!owner || !validInteriorTarget(selection) || stepId && owner.checkpoint.step_id !== stepId ||
+        !current.current.eligible || current.current.scopeKey !== owner.scopeKey || AppState.currentState !== 'active' ||
+        active.current || execution.current) return false;
+    if (!stepId && current.current.screen !== 'virtual_campus') return false;
+    if (stepId && !owner.checkpoint.options.some(option => option.campus_id === selection.campus_id && option.element_id === selection.element_id)) return false;
+    try { owner.transport.assertCurrent(); } catch { return false; }
+    if (interiorExchange.current) return true;
+    const controller = new AbortController(), { signal } = controller;
+    const startBinding = current.current.binding;
+    const isCurrent = () => {
+      if (!mounted.current || signal.aborted || !current.current.eligible ||
+          interiorOwner.current !== owner || current.current.scopeKey !== owner.scopeKey) return false;
+      try { owner.transport.assertCurrent(); return true; } catch { return false; }
+    };
+    const endpoint = runEndpoint(owner.run);
+    const post = () => apiFetch(`${endpoint}/interior-selection`, {
+      method: 'POST', body: JSON.stringify({ step_id: owner.checkpoint.step_id, selection }), signal,
+    });
+    interiorExchange.current = controller;
+    showInteriorSelection(owner, { submitting: true });
+    void (async () => {
+      try {
+        let response: unknown;
+        try { response = await post(); }
+        catch (error) {
+          if (!transientFailure(error) || !isCurrent()) throw error;
+          await copilotWait(200, signal);
+          if (!isCurrent()) return;
+          response = await post();
+        }
+        if (!isCurrent()) return;
+        const next = readCopilotBuildingSelectionReply(response, owner.run.threadId, owner.run.id, owner.checkpoint.step_id, selection);
+        if (!next) { showInteriorSelection(owner, { error: 'Try selecting the building again.' }); return; }
+        if (next.kind === 'wait') { showInteriorSelection({ ...owner, checkpoint: next.checkpoint }); return; }
+        clearInteriorSelection();
+        if (next.kind === 'finished') return;
+        const { id, name } = next.batch.plan[0]!;
+        const available = context(), lease = available && capture(available);
+        const selectedCampusNavigation = !selection.element_id && current.current.screen === 'virtual_campus' &&
+          (current.current.campusId === selection.campus_id || available?.campus_id === selection.campus_id);
+        if (!lease?.context.tools.includes(name) || startBinding !== current.current.binding && !selectedCampusNavigation) {
+          void apiFetch(`${endpoint}/ui-receipt`, {
+            method: 'POST', body: JSON.stringify({ call_id: id, status: 'blocked' }),
+          }).catch(noop);
+          setActivity({ label: 'Open Virtual Campus to continue with the building', tool: name, threadId: owner.run.threadId, phase: 'blocked' });
+          return;
+        }
+        follow({ id: owner.run.id, threadId: owner.run.threadId, lease });
+        inspect(owner.run.id, revealApp, next.batch);
+      } catch {
+        if (isCurrent()) showInteriorSelection(owner, { error: 'The selection could not be confirmed. Try again.' });
+      } finally {
+        if (interiorExchange.current === controller) interiorExchange.current = null;
+      }
+    })();
+    return true;
+  }, [capture, clearInteriorSelection, context, follow, inspect, showInteriorSelection]);
   const answerDetail = useCallback(async (id:string,name:string) => {
     const request=detailOwner.current,args={name:name.trim()};
     if (execution.current || detailAnswer.current || !request || request.id!==id || request.binding!==current.current.binding ||
@@ -338,8 +438,10 @@ export function CopilotProvider({ children }: PropsWithChildren) {
   },[find,clearDetail,showTarget]);
 
   const currentPointer = eligible && pointer?.binding===binding ? pointer : null;
-  const value = useMemo(() => ({ register, registerTarget, pointer:currentPointer, registerCampusTarget, context, capture, follow, inspect, takeOver, answerDetail, detail, pending, activity }),
-    [register, registerTarget, currentPointer, registerCampusTarget, context, capture, follow, inspect, takeOver, answerDetail, detail, pending, activity]);
+  const matchingInteriorSelection = eligible && interiorOwner.current?.scopeKey === session.scopeKey ? interiorSelection : null;
+  const interiorMapActive = screen === 'virtual_campus';
+  const value = useMemo(() => ({ register, registerTarget, pointer:currentPointer, registerCampusTarget, context, capture, follow, inspect, takeOver, answerDetail, detail, pending, activity, selectInteriorTarget, cancelInteriorSelection, interiorSelection: matchingInteriorSelection, interiorMapActive }),
+    [register, registerTarget, currentPointer, registerCampusTarget, context, capture, follow, inspect, takeOver, answerDetail, detail, pending, activity, selectInteriorTarget, cancelInteriorSelection, matchingInteriorSelection, interiorMapActive]);
   return <RuntimeContext.Provider value={value}>{children}</RuntimeContext.Provider>;
 }
 

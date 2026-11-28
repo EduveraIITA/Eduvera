@@ -1,0 +1,53 @@
+{
+  "scenarios": [
+    {
+      "name": "CC3 grounds across two authorized campuses",
+      "run": "3e5ea059-3ce5-4f0d-b2c6-ade078d5a54c",
+      "editor": "osm-cc3-outline",
+      "sameConversation": true
+    },
+    {
+      "name": "Explicit published map search choice resumes the same parked run",
+      "run": "812b5e1d-b85a-46f5-bd9d-6e2ec0b1a959",
+      "editor": "osm-library-outline"
+    },
+    {
+      "name": "Natural-language correction resolves the same interior intent",
+      "run": "68644516-e8a2-46fa-85ec-9213eff11840",
+      "editor": "osm-cc3-outline"
+    }
+  ],
+  "sends": [
+    {
+      "question": "Lets detail of cc3 building",
+      "negotiated": "1"
+    },
+    {
+      "question": "Lets detail of Research Annex building",
+      "negotiated": "1"
+    },
+    {
+      "question": "Lets detail of Hand Labs building",
+      "negotiated": "1"
+    },
+    {
+      "question": "I mean computing center 3",
+      "negotiated": "1"
+    }
+  ],
+  "selections": [
+    {
+      "campus_id": "d29e2de7-debd-4325-b85d-4f59ce4fa21f",
+      "element_id": "osm-library-outline"
+    },
+    null
+  ],
+  "receipts": [
+    {
+      "call_id": "b79675d8-dbdf-485d-a21b-dff6f855dd2e",
+      "status": "applied"
+    }
+  ],
+  "mutations": [],
+  "pageErrors": []
+}

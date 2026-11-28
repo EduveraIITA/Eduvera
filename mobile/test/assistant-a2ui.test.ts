@@ -3,6 +3,7 @@ import { test } from 'node:test';
 import {
   assistantCampusNameAnswer, assistantCampusNameMessages, assistantPublicWebSourceMessages, assistantPublicWebSourceSelected,
   assistantActionRecordMessages, assistantActionRecordSelected, assistantDecisionMessages,
+  assistantInteriorSelectionAction, assistantInteriorSelectionMessages,
   assistantDecisionSelected, assistantReportMessages, assistantReportSourceSelected,
 } from '../src/lib/assistant-a2ui';
 import { ASSISTANT_A2UI_CATALOG, campusA2uiAction, campusA2uiChildren, readCampusA2uiSurfaces, type CampusA2uiSurfaceState } from '../src/lib/campus-a2ui';
@@ -65,4 +66,22 @@ test('web citation controls open only their exact verified public source', () =>
   assert.equal(assistantPublicWebSourceSelected(action, source), source.url);
   assert.equal(assistantPublicWebSourceSelected(action, { ...source, url: 'https://example.com/?token=private' }), undefined);
   assert.equal(assistantPublicWebSourceSelected(action, { ...source, url: 'https://127.0.0.1/' }), undefined);
+});
+
+test('the themed Assistant building picker returns only an option from its owned checkpoint', () => {
+  const checkpoint = { step_id: 'active-building', target: 'CC3', options: [{
+    campus_id: 'main-campus', element_id: 'osm-cc3', label: 'Computing Center 3', campus_name: 'Main Campus',
+  }] };
+  const [full] = readCampusA2uiSurfaces(assistantInteriorSelectionMessages(checkpoint, false), ASSISTANT_A2UI_CATALOG)!;
+  const [compact] = readCampusA2uiSurfaces(assistantInteriorSelectionMessages(checkpoint, true), ASSISTANT_A2UI_CATALOG)!;
+  assert.equal(full.components.get('building')?.component,'ChoicePicker');
+  assert.equal(compact.components.has('map'),false);
+  assert.deepEqual(assistantInteriorSelectionAction(dispatch(full,'map'),checkpoint),{kind:'map'});
+  assert.deepEqual(assistantInteriorSelectionAction(dispatch(compact,'stop'),checkpoint),{kind:'stop'});
+  const missing = dispatch(full,'use');
+  assert.deepEqual(assistantInteriorSelectionAction(missing,checkpoint),{kind:'missing'});
+  const selected = dispatch({...full,model:{...full.model,selectedBuilding:['0']}},'use');
+  assert.deepEqual(assistantInteriorSelectionAction(selected,checkpoint),
+    {kind:'select',selection:{campus_id:'main-campus',element_id:'osm-cc3'}});
+  assert.equal(assistantInteriorSelectionAction(selected,{...checkpoint,step_id:'previous-building'}),undefined);
 });

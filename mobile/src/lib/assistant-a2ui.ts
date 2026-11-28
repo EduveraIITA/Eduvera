@@ -1,6 +1,6 @@
 import type { AgentPublicWebSource } from '../../../packages/contracts/src/wire/features/assistant/agentApi';
 import { assistantPublicWebUrl } from './assistant-policy';
-import { validCopilotArgs } from './copilot';
+import { validCopilotArgs, type InteriorCheckpoint } from './copilot';
 import { ASSISTANT_A2UI_CATALOG, type CampusA2uiActionMessage, type CampusA2uiComponent } from './campus-a2ui';
 
 const SOURCE = { '@path': '/sourceId' };
@@ -73,6 +73,48 @@ export function assistantCampusNameAnswer({action}:CampusA2uiActionMessage,detai
      action.name!=='answer_campus_detail' || action.context.detailId!==detailId || typeof action.context.name!=='string')return;
   const name=action.context.name.trim();
   return validCopilotArgs('prepare_campus_create',{name}) ? name : undefined;
+}
+
+const interiorSurface = (stepId: string) => `assistant-interior-${stepId}`;
+const selectedBuilding = { '@path': '/selectedBuilding' };
+const interiorStep = { '@path': '/stepId' };
+export function assistantInteriorSelectionMessages(checkpoint: InteriorCheckpoint, mapActive: boolean) {
+  const { step_id: stepId, target, options } = checkpoint;
+  const prompt = options.length ? 'Which building should I map?' : target ? `Select ${target} on the map.` : 'Select a building on the map.';
+  const components: CampusA2uiComponent[] = [{ id: 'prompt', component: 'Text', text: { '@path': '/prompt' } }];
+  const children = ['prompt'];
+  const controls = ['stop'];
+  if (options.length) {
+    components.push({ id: 'building', component: 'ChoicePicker', label: 'Building', value: selectedBuilding,
+      variant: 'mutuallyExclusive', options: options.map(({ label, campus_name }, index) => ({ value: String(index), label: `${label} · ${campus_name}` })) });
+    children.push('building');
+    controls.push('use');
+    components.push({ id: 'use', component: 'Button', child: 'use-label', variant: 'primary',
+      action: { event: { name: 'choose_interior_building', context: { stepId: interiorStep, selectedBuilding } } } },
+    { id: 'use-label', component: 'Text', text: 'Use building' });
+  }
+  if (!mapActive) {
+    controls.unshift('map');
+    components.push({ id: 'map', component: 'Button', child: 'map-label', ...(options.length ? {} : { variant: 'primary' }),
+      action: { event: { name: 'show_interior_map', context: { stepId: interiorStep } } } },
+    { id: 'map-label', component: 'Text', text: 'Show map' });
+  }
+  components.push({ id: 'controls', component: 'Row', children: controls },
+    { id: 'stop', component: 'Button', child: 'stop-label', action: { event: { name: 'stop_interior_setup', context: { stepId: interiorStep } } } },
+    { id: 'stop-label', component: 'Text', text: 'Stop' });
+  children.push('controls');
+  return surface(interiorSurface(stepId), { id: 'root', component: 'Column', children }, components, { stepId, prompt, selectedBuilding: [] });
+}
+
+export function assistantInteriorSelectionAction({ action }: CampusA2uiActionMessage, checkpoint: InteriorCheckpoint) {
+  if (action.surfaceId !== interiorSurface(checkpoint.step_id) || action.context.stepId !== checkpoint.step_id) return;
+  if (action.sourceComponentId === 'map' && action.name === 'show_interior_map') return { kind: 'map' as const };
+  if (action.sourceComponentId === 'stop' && action.name === 'stop_interior_setup') return { kind: 'stop' as const };
+  if (action.sourceComponentId !== 'use' || action.name !== 'choose_interior_building') return;
+  const value = action.context.selectedBuilding;
+  const option = Array.isArray(value) && value.length === 1 && typeof value[0] === 'string' && /^[0-7]$/.test(value[0])
+    ? checkpoint.options[Number(value[0])] : undefined;
+  return option ? { kind: 'select' as const, selection: { campus_id: option.campus_id, element_id: option.element_id } } : { kind: 'missing' as const };
 }
 
 export function assistantPublicWebSourceMessages(source: AgentPublicWebSource, compact = false) {

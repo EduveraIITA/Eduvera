@@ -27,7 +27,7 @@ type IndoorRoom = Omit<CampusIndoorRoomReview, 'items'> & { items: IndoorItem[] 
 export type CampusIndoorSave = { document: CampusSceneDocument; rows: ReviewedScenePlaceRow[] };
 type Props = {
   document: CampusSceneDocument; spaces: readonly CampusSceneSpace[]; schoolId: string; campusId: string;
-  contextKey: string; aiAvailable: boolean; autoOpenAssistant?: boolean; requestedBuilding?: string | null;
+  contextKey: string; aiAvailable: boolean; autoOpenAssistant?: boolean; requestedBuilding?: string | null; requestedBuildingId?: string | null;
   initialBuildingId?: string | null; initialFloorId?: string | null; disabled: boolean; busy: boolean; feedback?: ReactNode;
   onClose: () => void; onImportPlan: (buildingId: string) => void;
   onSave: (value: CampusIndoorSave) => Promise<void>;
@@ -38,6 +38,7 @@ type Props = {
 export function CampusIndoorMapping(props: Props) {
   const buildings = campusInteriorBuildings(props.document, props.spaces);
   const [buildingId,setBuildingId]=useState(() => {
+    if (props.requestedBuildingId != null) return buildings.find(building => building.id===props.requestedBuildingId)?.id??'';
     if (props.requestedBuilding != null) return findCampusInteriorBuilding(buildings,props.spaces,props.requestedBuilding)?.id??'';
     const focused = buildings.find(building => building.space_id===props.initialBuildingId);
     return focused?.id??(props.autoOpenAssistant&&buildings.length>1?'':buildings[0]?.id??'');
@@ -51,9 +52,9 @@ export function CampusIndoorMapping(props: Props) {
     onChange={setBuildingId} disabled={props.disabled}/>;
   if (!building && buildings.length) return <CampusSetupWorkspace campusName={props.document.name} phase="interior"
     map={<View style={{padding:24,gap:12}}>
-      <Empty title="Choose a building" message={props.requestedBuilding == null
+      <Empty title="Choose a building" message={props.requestedBuilding == null && props.requestedBuildingId == null
         ? 'Select a building to check for its floor plans and start mapping.'
-        : 'The requested name did not identify one mapped building. Select the building you want to use.'}/>
+        : 'The requested building could not be matched to the current layout. Select the building you want to use.'}/>
       {buildingPicker}
     </View>}
     options={[]} onClose={props.onClose} />;

@@ -15,6 +15,7 @@ const empty = z.object({}).strict();
 const query = z.object({query:z.string().trim().min(1).max(120).refine(value => Array.from(value).every(character => character.charCodeAt(0) >= 32))}).strict();
 export const draftCampusName = z.string().trim().min(2).max(180)
   .refine(value => !/[<>]/u.test(value) && Array.from(value).every(character => character.charCodeAt(0) >= 32));
+export const campusBuildingElementId=z.string().regex(/^[A-Za-z0-9][A-Za-z0-9_-]{0,79}$/u);
 export const indoorBuildingName = z.string().trim().min(2).max(160).refine(value=>!/[<>\p{Cc}\p{Cf}]/u.test(value));
 const toolDefinitions = {
   open_virtual_campus: {schema:empty, description:'Open the current institution’s Virtual Campus screen when the user explicitly requests it.'},
@@ -24,7 +25,7 @@ const toolDefinitions = {
   open_campus_create: {schema:empty, description:'Open the account’s campus workspace page.'},
   prepare_campus_create: {schema:z.object({name:draftCampusName.optional()}).strict(), description:'Open and optionally prefill the campus creation form. The user confirms creation there.'},
   open_campus_layout: {schema:z.object({campus_id:z.uuid()}).strict(), description:'Open the layout editor for the authorized campus.'},
-  open_campus_interiors: {schema:z.object({campus_id:z.uuid(),building_name:indoorBuildingName.optional()}).strict(), description:'Open interior mapping for the authorized campus.'},
+  open_campus_interiors: {schema:z.object({campus_id:z.uuid(),building_name:indoorBuildingName.optional(),building_id:campusBuildingElementId.optional()}).strict(), description:'Open interior mapping for the authorized campus.'},
 } as const;
 
 export const clientUiContextSchema = z.object({
@@ -32,6 +33,7 @@ export const clientUiContextSchema = z.object({
   tools:z.array(toolName).max(6),
   campus_id:z.uuid().optional(),
   workflow_steps:z.literal(true).optional(),
+  building_selection:z.literal(true).optional(),
   last_result:z.object({tool:toolName,status:z.enum(['applied','blocked','stopped']),call_id:z.uuid().optional()}).strict().optional(),
 }).strict().refine(context => new Set(context.tools).size === context.tools.length &&
   context.tools.every(tool => screenTools[context.screen].includes(tool)) && (!context.campus_id || context.screen==='virtual_campus'),
@@ -83,6 +85,13 @@ export const CLIENT_UI_CALL_STEP = 'assistant_client_ui_call';
 export const AG_UI_WORKFLOW_STEP_EVENT='thatcampus.workflow-step';
 export const clientWorkflowReceiptSchema=z.object({call_id:z.uuid(),status:z.enum(['applied','blocked','stopped'])}).strict();
 export type ClientWorkflowReceipt=z.infer<typeof clientWorkflowReceiptSchema>;
+export const CLIENT_INTERIOR_STEP='assistant_client_interior_selection';
+export const AG_UI_BUILDING_SELECTION_EVENT='thatcampus.building-selection';
+export const buildingSelectionOptionSchema=z.object({
+  campus_id:z.uuid(),element_id:campusBuildingElementId,label:indoorBuildingName,campus_name:draftCampusName,
+}).strict();
+export type BuildingSelectionOption=z.infer<typeof buildingSelectionOptionSchema>;
+export type AgUiBuildingSelection={step_id:string;target?:string;options:readonly BuildingSelectionOption[]};
 
 type RunStatus = 'running'|'completed'|'confirmation'|'failed'|'cancelled';
 type UiIntentKind = 'view_source'|'view_report'|'review_action';
@@ -95,6 +104,7 @@ export type AssistantAgUiEvent =
   | {type:'CUSTOM';name:'thatcampus.ui-intent';value:{version:1;kind:UiIntentKind;subjectId:string}}
   | {type:'CUSTOM';name:'thatcampus.public-web-source';value:{version:1;source:PublicWebSource}}
   | {type:'CUSTOM';name:typeof AG_UI_WORKFLOW_STEP_EVENT;value:{version:1;call_id:string}}
+  | {type:'CUSTOM';name:typeof AG_UI_BUILDING_SELECTION_EVENT;value:{version:1}&AgUiBuildingSelection}
   | {type:'TOOL_CALL_RESULT';messageId:string;toolCallId:string;content:string;role:'tool'}
   | {type:'TOOL_CALL_START';toolCallId:string;toolCallName:ClientToolName}
   | {type:'TOOL_CALL_ARGS';toolCallId:string;delta:string}
@@ -110,8 +120,9 @@ type AgUiProjection = {
   clientCalls?:readonly NonNullable<ReturnType<typeof restoreClientUiCall>>[];
   publicWebSources?:readonly PublicWebSource[];
   workflow?:{pending?:string;receipts:readonly ClientWorkflowReceipt[]};
+  buildingSelection?:AgUiBuildingSelection;
 };
-export function projectAssistantAgUi({threadId,runId,status,progress,answer,evidence,actionId,clientCall,clientCalls,publicWebSources,workflow}:AgUiProjection) {
+export function projectAssistantAgUi({threadId,runId,status,progress,answer,evidence,actionId,clientCall,clientCalls,publicWebSources,workflow,buildingSelection}:AgUiProjection) {
   const ids={threadId,runId}, messageId=`${runId}:assistant`;
   const event=(kind:UiIntentKind,subjectId:string):AssistantAgUiEvent => ({type:'CUSTOM', name:'thatcampus.ui-intent', value:{version:1,kind,subjectId}});
   const events:AssistantAgUiEvent[]=[
@@ -132,6 +143,8 @@ export function projectAssistantAgUi({threadId,runId,status,progress,answer,evid
   for (const source of evidence) events.push(event(source.chart?'view_report':'view_source',source.id));
   for (const source of publicWebSources??[]) events.push({type:'CUSTOM',name:'thatcampus.public-web-source',value:{version:1,source}});
   if (status==='confirmation' && actionId) events.push(event('review_action',actionId));
+  if(status==='completed'&&buildingSelection)
+    events.push({type:'CUSTOM',name:AG_UI_BUILDING_SELECTION_EVENT,value:{version:1,...buildingSelection}});
   const calls=status==='completed' ? clientCalls ?? (clientCall ? [clientCall] : []) : [];
   for(const receipt of workflow?.receipts??[])events.push({
     type:'TOOL_CALL_RESULT',messageId:`${receipt.call_id}:result`,toolCallId:receipt.call_id,

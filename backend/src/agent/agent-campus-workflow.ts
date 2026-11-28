@@ -1,5 +1,6 @@
 import { z } from 'zod';
 import { draftCampusName, indoorBuildingName, validateClientUiCall, type ClientUiCall, type ClientUiContext } from './agent-ui.js';
+import { campusInteriorBuildingChoices, matchCampusInteriorBuildings, type CampusInteriorBuilding } from './agent-campus-building.js';
 
 const workspaceCapacity = z.object({count:z.number().int().nonnegative(),limit:z.number().int().positive()});
 const campusDirectory = z.object({can_edit:z.boolean(),campuses:z.array(z.object({id:z.uuid(),name:z.string(),code:z.string()}))});
@@ -7,7 +8,7 @@ export type CampusRequest =
   | {kind:'create';name?:string;prepared?:true}
   | {kind:'branch'}
   | {kind:'layout';mode:'open'|'setup';campus?:string}
-  | {kind:'interiors';campus?:string;floorPlan?:true};
+  | {kind:'interiors';campus?:string;building?:string;floorPlan?:true};
 
 function normalizedRequest(text: string) {
   return text.trim().replace(/[’‘]/gu,"'");
@@ -17,6 +18,21 @@ function validName(value: string | undefined) {
   const name=value?.trim().replace(/^["“']|["”']$/gu,'').trim();
   const parsed=draftCampusName.safeParse(name);
   return parsed.success ? parsed.data : undefined;
+}
+
+function validBuilding(value:string|undefined) {
+  const name=value?.trim().replace(/[.!?]+$/u,'').replace(/^["“']|["”']$/gu,'').trim();
+  const parsed=indoorBuildingName.safeParse(name);
+  return parsed.success && !genericCampusName.test(parsed.data) ? parsed.data : undefined;
+}
+
+function buildingSubject(value:string|undefined) {
+  if (!value) return;
+  const parts=value.match(/^(.+?)\s+(?:in|at|on)\s+(.+?\bcampus)[.!?]*$/iu)
+    ?? value.match(/^(.+?\bbuilding)\s+(?:in|at|on)\s+(.+?)[.!?]*$/iu);
+  const building=validBuilding(parts?.[1]??value);
+  const campus=validName(parts?.[2]);
+  return building?{building,...(campus?{campus}:{})}:undefined;
 }
 
 const floorPlanTerm = /\bfloor[ -]*plans?\b/iu;
@@ -32,14 +48,27 @@ export function isCampusSetupContinuation(text: string) {
 
 // The caller supplies an owned, immediately preceding request. The direction is
 // planned again against current permission, campus directory and mounted controls.
-export function resumeCampusWorkflow(previous: CampusRequest | undefined, text: string, prepared?: {name?:string}) {
-  if (!previous || !isCampusSetupContinuation(text)) return undefined;
+export function resumeCampusWorkflow(previous: CampusRequest | undefined, text: string, prepared?: {name?:string}): CampusRequest | undefined {
+  if (!previous) return undefined;
+  if (previous.kind==='interiors') {
+    const subject=buildingSubject(campusBuildingClarification(text));
+    if (subject) return {kind:'interiors',...(previous.building&&previous.campus?{campus:previous.campus}:{}),
+      ...subject,...(previous.floorPlan?{floorPlan:true as const}:{})};
+  }
+  if (!isCampusSetupContinuation(text)) return undefined;
   if (previous.kind==='create' && prepared) return {kind:'create',prepared:true,...(prepared.name?{name:prepared.name}:{})} as const;
   return previous;
 }
 
+/** A correction is meaningful only when the caller has an owned interior handoff. */
+export function campusBuildingClarification(text:string) {
+  const value=normalizedRequest(text);
+  const target=value.match(/^(?:no[,]?\s+)?(?:i\s+mean(?:t)?|actually[,]?\s+(?:i\s+mean(?:t)?|it(?:'s|\s+is)))\s+(.+)$/iu)?.[1];
+  return validBuilding(target);
+}
+
 export function isCampusFloorPlanWebFollowup(text: string) {
-  return /^(?:please\s+)?(?:(?:can(?:not|'?t)?|could(?:n'?t)?|would)\s+you\s+)?(?:search|look\s+up|find\s+it|check)(?:\s+(?:on|the|on\s+the))?\s+(?:internet|web|online)(?:\s+(?:for\s+it|for\s+(?:the\s+)?floor[ -]*plans?))?[.!?]*$/iu.test(normalizedRequest(text));
+  return /^(?:please\s+)?(?:(?:can(?:not|'?t)?|could(?:n'?t)?|would)\s+you\s+)?(?:search(?:\s+(?:it|for\s+it))?|look\s+(?:it\s+)?up|find\s+it|check)(?:\s+(?:on\s+(?:the\s+)?|the\s+)?(?:internet|web|online))(?:\s+for\s+(?:it|(?:the\s+)?floor[ -]*plans?))?[.!?]*$/iu.test(normalizedRequest(text));
 }
 
 function floorPlanCampus(value: string) {
@@ -70,6 +99,8 @@ export function campusWorkflowRequest(text: string, awaitingCampusName = false):
   if (floorPlanTerm.test(value) && floorPlanAction.test(value)) {
     if (/\b(?:examples?|templates?|samples?|tutorials?|instructions?|guides?)\b/iu.test(value)) return;
     const campus=floorPlanCampus(value);
+    const subject=buildingSubject(campus);
+    if (subject?.campus) return {kind:'interiors',floorPlan:true,...subject};
     return {kind:'interiors',floorPlan:true,...(campus?{campus}:{})};
   }
   const branch=/\b(?:open|add|create|set\s*up|register)\s+(?:(?:a|the|my|our|this)\s+)?(?:(?:new|another|additional)\s+)?(?:branch\s+campus|campus\s+(?:branch|location)|physical\s+campus|campus\s+in\s+(?:this|our|the\s+current)\s+institution|branch(?=$|[.!?,]|\s+(?:named|called|in|at)\b))\b/iu.test(value);
@@ -80,8 +111,18 @@ export function campusWorkflowRequest(text: string, awaitingCampusName = false):
     const name=validName(value.match(/\b(?:named|called|with\s+the\s+name)\s+(.+?)\s*(?:[.!?]?$|(?:,\s*)?and\s+(?:then\s+)?(?:map|build|set\s*up|design|configure)\b)/iu)?.[1]);
     return name ? {kind:'create',name} : {kind:'create'};
   }
+  const detailBuilding=value.match(/^(?:please\s+)?(?:(?:let'?s|can\s+we|could\s+(?:we|you)|can\s+you)\s+)?detail(?:\s+(?:out|of))?\s+(?:(?:the|our|my)\s+)?(.+)$/iu)?.[1];
+  const subject=buildingSubject(detailBuilding);
+  if (subject && /(?:\b(?:building|cent(?:er|re)|block|hall|tower|library)\b|^[\p{L}]{1,12}[ -]?\d{1,6}$)/iu.test(subject.building))
+    return {kind:'interiors',...subject};
   if (setupAction.test(value) && interior) {
-    const campus=validName(value.match(/\b(?:interiors?|intir[iy]ors?|interiours?|indoors?)\s+(?:of|for|at)\s+(.+?)\s*[.!?]?$/iu)?.[1]);
+    const possessive=value.match(/\b(?:map|configure|edit|open|(?:start|continue)\s+mapping|set\s*up)\s+(?:(?:the|our|my)\s+)?(.+?)'s\s+(?:interiors?|intir[iy]ors?|interiours?|indoor(?:\s+(?:map|layout|mapping))?)\b/iu)?.[1];
+    const building=validBuilding(possessive);
+    if (building) return {kind:'interiors',building};
+    const name=value.match(/\b(?:interiors?|intir[iy]ors?|interiours?|indoors?)\s+(?:of|for|at)\s+(.+?)\s*[.!?]?$/iu)?.[1];
+    const explicit=buildingSubject(name);
+    if (explicit?.campus) return {kind:'interiors',...explicit};
+    const campus=validName(name);
     return campus && !genericCampusName.test(campus) ? {kind:'interiors',campus} : {kind:'interiors'};
   }
   const layout=layoutRequest(value);
@@ -109,13 +150,32 @@ export function authorizedCampusDirectory(data: unknown) {
   return parsed.success ? parsed.data : undefined;
 }
 
-type Direction = {calls:ClientUiCall[];answer:string;href?:string};
+type Direction = {
+  calls:ClientUiCall[];
+  answer:string;
+  href?:string;
+  selection?:{target?:string;options:ReturnType<typeof campusInteriorBuildingChoices>};
+  selectedBuilding?:CampusInteriorBuilding;
+};
 const virtualCampusHref = '/more/virtual-campus';
 const campusSetupHref = '/more/setup/institution/campus';
 const campusAccountHref = '/more/account/campuses';
 const step = (tool: ClientUiCall['tool'], args: unknown) => validateClientUiCall(tool,args)!;
 
-export function campusWorkflowDirection(request: CampusRequest, context: ClientUiContext | undefined, source: unknown): Direction {
+export function campusInteriorBuildingTarget(request:CampusRequest, directory:NonNullable<ReturnType<typeof authorizedCampusDirectory>>) {
+  if (request.kind!=='interiors' || !directory.can_edit) return undefined;
+  return request.building ?? (request.campus&&!directory.campuses.some(campus=>campusMatches(campus,request.campus))?validBuilding(request.campus):undefined);
+}
+
+export function campusInteriorBuildingCampusId(request:CampusRequest, directory:NonNullable<ReturnType<typeof authorizedCampusDirectory>>) {
+  return request.kind==='interiors' && request.building && request.campus
+    ? selectCampus(directory.campuses,request.campus)?.id : undefined;
+}
+
+export function campusWorkflowDirection(
+  request: CampusRequest, context: ClientUiContext | undefined, source: unknown,
+  buildings?:readonly CampusInteriorBuilding[],
+): Direction {
   const tools=context?.tools??[];
   if (request.kind==='create') {
     const capacity=workspaceCapacity.safeParse(source);
@@ -160,6 +220,23 @@ export function campusWorkflowDirection(request: CampusRequest, context: ClientU
     return chooseCampus(context,request.campus ? 'Choose the campus you meant.' : 'Choose a campus to continue its layout.');
   }
 
+  const target=campusInteriorBuildingTarget(request,directory);
+  const campusId=campusInteriorBuildingCampusId(request,directory);
+  if (target && request.building && request.campus && !campusId && directory.campuses.length)
+    return requestInteriorSelection(context,`Select the building on the map for “${request.campus}”.`,target,[]);
+  if (target && buildings) {
+    const campuses=new Set(campusId?[campusId]:directory.campuses.map(campus=>campus.id));
+    const matches=matchCampusInteriorBuildings(buildings.filter(building=>campuses.has(building.campus_id)),target);
+    const active=matches.filter(building=>building.campus_id===context?.campus_id);
+    const match=matches.length===1?matches[0]:active.length===1?active[0]:undefined;
+    if (match) return campusInteriorBuildingDirection(match,request,context,buildings);
+    if (matches.length>1) return requestInteriorSelection(context,`I found more than one building matching “${target}”. Choose one to continue.`,target,matches);
+  }
+  if (target && (request.building || !request.floorPlan) && directory.campuses.length) {
+    const answer=buildings?`I couldn’t match “${target}” to a mapped building. Select it on the campus map to continue.`
+      :'Select the building on the campus map to continue.';
+    return requestInteriorSelection(context,answer,target,[]);
+  }
   const building=!named && request.floorPlan && !directory.campuses.some(campus=>campusMatches(campus,request.campus))
     ? indoorBuildingName.safeParse(request.campus).data : undefined;
   const selected=named ?? (building ? selectCampus(directory.campuses,undefined,context?.campus_id) : undefined);
@@ -173,7 +250,44 @@ export function campusWorkflowDirection(request: CampusRequest, context: ClientU
     return {calls,answer,href};
   }
   if (!directory.campuses.length) return {calls:[],answer:'Add a campus location before mapping its interior.',href:campusSetupHref};
-  return chooseCampus(context,request.floorPlan ? 'Choose a campus for the floor-plan search.' : 'Choose a campus to map its interior.');
+  return requestInteriorSelection(context,request.floorPlan ? 'Choose a campus for the floor-plan search.' : 'Choose a campus to map its interior.',undefined,[]);
+}
+
+export function campusInteriorBuildingDirection(
+  building:CampusInteriorBuilding,
+  request:Extract<CampusRequest,{kind:'interiors'}>,
+  context:ClientUiContext|undefined,
+  candidates:readonly CampusInteriorBuilding[]=[building],
+): Direction {
+  const params=new URLSearchParams({campus_id:building.campus_id,edit:'1',indoor:'1'});
+  const args:Record<string,string>={campus_id:building.campus_id};
+  if (context?.building_selection) {
+    params.set('indoor_building_id',building.element_id);
+    args.building_id=building.element_id;
+  } else {
+    const normalize=(value:string)=>value.normalize('NFC').trim().replace(/\s+/gu,' ').toLowerCase();
+    const otherNames=new Set(candidates.filter(other=>other!==building && other.campus_id===building.campus_id)
+      .flatMap(other=>[other.label,...other.aliases]).map(normalize));
+    const legacy=[building.label,...building.aliases].map(value=>validBuilding(value))
+      .find(value=>value && !otherNames.has(normalize(value)));
+    if (legacy) {
+      params.set('indoor_building',legacy);
+      args.building_name=legacy;
+    }
+  }
+  const call=context?.tools.includes('open_campus_interiors')?step('open_campus_interiors',args):undefined;
+  return {calls:call?[call]:[],answer:request.floorPlan
+    ? `Choose a floor to look for a public plan for ${building.label}.`
+    : `Let’s map ${building.label}.`,
+    href:`${virtualCampusHref}?${params.toString()}`,selectedBuilding:building};
+}
+
+function requestInteriorSelection(context:ClientUiContext|undefined,answer:string,target:string|undefined,options:readonly CampusInteriorBuilding[]): Direction {
+  if (!context?.building_selection) return chooseCampus(context,answer);
+  const calls=context.screen==='virtual_campus'
+    ? !target&&context.tools.includes('campus_open_picker')?[step('campus_open_picker',{})]:[]
+    : context.tools.includes('open_virtual_campus')?[step('open_virtual_campus',{})]:[];
+  return {calls,answer,href:virtualCampusHref,selection:{...(target?{target:target.slice(0,160)}:{}),options:campusInteriorBuildingChoices(options)}};
 }
 
 function chooseCampus(context: ClientUiContext | undefined, answer: string): Direction {

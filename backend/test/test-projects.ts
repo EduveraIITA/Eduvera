@@ -15,6 +15,7 @@ export const FAST_TEST_FILES = [
   "agent-campus-trial-limits.test.ts",
   "agent-contracts.test.ts",
   "agent-ui.test.ts",
+  "agent-campus-building.test.ts",
   "analytics-metrics.test.ts",
   "assessment-report-events.test.ts",
   "assessment-result-input.test.ts",

@@ -53,6 +53,14 @@ export class CampusScenesController {
   ) {
     return this.scenes.workspace(request.authUser, school, campus);
   }
+  @Get("interior-buildings/")
+  interiorBuildings(
+    @Req() request: AuthenticatedRequest,
+    @Param("schoolId") school: string,
+    @Param("campusId") campus: string,
+  ) {
+    return this.scenes.interiorBuildings(request.authUser, school, campus);
+  }
   @Put("draft/")
   save(
     @Req() request: AuthenticatedRequest,

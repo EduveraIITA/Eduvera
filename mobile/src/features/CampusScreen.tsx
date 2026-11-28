@@ -33,13 +33,13 @@ import { useNativeSceneLighting } from '../lib/native-scene-lighting';
 import { nativeCampusRoutePath,nativeCampusDisplay,nativeCampusFloorNavigation,nativeCampusPage, nativeCampusPlacePage, nativeCampusPlaceSelection, nativeCampusProjectionMatches, nativeCampusPublicationMatches, nativeCampusUrlView,nativeCampusJourneyChanges,nativeCampusPresentationQuery,nativeCampusFullscreenReturnMatches,nativeCampusLayersMatch,nativeCampusJourneyMatches,nativeCampusMapContext,nativeCampusAssetContext,nativeCampusPresentationKeys, selectNativeCampus, type NativeCampusSelection } from '../lib/native-campus';
 import { Button, Empty, Field, Loading, Notice, Page, Row, SearchField, Section } from '../ui/components';
 import { useTheme } from '../ui/theme';
-import { useCopilotAction, useCopilotActiveAction, useCopilotCampusTarget, useCopilotTakeOver, useCopilotTarget } from '../ui/CopilotProvider';
+import { useCopilot, useCopilotAction, useCopilotActiveAction, useCopilotCampusTarget, useCopilotTarget } from '../ui/CopilotProvider';
 import { DomainPages, DomainText, LabeledSwitch, domainDate, domainHref, domainParams, type DomainScreenProps } from './ResourcesScreen';
 import { CampusChoices, CampusControl, CampusFrame, CampusWorkspace, type CampusPanel } from './campus/CampusWorkspace';
 import { CampusMapCanvas, initialCampusCamera,type CampusCamera } from './campus/CampusMapCanvas';
 import { CampusRoomInventory } from './campus/CampusRoomInventory';
 import { CampusBuildingPanel } from './campus/CampusBuildingPanel';
-import { campusCopilotFocusTarget, campusCopilotQuery } from './campus/campus-copilot-targets';
+import { campusCopilotBuildingSelection, campusCopilotFocusTarget, campusCopilotQuery } from './campus/campus-copilot-targets';
 
 const fullScreenMemory=new Map<string,{query:string;camera:CampusCamera;sourceKey:string|null;sourceQuery:string}>();
 function rememberFull(key:string,params:URLSearchParams,camera:CampusCamera,entryKey?:string){const old=fullScreenMemory.get(key),query=nativeCampusPresentationQuery(params);fullScreenMemory.delete(key);fullScreenMemory.set(key,{query,camera:{...camera},sourceKey:entryKey??old?.sourceKey??null,sourceQuery:entryKey?query:old?.sourceQuery??query});while(fullScreenMemory.size>8)fullScreenMemory.delete(fullScreenMemory.keys().next().value!);}
@@ -51,7 +51,7 @@ export function CampusScreen(props: DomainScreenProps) {
 }
 function CampusDirectory({ href, onNavigate, schoolId }: DomainScreenProps & { schoolId: string }) {
   const session=useSession(),priorEditor=useRef('');
-  const focused=useIsFocused(),takeOver=useCopilotTakeOver();
+  const focused=useIsFocused(),{takeOver,selectInteriorTarget}=useCopilot();
   const params = domainParams(href), directory = useApi<CampusSceneDirectory>(`/api/v1/schools/${encodeURIComponent(schoolId)}/campus-scenes/`);
   const [choosingCampus, setChoosingCampus] = useState(false);
   const selected = selectNativeCampus(directory.data, params.get('campus_id'));
@@ -82,7 +82,19 @@ function CampusDirectory({ href, onNavigate, schoolId }: DomainScreenProps & { s
     else if (editing || setupCampus.current !== selected?.id || finishedSetup === selected?.id) setupCampus.current = null;
   }, [startSetup, editing, selected?.id, finishedSetup]);
   useLayoutEffect(()=>{if(!editing&&!settingUp)priorEditor.current='';else if(canEdit&&selected)priorEditor.current=selected.id;},[editing,settingUp,canEdit,selected?.id]);
-  const campusChoices = <CampusChoices visible={choosingCampus} title="Choose campus" options={directory.data?.campuses ?? []} selected={selected?.id} onClose={() => { takeOver(); setChoosingCampus(false); }} onSelect={id => {takeOver(); const next=new URLSearchParams(params);for(const key of [...nativeCampusPresentationKeys,'panel','edit','indoor','indoor_building'])next.delete(key);next.set('campus_id',id);onNavigate(`${nativeCampusRoutePath(href)}?${next}`);}} />;
+  const chooseCampusByHand = (id: string) => {
+    if (!choosingCampus || !directory.data?.campuses.some(campus => campus.id === id)) return;
+    const continued = focused && canEdit && session.environment.mode === 'live' && directory.isSuccess &&
+      selectInteriorTarget({ campus_id: id });
+    if (!continued) takeOver();
+    const next = new URLSearchParams(params);
+    for (const key of [...nativeCampusPresentationKeys, 'panel', 'edit', 'indoor', 'indoor_building', 'indoor_building_id']) next.delete(key);
+    next.set('campus_id', id);
+    onNavigate(`${nativeCampusRoutePath(href)}?${next}`);
+  };
+  const campusChoices = <CampusChoices visible={choosingCampus} title="Choose campus"
+    options={directory.data?.campuses ?? []} selected={selected?.id}
+    onClose={() => setChoosingCampus(false)} onSelect={chooseCampusByHand} />;
   if((editing||settingUp)&&selected&&(canEdit||transientError&&priorEditor.current===selected.id))return <View style={{flex:1}}>
     {directory.isError?<Notice tone="warning" message="Campus access could not refresh. Your draft remains mounted; restore access before continuing."/>:null}
     <View style={{flex:1}} pointerEvents={canEdit?'auto':'none'} accessibilityElementsHidden={!canEdit} importantForAccessibility={canEdit?'auto':'no-hide-descendants'}>
@@ -93,7 +105,7 @@ function CampusDirectory({ href, onNavigate, schoolId }: DomainScreenProps & { s
     {directory.isError?<Button title="Refresh campus access" onPress={()=>void directory.refetch()}/>:null}
     {campusChoices}
   </View>;
-  if(editing&&!directory.isPending)return <Page title="Campus layout"><Empty title="Layout editing is unavailable" message="The current institution must authorize layout editing for this exact campus." onRetry={()=>void directory.refetch()}/><Button title="View published campus" onPress={()=>onNavigate(domainHref(nativeCampusRoutePath(href),params,{edit:undefined,indoor:undefined,indoor_building:undefined}))}/></Page>;
+  if(editing&&!directory.isPending)return <Page title="Campus layout"><Empty title="Layout editing is unavailable" message="The current institution must authorize layout editing for this exact campus." onRetry={()=>void directory.refetch()}/><Button title="View published campus" onPress={()=>onNavigate(domainHref(nativeCampusRoutePath(href),params,{edit:undefined,indoor:undefined,indoor_building:undefined,indoor_building_id:undefined}))}/></Page>;
   return <CampusFrame campusName={selected?.name} headingTarget={headingTarget} pickerTarget={pickerTarget} onChooseCampus={directory.data && directory.data.campuses.length > 1 ? chooseByHand : undefined}>
     {directory.isPending ? <Loading /> : (!directory.data) ? <View style={{ padding: 20 }}><Empty title="Your campuses could not be loaded" message={directory.error?.message} onRetry={() => { void directory.refetch(); }} /></View> : selected ? <PublishedCampus key={selected.id} schoolId={schoolId} campusId={selected.id} campusPickerOpen={choosingCampus} campusPicker={campusPicker} canEdit={canEdit} checkingSetup={canEdit && (workspace.isPending || workspace.isFetching)} setupError={canEdit ? workspace.error : null} retrySetup={() => void workspace.refetch()} href={href} onNavigate={onNavigate} /> : <View style={{ padding: 20 }}><Empty title={params.has('campus_id') ? 'This campus is unavailable' : 'No published campus yet'} message="Select an authorized campus to explore its published layout." />{directory.data.campuses.length ? <Button title="Choose campus" kind="secondary" onPress={chooseByHand} /> : null}</View>}
     {campusChoices}
@@ -117,7 +129,8 @@ function PublishedCampus({ schoolId, campusId, href, onNavigate, campusPickerOpe
   const places = data?.places ?? [];
   const display = useMemo(() => scene ? nativeCampusDisplay(scene, places, selection) : null, [scene, places, selection]);
   const selected = display?.selected, selectedPlace = places.find(place => place.id === selection.spaceId), building = display?.contextBuilding;
-  const takeOver=useCopilotTakeOver(),assistantFocusedPlace=useCopilotActiveAction('campus_focus_place'),assistantOpenedSearch=useCopilotActiveAction('campus_search_places');
+  const {takeOver,selectInteriorTarget}=useCopilot();
+  const assistantFocusedPlace=useCopilotActiveAction('campus_focus_place'),assistantOpenedSearch=useCopilotActiveAction('campus_search_places');
   const personalData=!personal.error&&nativeCampusJourneyMatches(personal.data,schoolId,campusId,environment)?personal.data:undefined,layerData=data&&!operations.error&&nativeCampusLayersMatch(operations.data,schoolId,campusId,environment,data)?operations.data:undefined;
   const urlView=useMemo(()=>valid&&data?nativeCampusUrlView(params,{schoolId,actorId:user!.id,environment,data,personal:personalData,operations:layerData}):null,[href,valid,data,personalData,layerData,schoolId,user?.id,environment]);
   const memoryKey=JSON.stringify([scopeKey,campusId,data?.scene?.id,data?.scene?.version]),searchIntent=useRef<CampusSearchIntent|null>(null);
@@ -203,8 +216,16 @@ function PublishedCampus({ schoolId, campusId, href, onNavigate, campusPickerOpe
       return true;
     },
   });
-  const choosePlaceByHand=(id:string)=>{takeOver();selectPlace(id);};
-  const chooseElementByHand=(id:string)=>{takeOver();selectElement(id);};
+  const continueInteriorFromMap = (kind: 'place' | 'element', id: string) => {
+    if (!copilotMapAvailable || !canEdit || !data?.can_edit || !scene) return false;
+    const building = campusCopilotBuildingSelection(scene, places, { kind, id });
+    if (!building || !selectInteriorTarget({ campus_id: campusId, element_id: building.id })) return false;
+    setSelection({ selectedId: building.id, spaceId: building.space_id, buildingId: null, floorId: null });
+    setPanel('place');
+    return true;
+  };
+  const choosePlaceByHand=(id:string)=>{if(!continueInteriorFromMap('place',id)){takeOver();selectPlace(id);}};
+  const chooseElementByHand=(id:string)=>{if(!continueInteriorFromMap('element',id)){takeOver();selectElement(id);}};
   const chooseFloorByHand=(id:string|null)=>{takeOver();selectFloor(id);};
   const adminSnapshot=useMemo(()=>!motionSnapshot.isError&&motionSnapshot.data?campusPublishedSnapshot(motionSnapshot.data,{schoolId,campusId,environment}):null,[motionSnapshot.isError,motionSnapshot.data,schoolId,campusId,environment]);
   const adminMotion=adminSnapshot?.motion,personalMotion=personalData?.motion,usingAdminMotion=!!adminMotion;
@@ -218,8 +239,8 @@ function PublishedCampus({ schoolId, campusId, href, onNavigate, campusPickerOpe
   const endpoints=routeScene?sceneWalkingPlaceIds(routeScene):[];
   const nearestEndpoint=(spaceId:string)=>scene?personalWalkingDestination(scene,places,spaceId)?.id??null:null;
   const chooseJourney=(item:NonNullable<typeof journey>,directions=false)=>update(nativeCampusJourneyChanges(item,directions));
-  const edit=()=>onNavigate(domainHref(nativeCampusRoutePath(href),params,{edit:'1',indoor:undefined,indoor_building:undefined,map_full:undefined}));
-  const editIndoor=()=>onNavigate(domainHref(nativeCampusRoutePath(href),params,{edit:'1',indoor:'1',indoor_building:undefined,map_full:undefined}));
+  const edit=()=>onNavigate(domainHref(nativeCampusRoutePath(href),params,{edit:'1',indoor:undefined,indoor_building:undefined,indoor_building_id:undefined,map_full:undefined}));
+  const editIndoor=()=>onNavigate(domainHref(nativeCampusRoutePath(href),params,{edit:'1',indoor:'1',indoor_building:undefined,indoor_building_id:undefined,map_full:undefined}));
   const showIndoor=canEdit&&data?.can_edit&&scene?.elements.some(element=>element.kind==='building'&&element.space_id);
   const floors = scene && building ? sceneBuildingFloorIds(scene, building) : [];
   const placeResults = scene ? nativeCampusPlacePage(scene, places, search, placePage) : null;

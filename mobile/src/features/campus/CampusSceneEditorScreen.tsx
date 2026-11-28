@@ -72,7 +72,8 @@ function NativeSceneEditor({href,onNavigate,schoolId,campusId,root,workspace,rel
  const document=history.document,current=useRef(document),knownRevision=useRef(workspace.scene?.revision??0);current.current=document;knownRevision.current=Math.max(knownRevision.current,workspace.scene?.revision??0);
  const params=domainParams(href),requestedIndoor=params.get('indoor')==='1';
  const requestedBuilding=requestedIndoor?params.get('indoor_building'):null;
- const interiorRequestKey=requestedIndoor?JSON.stringify([requestedBuilding]):'';
+ const requestedBuildingId=requestedIndoor?params.get('indoor_building_id'):null;
+ const interiorRequestKey=requestedIndoor?JSON.stringify([requestedBuilding,requestedBuildingId]):'';
  const initialInterior=requestedIndoor&&!sourceError
   ? campusInteriorSetupStage(document,workspace.spaces,!workspace.scene||workspace.scene.draft!==null) : null;
  const initialPanel=guide?.panel??(initialInterior?initialInterior==='reopen'?null:initialInterior:!initialFocus.selected
@@ -82,6 +83,7 @@ function NativeSceneEditor({href,onNavigate,schoolId,campusId,root,workspace,rel
  const [draftOpen,setDraftOpen]=useState(!workspace.scene||workspace.scene.draft!==null),[revision,setRevision]=useState(workspace.scene?.revision??0),[published,setPublished]=useState(workspace.scene?.published_version??null),[spaces,setSpaces]=useState<CampusSceneSpace[]>(workspace.spaces.map(p=>({...p,campus_id:campusId}))),[selected,setSelected]=useState<string|null>(initialFocus.selected),[floor,setFloor]=useState<string|null>(initialFocus.floor),[panel,setPanel]=useState<'map'|'preview'|'assisted'|'publication'|'indoor'|'source'|'items'|'review'|'places'|'floorplan'|null>(initialPanel),[mode,setMode]=useState<'2d'|'2.5d'>(initialFocus.mode),[camera,setCamera]=useState(initialCampusCamera),[asset,setAsset]=useState('0'),[drawing,setDrawing]=useState<CampusScenePoint[]|null>(null),[creating,setCreating]=useState(false),[floorPlan,setFloorPlan]=useState<SceneFloorPlanContext|null>(null),[search,setSearch]=useState(''),[page,setPage]=useState(1),[onlyPending,setOnlyPending]=useState(false),[notice,setNotice]=useState(''),[error,setError]=useState(''),[preparing,setPreparing]=useState(false),[floorImageId,setFloorImageId]=useState<string|undefined>(),[showGuide,setShowGuide]=useState(true),[reviewChecks,setReviewChecks]=useState({signature:'',values:[false,false,false]});
  const [indoorBuilding,setIndoorBuilding]=useState<string|null>(()=>document.elements.find(element=>element.id===initialFocus.selected&&element.kind==='building')?.space_id??null);
  const [indoorTarget,setIndoorTarget]=useState(requestedBuilding);
+ const [indoorTargetId,setIndoorTargetId]=useState(requestedBuildingId);
  const [floorplanReturn,setFloorplanReturn]=useState(false);
  const [publicPlan,setPublicPlan]=useState<AvailableFloorPlan|null>(null);
  const indoorReturn=useRef<'preview'|null>(null);
@@ -164,6 +166,7 @@ function NativeSceneEditor({href,onNavigate,schoolId,campusId,root,workspace,rel
   if(dirty||indoorEditing.current||creating||write.locked||preparing||panel==='source'||panel==='floorplan')return;
   continueIndoors.current=true;
   setIndoorTarget(requestedBuilding);
+  setIndoorTargetId(requestedBuildingId);
   const stage=campusInteriorSetupStage(document,spaces,draftOpen);
   if(stage==='reopen')return;
   if(stage==='indoor'){
@@ -171,11 +174,11 @@ function NativeSceneEditor({href,onNavigate,schoolId,campusId,root,workspace,rel
    setIndoorBuilding(select?.kind==='building'?select.space_id:null);
   }else setSelected(null);
   setPanel(stage);
- },[requestedIndoor,requestedBuilding,interiorRequestKey,sourceState,dirty,creating,write.locked,preparing,panel,document,spaces,draftOpen,select]);
+ },[requestedIndoor,requestedBuilding,requestedBuildingId,interiorRequestKey,sourceState,dirty,creating,write.locked,preparing,panel,document,spaces,draftOpen,select]);
  useEffect(()=>{
   if(!leaveIndoor.current||panel==='indoor'||write.busy||preparing)return;
   leaveIndoor.current=false;
-  if(requestedIndoor)onNavigate(domainHref('/more/virtual-campus',domainParams(href),{indoor:undefined,indoor_building:undefined}));
+  if(requestedIndoor)onNavigate(domainHref('/more/virtual-campus',domainParams(href),{indoor:undefined,indoor_building:undefined,indoor_building_id:undefined}));
  },[href,panel,requestedIndoor,write.busy,preparing,onNavigate]);
  const outlineOnly=!!document.source.map_coverage&&document.elements.length===1&&document.elements[0]?.id==='map-boundary';
  const focusElement=selected??(outlineOnly&&panel==='preview'?'map-boundary':null);
@@ -287,7 +290,7 @@ function NativeSceneEditor({href,onNavigate,schoolId,campusId,root,workspace,rel
  };
  const reviewPlaces=async(body:CampusScenePlaceReview)=>{const ok=await task(async()=>{await send('reviewed-places',body as unknown as Record<string,unknown>);await setup.refetch({throwOnError:true});});if(!ok)throw new Error('Place review is unconfirmed. Recover its exact original request.');};
  const issues=draftIssues(document),signature=JSON.stringify(document),checks=reviewChecks.signature===signature?reviewChecks.values:[false,false,false],readiness=sceneOnboardingReadiness(document,spaces);
- const viewHref=domainHref('/more/virtual-campus',params,{edit:undefined,element_id:undefined,panel:undefined,indoor:undefined,indoor_building:undefined});
+ const viewHref=domainHref('/more/virtual-campus',params,{edit:undefined,element_id:undefined,panel:undefined,indoor:undefined,indoor_building:undefined,indoor_building_id:undefined});
  const layoutFeedback=<>{write.error||error?<Notice tone="warning" message={error||write.error}/>:null}{notice?<Notice message={notice}/>:null}{write.action?<Section title="Retained layout action"><DomainText>{write.action.phase==='accepted'?'The owning service acknowledged this action. Recovery only reads the saved receipt and current campus.':'The original request, source revision, file and key are retained. Recover that exact request before editing.'}</DomainText><Button title={write.resumeHref?'Open original layout action':write.action.phase==='accepted'?'Read saved layout result':'Recover original layout request'} busy={write.busy} onPress={()=>write.resumeHref?onNavigate(write.resumeHref):void write.recover()}/></Section>:null}</>;
  const guidedCanvas=panel==='preview'||panel==='assisted'||panel==='publication';
  const sceneCanvas=<CampusMapCanvas contextKey={session.scopeKey} draftPreview includeSurroundings={!guidedCanvas}
@@ -299,15 +302,16 @@ function NativeSceneEditor({href,onNavigate,schoolId,campusId,root,workspace,rel
   indoorReturn.current=returnTo;
   setIndoorBuilding(select?.kind==='building'?select.space_id:null);
   setIndoorTarget(null);
+  setIndoorTargetId(null);
   setFloorplanReturn(false);
   setPanel('indoor');
  };
- if(panel==='indoor'&&draftOpen)return <CampusIndoorMapping key={JSON.stringify([indoorTarget])} {...{document,spaces,schoolId,campusId}}
+ if(panel==='indoor'&&draftOpen)return <CampusIndoorMapping key={JSON.stringify([indoorTarget,indoorTargetId])} {...{document,spaces,schoolId,campusId}}
   contextKey={session.scopeKey} aiAvailable={capabilities.data?.indoor_guidance?.available===true} autoOpenAssistant={continueIndoors.current} initialBuildingId={indoorBuilding} initialFloorId={floor} disabled={locked} busy={write.busy||preparing}
-  requestedBuilding={indoorTarget} onEditingChange={trackIndoorEditing} onUsePublicPlan={downloadPublicPlan}
+  requestedBuilding={indoorTarget} requestedBuildingId={indoorTargetId} onEditingChange={trackIndoorEditing} onUsePublicPlan={downloadPublicPlan}
   feedback={mapFeedback??(sourceState!=='current'?<Notice tone="warning" message="The saved layout changed or is unavailable. Reopen the current draft to continue."/>:undefined)}
   onClose={endIndoor} onSave={saveIndoor}
-  onImportPlan={buildingId=>{setIndoorBuilding(buildingId);setIndoorTarget(null);setPublicPlan(null);setFloorplanReturn(true);setPanel('floorplan');}}/>;
+  onImportPlan={buildingId=>{setIndoorBuilding(buildingId);setIndoorTarget(null);setIndoorTargetId(null);setPublicPlan(null);setFloorplanReturn(true);setPanel('floorplan');}}/>;
  const leaveSetup=()=>onNavigate('/more');
  const lockNavigation=write.busy||preparing;
  const mapGenerationError=mapAttempted&&!write.action&&!lockNavigation ? write.error||error : '';

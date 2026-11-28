@@ -269,6 +269,93 @@ describe.skipIf(!enabled)('authorized Assistant AG-UI event read and client tool
     },15000);
   });
 
+  it('opens an exact building from a fresh chat or clarification and resumes a manual handoff after service restart', async () => {
+    complete.mockClear();
+    const fixture=await createClassPracticeFixture(db);
+    await db.updateTable('users').set({pro_features_enabled:true}).where('id','=',fixture.owner.id).execute();
+    const {scenes,topology}=campusSceneServices(db);
+    const main=await topology.createCampus(fixture.owner,fixture.schoolId,{
+      name:'Main Campus',code:'MAIN',campus_type:'main',is_primary:true,timezone:'UTC',
+    },request(fixture.owner));
+    const west=await topology.createCampus(fixture.owner,fixture.schoolId,{
+      name:'West Campus',code:'WEST',campus_type:'main',is_primary:false,timezone:'UTC',
+    },request(fixture.owner));
+    const computing={element_id:'osm-building_301',space_id:randomUUID(),label:'Computing Center 3',name:'Computing Centre 3',code:'COMP-003'};
+    const other={element_id:'library-east',space_id:randomUUID(),label:'East Library',name:'East Library',code:'EAST-LIB'};
+    const gateway={dispatch:async(capability:{name:string},input:{campus_id?:string})=>{
+      if(capability.name==='virtual_campus_layout')return scenes.directory(fixture.owner,fixture.schoolId);
+      if(capability.name==='campus_interior_buildings')return input.campus_id===west.id?[computing]:input.campus_id===main.id?[other]:[];
+      throw new Error('Unexpected fixture tool');
+    }} as unknown as AgentGateway;
+    const memory=new AgentMemoryService(db);
+    const makeService=()=>new AgentService(db,new RolesService(db),fixture.school,gateway,memory);
+    const home={screen:'workspace',tools:['open_virtual_campus','open_campus_interiors'],building_selection:true};
+    let agent=makeService(),http=new AgentController(agent,memory);
+    const create=async()=>(await http.create(request(fixture.owner,{portal:'principal'}))).id;
+    async function turn(question:string,threadId:string,ui_context:unknown=home) {
+      const {run_id}=await http.send(request(fixture.owner,{question,client_id:randomUUID(),ui_context}),threadId);
+      const events=async()=>(await http.runEvents(request(fixture.owner),threadId,run_id)).events;
+      await vi.waitFor(async()=>expect((await events()).at(-1)).toMatchObject({type:'RUN_FINISHED'}),{timeout:5000});
+      return {run_id,events:await events()};
+    }
+    const waitEvent=(events:Awaited<ReturnType<typeof turn>>['events'])=>events.flatMap(event=>
+      event.type==='CUSTOM'&&event.name==='thatcampus.building-selection'?[event.value]:[],
+    )[0]!;
+    const editorArguments={campus_id:west.id,building_id:computing.element_id};
+    const exact={type:'TOOL_CALL_ARGS',delta:JSON.stringify(editorArguments)};
+    try {
+      const original=await turn('Lets detail of cc3 building',await create());
+      expect(original.events).toContainEqual(expect.objectContaining(exact));
+      expect(waitEvent(original.events)).toBeUndefined();
+      const legacy=await turn('Lets detail of cc3 building',await create(),{...home,building_selection:undefined});
+      expect(legacy.events).toContainEqual(expect.objectContaining({type:'TOOL_CALL_ARGS',delta:JSON.stringify({
+        campus_id:west.id,building_name:'Computing Center 3',
+      })}));
+
+      const correctionThread=await create();
+      const unresolved=await turn('Lets detail of computing annex 21 building',correctionThread);
+      expect(waitEvent(unresolved.events)).toMatchObject({target:'computing annex 21 building',options:[]});
+      const correction=await turn('I mean computing center 3',correctionThread);
+      expect(correction.events).toContainEqual(expect.objectContaining(exact));
+
+      const manualThread=await create();
+      const manual=await turn('Lets detail of the computing annex building',manualThread);
+      const wait=waitEvent(manual.events);
+      expect(wait).toMatchObject({target:'computing annex building',options:[]});
+      await agent.onModuleDestroy();
+      agent=makeService();
+      http=new AgentController(agent,memory);
+      const select=(selection:{campus_id:string;element_id?:string})=>
+        http.selectInteriorBuilding(request(fixture.owner,{step_id:wait.step_id,selection}),manualThread,manual.run_id);
+      const selection={campus_id:west.id,element_id:computing.element_id};
+      await expect(select({campus_id:main.id,element_id:computing.element_id})).rejects.toThrow('no longer available');
+      await expect(http.selectInteriorBuilding(request(fixture.learner.actor,{step_id:wait.step_id,selection}),
+        manualThread,manual.run_id)).rejects.toThrow('Conversation not found');
+      const options=waitEvent((await select({campus_id:west.id})).events);
+      expect(options).toMatchObject({step_id:wait.step_id,options:[{campus_id:west.id,element_id:computing.element_id,label:computing.label}]});
+      const opened=await select(selection);
+      expect(opened.events).toContainEqual(expect.objectContaining(exact));
+      expect(waitEvent(opened.events)).toBeUndefined();
+      const call=opened.events.filter(event=>event.type==='TOOL_CALL_START').find(event=>event.toolCallName==='open_campus_interiors');
+      expect(call?.toolCallId).toBeDefined();
+      expect(await select(selection)).toEqual(opened);
+      const acknowledged=await http.acknowledgeUiStep(request(fixture.owner,{call_id:call!.toolCallId,status:'applied'}),manualThread,manual.run_id);
+      expect(acknowledged.events.some(event=>event.type==='TOOL_CALL_START')).toBe(false);
+      expect((await select(selection)).events.some(event=>event.type==='TOOL_CALL_START')).toBe(false);
+      await expect(select({campus_id:main.id,element_id:other.element_id})).rejects.toThrow('different building selection');
+
+      const stopThread=await create();
+      const pending=await turn('Lets detail of another building',stopThread);
+      const stopped=await http.selectInteriorBuilding(request(fixture.owner,{step_id:waitEvent(pending.events).step_id,cancel:true}),stopThread,pending.run_id);
+      expect(waitEvent(stopped.events)).toBeUndefined();
+      expect(stopped.events.some(event=>event.type==='TOOL_CALL_START')).toBe(false);
+      expect(stopped.events).toContainEqual(expect.objectContaining({type:'STATE_SNAPSHOT',snapshot:{status:'completed',progress:'Setup stopped'}}));
+      expect(complete).not.toHaveBeenCalled();
+    } finally {
+      await agent.onModuleDestroy();
+    }
+  }, 25_000);
+
   it('recovers a mixed model batch, opens an empty map, and binds a paraphrased editor request to a permitted campus',async()=>{
     complete.mockReset();
     const fixture=await createClassPracticeFixture(db);

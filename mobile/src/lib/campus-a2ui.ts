@@ -6,7 +6,7 @@ const MAX_COMPONENTS = 128;
 const MAX_DEPTH = 12;
 const ACTION_NAMES = ['focus_feature', 'accept_place_hint', 'review_places', 'answer_indoor_question', 'skip_indoor_question',
   'open_floor_plan_source', 'use_public_floor_plan'] as const;
-const ASSISTANT_ACTION_NAMES = ['open_assistant_source', 'open_assistant_action', 'confirm_assistant_action', 'dismiss_assistant_action', 'answer_campus_detail', 'open_public_web_source'] as const;
+const ASSISTANT_ACTION_NAMES = ['open_assistant_source', 'open_assistant_action', 'confirm_assistant_action', 'dismiss_assistant_action', 'answer_campus_detail', 'choose_interior_building', 'show_interior_map', 'stop_interior_setup', 'open_public_web_source'] as const;
 
 type DataModel = Record<string, unknown>;
 type ActionName = typeof ACTION_NAMES[number] | typeof ASSISTANT_ACTION_NAMES[number];

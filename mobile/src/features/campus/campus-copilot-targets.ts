@@ -7,6 +7,14 @@ import { nativeCampusDisplay, nativeCampusPlaceSelection } from '../../lib/nativ
 type Place = CampusScenePublished['places'][number];
 type FocusTarget = { kind: 'place' | 'element'; id: string };
 
+/** A manual choice acknowledges the exact reviewed, linked building polygon. */
+export function campusCopilotBuildingSelection(scene: CampusSceneDocument, places: readonly Place[], target: FocusTarget) {
+  const buildings = campusInteriorBuildings(scene, places.filter(place => place.kind === 'building'));
+  const reviewed = buildings.filter(building => building.review_state === 'reviewed' &&
+    (target.kind === 'element' ? building.id === target.id : building.space_id === target.id));
+  return reviewed.length === 1 ? reviewed[0] : undefined;
+}
+
 const cleanName = (value: string) => value.normalize('NFC').trim().replace(/\s+/gu, ' ').toLocaleLowerCase();
 
 export function campusInteriorBuildings(document: CampusSceneDocument, spaces: readonly Pick<CampusSceneSpace, 'id' | 'status'>[]): CampusSceneElement[] {

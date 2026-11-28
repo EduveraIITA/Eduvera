@@ -251,6 +251,28 @@ export class CampusScenesService {
       };
     });
   }
+  interiorBuildings(user: AuthUser, school: string, campus: string) {
+    return this.db.transaction().execute(async (tx) => {
+      await this.context(tx, user, school, campus, true);
+      const row = await this.current(tx, school, campus);
+      const document = row?.draft_document
+        ? sceneDocumentSchema.parse(row.draft_document)
+        : this.publicPublication(await this.publication(tx, row))?.document;
+      const buildings = document?.elements.filter(element =>
+        element.kind === "building" && element.geometry.type === "polygon" && element.space_id,
+      ) ?? [];
+      const placeIds = [...new Set(buildings.flatMap(element => element.space_id ? [element.space_id] : []))];
+      if (!placeIds.length) return [];
+      const places = await tx.selectFrom("campus_spaces").select(["id", "name", "code"])
+        .where("school_id", "=", school).where("campus_id", "=", campus)
+        .where("status", "=", "active").where("id", "in", placeIds).execute();
+      const byId = new Map(places.map(place => [place.id, place]));
+      return buildings.flatMap(element => {
+        const place = element.space_id && byId.get(element.space_id);
+        return place ? [{ element_id: element.id, space_id: place.id, label: element.label, name: place.name, code: place.code }] : [];
+      });
+    });
+  }
   resources(user: AuthUser, school: string, campus: string, raw: unknown) {
     const parsed = sceneResourceQuerySchema.safeParse(raw);
     if (!parsed.success) throw new BadRequestException("Choose a valid resource search and page.");

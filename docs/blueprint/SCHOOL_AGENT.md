@@ -149,6 +149,15 @@ A2UI collects the name in the conversation and fills the registered form,
 where the user confirms creation. Checkpoints cover this client handoff.
 Gemini model turns continue through the existing provider adapter.
 
+For building interiors, the Assistant resolves the building name or code against
+the campus editor’s current, linked buildings. A unique match opens its exact
+map element and starts the existing A2UI indoor setup. Ambiguity is presented
+as a choice in the conversation and on the map. A deliberate map selection
+returns the campus and map element to the same owned run. LangGraph checkpoints
+the selection and the editor’s acknowledgement. The editor checks the current
+record and permission again. Stop cancels a pending handoff. A new turn replaces
+it, and a building-name correction can carry forward the previous interior goal.
+
 Common campus requests run through the app-owned setup workflow without an
 inference call. The model can also request the same workflow for natural-language
 variants. The workflow checks the current directory or workspace capacity, binds
@@ -333,7 +342,8 @@ Private agent tables retain RLS and revoked direct browser/PUBLIC grants; a
 non-owner production runtime/RLS validation remains a separate gate, not implied
 by successful application permission tests.
 
-Use LangGraph TypeScript with PostgreSQL for the campus creation handoff.
+Use LangGraph TypeScript with PostgreSQL for the campus creation and building
+selection handoffs.
 Its [checkpoints](https://docs.langchain.com/oss/javascript/langgraph/checkpointers)
 and [interrupts](https://docs.langchain.com/oss/javascript/langgraph/interrupts)
 fit the existing database and support continuation across calls to separate

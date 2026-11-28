@@ -20,7 +20,7 @@ import { NativeDockInsetsContext, NativeDockMetricsContext } from './campus-tabs
 import { AssistantOverlayHost } from './AssistantOverlayHost';
 import { useCopilotAction, useCopilotTakeOver } from './CopilotProvider';
 import { CopilotPointer } from './CopilotPointer';
-import { copilotCallId } from '../lib/copilot';
+import { copilotCallId, validInteriorTarget } from '../lib/copilot';
 import { useAssistantPresentation } from './AssistantPresentation';
 import { NativeTabInsetsContext } from './native-tab-insets-context';
 import { Icon } from './Icon';
@@ -110,10 +110,11 @@ export function CampusShell() {
       },signal);
     },
   });
-  const atCampusInteriors = ({campus_id,building_name}: Record<string, unknown>) => {
+  const atCampusInteriors = ({campus_id,building_name,building_id}: Record<string, unknown>) => {
     const active=activeRoute.current;
     return active.pathname==='/more/virtual-campus' && active.params.campus_id===campus_id
-      && active.params.edit==='1' && active.params.indoor==='1' && active.params.indoor_building===building_name;
+      && active.params.edit==='1' && active.params.indoor==='1'
+      && active.params.indoor_building===building_name && active.params.indoor_building_id===building_id;
   };
   useCopilotAction({
     name:'open_campus_interiors',label:'Open interior setup',destinationPath:'/more/virtual-campus',
@@ -121,8 +122,11 @@ export function CampusShell() {
     isAtDestination:atCampusInteriors,
     run:(args,signal)=>{
       const campusId=args.campus_id,building=typeof args.building_name==='string'?args.building_name:undefined;
-      if(!copilotCallId(campusId))return false;
-      const query=new URLSearchParams({campus_id:campusId,edit:'1',indoor:'1',...(building?{indoor_building:building}:{})});
+      const buildingId=args.building_id;
+      if(!copilotCallId(campusId)||buildingId!==undefined&&!validInteriorTarget({campus_id:campusId,element_id:buildingId}))return false;
+      const query=new URLSearchParams({campus_id:campusId,edit:'1',indoor:'1'});
+      if(building)query.set('indoor_building',building);
+      if(buildingId!==undefined)query.set('indoor_building_id',buildingId);
       return openCopilotRoute(`/more/virtual-campus?${query}`,()=>atCampusInteriors(args),signal);
     },
   });

@@ -19,7 +19,7 @@ import { AssistantMark } from '../ui/AssistantMark';
 import { useAssistantOperationContext, useAssistantPresentation } from '../ui/AssistantPresentation';
 import { assistantDefinitiveRefusal, bindAssistantConversation, clearAssistantCommand, dispatchAssistantCommand, restoreAssistantCommand, type AssistantCommand } from '../lib/assistant-command';
 import { assistantChartKind, assistantChartValue, assistantLineSegments, parseAssistantStatus, parseAssistantThread, parseAssistantThreads } from '../lib/assistant-policy';
-import { assistantCampusNameAnswer, assistantCampusNameMessages, assistantActionRecordMessages, assistantActionRecordSelected, assistantDecisionMessages, assistantDecisionSelected, assistantReportMessages, assistantReplyMessages, assistantReportSourceSelected, assistantPublicWebSourceMessages, assistantPublicWebSourceSelected } from '../lib/assistant-a2ui';
+import { assistantCampusNameAnswer, assistantCampusNameMessages, assistantInteriorSelectionAction, assistantInteriorSelectionMessages, assistantActionRecordMessages, assistantActionRecordSelected, assistantDecisionMessages, assistantDecisionSelected, assistantReportMessages, assistantReplyMessages, assistantReportSourceSelected, assistantPublicWebSourceMessages, assistantPublicWebSourceSelected } from '../lib/assistant-a2ui';
 import { ASSISTANT_A2UI_CATALOG } from '../lib/campus-a2ui';
 import { ControlButton, Disclosure, Facts, InfoDisclosure } from '../ui/DomainControls';
 import { Alert } from '../ui/Alert';
@@ -29,7 +29,7 @@ import { assistantCopySnapshot, copyAssistantResponse } from './assistant/assist
 import { CampusA2uiSurface } from './campus/CampusA2uiSurface';
 import { useCopilot, useCopilotTarget } from '../ui/CopilotProvider';
 import type { WorkspaceTask } from '../ui/assistant-workspace-task';
-import { copilotCallId } from '../lib/copilot';
+import { copilotCallId, type InteriorCheckpoint, type InteriorTarget } from '../lib/copilot';
 
 type Props = { href: string; onNavigate: (href: string) => void; onCompactHeightChange?: (height: number) => void; workspaceTask?: WorkspaceTask | null };
 type Pending = AssistantCommand;
@@ -81,6 +81,11 @@ function AssistantAccess(props: Props & { portal: AssistantPortal }) {
 function Conversation({ href, onNavigate, onCompactHeightChange, workspaceTask, portal, accessPaused, preferenceError, preferenceRefreshing, onPreferenceRetry }: Props & { portal: AssistantPortal; accessPaused: boolean; preferenceError?: string; preferenceRefreshing: boolean; onPreferenceRetry: () => void }) {
   const { scopeKey, status: sessionStatus } = useSession(), client = useQueryClient(), { colors } = useTheme(), presentation = useAssistantPresentation();
   const copilot = useCopilot();
+  const revealCopilotApp = (atDestination: boolean) => {
+    if (presentation.mode === 'fullscreen' && (!atDestination || !workspaceTask)) presentation.collapse();
+  };
+  const revealApp = useRef(revealCopilotApp);
+  revealApp.current = revealCopilotApp;
   const workspaceHeading = useCopilotTarget('open_campus_interiors', { stage: 'after', enabled: !!workspaceTask && presentation.mode === 'fullscreen' });
   const [replyFocus, setReplyFocus] = useState<'full' | 'mini' | null>(null);
   const [sendWork, setSendWork] = useState<'sending' | 'stopping' | null>(null);
@@ -158,7 +163,8 @@ function Conversation({ href, onNavigate, onCompactHeightChange, workspaceTask, 
     setError(cause instanceof Error ? cause.message : 'Cancellation was not confirmed. Refresh before trying again.');
   }
   const localPhase = copilot.pending?.threadId === threadId || copilot.detail?.threadId === threadId ? copilot.activity?.phase : undefined;
-  const localWork = localPhase === 'preparing' || localPhase === 'applying';
+  const interiorSelection = copilot.interiorSelection?.threadId === threadId ? copilot.interiorSelection : null;
+  const localWork = localPhase === 'preparing' || localPhase === 'applying' || !!interiorSelection?.submitting;
   const focusedPreview = assistantCompactPresentation(runs, { attention: false, loading: false });
   const warningRef = useRef<React.ComponentRef<typeof View>>(null), reviewRef = useRef<React.ComponentRef<typeof View>>(null), reviewId = focusedPreview.mode === 'review' ? focusedPreview.action?.id ?? '' : '';
   const awaiting = runs.some(run => run.action?.status === 'pending' || run.action?.status === 'executing');
@@ -196,11 +202,15 @@ function Conversation({ href, onNavigate, onCompactHeightChange, workspaceTask, 
         dispatch: async value => {
           assertAssistantWriteReady(accessPausedRef.current);
           if (value.kind === 'decision') return apiFetch(`${root}/threads/${encodeURIComponent(value.threadId)}/actions/${encodeURIComponent(value.actionId)}`, { method: 'POST', body: JSON.stringify({ decision: value.decision }) });
+          copilot.cancelInteriorSelection(value.threadId);
           const lease = !recovering && value.uiContext ? copilot.capture(value.uiContext) : undefined;
-          const {workflow_steps,...wireUiContext}=value.uiContext??{};
+          const { workflow_steps, building_selection, ...wireUiContext } = value.uiContext ?? {};
           const receipt = await apiFetch<{run_id?: string}>(`${root}/threads/${encodeURIComponent(value.threadId)}/messages`, {
             method:'POST',
-            ...(workflow_steps?{headers:{'X-ThatCampus-Workflow-Steps':'1'}}:{}),
+            headers: {
+              ...(workflow_steps ? { 'X-ThatCampus-Workflow-Steps': '1' } : {}),
+              ...(building_selection ? { 'X-ThatCampus-Building-Selection': '1' } : {}),
+            },
             body:JSON.stringify({question:value.question,client_id:value.clientId,...(value.uiContext?{ui_context:wireUiContext}:{})}),
           });
           assertCurrent?.();
@@ -247,7 +257,7 @@ function Conversation({ href, onNavigate, onCompactHeightChange, workspaceTask, 
             { text: target === null ? 'Discard and start new' : 'Discard and open', style: 'destructive', onPress: () => finish(true) },
           ], { cancelable: true, onDismiss: () => finish(false) });
         }),
-        commit: () => { setSelected(target ?? ''); if (target !== null) setRequested(target); setQuestion(''); setHistory(false); setLinkedRequest(current => current?.id === target ? null : current); },
+        commit: () => { copilot.cancelInteriorSelection(threadId); setSelected(target ?? ''); if (target !== null) setRequested(target); setQuestion(''); setHistory(false); setLinkedRequest(current => current?.id === target ? null : current); },
       });
     } finally { conversationPrompt.current = false; }
   }
@@ -274,12 +284,16 @@ function Conversation({ href, onNavigate, onCompactHeightChange, workspaceTask, 
     if (!observed || observed.threadId!==threadId) return;
     if (accessPaused || !presentation.active) { copilot.takeOver(); return; }
     if (runs.some(run=>run.id===observed.id&&run.status!=='running'))
-      copilot.inspect(observed.id,atDestination=>{
-        if(presentation.mode==='fullscreen'&&(!atDestination||!workspaceTask))presentation.collapse();
-      });
-  },[copilot.pending,copilot.activity?.phase,presentation.active,accessPaused,threadId,runs,workspaceTask]);
+      copilot.inspect(observed.id, atDestination => revealApp.current(atDestination));
+  },[copilot.pending,copilot.activity?.phase,presentation.active,accessPaused,threadId,runs,copilot.inspect]);
+  const buildingOpened = copilot.activity?.threadId === threadId &&
+    copilot.activity.tool === 'open_campus_interiors' && copilot.activity.phase === 'applied';
+  useEffect(() => {
+    if (buildingOpened && presentation.active && !accessPaused) void detail.refetch();
+  }, [buildingOpened, presentation.active, accessPaused, detail.refetch]);
   async function cancelRun() {
     if (!presentation.active || accessPaused || cancelling.current) return;
+    copilot.cancelInteriorSelection(threadId);
     copilot.takeOver();
     if (stopFlight.current) {
       const followedRun = copilot.pending?.threadId === threadId ? copilot.pending.id : undefined;
@@ -315,7 +329,7 @@ function Conversation({ href, onNavigate, onCompactHeightChange, workspaceTask, 
   const currentCopyState = copyOwner.current === copyIdentity ? copyState : 'idle';
   const copyControl = <ResponseCopyControl onCopy={() => void copyResponse()} disabled={!copySnapshot} state={currentCopyState} />;
   const campusDetail = copilot.detail?.threadId === threadId ? copilot.detail : null;
-  const localLabel = localPhase === 'applying' ? copilot.activity?.label : undefined;
+  const localLabel = interiorSelection?.submitting ? 'Opening building' : localPhase === 'applying' ? copilot.activity?.label : undefined;
   const serverProgress = activeRun?.progress?.trim().replace(/[.…]+$/u, '');
   const working = sendWork === 'stopping' || cancelling.current ? 'Stopping…'
     : localLabel ? `${localLabel}…`
@@ -333,15 +347,22 @@ function Conversation({ href, onNavigate, onCompactHeightChange, workspaceTask, 
   const hasAnswerPreview = preview.mode === 'answer' && !!preview.latest && preview.latest.status !== 'running'
     && assistantInline(assistantCompactText(assistantRunAnswer(preview.latest), preview.chartSource?.chart)).some(part => !!part.text.trim());
   const hasCompactPreview = preview.mode === 'attention' || preview.mode === 'review' || hasAnswerPreview;
-  const openFromComposer = !hasCompactPreview && !loadingConversation && !working && !busy && !question && !campusDetail;
+  const openFromComposer = (!hasCompactPreview || !!interiorSelection) && !loadingConversation && !working && !busy && !question && !campusDetail;
   const expandConversation = () => { setReplyFocus('full'); presentation.expand(); };
   const restoreMiniFocus = replyFocus === 'mini' ? () => setReplyFocus(null) : undefined;
   const composer = <View style={{ gap: 8, minHeight: 0, flexShrink: 1, width: '100%', maxWidth: presentation.expanded ? 720 : 440, alignSelf: 'center' }}>
-    {!presentation.expanded && hasCompactPreview ? <CompactConversation preview={preview} onExpand={expandConversation}
+    {!presentation.expanded && hasCompactPreview && !interiorSelection ? <CompactConversation preview={preview} onExpand={expandConversation}
       onCopy={copySnapshot ? () => void copyResponse() : undefined} copyState={currentCopyState}
       restoreFocus={restoreMiniFocus} attention={attention} pending={pending} showReplyMark={hasAnswerPreview && !working && !busy && !copilot.pointer} /> : null}
     {campusDetail ? <CampusNameDetail key={campusDetail.id} id={campusDetail.id} locked={locked}
       onAnswer={copilot.answerDetail} onUseForm={copilot.takeOver} /> : null}
+    {interiorSelection && !interiorSelection.submitting ? <InteriorSelectionDetail
+      key={interiorSelection.step_id} checkpoint={interiorSelection} error={interiorSelection.error}
+      locked={!presentation.active || accessPaused || busy || !!pending || !!activeRun || localWork || awaiting}
+      mapVisible={copilot.interiorMapActive && presentation.mode !== 'fullscreen'}
+      onShowMap={() => { revealApp.current(false); if (!copilot.interiorMapActive) onNavigate('/more/virtual-campus'); }}
+      onStop={() => copilot.cancelInteriorSelection(threadId, interiorSelection.step_id)}
+      onSelect={selection => copilot.selectInteriorTarget(selection, interiorSelection.step_id, atDestination => revealApp.current(atDestination))} /> : null}
     <ConversationComposer value={question} onChange={setQuestion} locked={locked} busy={busy} working={working}
       stopDisabled={stopDisabled} status={composerStatus} onStop={() => void cancelRun()} loading={loadingConversation}
       onExpand={!presentation.expanded && openFromComposer ? expandConversation : undefined} restoreOpenFocus={restoreMiniFocus}
@@ -441,6 +462,28 @@ function CampusNameDetail({id,locked,onAnswer,onUseForm}:{id:string;locked:boole
       }}/>
     {error?<Notice tone="warning" message={error}/>:null}
     <ControlButton title="Use the campus form" disabled={busy} onPress={onUseForm}/>
+  </View>;
+}
+
+function InteriorSelectionDetail({ checkpoint, mapVisible, locked, error, onShowMap, onSelect, onStop }: {
+  checkpoint: InteriorCheckpoint; mapVisible: boolean; locked: boolean; error?: string;
+  onShowMap: () => void; onSelect: (selection: InteriorTarget) => boolean; onStop: () => void;
+}) {
+  const { colors } = useTheme(), [notice, setNotice] = useState('');
+  const messages = useMemo(() => assistantInteriorSelectionMessages(checkpoint, mapVisible), [checkpoint, mapVisible]);
+  const warning = notice || error;
+  return <View style={[styles.detailForm, { borderColor: colors.border }]}>
+    <Glass material="assistant" pointerEvents="none" accessibilityElementsHidden importantForAccessibility="no-hide-descendants"
+      style={[StyleSheet.absoluteFill, { borderRadius: 20 }]} />
+    <CampusA2uiSurface catalog={ASSISTANT_A2UI_CATALOG} messages={messages} disabled={locked}
+      onValueChange={() => setNotice('')} onAction={event => {
+        const action = assistantInteriorSelectionAction(event, checkpoint);
+        if (action?.kind === 'map') onShowMap();
+        if (action?.kind === 'stop') onStop();
+        if (action?.kind === 'select' && !onSelect(action.selection)) setNotice('Try selecting the building again.');
+        if (action?.kind === 'missing') setNotice('Choose a building.');
+      }} />
+    {warning ? <Notice tone="warning" message={warning} /> : null}
   </View>;
 }
 

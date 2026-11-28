@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { copilotRouteContext, parseCopilotContext, readCopilotBatch, readCopilotPlan, readCopilotWorkflowReply } from '../src/lib/copilot';
+import { copilotRouteContext, parseCopilotContext, readCopilotBatch, readCopilotBuildingSelectionReply, readCopilotPlan, readCopilotWorkflowReply } from '../src/lib/copilot';
 
 const threadId = 'thread', runId = 'run', toolCallId = 'call_1';
 const event = (type: string, body: Record<string, unknown> = {}) => ({ type, ...body });
@@ -108,4 +108,36 @@ test('staged workspace creation binds each graph marker and receipt to the exact
   ]) assert.equal(readCopilotWorkflowReply(bad,threadId,runId,navigate),null);
   assert.deepEqual(readCopilotWorkflowReply(packet([receipt(first,'applied'),receipt(second,'applied')]),threadId,runId,prepare),
     {kind:'finished',status:'applied'});
+});
+
+test('a building checkpoint and resume bind the exact run, campus, human receipt and editor', () => {
+  const step = '169fadb6-a106-41b2-9ba3-792ea74cdbe6', editor = '839a86d0-4f4c-4d8c-aafe-c0943305357e';
+  const campus = '861291df-e176-47e8-8595-e48161a8e61f';
+  const selection = { campus_id: campus, element_id: 'osm-123' };
+  const option = { ...selection, label: 'Computing Center 3', campus_name: 'Main campus' };
+  const custom = (name: string,value: unknown) => event('CUSTOM',{name,value});
+  const checkpoint = custom('thatcampus.building-selection',{version:1,step_id:step,target:'CC3',options:[option]});
+  const packet = (events: Record<string,unknown>[], pending?: string) => ({ version:'1.0', events:[
+    ...head,...events,event('RUN_FINISHED',{threadId,runId,result:{status:'completed'},
+      ...(pending ? {outcome:{type:'success',pendingToolCallIds:[pending]}} : {})}),
+  ] });
+  const approved = event('TOOL_CALL_RESULT',{role:'tool',messageId:`${step}:result`,toolCallId:step,content:'{"status":"applied"}'});
+  const editorSteps = (args:unknown) => [
+    custom('thatcampus.workflow-step',{version:1,call_id:editor}),
+    event('TOOL_CALL_START',{toolCallId:editor,toolCallName:'open_campus_interiors'}),
+    event('TOOL_CALL_ARGS',{toolCallId:editor,delta:JSON.stringify(args)}),
+    event('TOOL_CALL_END',{toolCallId:editor}),
+  ];
+  assert.equal(readCopilotBatch(packet([checkpoint]),threadId,runId)?.interiorCheckpoint?.target,'CC3');
+  assert.equal(readCopilotBatch(packet([checkpoint,checkpoint]),threadId,runId),null);
+  assert.equal(readCopilotBatch(packet([checkpoint,...editorSteps({campus_id:campus,building_id:'osm-123'})],editor),threadId,runId),null);
+  const valid = packet([approved,...editorSteps({campus_id:campus,building_id:'osm-123'})],editor);
+  const read = (value:unknown, target=selection) => readCopilotBuildingSelectionReply(value,threadId,runId,step,target);
+  assert.equal(read(valid)?.kind,'step');
+  assert.equal(read(packet([checkpoint]))?.kind,'wait');
+  assert.equal(read(packet([approved]))?.kind,'finished');
+  assert.equal(read(valid,{...selection,element_id:'other-building'}),null);
+  assert.equal(read(packet([...editorSteps({campus_id:campus,building_id:'osm-123'})],editor)),null);
+  assert.equal(read(packet([approved,...editorSteps({campus_id:campus,building_id:'../osm-123'})],editor)),null);
+  assert.equal(readCopilotBuildingSelectionReply(valid,threadId,'old-run',step,selection),null);
 });
