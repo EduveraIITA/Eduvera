@@ -30,7 +30,7 @@ import {
 import { authorizedCampusDirectory, campusWorkflowDirection, campusWorkflowRequest, campusBuildingClarification, campusInteriorBuildingCampusId, campusInteriorBuildingTarget, canPrepareCampus, isCampusFloorPlanWebFollowup, isCampusSetupContinuation, resumeCampusWorkflow, type CampusRequest } from './agent-campus-workflow.js';
 import { freePublicWebEnabled, FREE_PUBLIC_WEB_DAILY_LIMIT, PUBLIC_WEB_LOOKUP_STEP, publicWebLookupsSince } from '../common/public-web-lookup.js';
 import { lookupPublicWeb, publicWebRequest, publicWebSourceSchema, type PublicWebRequest } from '../campus-scene-import/scene-import.floor-plan-discovery.js';
-import { timetableNavigationDate } from './timetable-navigation.js';
+import { asksForDisplayedAttendees, timetableNavigationDate } from './timetable-navigation.js';
 import { executionNow } from '../campus-model-core/execution-time.runtime.js';
 import { AgentCampusWorkflow } from './agent-campus-graph.js';
 import { campusInteriorBuildingChoices, matchCampusInteriorBuildings, readCampusInteriorBuildings } from './agent-campus-building.js';
@@ -878,6 +878,19 @@ export class AgentService implements OnModuleDestroy {
         await sql`UPDATE agent_runs SET evidence=${JSON.stringify(evidence)}::jsonb WHERE id=${id}::uuid`.execute(this.db);
         return {data,stepId,source};
       };
+    const showAttendees=async(date:string,title?:string,kind?:string)=>{
+      if(!timetableRead||!attendeeRead)throw new ForbiddenException('Activity attendance is unavailable.');
+      const schedule=projectScheduledActivities((await rememberRead(timetableRead,{date})).data);
+      const matches=schedule.items.filter(item=>(!title||item.title.toLowerCase()===title.toLowerCase())
+        &&(!kind||!['class','lesson'].includes(kind)||['training','teaching'].includes(item.purpose))
+        &&(kind!=='meeting'||item.purpose==='meeting'));
+      if(schedule.total_pages>1||matches.length!==1||matches[0]!.can_open_register===false)return schedule;
+      const match=matches[0]!;
+      const data=projectActivityAttendance((await rememberRead(attendeeRead,{occurrence_id:match.id})).data);
+      controller.signal.throwIfAborted();
+      await this.finish(id,'completed',attendeeReport(match.title,date,data),evidence);
+      return undefined;
+    };
     const applyCampusRequest=async(request:CampusRequest)=>{
       await requireProFeatures(this.db,scope.userId);
       const owner=request.kind==='create'?campusCapacityRead:campusMapRead;
@@ -902,13 +915,21 @@ export class AgentService implements OnModuleDestroy {
     try {
       if (timetableRead && admittedUi?.tools.includes('open_timetable')) {
         let previousDate: string | undefined;
-        if (/^(?:the )?\d{1,2}(?:st|nd|rd|th)?[.!]?$/i.test(question.trim())) {
+        const attendees=asksForDisplayedAttendees(question);
+        if (attendees || /^(?:the )?\d{1,2}(?:st|nd|rd|th)?[.!]?$/i.test(question.trim())) {
           const previous = (await sql<{date:string}>`SELECT step.input->>'date' AS date FROM agent_tool_steps step
             JOIN (SELECT id,status FROM agent_runs WHERE thread_id=${thread.id}::uuid AND id<>${id}::uuid
               ORDER BY created_at DESC,id DESC LIMIT 1) prior ON prior.id=step.run_id AND prior.status='completed'
             WHERE step.kind='read' AND step.capability='scheduled_activities'
+              AND EXISTS (SELECT 1 FROM agent_tool_steps nav WHERE nav.run_id=prior.id AND nav.capability=${CLIENT_UI_CALL_STEP}
+                AND nav.input->>'tool'='open_timetable' AND nav.input->'arguments'->>'date'=step.input->>'date'
+                AND (${!attendees} OR nav.id=${admittedUi.last_result?.call_id??null}::uuid))
             ORDER BY step.created_at DESC LIMIT 1`.execute(this.db)).rows[0];
           previousDate=previous?.date;
+        }
+        if(previousDate && attendees && attendeeRead && admittedUi.last_result?.tool==='open_timetable' && admittedUi.last_result.status==='applied') {
+          await requireProFeatures(this.db,scope.userId);
+          if(!await showAttendees(previousDate,undefined,attendees.kind))return;
         }
         const date=timetableNavigationDate(question,schoolDate(scope.timezone,executionNow()),previousDate);
         const call=date && parseClientUiCall(admittedUi,'open_timetable',{date});
@@ -1067,15 +1088,8 @@ export class AgentService implements OnModuleDestroy {
             } else if(call.name===attendeeReportTool.name) {
               if(!timetableRead||!attendeeRead||!tools.some(tool=>tool.name===call.name))throw new ForbiddenException('Activity attendance is unavailable.');
               const {date,title}=attendeeReportInput.parse(call.arguments);
-              const schedule=projectScheduledActivities((await rememberRead(timetableRead,{date})).data);
-              const matches=title?schedule.items.filter(item=>item.title.toLowerCase()===title.toLowerCase()):schedule.items;
-              if(schedule.total_pages<=1 && matches.length===1 && matches[0]!.can_open_register!==false) {
-                const match=matches[0]!;
-                const data=projectActivityAttendance((await rememberRead(attendeeRead,{occurrence_id:match.id})).data);
-                controller.signal.throwIfAborted();
-                await this.finish(id,'completed',attendeeReport(match.title,date,data),evidence);
-                return;
-              }
+              const schedule=await showAttendees(date,title);
+              if(!schedule)return;
               output={date,activities:schedule,instruction:'Match the requested class from these results. If there is no matching activity, check the academic class registers for that date. For multiple plausible matches give their names and times.'};
             } else if(call.name===campusSetupTool.name) {
               if(!campusSetupAdvertised)throw new BadRequestException('Campus setup controls are unavailable on the current screen.');

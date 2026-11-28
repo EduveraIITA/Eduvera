@@ -149,6 +149,16 @@ describe.skipIf(!enabled)('authorized Assistant AG-UI event read and client tool
       expect(run?.answer).toContain('unmarked for 1');
       expect(run?.answer).not.toContain('Remi');
       expect(complete).toHaveBeenCalledTimes(1);
+      const context={screen:'workspace',tools:['open_timetable']};
+      const opened=await http.send(request(fixture.owner,{question:'Show my schedule for '+date,client_id:randomUUID(),ui_context:context}),thread);
+      const events=()=>http.runEvents(request(fixture.owner),thread,opened.run_id);
+      await vi.waitFor(async()=>expect((await events()).events.some(event=>event.type==='TOOL_CALL_START')).toBe(true));
+      const call=(await events()).events.find(event=>event.type==='TOOL_CALL_START')!;
+      const follow=await http.send(request(fixture.owner,{question:'Who attended that class?',client_id:randomUUID(),ui_context:{
+        ...context,last_result:{tool:'open_timetable',status:'applied',call_id:call.toolCallId}
+      }}),thread);
+      await vi.waitFor(async()=>expect((await http.detail(request(fixture.owner),thread)).runs.find(row=>row.id===follow.run_id)?.answer).toContain('Jo (late)'));
+      expect(complete).toHaveBeenCalledTimes(1);
     } finally {await agent.onModuleDestroy();}
   },20000);
 

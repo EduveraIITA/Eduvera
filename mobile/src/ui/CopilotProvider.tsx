@@ -78,6 +78,9 @@ export function CopilotProvider({ children }: PropsWithChildren) {
   const { screen, identity } = copilotRouteContext(pathname, href);
   // A registered route declares its exact scope selectors. Transient view
   // controls are given to the owning module and do not change this lease.
+  const appliedTimetableDate = useRef<string | undefined>(undefined);
+  const displayedTimetableDate = useRef<string | undefined>(undefined);
+  displayedTimetableDate.current = pathname === '/areas/timetable/schedule' ? new URLSearchParams(href.split('?')[1]).get('date') ?? undefined : undefined;
   const binding = JSON.stringify([session.scopeKey, route?.key, pathname, ...identity]);
   const eligible = session.status === 'authenticated' && session.environment.mode === 'live' && !session.environment.unavailable;
   const current = useRef({ binding, eligible, screen, pathname, campusId: identity[0], scopeKey: session.scopeKey });
@@ -167,10 +170,12 @@ export function CopilotProvider({ children }: PropsWithChildren) {
   const context = useCallback((): CopilotContext | undefined => {
     if (!current.current.eligible || AppState.currentState !== 'active') return;
     const tools = copilotToolNames.filter(name => copilotToolAvailableOn(name,current.current.screen) && find(name));
-    if (!tools.length && !lastResult.current) return;
+    const result = lastResult.current?.tool === 'open_timetable' && lastResult.current.status === 'applied'
+      && (!displayedTimetableDate.current || displayedTimetableDate.current !== appliedTimetableDate.current) ? undefined : lastResult.current;
+    if (!tools.length && !result) return;
     const mapped = current.current.screen==='virtual_campus' ? [...new Set(campusTargets.current.values())] : [];
     return { screen: current.current.screen, tools, workflow_steps: true, building_selection: true, ...(mapped.length===1?{campus_id:mapped[0]}:{}),
-      ...(lastResult.current ? { last_result: lastResult.current } : {}) };
+      ...(result ? { last_result: result } : {}) };
   }, [find]);
   const capture = useCallback((expected: CopilotContext): Lease | undefined => {
     const available = context();
@@ -310,6 +315,7 @@ export function CopilotProvider({ children }: PropsWithChildren) {
           operation.destinationPath = action.destinationPath;
           const applied = await action.run(intent.args,signal);
           operation.applied = applied;
+          if (applied && intent.name==='open_timetable' && typeof intent.args.date==='string') appliedTimetableDate.current=intent.args.date;
           if (!currentLease()) { finish();return; }
           if (!applied) { finish({tool:intent.name,status:'blocked'},action.label);return; }
           operation.binding=current.current.binding;operation.destinationPath=undefined;

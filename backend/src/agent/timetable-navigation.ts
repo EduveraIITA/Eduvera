@@ -21,3 +21,11 @@ export function timetableNavigationDate(question:string, today:string, previousD
   const offset=date==='tomorrow'?1:date==='yesterday'?-1:0;
   return new Date(Date.parse(today+'T12:00:00Z')+offset*86400000).toISOString().slice(0,10);
 }
+
+// A short reference to the class on the last dated screen. Named people, dates,
+// filters and extra instructions require the model to resolve their meaning.
+export function asksForDisplayedAttendees(question:string) {
+  const text=question.trim().toLowerCase().replace(/[.!?]+$/, '').replace(/\s+/g,' ');
+  const match=/^(?:please )?(?:who (?:attended|was present|were (?:the )?attendees)|(?:list|show(?: me)?) (?:the )?attendees)(?: (?:in |of |for |at )?(?:that|the|this|my) (class|lesson|session|activity|meeting))?$/.exec(text);
+  return match ? {kind:match[1]??'activity'} : undefined;
+}
