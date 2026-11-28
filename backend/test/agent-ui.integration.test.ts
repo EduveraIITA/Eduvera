@@ -152,7 +152,7 @@ describe.skipIf(!enabled)('authorized Assistant AG-UI event read and client tool
     const campusId=randomUUID();
     let campuses:{id:string;name:string;code:string}[]=[];
     let can_edit=true;
-    const dispatch=vi.fn(async()=>({can_edit,campuses}));
+    const dispatch=vi.fn(()=>Promise.resolve({can_edit,campuses}));
     const memory=new AgentMemoryService(db);
     const agent=new AgentService(db,new RolesService(db),fixture.school,{dispatch} as unknown as AgentGateway,memory);
     const http=new AgentController(agent,memory);
