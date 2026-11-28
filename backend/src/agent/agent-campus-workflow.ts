@@ -122,10 +122,12 @@ export function campusWorkflowDirection(request: CampusRequest, context: ClientU
     if (!capacity.success) return {calls:[],answer:'Open Your campuses to check your account limit.',href:campusAccountHref};
     if (capacity.data.count>=capacity.data.limit) return {calls:[],answer:`You’ve reached the ${capacity.data.limit}-campus limit.`,href:campusAccountHref};
     const prepare=step('prepare_campus_create',request.name ? {name:request.name} : {});
-    const calls=request.prepared && context?.screen==='campus_account' ? []
+    const formOpen=request.prepared && context?.screen==='campus_account';
+    const calls=formOpen ? []
       : tools.includes('prepare_campus_create') ? [prepare]
         : tools.includes('open_campus_create') ? [step('open_campus_create',{}),prepare] : [];
-    const answer=request.name ? 'Review the campus form, then tap Create campus.' : 'Enter a name for the new campus.';
+    const answer=request.name ? 'Review the campus form, then tap Create campus.'
+      : formOpen ? 'Review the name in the campus form, then tap Create campus.' : 'Enter a name for the new campus.';
     return {calls,answer,href:campusAccountHref};
   }
   const directory=authorizedCampusDirectory(source);

@@ -127,7 +127,7 @@ describe.skipIf(!enabled)('authorized Assistant AG-UI event read and client tool
     const continuation=await turn('Then start building',{screen:'campus_account',tools:['prepare_campus_create'],
       last_result:{tool:'prepare_campus_create',status:'applied',call_id:steps.at(-1)!.toolCallId}});
     expect(continuation.initial.some(event=>event.type==='TOOL_CALL_START')).toBe(false);
-    expect(JSON.stringify(continuation.initial)).toContain('Enter a name');
+    expect(JSON.stringify(continuation.initial)).toContain('Review the name in the campus form, then tap Create campus.');
     const form=await turn('River House',{screen:'campus_account',tools:['prepare_campus_create'],
       last_result:{tool:'prepare_campus_create',status:'applied',call_id:steps.at(-1)!.toolCallId}});
     expect(form.initial.filter(event=>event.type==='TOOL_CALL_START').map(step=>step.toolCallName)).toEqual(['prepare_campus_create']);
