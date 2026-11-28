@@ -1,7 +1,7 @@
 // Intent vocabulary routes to small, coherent tool sets. Whole tokens avoid
 // accidental matches such as "his" -> "history" or "mark present" -> marks.
 const topics: Record<string,string[]> = {
-  attendance: ['attendance','attendence','present','presence','absent','absence','late','register','registers','half_day'],
+  attendance: ['attendance','attendence','attendees','attended','present','presence','absent','absence','late','register','registers','half_day'],
   assessments: ['assessment','assessments','marks','grades','score','scores','results','exam','exams'],
   records: ['student','students','learner','learners','admission','enrollment','enrolment'],
   timetable: ['timetable','schedule','lesson','lessons','period','periods','calendar'],
@@ -41,11 +41,11 @@ export function conversationRoutingQuery(question:string,previousUserQuestions:r
 export const domainStarters: Record<string,string[]> = {
   virtual_campus:['virtual_campus_layout'],
   insights:['principal_analytics','principal_review','insights','school_insights','find_students'],
-  attendance: ['student_attendance','record_student_attendance','my_attendance','subject_attendance','class_registers','attendance_register','record_attendance'],
+  attendance: ['scheduled_activities','activity_attendees','student_attendance','record_student_attendance','my_attendance','subject_attendance','class_registers','attendance_register','record_attendance'],
   records: ['find_students','student_attendance','enrollment_options','school_records'],
   assessments: ['assessments','my_results','assessment_details','save_marks'],
   messages: ['conversations','conversation_messages','message_recipients','send_message','create_conversation'],
   notifications: ['notifications','read_notification'],
   fees: ['student_fees','fee_workspace','fee_students','record_payment','report_fee_payment'],
-  timetable: ['my_timetable','teacher_day_plan','day_plan_options','day_plan_details'],
+  timetable: ['scheduled_activities','my_timetable','teacher_day_plan','day_plan_options','day_plan_details'],
 };

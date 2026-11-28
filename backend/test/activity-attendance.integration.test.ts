@@ -110,6 +110,22 @@ async function academicLessonFixture(){
 }
 
 describe.skipIf(!enabled)("one person-based participation lifecycle with real PostgreSQL and DT evidence", () => {
+  it("reads recorded attendance without initializing an empty register or inferring attendance from the roster", async()=>{
+    const f=await fixture();
+    await f.run(async()=>{
+      const draft=await planning.create(request(f.user),f.schoolId,{idempotency_key:randomUUID(),title:"Attendance lookup",purpose:"training",timezone:"Asia/Kolkata",starts_on:f.today,recurrence:"once",starts_at:"09:00",ends_at:"10:00",end_day_offset:0,person_ids:f.people,attendance_mode:"roll_call",recorder_person_id:f.personId,reviewer_person_id:f.personId});
+      await planning.publish(request(f.user),f.schoolId,draft.id,{idempotency_key:randomUUID(),expected_revision:draft.revision});
+      const occurrence=(await planning.ensureOccurrences(f.schoolId,f.today,f.today)).find(item=>item.plan_version_id===draft.id)!;
+      const lookup=()=>workspace.openOccurrence(f.user,f.schoolId,occurrence.id,true);
+      expect(await lookup()).toMatchObject({register:null,counts:{recorded:0}});
+      expect((await sql`SELECT id FROM activity_attendance_registers WHERE occurrence_id=${occurrence.id}::uuid`.execute(db)).rows).toHaveLength(0);
+      const id=await service.ensureRegister(f.schoolId,occurrence.id);
+      await service.marks(f.user,f.schoolId,id,{expected_revision:0,records:[{person_id:f.people[0],status:"late"}]},request(f.user));
+      expect(await lookup()).toMatchObject({register:{id},counts:{recorded:1},roster:expect.arrayContaining([expect.objectContaining({person_id:f.people[0],status:"late"})])});
+      await expect(workspace.openOccurrence({...f.user,active_school_id:randomUUID()},f.schoolId,occurrence.id,true)).rejects.toThrow("Choose this institution");
+    });
+  });
+
   it("resolves accepted observation state at the recorded cutoff after a later attendance correction", async () => {
     const f = await fixture(), { registerId } = await f.create();
     await f.run(async () => {

@@ -96,6 +96,62 @@ describe.skipIf(!enabled)('authorized Assistant AG-UI event read and client tool
     expect(revoked.events.some(event=>event.type==='TOOL_CALL_START'||event.type==='CUSTOM')).toBe(false);
   },15000);
 
+  it('opens an empty staff timetable and handles a day-only correction without calling the model', async()=>{
+    complete.mockClear();
+    const fixture=await createClassPracticeFixture(db);
+    await db.updateTable('users').set({pro_features_enabled:true}).where('id','=',fixture.owner.id).execute();
+    let visible=true;
+    const dispatch=vi.fn((capability:{name:string})=>{
+      if(!visible||capability.name!=='scheduled_activities')return Promise.reject(new ForbiddenException());
+      return Promise.resolve({items:[],total_pages:1});
+    });
+    const memory=new AgentMemoryService(db);
+    const agent=new AgentService(db,new RolesService(db),fixture.school,{dispatch} as unknown as AgentGateway,memory);
+    const http=new AgentController(agent,memory);
+    const thread=(await agent.create(request(fixture.owner,{portal:'principal'}))).id;
+    const open=async(question:string,date:string)=>{
+      const {run_id}=await http.send(request(fixture.owner,{question,client_id:randomUUID(),ui_context:{screen:'workspace',tools:['open_timetable']}}),thread);
+      const packet=()=>http.runEvents(request(fixture.owner),thread,run_id);
+      await vi.waitFor(async()=>expect((await packet()).events).toContainEqual(expect.objectContaining({type:'TOOL_CALL_START',toolCallName:'open_timetable'})),{timeout:5000});
+      expect((await packet()).events).toContainEqual(expect.objectContaining({type:'TOOL_CALL_ARGS',delta:JSON.stringify({date})}));
+      return packet;
+    };
+    try {
+      await open('Show me the schedule for 2027-02-12','2027-02-12');
+      const packet=await open('18th','2027-02-18');
+      expect(complete).not.toHaveBeenCalled();
+      visible=false;
+      expect((await packet()).events.some(event=>event.type==='TOOL_CALL_START')).toBe(false);
+    } finally { await agent.onModuleDestroy(); }
+  },20000);
+
+  it('answers a dated attendee request with recorded marks in one model decision', async()=>{
+    complete.mockClear();
+    const fixture=await createClassPracticeFixture(db);
+    await db.updateTable('users').set({pro_features_enabled:true}).where('id','=',fixture.owner.id).execute();
+    const occurrence=randomUUID(),register=randomUUID(),date='2027-02-12';
+    const roster=[{person_id:randomUUID(),name:'Jo',status:'late'},{person_id:randomUUID(),name:'Remi',status:null}];
+    const dispatch=(cap:{name:string},args:Record<string,unknown>)=>{
+      if(cap.name==='scheduled_activities' && args.date===date)return Promise.resolve({items:[{id:occurrence,title:'Design studio',starts_at:date+'T08:00:00Z',ends_at:date+'T09:00:00Z',purpose:'training',can_open_register:true}],total_pages:1});
+      if(cap.name==='activity_attendees' && args.occurrence_id===occurrence)return Promise.resolve({register:{id:register,title:'Design studio',state:'draft'},counts:{participants:2,recorded:1,unrecorded:1},roster});
+      throw new Error('Unexpected attendee source');
+    };
+    const memory=new AgentMemoryService(db);
+    const agent=new AgentService(db,new RolesService(db),fixture.school,{dispatch} as unknown as AgentGateway,memory);
+    const http=new AgentController(agent,memory);
+    try {
+      const thread=(await agent.create(request(fixture.owner,{portal:'principal'}))).id;
+      complete.mockResolvedValueOnce({text:'',calls:[{id:'model-call',name:'show_activity_attendees',arguments:{date}}]});
+      const {run_id}=await http.send(request(fixture.owner,{question:'Who attended the class on February 12, 2027?',client_id:randomUUID()}),thread);
+      await vi.waitFor(async()=>expect((await http.runEvents(request(fixture.owner),thread,run_id)).events.at(-1)).toMatchObject({type:'RUN_FINISHED'}),{timeout:5000});
+      const run=(await agent.detail(request(fixture.owner),thread)).runs.find(row=>row.id===run_id);
+      expect(run?.answer).toContain('Jo (late)');
+      expect(run?.answer).toContain('unmarked for 1');
+      expect(run?.answer).not.toContain('Remi');
+      expect(complete).toHaveBeenCalledTimes(1);
+    } finally {await agent.onModuleDestroy();}
+  },20000);
+
   it('runs explicit campus controls in order, retains the exact follow-up and checks current authority again', async () => {
     complete.mockClear();
     const fixture=await createClassPracticeFixture(db);

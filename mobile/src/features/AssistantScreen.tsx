@@ -225,7 +225,15 @@ function Conversation({ href, onNavigate, onCompactHeightChange, workspaceTask, 
       });
       assertCurrent();
       if (cancellation) await cancellation;
-      await client.invalidateQueries({ queryKey: ['campus', scopeKey] });
+      if (completed.kind === 'send') {
+        const conversationKey = ['campus', scopeKey, 'assistant-thread', portal, studentId, completed.threadId];
+        // Refresh the rest of the workspace independently of the conversation.
+        void client.invalidateQueries({ queryKey: ['campus', scopeKey], predicate: query =>
+          !(query.queryKey[2] === 'assistant-thread' && query.queryKey[5] === completed.threadId) }).catch(() => {});
+        await client.invalidateQueries({ queryKey: conversationKey, exact: true });
+      } else {
+        await client.invalidateQueries({ queryKey: ['campus', scopeKey] });
+      }
       if (cancellation) await cancellation;
       assertCurrent();
       setSelected(completed.threadId); if (completed.kind === 'send') setQuestion('');
@@ -333,7 +341,7 @@ function Conversation({ href, onNavigate, onCompactHeightChange, workspaceTask, 
   const serverProgress = activeRun?.progress?.trim().replace(/[.…]+$/u, '');
   const working = sendWork === 'stopping' || cancelling.current ? 'Stopping…'
     : localLabel ? `${localLabel}…`
-      : sendWork || activeRun || localWork ? `${serverProgress && serverProgress !== 'Checking your request' ? serverProgress : 'Thinking'}…` : undefined;
+      : sendWork || activeRun || localWork ? `${serverProgress && serverProgress !== 'Checking your request' ? serverProgress : sendWork ? 'Sending request' : 'Working on your request'}…` : undefined;
   const stopDisabled = accessPaused || sendWork === 'stopping' || cancelling.current
     || (!sendWork && !localWork && (busy || !!pending));
   const composerStatus = accessPaused ? 'Access check paused. Your question is retained.'

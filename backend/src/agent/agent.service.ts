@@ -12,7 +12,7 @@ import { proFeaturesEnabled, requireProFeatures } from '../auth/pro-features.js'
 import { nativeSessionToken } from '../auth/session-transport.js';
 import { AgentGateway, assertKnownIds, assertLocalScreen, collectIds, stableHash, type AgentCredentials, type Evidence } from './gateway.js';
 import { agentContextWindowTokens, agentSettings, createAgentModel, modelAvailability, type ModelMessage, type ToolDefinition } from './providers.js';
-import { recordReferences, resolveReferences, reportsUnverifiedWrite, type RecordReference } from './references.js';
+import { recordReferences, resolveReferences, reportsUnverifiedWrite, schoolDate, type RecordReference } from './references.js';
 import { attendanceArguments } from './attendance-intent.js';
 import { AgentLimitError, assertAgentEnabled, reserveModelCall, agentExecutionLimits, agentLimits } from './limits.js';
 import { ModelFailure } from './model-errors.js';
@@ -30,6 +30,7 @@ import {
 import { authorizedCampusDirectory, campusWorkflowDirection, campusWorkflowRequest, campusBuildingClarification, campusInteriorBuildingCampusId, campusInteriorBuildingTarget, canPrepareCampus, isCampusFloorPlanWebFollowup, isCampusSetupContinuation, resumeCampusWorkflow, type CampusRequest } from './agent-campus-workflow.js';
 import { freePublicWebEnabled, FREE_PUBLIC_WEB_DAILY_LIMIT, PUBLIC_WEB_LOOKUP_STEP, publicWebLookupsSince } from '../common/public-web-lookup.js';
 import { lookupPublicWeb, publicWebRequest, publicWebSourceSchema, type PublicWebRequest } from '../campus-scene-import/scene-import.floor-plan-discovery.js';
+import { timetableNavigationDate } from './timetable-navigation.js';
 import { executionNow } from '../campus-model-core/execution-time.runtime.js';
 import { AgentCampusWorkflow } from './agent-campus-graph.js';
 import { campusInteriorBuildingChoices, matchCampusInteriorBuildings, readCampusInteriorBuildings } from './agent-campus-building.js';
@@ -64,6 +65,12 @@ function mayOpenVirtualCampus(data:unknown) {
   const directory=authorizedCampusDirectory(data);
   return Boolean(directory&&(directory.can_edit||directory.campuses.length));
 }
+const attendeeReportInput=z.object({date:z.iso.date(),title:z.string().trim().min(1).max(180).optional()}).strict();
+const attendeeReportTool:ToolDefinition={
+  name:'show_activity_attendees',
+  description:'Answer who attended a scheduled class or activity on a local date. The app resolves one matching occurrence and displays its recorded attendees. Provide its exact title only if known. A request with additional analysis should use the individual read tools.',
+  parameters:z.toJSONSchema(attendeeReportInput,{io:'input'}),
+};
 const reasoningRequest=z.object({
   reason:z.enum(['dependent_steps','ambiguous_target','conflicting_evidence']),
 }).strict();
@@ -119,6 +126,28 @@ function displayLabels(value: unknown, labels: Record<string,string> = {}): Reco
     Object.values(record).forEach(item => displayLabels(item,labels));
   }
   return labels;
+}
+const scheduleRow=z.object({id:z.uuid(),title:z.string(),starts_at:z.string(),ends_at:z.string(),can_open_register:z.boolean().optional(),purpose:z.string()});
+function projectScheduledActivities(raw:unknown) {
+  return z.object({items:z.array(scheduleRow),total_pages:z.number()}).parse(raw);
+}
+function projectActivityAttendance(raw:unknown) {
+  return z.object({register:z.object({id:z.uuid(),title:z.string(),state:z.string()}).nullable(),
+    counts:z.object({participants:z.number(),recorded:z.number(),unrecorded:z.number()}),
+    roster:z.array(z.object({person_id:z.uuid(),name:z.string(),status:z.string().nullable()}))}).parse(raw);
+}
+function projectSource(name:string,raw:unknown) {
+  if(name==='scheduled_activities')return projectScheduledActivities(raw);
+  if(name==='activity_attendees')return projectActivityAttendance(raw);
+  return raw;
+}
+function attendeeReport(title:string,date:string,data:ReturnType<typeof projectActivityAttendance>) {
+  if(!data.register||!data.counts.recorded)return `No attendance has been recorded for ${title} on ${date}.`;
+  const attended=data.roster.filter(row=>['present','late','half_day','left_early','checked_out'].includes(row.status??''));
+  const names=attended.slice(0,40).map(row=>row.status==='present'?row.name:`${row.name} (${row.status!.replaceAll('_',' ')})`).join(', ');
+  const overflow=attended.length>40?` Showing 40 of ${attended.length}. The register has the full list.`:'';
+  const pending=data.counts.unrecorded?` Attendance is unmarked for ${data.counts.unrecorded}.`:'';
+  return `${title} · ${date}\n${names?`Recorded attendees: ${names}.`:'Nobody is marked as having attended.'}${overflow}${pending}`;
 }
 function safeFailure(error: unknown) {
   if (error instanceof ModelFailure) return error.userMessage;
@@ -301,7 +330,7 @@ export class AgentService implements OnModuleDestroy {
       // A stalled read must never leave an external delivery waiting indefinitely
       // or fall back to its retained private answer. This dispatch is read-only.
       return await Promise.race([
-        this.gateway.dispatch(capability,input,scope,credentials).then(data=>({available:true,data}),()=>({available:false})),
+        this.gateway.dispatch(capability,input,scope,credentials).then(raw=>({available:true,data:projectSource(capability.name,raw)})).catch(()=>({available:false})),
         new Promise<{available:boolean}>(resolve=>{timer=setTimeout(()=>resolve({available:false}),12_000);timer.unref();}),
       ]);
     } finally {if(timer)clearTimeout(timer);}
@@ -378,7 +407,7 @@ export class AgentService implements OnModuleDestroy {
     const directory=currentReads.find(read=>read.capability==='virtual_campus_layout')?.data;
     const capacity=currentReads.find(read=>read.capability==='campus_workspace_capacity')?.data;
     const isCurrent=!thread.archived&&run.is_latest&&run.status==='completed';
-    const planned=isCurrent?this.authorizedClientUiCalls(steps,directory,capacity):[];
+    const planned=isCurrent?this.authorizedClientUiCalls(steps,directory,capacity,currentReads.some(read=>read.visible&&read.capability==='scheduled_activities')):[];
     const interiorWait=isCurrent?this.journaledInteriorSelection(steps):undefined;
     const journaledWorkflow=interiorWait?[interiorWait.step_id,interiorWait.editor_id]:isCurrent?this.journaledCampusWorkflow(steps):undefined;
     const workflow=journaledWorkflow?.length ? await this.campusWorkflow.current(runId) : undefined;
@@ -400,7 +429,7 @@ export class AgentService implements OnModuleDestroy {
     if(isCurrent&&!waiting&&!clientCalls.length&&(interiorWait||steps.some(step=>step.kind==='handoff'&&step.capability===CLIENT_UI_CALL_STEP))
         &&!(workflowMatches&&!workflow.pending&&!workflow.recovering)) {
       return projectAssistantAgUi({...ids,status:run.status,progress:'Setup changed',
-        answer:'This setup step is no longer available. Check the current campus and try again.',evidence});
+        answer:'This control is no longer available in the current workspace.',evidence});
     }
     const lastReceipt=workflowMatches?workflow.receipts.at(-1):undefined;
     const outcome=lastReceipt?.status==='blocked' ? interiorWait?'The building editor couldn’t open. You can continue on the map.':'The campus form couldn’t open. You can continue in Your campuses.'
@@ -548,7 +577,7 @@ export class AgentService implements OnModuleDestroy {
     return this.runEvents(request,threadId,runId);
   }
 
-  private authorizedClientUiCalls(steps: readonly Step[], directory: unknown, capacity: unknown) {
+  private authorizedClientUiCalls(steps: readonly Step[], directory: unknown, capacity: unknown, scheduleVisible:boolean) {
     const raw=steps.filter(step=>step.kind==='handoff'&&step.capability===CLIENT_UI_CALL_STEP);
     if(raw.length>3)return [];
     const ordered=raw.map(step=>({step,position:clientUiStepOrder.safeParse(step.result).data?.position??(raw.length===1?0:-1)}))
@@ -558,7 +587,9 @@ export class AgentService implements OnModuleDestroy {
       if(position!==index||step.snapshot_hash!==stableHash(step.input))return [];
       const call=restoreClientUiCall(step.id,step.input);
       if(!call)return [];
-      if(call.tool==='open_campus_create'||call.tool==='prepare_campus_create') {
+      if(call.tool==='open_timetable') {
+        if(!scheduleVisible||!steps.some(step=>step.kind==='read'&&step.capability==='scheduled_activities'&&'date' in call.arguments&&step.input.date===call.arguments.date))return [];
+      } else if(call.tool==='open_campus_create'||call.tool==='prepare_campus_create') {
         if(!canPrepareCampus(capacity))return [];
       } else if(call.tool==='open_campus_interiors'||call.tool==='open_campus_layout') {
         const current=authorizedCampusDirectory(directory);
@@ -831,11 +862,14 @@ export class AgentService implements OnModuleDestroy {
     const available=availableCapabilities(scope);
     const campusMapRead=available.find(capability=>capability.name==='virtual_campus_layout'&&capability.kind==='read');
     const campusCapacityRead=available.find(capability=>capability.name==='campus_workspace_capacity'&&capability.kind==='read');
-    const admittedUi=campusMapRead?uiContext:undefined;
+    const timetableRead=available.find(cap=>cap.name==='scheduled_activities');
+    const attendeeRead=available.find(cap=>cap.name==='activity_attendees');
+    const admittedUi=uiContext?{...uiContext,tools:uiContext.tools.filter(tool=>tool==='open_timetable'?!!timetableRead:!!campusMapRead)}:undefined;
     const uiTools=advertisedClientTools(admittedUi);
     const campusSetupAdvertised=admittedUi?.tools.some(tool=>tool==='open_virtual_campus'||isCampusWorkflowTool(tool))===true;
     const rememberRead=async(capability:typeof available[number],input:Record<string,unknown>)=>{
-        const data=await this.gateway.dispatch(capability,input,scope,credentials);
+        const raw=await this.gateway.dispatch(capability,input,scope,credentials);
+        const data=projectSource(capability.name,raw);
         const stepId=randomUUID();collectIds(data,known);references.push(...recordReferences(data,capability.name));
         await sql`INSERT INTO agent_tool_steps(id,run_id,capability,kind,input,result,snapshot_hash) VALUES (${stepId}::uuid,${id}::uuid,${capability.name},'read',${JSON.stringify(input)}::jsonb,${JSON.stringify(data)}::jsonb,${stableHash(data)})`.execute(this.db);
         const chart=scope.proFeaturesEnabled && await proFeaturesEnabled(this.db,scope.userId) ? analyticsChart(capability.name,input,data) : null;
@@ -848,6 +882,8 @@ export class AgentService implements OnModuleDestroy {
       await requireProFeatures(this.db,scope.userId);
       const owner=request.kind==='create'?campusCapacityRead:campusMapRead;
       if(!owner)throw new ForbiddenException('Campus setup is unavailable for this account.');
+      const progress=request.kind==='create'?'Checking campus capacity':request.kind==='interiors'?'Finding the building':'Opening the campus map';
+      await sql`UPDATE agent_runs SET progress=${progress} WHERE id=${id}::uuid AND status='running'`.execute(this.db);
       const checked=await rememberRead(owner,{});
       controller.signal.throwIfAborted();
       await requireProFeatures(this.db,scope.userId);
@@ -864,6 +900,26 @@ export class AgentService implements OnModuleDestroy {
       else await this.finish(id,'completed',direction.answer,evidence);
     };
     try {
+      if (timetableRead && admittedUi?.tools.includes('open_timetable')) {
+        let previousDate: string | undefined;
+        if (/^(?:the )?\d{1,2}(?:st|nd|rd|th)?[.!]?$/i.test(question.trim())) {
+          const previous = (await sql<{date:string}>`SELECT step.input->>'date' AS date FROM agent_tool_steps step
+            JOIN (SELECT id,status FROM agent_runs WHERE thread_id=${thread.id}::uuid AND id<>${id}::uuid
+              ORDER BY created_at DESC,id DESC LIMIT 1) prior ON prior.id=step.run_id AND prior.status='completed'
+            WHERE step.kind='read' AND step.capability='scheduled_activities'
+            ORDER BY step.created_at DESC LIMIT 1`.execute(this.db)).rows[0];
+          previousDate=previous?.date;
+        }
+        const date=timetableNavigationDate(question,schoolDate(scope.timezone,executionNow()),previousDate);
+        const call=date && parseClientUiCall(admittedUi,'open_timetable',{date});
+        if (call) {
+          await requireProFeatures(this.db,scope.userId);
+          await rememberRead(timetableRead,{date});
+          controller.signal.throwIfAborted();
+          await this.finishClientUiCalls(id,[call],evidence,`Opening the timetable for ${date}.`);
+          return;
+        }
+      }
       const prepared=await this.preparedCampusForm(thread.id,admittedUi);
       const request=await this.previousCampusRequest(thread.id,id,question,prepared)??
         campusWorkflowRequest(question,Boolean(prepared&&!prepared.name));
@@ -946,7 +1002,7 @@ export class AgentService implements OnModuleDestroy {
         const canEscalate=supportsEscalation&&!usedEscalation&&!blockedEscalation
           && turn+1<executionLimits.modelCalls && toolCount<executionLimits.tools;
         const tools=[discover,userMemoryTool,...[...selected.values()].slice(-14).map(capabilityTool),
-          ...uiTools,...(campusSetupAdvertised?[campusSetupTool]:[]),...(canEscalate?[deeperReasoning]:[])];
+          ...uiTools,...(timetableRead&&attendeeRead&&[...selected.values()].some(cap=>cap.domain==='attendance')?[attendeeReportTool]:[]),...(campusSetupAdvertised?[campusSetupTool]:[]),...(canEscalate?[deeperReasoning]:[])];
         controller.signal.throwIfAborted();
         const result=await model.complete(messages,tools,controller.signal,undefined,escalation?'high':'medium');
         const current = (await sql<{status:string}>`SELECT status FROM agent_runs WHERE id=${id}::uuid`.execute(this.db)).rows[0];
@@ -1008,12 +1064,30 @@ export class AgentService implements OnModuleDestroy {
               if(!canEscalate)throw new BadRequestException('The additional reasoning step is unavailable. Continue from the current evidence.');
               pendingEscalation=reasoningRequest.parse(call.arguments).reason;
               output={granted:true,instruction:'Choose the next authorized action or answer from the available evidence.'};
+            } else if(call.name===attendeeReportTool.name) {
+              if(!timetableRead||!attendeeRead||!tools.some(tool=>tool.name===call.name))throw new ForbiddenException('Activity attendance is unavailable.');
+              const {date,title}=attendeeReportInput.parse(call.arguments);
+              const schedule=projectScheduledActivities((await rememberRead(timetableRead,{date})).data);
+              const matches=title?schedule.items.filter(item=>item.title.toLowerCase()===title.toLowerCase()):schedule.items;
+              if(schedule.total_pages<=1 && matches.length===1 && matches[0]!.can_open_register!==false) {
+                const match=matches[0]!;
+                const data=projectActivityAttendance((await rememberRead(attendeeRead,{occurrence_id:match.id})).data);
+                controller.signal.throwIfAborted();
+                await this.finish(id,'completed',attendeeReport(match.title,date,data),evidence);
+                return;
+              }
+              output={date,activities:schedule,instruction:'Match the requested class from these results. If there is no matching activity, check the academic class registers for that date. For multiple plausible matches give their names and times.'};
             } else if(call.name===campusSetupTool.name) {
               if(!campusSetupAdvertised)throw new BadRequestException('Campus setup controls are unavailable on the current screen.');
               await applyCampusRequest(parseCampusSetup(call.arguments));
               return;
             } else if (isClientUiTool(call.name)) {
               const clientCall=parseClientUiCall(admittedUi,call.name,call.arguments);
+              if(clientCall?.tool==='open_timetable'&&timetableRead&&'date' in clientCall.arguments) {
+                await rememberRead(timetableRead,{date:clientCall.arguments.date});
+                controller.signal.throwIfAborted();
+                await this.finishClientUiCalls(id,[clientCall],evidence,`Opening the timetable for ${clientCall.arguments.date}.`);return;
+              }
               if(!clientCall || !campusMapRead || !uiTools.some(tool=>tool.name===call.name))throw new BadRequestException('That control is unavailable on the current screen.');
               const directory=await rememberRead(campusMapRead,{});
               if(clientCall.tool==='open_virtual_campus' ? !mayOpenVirtualCampus(directory.data) : !authorizedCampusDirectory(directory.data)?.campuses.length)throw new ForbiddenException('No Virtual Campus is currently available in this workspace.');
@@ -1021,7 +1095,12 @@ export class AgentService implements OnModuleDestroy {
             } else if (call.name === 'find_tools') {
               const query = z.object({ query:z.string().max(120) }).strict().parse(call.arguments).query;
               const found = findCapabilities(query,available,contextDomains);
-              found.forEach(cap => selected.set(cap.name,cap));
+              // The model receives the last 14 loaded tools. Rediscovery must
+              // move every returned tool into that window, including old hits.
+              for (const cap of found) {
+                selected.delete(cap.name);
+                selected.set(cap.name,cap);
+              }
               output = found.length ? {tools:found.map(cap=>({name:cap.name,description:cap.description,domain:cap.domain}))} : { domains:[...new Set(available.map(cap => cap.domain))], message:'Search by a domain or action.' };
             } else {
               const capability = selected.get(call.name);
@@ -1102,7 +1181,15 @@ export class AgentService implements OnModuleDestroy {
           messages.push({ role:'tool',content:modelData(output),name:call.name,callId:call.id });
         }
         // Bound context independently of the model provider's context size.
-        if (messages.reduce((sum,message) => sum+message.content.length,0)>68000) { await this.finish(id,'completed','This request needs a narrower scope. Please choose one class, date or record.',evidence); return; }
+        let size=messages.reduce((sum,message)=>sum+message.content.length,0);
+        for(const message of messages.slice(0,-1)) {
+          if(size<=68000)break;
+          if(message.role!=='tool'||message.content.length<1500)continue;
+          size-=message.content.length;
+          message.content=JSON.stringify({omitted:true,instruction:'Read this earlier result again if needed.'});
+          size+=message.content.length;
+        }
+        if(size>68000)throw new ModelFailure('too_large');
       }
       await this.finish(id,'completed','I reached the step limit. Please narrow the request to one record or action.',evidence);
     } catch(error) {

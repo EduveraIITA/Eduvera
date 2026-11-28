@@ -2,7 +2,7 @@ import { CAPABILITY_CONTRACT_VERSION } from './capability-contract.js';
 import { schoolDate } from './references.js';
 import type { AgentScope,Capability } from './catalogue.js';
 
-export const AGENT_PROMPT_VERSION='2026-11-28.api-owned-v9';
+export const AGENT_PROMPT_VERSION='2026-11-28.api-owned-v10';
 
 export interface AgentSkill {
   id:string;
@@ -12,6 +12,7 @@ export interface AgentSkill {
 
 /** Domain rules are small, testable skills rather than one growing global prompt. */
 export const AGENT_SKILLS:readonly AgentSkill[]=[
+  {id:'schedule-and-register',domains:['timetable','attendance'],instruction:'For staff daily timetable questions use scheduled_activities on the requested campus-local date. Opening the timetable requires only the date, even for an empty day. Interpret a day number in the month and year already under discussion. For a request to see attendees use show_activity_attendees with the date. For further analysis use scheduled_activities then activity_attendees. When the activity agenda is empty, check academic class registers for class attendance. Use recorded statuses. Resolve a single matching class yourself, check further pages when needed, and ask which class only when multiple plausible matches remain. Planning options and a personal teaching schedule have narrower coverage than the staff timetable.'},
   {
     id:'attendance-observations-v1',domains:['attendance'],
     instruction:'Use single-student attendance for one learner and class attendance only for a requested whole register. Take observations from the conversation; omitted statuses are unknown. Resolve people and dates in context. The tool reads current attendance and reports any missing details.',

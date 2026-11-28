@@ -13,8 +13,8 @@ export class ActivityAttendanceController {
   }
 
   @Get("for-occurrence/:occurrenceId")
-  forOccurrence(@Req() request: AuthenticatedRequest, @Param("schoolId") schoolId: string, @Param("occurrenceId") id: string) {
-    return this.workspace.openOccurrence(request.authUser, schoolId, id);
+  forOccurrence(@Req() request: AuthenticatedRequest, @Param("schoolId") schoolId: string, @Param("occurrenceId") id: string, @Query("view") view?: string) {
+    return this.workspace.openOccurrence(request.authUser, schoolId, id, view === "recorded");
   }
 
   @Get(":registerId")

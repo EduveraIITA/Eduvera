@@ -235,6 +235,22 @@ export class GeminiAgentModel implements AgentModel {
     this.previousReply=undefined;
   }
 
+  private trimEarlierResults() {
+    // Preserve call/result pairs, the most recent results and model signatures.
+    // Earlier bulky tool results can be read again under current authority.
+    let trimmed=false;
+    for(const message of this.history.slice(0,-1)) {
+      for(const part of message.parts??[]) {
+        const response=part.functionResponse;
+        if(response?.response&&JSON.stringify(response.response).length>1500) {
+          response.response={omitted:true,instruction:'Earlier tool output omitted for space. Read the source again if required.'};
+          trimmed=true;
+        }
+      }
+    }
+    return trimmed;
+  }
+
   async complete(messages:ModelMessage[],tools:ToolDefinition[],signal:AbortSignal,choice?:ToolChoice,thinkingEffort:AgentThinkingEffort='medium'):Promise<ModelReply> {
     const strict=this.provider==='vertex'&&this.model===VERTEX_ASSISTANT_MODEL;
     this.appendMessages(messages,strict);
@@ -257,11 +273,16 @@ export class GeminiAgentModel implements AgentModel {
     return pRetry(async()=>{
       try {
       signal.throwIfAborted();
-      if(Buffer.byteLength(JSON.stringify({contents:this.history,config}),'utf8')>180000)throw new ModelFailure('too_large');
+      const requestBytes=()=>Buffer.byteLength(JSON.stringify({contents:this.history,config}),'utf8');
+      if(requestBytes()>180000 && (!this.trimEarlierResults() || requestBytes()>180000))throw new ModelFailure('too_large');
       if(this.provider==='vertex') {
         assertAgentEnabled();
         if(!this.budget)throw new Error('A durable cloud AI budget is required.');
-        const count=await this.client.models.countTokens({model:this.model,contents:this.history,config:{abortSignal:signal,systemInstruction:config.systemInstruction!,...(config.tools?{tools:config.tools as Tool[]}:{})}});
+        const countInput=()=>this.client.models.countTokens({model:this.model,contents:this.history,config:{abortSignal:signal,systemInstruction:config.systemInstruction!,...(config.tools?{tools:config.tools as Tool[]}:{})}});
+        let count=await countInput();
+        if((count.totalTokens??0)>24000) {
+          if(this.trimEarlierResults())count=await countInput();
+        }
         await this.budget(z.number().int().nonnegative().parse(count.totalTokens),outputTokens);
         signal.throwIfAborted();
       }

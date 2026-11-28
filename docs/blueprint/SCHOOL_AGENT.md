@@ -134,6 +134,7 @@ opens Virtual Campus, a verified campus layout editor, or building interiors. It
 fills place search and focuses an exact published place. Campus creation opens
 the existing account form. When the name is missing, A2UI collects it in the
 same chat and fills the owned form. The user confirms creation in that form.
+Staff timetable navigation opens the dated assigned schedule, including empty days. Simple navigation and a day-only correction to the previous timetable bypass model generation. The Assistant reads published occurrences and can check a recorded participation register without initializing one. Unmarked participants have unknown attendance.
 Additional modules register scoped handlers with their owning route and source.
 A later tool in the same run can cross a route only through a declared handoff.
 

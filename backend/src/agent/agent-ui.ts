@@ -2,14 +2,14 @@ import { z } from 'zod';
 import type { ToolDefinition } from './providers.js';
 import type { PublicWebSource } from '../campus-scene-import/scene-import.floor-plan-discovery.js';
 
-const toolName = z.enum(['campus_search_places','campus_focus_place','open_virtual_campus','campus_open_picker',
+const toolName = z.enum(['open_timetable','campus_search_places','campus_focus_place','open_virtual_campus','campus_open_picker',
   'open_campus_create','prepare_campus_create','open_campus_interiors','open_campus_layout']);
 type ClientToolName = z.infer<typeof toolName>;
 const screen = z.enum(['workspace','virtual_campus','campus_account']);
 const screenTools: Record<z.infer<typeof screen>, readonly ClientToolName[]> = {
-  workspace: ['open_virtual_campus','open_campus_create','open_campus_interiors','open_campus_layout'],
-  virtual_campus: ['campus_search_places','campus_focus_place','campus_open_picker','open_campus_create','open_campus_interiors','open_campus_layout'],
-  campus_account: ['prepare_campus_create','open_campus_interiors','open_campus_layout'],
+  workspace: ['open_timetable','open_virtual_campus','open_campus_create','open_campus_interiors','open_campus_layout'],
+  virtual_campus: ['open_timetable','campus_search_places','campus_focus_place','campus_open_picker','open_campus_create','open_campus_interiors','open_campus_layout'],
+  campus_account: ['open_timetable','prepare_campus_create','open_campus_interiors','open_campus_layout'],
 };
 const empty = z.object({}).strict();
 const query = z.object({query:z.string().trim().min(1).max(120).refine(value => Array.from(value).every(character => character.charCodeAt(0) >= 32))}).strict();
@@ -18,6 +18,7 @@ export const draftCampusName = z.string().trim().min(2).max(180)
 export const campusBuildingElementId=z.string().regex(/^[A-Za-z0-9][A-Za-z0-9_-]{0,79}$/u);
 export const indoorBuildingName = z.string().trim().min(2).max(160).refine(value=>!/[<>\p{Cc}\p{Cf}]/u.test(value));
 const toolDefinitions = {
+  open_timetable:{schema:z.object({date:z.iso.date()}).strict(),description:'Open the staff timetable screen on the requested local date, including an empty day. Use this when asked to open or show the schedule.'},
   open_virtual_campus: {schema:empty, description:'Open the current institution’s Virtual Campus screen when the user explicitly requests it.'},
   campus_open_picker: {schema:empty, description:'Open the current map’s campus picker without choosing or changing a campus.'},
   campus_search_places: {schema:query, description:'Fill the current map place search with the user’s query and show authoritative matches.'},
@@ -30,7 +31,7 @@ const toolDefinitions = {
 
 export const clientUiContextSchema = z.object({
   screen,
-  tools:z.array(toolName).max(6),
+  tools:z.array(toolName).max(7),
   campus_id:z.uuid().optional(),
   workflow_steps:z.literal(true).optional(),
   building_selection:z.literal(true).optional(),

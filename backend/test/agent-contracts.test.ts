@@ -5,6 +5,7 @@ import { CAPABILITY_CONTRACT_VERSION,summarizeCapabilityPolicy } from '../src/ag
 import { assertKnownIds,assertLocalScreen,redactEvidence,stableHash } from '../src/agent/gateway.js';
 import { compactModelData,toolFailureCode } from '../src/agent/agent.service.js';
 import { recordReferences, resolveReferences, reportsUnverifiedWrite, schoolDate } from '../src/agent/references.js';
+import { timetableNavigationDate } from '../src/agent/timetable-navigation.js';
 import { attendanceArguments } from '../src/agent/attendance-intent.js';
 import { conversationSummaryPrompt,needsConversationCompaction,needsStoredConversationCompaction,serializedTurn,turnsToCompact } from '../src/agent/conversation-memory.js';
 import { agentSystemPrompt,responsePrompt,skillPrompt } from '../src/agent/agent-prompts.js';
@@ -20,6 +21,23 @@ describe('agent capability boundary',()=>{
     expect(toolFailureCode(new ConflictException('Stale revision'))).toBe('state_conflict');
     expect(toolFailureCode(new ForbiddenException('Not assigned'))).toBe('access_denied');
     expect(toolFailureCode(Object.assign(new BadRequestException('API rejected'),{appStatus:403}))).toBe('access_denied');
+  });
+  it('uses campus-local calendar dates and leaves ambiguous or compound tasks to the agent',()=>{
+    expect(timetableNavigationDate('Open today timetable','2026-11-28')).toBe('2026-11-28');
+    expect(timetableNavigationDate('Take me to tomorrow’s agenda','2026-12-31')).toBe('2027-01-01');
+    expect(timetableNavigationDate('28th','2026-11-28','2027-02-01')).toBe('2027-02-28');
+    expect(timetableNavigationDate('31st','2026-11-28','2027-02-01')).toBeUndefined();
+    expect(timetableNavigationDate('28th','2026-11-28')).toBeUndefined();
+    expect(timetableNavigationDate('Show the timetable and cancel math','2026-11-28')).toBeUndefined();
+  });
+  it('discovers the published activity schedule and actual register through ordinary user wording',()=>{
+    const available=availableCapabilities({...scope,portal:'principal'});
+    expect(findCapabilities('Open today timetable',available).map(tool=>tool.name)).toContain('scheduled_activities');
+    expect(findCapabilities('who were the attendees',available).map(tool=>tool.name)).toContain('activity_attendees');
+    const schedule=available.find(tool=>tool.name==='scheduled_activities')!;
+    expect(schedule.request!({date:'2026-11-28'},scope)).toMatchObject({method:'GET',
+      path:`/schools/${scope.schoolId}/activities/occurrences`,query:{from:'2026-11-28',until:'2026-11-28',state:'expected'}});
+    expect(assertLocalScreen(schedule.screen({date:'2026-11-28'},scope))).toBe('/areas/timetable/schedule?date=2026-11-28');
   });
   it('has unique, schema-described operations and no unrestricted executor',()=>{
     expect(new Set(CAPABILITIES.map(cap=>cap.name)).size).toBe(CAPABILITIES.length);

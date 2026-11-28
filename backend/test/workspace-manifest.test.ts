@@ -437,7 +437,7 @@ describe("responsibility-composed workspace manifest", () => {
           key: "planning",
           href: "/areas/timetable/planning",
           capabilities: ["schedule.manage"],
-        })],
+        }), expect.objectContaining({key:"schedule",href:"/areas/timetable/schedule",capabilities:["schedule.manage"]})],
       }),
       expect.objectContaining({
         key: "calendar", href: "/areas/calendar", capabilities: ["schedule.manage"],

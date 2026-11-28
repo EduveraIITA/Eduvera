@@ -43,7 +43,7 @@ export function assertKnownIds(input: unknown, known: Set<string>) {
 // owning application routes still resolve current responsibility/relationship
 // authority; accepting an evidence link never authorizes its records.
 const neutralEvidenceScreens = new Set([
-  '/areas/people/classes', '/areas/attendance/registers', '/areas/messages/conversations',
+  '/areas/timetable/schedule', '/areas/people/classes', '/areas/attendance/registers', '/areas/messages/conversations',
   '/areas/assessments/assigned', '/areas/assessments/manage', '/areas/assessments/results',
   '/areas/events/assigned', '/areas/events/manage', '/areas/events/calendar',
   '/areas/departure/plan', '/areas/departure/manage', '/areas/departure/operate',

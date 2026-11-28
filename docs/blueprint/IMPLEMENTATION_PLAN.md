@@ -256,6 +256,8 @@ a level rather than pushing duplicate parents. Same-identity session rechecks
 preserve blocked mounted presentation, while access/scope changes clear it.
 Browser and iPhone/iPad simulator checks cover hierarchy, origin and retained
 filters; the browser also covers cancelled/approved unsaved exits and Forward.
+Staff can open the dated timetable from the Assistant, including with timetable management access. Published activity and recorded attendance reads use the owning services. Assistant integration coverage includes an empty agenda, a day-only correction, revoked access and a recorded attendee alongside an unmarked participant.
+
 The earlier Assistant [mobile test/build/export check](../../artifacts/native-web-ui-20261029/assistant-overlay-build-export-validation.json)
 passes1544 TypeScript tests and9 theme tests, whole-mobile TypeScript and web,
 iOS and Android exports. Switching tabs retains context; reselecting the active

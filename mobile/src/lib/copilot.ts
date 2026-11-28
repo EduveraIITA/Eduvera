@@ -1,13 +1,14 @@
 import { AG_UI_BUILDING_SELECTION_EVENT, AG_UI_WORKFLOW_STEP_EVENT } from '../../../packages/contracts/src/agent-workflow';
 
 export const copilotToolNames = [
-  'open_virtual_campus', 'campus_search_places', 'campus_focus_place', 'campus_open_picker',
+  'open_timetable', 'open_virtual_campus', 'campus_search_places', 'campus_focus_place', 'campus_open_picker',
   'open_campus_create', 'prepare_campus_create', 'open_campus_interiors', 'open_campus_layout',
 ] as const;
 export type CopilotToolName = typeof copilotToolNames[number];
 const screens = ['workspace', 'virtual_campus', 'campus_account'] as const;
 export type CopilotScreen = typeof screens[number];
-const toolPolicy: Record<CopilotToolName, { screens: readonly CopilotScreen[]; input: 'none' | 'query' | 'name' | 'campus' | 'layout' }> = {
+const toolPolicy: Record<CopilotToolName, { screens: readonly CopilotScreen[]; input: 'date' | 'none' | 'query' | 'name' | 'campus' | 'layout' }> = {
+  open_timetable: { screens, input:'date' },
   open_virtual_campus: { screens: ['workspace'], input: 'none' },
   campus_search_places: { screens: ['virtual_campus'], input: 'query' },
   campus_focus_place: { screens: ['virtual_campus'], input: 'query' },
@@ -88,6 +89,7 @@ export function validCopilotArgs(name: CopilotToolName, value: unknown): value i
   const args = record(value);
   if (!args) return false;
   switch (toolPolicy[name].input) {
+    case 'date': return exact(args,['date']) && typeof args.date==='string' && /^\d{4}-\d{2}-\d{2}$/.test(args.date) && Number.isFinite(Date.parse(args.date)) && new Date(args.date).toISOString().slice(0,10)===args.date;
     case 'none': return Object.keys(args).length === 0;
     case 'query': return exact(args, ['query']) && cleanText(args.query, 1, 120);
     case 'name': return exact(args, ['name']) && (args.name === undefined || cleanText(args.name, 2, 180));

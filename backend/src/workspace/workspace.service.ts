@@ -656,9 +656,10 @@ function areas(snapshot: WorkspaceRepositorySnapshot, workItems: readonly Worksp
     if (key === "timetable") {
       if (capability === "learning.sessions.manage") return [{ key: "sessions", label: "Teaching sessions", description: "Prepare, teach and return to your session records", href: "/areas/timetable/session" }];
       const canPlan = /(^|\.)(manage|plan|publish|configure)$/.test(capability);
-      return [canPlan
-        ? { key: "planning", label: "Timetable planning", description: "Plan and publish authorized schedules", href: "/areas/timetable/planning" }
-        : { key: "schedule", label: "My schedule", description: "Current and upcoming sessions", href: "/areas/timetable/schedule" }];
+      const schedule = { key: "schedule", label: "My schedule", description: "Current and upcoming sessions", href: "/areas/timetable/schedule" };
+      if (!canPlan) return [schedule];
+      const planning = { key: "planning", label: "Timetable planning", description: "Plan and publish authorized schedules", href: "/areas/timetable/planning" };
+      return capability === "schedule.manage" ? [planning, schedule] : [planning];
     }
     if (key === "calendar") {
       const canPlan = /(^|\.)(manage|plan|publish|configure)$/.test(capability);

@@ -146,6 +146,12 @@ export function CampusShell() {
     try { const value = normalizeWorkspaceManifest(workspace.data); assertWorkspaceManifestContext(value, { actorUserId: session.user.id, institutionId: session.schoolId, environment: session.environment }); return value; }
     catch { return null; }
   }, [workspace.data, session.user, session.schoolId, session.environment]);
+  useCopilotAction({
+    name:'open_timetable',label:'Open timetable',destinationPath:'/areas/timetable/schedule',
+    available:!!manifest?.areas?.find(area=>area.key==='timetable')?.surfaces?.some(surface=>surface.key==='schedule'),
+    run:(args,signal)=>typeof args.date==='string' && openCopilotRoute(`/areas/timetable/schedule?date=${encodeURIComponent(args.date)}`,
+      ()=>activeRoute.current.pathname==='/areas/timetable/schedule'&&activeRoute.current.params.date===args.date,signal),
+  });
   if (session.status === 'loading' && !session.user) return <Page title="Opening your campus"><Loading /></Page>;
   if (session.status !== 'authenticated' && !session.user) return <Redirect href="/" />;
   const verifying = session.status !== 'authenticated' || tabConfigurationBusy || preference.isPending;

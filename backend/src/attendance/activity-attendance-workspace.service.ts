@@ -29,12 +29,17 @@ export class ActivityAttendanceWorkspaceService {
     if (!member) throw new ForbiddenException("An active institution membership is required.");
   }
 
-  async openOccurrence(user: AuthUser, schoolValue: string, occurrenceValue: string) {
+  async openOccurrence(user: AuthUser, schoolValue: string, occurrenceValue: string): ReturnType<ActivityAttendanceService["detail"]>;
+  async openOccurrence(user: AuthUser, schoolValue: string, occurrenceValue: string, recordedOnly: boolean): Promise<
+    Awaited<ReturnType<ActivityAttendanceService["detail"]>> | {register:null;roster:never[];counts:{participants:number;recorded:number;unrecorded:number}}
+  >;
+  async openOccurrence(user: AuthUser, schoolValue: string, occurrenceValue: string, recordedOnly = false) {
     const schoolId = z.string().uuid().parse(schoolValue), occurrenceId = z.string().uuid().parse(occurrenceValue);
     await this.member(user, schoolId);
     const existing = (await sql<{id:string}>`SELECT register.id FROM activity_attendance_registers register
-      JOIN activity_attendance_source_contexts link ON link.register_id=register.id AND link.school_id=register.school_id AND link.state='active'
-      WHERE register.school_id=${schoolId}::uuid AND register.occurrence_id=${occurrenceId}::uuid`.execute(this.db)).rows[0];
+      LEFT JOIN activity_attendance_source_contexts link ON link.register_id=register.id AND link.school_id=register.school_id
+      WHERE register.school_id=${schoolId}::uuid AND register.occurrence_id=${occurrenceId}::uuid
+        AND (link.state='active' OR (${recordedOnly} AND link.register_id IS NULL))`.execute(this.db)).rows[0];
     if (existing) return this.attendance.detail(user,schoolId,existing.id);
     const actor = await this.attendance.readerContext(user, schoolId);
     const permitted = (await sql<{ allowed: boolean }>`SELECT ${actor.administrator} OR EXISTS(
@@ -45,6 +50,7 @@ export class ActivityAttendanceWorkspaceService {
       FROM schedule_activity_occurrences occurrence WHERE occurrence.school_id=${schoolId}::uuid
         AND occurrence.id=${occurrenceId}::uuid AND occurrence.source='activity' AND occurrence.attendance_mode='roll_call'`.execute(this.db)).rows[0];
     if (!permitted?.allowed) throw new ForbiddenException("This attendance occurrence is outside your current responsibilities.");
+    if (recordedOnly) return { register: null, roster: [], counts: { participants: 0, recorded: 0, unrecorded: 0 } };
     const registerId = await this.attendance.ensureRegister(schoolId, occurrenceId);
     return this.attendance.detail(user, schoolId, registerId);
   }
