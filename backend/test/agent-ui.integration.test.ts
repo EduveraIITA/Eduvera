@@ -1,7 +1,8 @@
 import 'reflect-metadata';
+import { ForbiddenException } from '@nestjs/common';
 import { randomUUID } from 'node:crypto';
 import { sql } from 'kysely';
-import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import { AgentController } from '../src/agent/agent.controller.js';
 import { AgentService } from '../src/agent/agent.service.js';
 import { AgentMemoryService } from '../src/agent/long-term-memory.js';
@@ -14,10 +15,13 @@ import { campusSceneServices } from './campus-scenes.test-support.js';
 import { createClassPracticeFixture } from './class-practice.test-support.js';
 import { requireIsolatedTestDatabaseUrl } from './test-database.js';
 
-const complete=vi.hoisted(()=>vi.fn());
+const {complete,modelIdentity}=vi.hoisted(()=>({
+  complete:vi.fn(),
+  modelIdentity:{provider:'ollama',model:'isolated-ui-test'},
+}));
 vi.mock('../src/agent/providers.js', async importOriginal => ({
   ...await importOriginal<typeof AgentProviders>(),
-  createAgentModel:()=>({provider:'ollama',model:'isolated-ui-test',complete}),
+  createAgentModel:()=>({...modelIdentity,complete}),
 }));
 
 const enabled=process.env.TEST_DATABASE_ISOLATED==='true';
@@ -189,6 +193,116 @@ describe.skipIf(!enabled)('authorized Assistant AG-UI event read and client tool
       WHERE run.thread_id=${thread}::uuid`.execute(db)).rows[0];
     expect(actions?.count).toBe(0);
   },15000);
+
+  describe('bounded adaptive reasoning',()=>{
+    const reasoning={id:'plan',name:'request_deeper_reasoning',arguments:{reason:'ambiguous_target'}};
+    const workspace={screen:'workspace',tools:['open_virtual_campus']};
+    beforeEach(()=>{
+      complete.mockReset();
+      Object.assign(modelIdentity,{provider:'vertex',model:'gemini-3.8-flash'});
+    });
+    afterEach(()=>{Object.assign(modelIdentity,{provider:'ollama',model:'isolated-ui-test'});});
+
+    async function harness(dispatch=vi.fn()) {
+      const fixture=await createClassPracticeFixture(db);
+      await db.updateTable('users').set({pro_features_enabled:true}).where('id','=',fixture.owner.id).execute();
+      const memory=new AgentMemoryService(db);
+      const agent=new AgentService(db,new RolesService(db),fixture.school,{dispatch} as unknown as AgentGateway,memory);
+      const http=new AgentController(agent,memory);
+      const {id:thread}=await agent.create(request(fixture.owner,{portal:'principal'}));
+      async function run(question:string,ui_context:unknown) {
+        const {run_id}=await http.send(request(fixture.owner,{question,client_id:randomUUID(),ui_context}),thread);
+        const read=async()=>(await http.runEvents(request(fixture.owner),thread,run_id)).events;
+        await vi.waitFor(async()=>expect((await read()).at(-1)).toMatchObject({type:'RUN_FINISHED'}),{timeout:5000});
+        const escalations=(await sql<{metadata:{reason:string;turn:number}}>`SELECT metadata FROM audit_events
+          WHERE target_id=${run_id}::uuid AND action='agent.reasoning.escalated'`.execute(db)).rows.map(row=>row.metadata);
+        return {run_id,events:await read(),escalations};
+      }
+      return {run,dispatch};
+    }
+
+    const efforts=()=>complete.mock.calls.map(call=>call[4]);
+    const offersReasoning=(index:number)=>complete.mock.calls[index]?.[1]
+      .some((tool:{name:string})=>tool.name===reasoning.name);
+
+    it('starts on Medium even with sequence language and accepts a necessary user clarification',async()=>{
+      const {run,dispatch}=await harness();
+      complete.mockResolvedValueOnce({text:'Which learner should I check?',calls:[]});
+      const result=await run('Find the attendance entry and then compare it with yesterday.',workspace);
+      expect(efforts()).toEqual(['medium']);
+      expect(offersReasoning(0)).toBe(true);
+      expect(result.escalations).toEqual([]);
+      expect(JSON.stringify(result.events)).toContain('Which learner should I check?');
+      expect(dispatch).not.toHaveBeenCalled();
+    },12000);
+
+    it('keeps the sourced records across one High decision, then returns to Medium for a scoped app action',async()=>{
+      const campusId=randomUUID();
+      const directory={can_edit:true,campuses:[{id:campusId,name:'Oak Hall',code:'OAK'}]};
+      const dispatch=vi.fn().mockResolvedValue(directory);
+      const {run}=await harness(dispatch);
+      const messages:AgentProviders.ModelMessage[][]=[];
+      const replies=[
+        {text:'',calls:[{id:'layout-read',name:'virtual_campus_layout',arguments:{}}]},
+        {text:'',calls:[reasoning]},
+        {text:'',calls:[{id:'discover',name:'find_tools',arguments:{query:'campus map'}}]},
+        {text:'',calls:[{id:'navigate',name:'campus_focus_place',arguments:{query:'Library'}}]},
+      ];
+      for(const reply of replies)complete.mockImplementationOnce((context:AgentProviders.ModelMessage[])=>{
+        messages.push(structuredClone(context));
+        return Promise.resolve(reply);
+      });
+      const result=await run('Which library fits tomorrow’s club on the map?',{screen:'virtual_campus',tools:['campus_focus_place'],campus_id:campusId});
+      expect(efforts()).toEqual(['medium','medium','high','medium']);
+      expect([0,1,2,3].map(offersReasoning)).toEqual([true,true,false,false]);
+      const groundedRead=messages[1]?.find(message=>message.callId==='layout-read');
+      expect(groundedRead).toMatchObject({role:'tool',name:'virtual_campus_layout',content:expect.stringContaining('Oak Hall')});
+      expect(messages[2]).toContainEqual(groundedRead);
+      const approval=messages[2]?.find(message=>message.callId==='plan');
+      expect(approval).toMatchObject({role:'tool',name:'request_deeper_reasoning'});
+      expect(JSON.parse(approval!.content)).toMatchObject({granted:true});
+      expect(result.escalations).toEqual([expect.objectContaining({reason:'ambiguous_target',turn:2})]);
+      expect(result.events.filter(event=>event.type==='TOOL_CALL_START')).toEqual([
+        expect.objectContaining({toolCallName:'campus_focus_place'}),
+      ]);
+      const actions=(await sql<{count:number}>`SELECT count(*)::int AS count FROM agent_actions WHERE run_id=${result.run_id}::uuid`.execute(db)).rows[0];
+      expect(actions?.count).toBe(0);
+    },12000);
+
+    it('discards every call in a mixed escalation batch and continues on Medium',async()=>{
+      const {run,dispatch}=await harness();
+      const navigate={id:'navigate',name:'open_virtual_campus',arguments:{}};
+      complete.mockResolvedValueOnce({text:'',calls:[reasoning,navigate]});
+      complete.mockResolvedValueOnce({text:'Which campus should I open?',calls:[]});
+      const result=await run('Bring up the school grounds.',workspace);
+      expect(efforts()).toEqual(['medium','medium']);
+      const replies=(complete.mock.calls[1]?.[0] as AgentProviders.ModelMessage[]).filter(message=>message.role==='tool');
+      expect(replies.map(message=>({id:message.callId,name:message.name}))).toEqual([
+        {id:'plan',name:'request_deeper_reasoning'},
+        {id:'navigate',name:'open_virtual_campus'},
+      ]);
+      expect(replies.every(message=>JSON.parse(message.content).code==='separate_reasoning_step')).toBe(true);
+      expect(result.escalations).toEqual([]);
+      expect(result.events.some(event=>event.type==='TOOL_CALL_START')).toBe(false);
+      expect(dispatch).not.toHaveBeenCalled();
+    },12000);
+
+    it.each([
+      {reason:'invalid_tool_arguments',call:{name:'find_tools',arguments:{query:42}}},
+      {reason:null,call:{name:'open_virtual_campus',arguments:{}}},
+    ])('uses High only for recoverable invalid arguments, with expected reason $reason',async({reason,call})=>{
+      const dispatch=vi.fn().mockRejectedValue(new ForbiddenException('The campus map is outside your current access.'));
+      const {run}=await harness(dispatch);
+      complete.mockResolvedValueOnce({text:'',calls:[{id:'first-choice',...call}]});
+      complete.mockResolvedValueOnce({text:'Choose a campus to continue.',calls:[]});
+      const result=await run('Bring up the school grounds.',workspace);
+      expect(efforts()).toEqual(['medium',reason?'high':'medium']);
+      expect(offersReasoning(1)).toBe(false);
+      expect(result.escalations).toEqual(reason?[expect.objectContaining({reason})]:[]);
+      expect(result.events.some(event=>event.type==='TOOL_CALL_START')).toBe(false);
+      expect(dispatch).toHaveBeenCalledTimes(reason?0:1);
+    },12000);
+  });
 
   it('reads explicit public web requests without a model or sending the app context, and retains only safe source cards', async () => {
     complete.mockClear();

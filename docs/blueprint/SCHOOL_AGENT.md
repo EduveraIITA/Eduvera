@@ -19,6 +19,11 @@ tool uses the existing authenticated domain API and its membership, relationship
 scope, time, revision and workflow rules. Tenant/person/child scope is injected
 from the validated session/thread, never chosen by the model.
 
+The current catalogue has 141 entries across 21 domains. It contains 53
+autonomous reads, 2 monitored actions, 76 approval actions and 10 human
+handoffs. Tool availability depends on each user's scope, role and the owning
+record. The campus setup and navigation registry has eight client controls.
+
 | Effect | Control |
 | --- | --- |
 | Authorized read | May run autonomously through the owning API. |
@@ -256,11 +261,20 @@ configuration. Non-loopback endpoints require HTTPS, no embedded URL credentials
 or redirects. Keys, ADC and tokens remain server-only, outside source/chat/logs/UI.
 Vertex permits only the currently reviewed project/model/region shape enforced by
 `vertex-auth.ts`; it also needs an unexpired `AGENT_ENABLED_UNTIL` allowance.
-The Assistant uses Medium thinking for general requests and High when an
-unresolved workflow needs multi-step reasoning. Campus image/map inference keeps
-Gemini 3.1 Flash-Lite, which is also an explicit Assistant rollback setting. The
-models share the configured daily and monthly ledger. The Assistant reserves
-against its configured output ceiling before each billable attempt.
+Gemini 3.8 Flash starts each Assistant run at Medium. It can request one High
+model call through the typed `request_deeper_reasoning` tool when the current
+goal, open screen, available tools and evidence call for deeper planning. The
+harness can also escalate once after a recoverable invalid decision, such as
+incompatible interface actions, invalid tool arguments or a claimed change
+without an app receipt. The High call uses the same provider conversation and
+signed tool history. Missing user choices, denied access, cancellation and
+service outages retain their own handling. Existing deterministic workflows can
+still run directly, and the run, tool and spending limits continue to apply.
+
+Campus image/map inference uses Gemini 3.1 Flash-Lite, which is also an explicit
+Assistant rollback setting. The models share the configured daily and monthly
+ledger. The Assistant reserves against its configured output ceiling before
+each billable attempt.
 
 Cloud/provider status must distinguish configuration/auth readiness from an actual
 successful inference. Before use, approve data handling and evaluate the exact

@@ -7,7 +7,7 @@ import { compactModelData,toolFailureCode } from '../src/agent/agent.service.js'
 import { recordReferences, resolveReferences, reportsUnverifiedWrite, schoolDate } from '../src/agent/references.js';
 import { attendanceArguments } from '../src/agent/attendance-intent.js';
 import { conversationSummaryPrompt,needsConversationCompaction,needsStoredConversationCompaction,serializedTurn,turnsToCompact } from '../src/agent/conversation-memory.js';
-import { agentSystemPrompt,assistantThinkingEffort,responsePrompt,skillPrompt } from '../src/agent/agent-prompts.js';
+import { agentSystemPrompt,responsePrompt,skillPrompt } from '../src/agent/agent-prompts.js';
 import { conversationRoutingQuery } from '../src/agent/tool-routing.js';
 import { recordRevision } from '../src/agent/revisions.js';
 import { assertDurableMemoryIntent,assertMemoryEvidence,assertMemoryValueGrounded,longTermMemoryPrompt,sanitizeMemoryValue,userIdentityPrompt,userMemoryChangeSchema,userMemoryTool } from '../src/agent/long-term-memory.js';
@@ -43,13 +43,6 @@ describe('agent capability boundary',()=>{
     expect(CAPABILITIES.find(cap=>cap.name==='record_student_attendance')?.contract).toMatchObject({effect:'consequential',control:'approval'});
     expect(CAPABILITIES.find(cap=>cap.name==='record_attendance')?.title).toBe('Submit class attendance');
   });
-  it('uses higher reasoning for app planning and preserves the lower-latency default',()=>{
-    expect(assistantThinkingEffort('What is today’s attendance?')).toBe('medium');
-    expect(assistantThinkingEffort('Map a floor plan for this campus')).toBe('high');
-    expect(assistantThinkingEffort('Then start building','Set up the campus layout')).toBe('high');
-    expect(assistantThinkingEffort('Find the attendance entry and then compare it with yesterday')).toBe('high');
-  });
-
   it('keeps one concise operating policy with focused domain and response guidance',()=>{
     const capabilities=CAPABILITIES.filter(capability=>['find_students','record_student_attendance','principal_analytics'].includes(capability.name));
     const system=agentSystemPrompt({...scope,portal:'principal'},capabilities);

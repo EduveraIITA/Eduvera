@@ -501,9 +501,10 @@ for an authorized campus, keep a partially prepared form on screen, and resume a
 public floor-plan search in the current conversation. A model-selected setup
 action uses the same checked workflow as a recognized text command. Campus
 creation, publisher reuse and publication still require their owning controls.
-Gemini 3.8 Flash uses Medium by default and High for multi-step reasoning, with
-the existing paid test allowance. Campus image and map inference retain their
-current provider model.
+Gemini 3.8 Flash starts at Medium. A model request for deeper reasoning or a
+recoverable invalid tool decision can trigger one High call in the same run,
+using the signed conversation and the existing tool, time and spending limits.
+Campus image and map inference retain their current provider model.
 
 Compact Assistant replies now open the full conversation on tap and copy the
 full reply on a long press. A compact browser test exercised both gestures,

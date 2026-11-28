@@ -173,18 +173,18 @@ describe('Gemini recovery through the official SDK',()=>{
 describe('Gemini 3.8 Flash through Vertex',()=>{
   const answer={candidates:[{finishReason:'STOP',content:{role:'model',parts:[{text:'Checked'}]}}]};
   const request=[{role:'user' as const,content:'Check attendance'}];
-  const vertexProvider=(generate:ReturnType<typeof vi.fn>,effort?:'medium'|'high')=>{
+  const vertexProvider=(generate:ReturnType<typeof vi.fn>,diagnostic?:ReturnType<typeof vi.fn>)=>{
     vi.stubEnv('AGENT_PROVIDER','vertex');
     vi.stubEnv('AGENT_ENABLED_UNTIL',new Date(Date.now()+86400000).toISOString());
     const budget=vi.fn().mockResolvedValue(undefined);
-    const model=new GeminiAgentModel('gemini-3.8-flash','https://unused.test','','vertex',budget,sdkClient(generate),undefined,effort);
+    const model=new GeminiAgentModel('gemini-3.8-flash','https://unused.test','','vertex',budget,sdkClient(generate),diagnostic);
     return {model,budget};
   };
 
   it.each([[undefined,'MEDIUM',4096],['high','HIGH',8192]] as const)('reserves the full %s thinking envelope and sends only supported generation parameters',async(effort,thinkingLevel,maxOutputTokens)=>{
     const generate=vi.fn().mockResolvedValue(answer);
-    const {model,budget}=vertexProvider(generate,effort);
-    await expect(model.complete(request,[tool],signal)).resolves.toMatchObject({text:'Checked'});
+    const {model,budget}=vertexProvider(generate);
+    await expect(model.complete(request,[tool],signal,undefined,effort)).resolves.toMatchObject({text:'Checked'});
     expect(budget).toHaveBeenCalledWith(123,maxOutputTokens);
     expect(generate.mock.calls[0]![0].config).toMatchObject({maxOutputTokens,thinkingConfig:{thinkingLevel},automaticFunctionCalling:{disable:true}});
     expect(generate.mock.calls[0]![0].config).not.toHaveProperty('candidateCount');
@@ -224,11 +224,47 @@ describe('Gemini 3.8 Flash through Vertex',()=>{
     const generate=vi.fn().mockResolvedValueOnce({candidates:[{finishReason:'STOP',content:signed}]})
       .mockImplementationOnce(({contents})=>{snapshots.push(structuredClone(contents));return {candidates:[{finishReason:'MAX_TOKENS'}]};})
       .mockImplementationOnce(({contents})=>{snapshots.push(structuredClone(contents));return answer;});
-    const {model,budget}=vertexProvider(generate,'high');
+    const {model,budget}=vertexProvider(generate);
     await model.complete(request,[tool],signal);
     await model.complete([...request,{role:'tool',name:tool.name,callId:'a',content:'{"value":42}'}],[tool],signal);
     expect(snapshots[0]).toEqual(snapshots[1]);
-    expect(budget.mock.calls).toEqual([[123,8192],[123,8192],[123,8192]]);
+    expect(budget.mock.calls).toEqual([[123,4096],[123,4096],[123,4096]]);
+  });
+
+  it('changes a single completion to High and preserves both signed tool turns when Medium resumes',async()=>{
+    const medium={role:'model',parts:[{functionCall:{id:'medium-call',name:tool.name,args:{}},thoughtSignature:'medium-signature'}]};
+    const high={role:'model',parts:[{functionCall:{id:'high-call',name:tool.name,args:{}},thoughtSignature:'high-signature'}]};
+    const generate=vi.fn()
+      .mockResolvedValueOnce({candidates:[{finishReason:'STOP',content:medium}]})
+      .mockResolvedValueOnce({candidates:[{finishReason:'STOP',content:high}]})
+      .mockResolvedValueOnce(answer);
+    const {model,budget}=vertexProvider(generate);
+    const first=await model.complete(request,[tool],signal);
+    const escalation=[...request,{role:'assistant' as const,content:first.text,calls:first.calls},
+      {role:'tool' as const,name:tool.name,callId:'medium-call',content:'{"code":"validation"}'}];
+    const second=await model.complete(escalation,[tool],signal,undefined,'high');
+    await expect(model.complete([...escalation,{role:'assistant',content:second.text,calls:second.calls},
+      {role:'tool',name:tool.name,callId:'high-call',content:'{"value":42}'}],[tool],signal)).resolves.toMatchObject({text:'Checked'});
+    expect(generate.mock.calls.map(([input])=>input.config.thinkingConfig.thinkingLevel)).toEqual(['MEDIUM','HIGH','MEDIUM']);
+    expect(budget.mock.calls).toEqual([[123,4096],[123,8192],[123,4096]]);
+    expect(generate.mock.calls[2]![0].contents.slice(0,5)).toEqual([
+      {role:'user',parts:[{text:'Check attendance'}]},
+      medium,
+      {role:'user',parts:[{functionResponse:{id:'medium-call',name:tool.name,response:{code:'validation'}}}]},
+      high,
+      {role:'user',parts:[{functionResponse:{id:'high-call',name:tool.name,response:{value:42}}}]},
+    ]);
+  });
+
+  it('reserves and attempts a High generation once when its provider response fails',async()=>{
+    const generate=vi.fn().mockRejectedValue(new ApiError({status:429,message:'PRIVATE BODY'}));
+    const diagnostic=vi.fn().mockResolvedValue(undefined);
+    const {model,budget}=vertexProvider(generate,diagnostic);
+    await expect(model.complete(request,[tool],signal,undefined,'high')).rejects.toMatchObject({code:'http',status:429});
+    expect(generate).toHaveBeenCalledTimes(1);
+    expect(budget.mock.calls).toEqual([[123,8192]]);
+    expect(diagnostic).toHaveBeenCalledOnce();
+    expect(diagnostic).toHaveBeenCalledWith({code:'http',status:429,attempt:1,retrying:false});
   });
 
   it('keeps a signed text answer only once when the application continues the turn',async()=>{

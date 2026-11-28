@@ -16,7 +16,7 @@ export interface ToolChoice { required: string[] }
 export interface AgentModel {
   readonly provider: string;
   readonly model: string;
-  complete(messages: ModelMessage[], tools: ToolDefinition[], signal: AbortSignal, choice?:ToolChoice): Promise<ModelReply>;
+  complete(messages: ModelMessage[], tools: ToolDefinition[], signal: AbortSignal, choice?:ToolChoice, thinkingEffort?:AgentThinkingEffort): Promise<ModelReply>;
 }
 
 const settings = z.object({
@@ -181,8 +181,7 @@ export class GeminiAgentModel implements AgentModel {
   constructor(readonly model:string,private readonly base:string,private readonly key:string,
     readonly provider:'gemini'|'vertex'='gemini',private readonly budget?:ModelBudget,
     client?:Pick<GoogleGenAI,'models'>,
-    private readonly diagnostic?:(event:ModelDiagnostic)=>Promise<void>,
-    private readonly thinkingEffort:AgentThinkingEffort='medium') {
+    private readonly diagnostic?:(event:ModelDiagnostic)=>Promise<void>) {
     // Official SDK owns REST serialization, authentication/refresh and typed responses.
     // Disable hidden SDK retries: p-retry below reserves every billable attempt.
     const httpOptions={timeout:60_000,retryOptions:{attempts:1}};
@@ -236,11 +235,12 @@ export class GeminiAgentModel implements AgentModel {
     this.previousReply=undefined;
   }
 
-  async complete(messages:ModelMessage[],tools:ToolDefinition[],signal:AbortSignal,choice?:ToolChoice):Promise<ModelReply> {
+  async complete(messages:ModelMessage[],tools:ToolDefinition[],signal:AbortSignal,choice?:ToolChoice,thinkingEffort:AgentThinkingEffort='medium'):Promise<ModelReply> {
     const strict=this.provider==='vertex'&&this.model===VERTEX_ASSISTANT_MODEL;
     this.appendMessages(messages,strict);
-    const level=this.thinkingEffort==='high'?ThinkingLevel.HIGH:ThinkingLevel.MEDIUM;
-    const outputTokens=strict?VERTEX_ASSISTANT_OUTPUT_TOKENS[this.thinkingEffort]:this.provider==='vertex'?2048:2500;
+    const high=strict&&thinkingEffort==='high';
+    const level=high?ThinkingLevel.HIGH:ThinkingLevel.MEDIUM;
+    const outputTokens=strict?VERTEX_ASSISTANT_OUTPUT_TOKENS[thinkingEffort]:this.provider==='vertex'?2048:2500;
     const systemInstruction={parts:[{text:messages.filter(message=>message.role==='system').map(message=>message.content).join('\n')}]};
     const config:GenerateContentConfig={
       systemInstruction,
@@ -297,7 +297,8 @@ export class GeminiAgentModel implements AgentModel {
         throw error;
       }
     },{
-      retries:2,minTimeout:1000,maxTimeout:2500,randomize:true,signal,
+      // Escalation gets one generation attempt under the existing run budget.
+      retries:high?0:2,minTimeout:1000,maxTimeout:2500,randomize:true,signal,
       shouldRetry:({error})=>error instanceof ModelFailure&&error.retryable,
       onFailedAttempt:async({error,attemptNumber,retriesLeft})=>{
       signal.throwIfAborted();
@@ -315,11 +316,11 @@ export class GeminiAgentModel implements AgentModel {
     });
   }
 }
-export function createAgentModel(budget?:ModelBudget, diagnostic?:(event:ModelDiagnostic)=>Promise<void>, thinkingEffort:AgentThinkingEffort='medium'): AgentModel {
+export function createAgentModel(budget?:ModelBudget, diagnostic?:(event:ModelDiagnostic)=>Promise<void>): AgentModel {
   const setting = agentSettings();
   if(setting.provider==='vertex') {
     if(!budget)throw new Error('A durable cloud AI budget is required.');
-    return new GeminiAgentModel(setting.model,setting.base,'','vertex',budget,undefined,diagnostic,thinkingEffort);
+    return new GeminiAgentModel(setting.model,setting.base,'','vertex',budget,undefined,diagnostic);
   }
   if(setting.provider!=='ollama'&&setting.provider!=='openai-compatible'&&!setting.key)throw new Error('The configured cloud model has no API key.');
   if(!setting.model)throw new Error('Choose an explicit AGENT_MODEL for the configured provider.');

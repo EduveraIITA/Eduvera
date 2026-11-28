@@ -2,7 +2,7 @@ import { CAPABILITY_CONTRACT_VERSION } from './capability-contract.js';
 import { schoolDate } from './references.js';
 import type { AgentScope,Capability } from './catalogue.js';
 
-export const AGENT_PROMPT_VERSION='2026-10-10.api-owned-v8';
+export const AGENT_PROMPT_VERSION='2026-11-28.api-owned-v9';
 
 export interface AgentSkill {
   id:string;
@@ -45,15 +45,4 @@ const audienceFocus:Record<AgentScope['portal'],string>={
 
 export function responsePrompt(scope:Pick<AgentScope,'portal'>,openingTurn:boolean) {
   return `Conversation style: warm, concise, personal and professional. ${openingTurn?'On the first turn, greet briefly by preferred_name in casual conversation. For a task, start with the action or outcome.':'Continue naturally without another greeting or introduction.'} Answer a direct name question with display_name and a direct role question with account_role; otherwise do not narrate account state. ${audienceFocus[scope.portal]} Lead with the outcome. Use one or two sentences for simple answers and usually stay under 80 words. For charts, state at most two findings. Avoid generic closings, raw links, Markdown tables and speculation.`;
-}
-
-// Deterministic screen workflows do not call the model. Give more reasoning to
-// the requests that still need planning across steps or resolving references.
-export function assistantThinkingEffort(question:string,previousQuestion?:string):'medium'|'high' {
-  const setup=/\b(?:set\s*up|configure|build|provision|map\s+(?:the|out|a)|floor[ -]*plans?|interiors?|boundar(?:y|ies))\b/iu;
-  const campus=/\b(?:campus|buildings?|floors?|rooms?|locations?|layouts?|maps?)\b/iu;
-  const multiStep=/\b(?:and then|then (?:open|find|add|create|map|build|update|compare|check)|step by step|across multiple)\b/iu;
-  const continuation=/^(?:please\s+)?(?:continue|go ahead|proceed|(?:then\s+)?start building|do (?:that|it)|keep going)[.!?]*$/iu;
-  const related=continuation.test(question.trim())?previousQuestion??question:question;
-  return (setup.test(related)&&campus.test(related))||multiStep.test(question)?'high':'medium';
 }

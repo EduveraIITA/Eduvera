@@ -5,7 +5,7 @@ import type { EXECUTION_EFFECT_KINDS } from "../campus-model-core/execution-effe
  * rewrite a stale lock unless this number is increased first, so accepting
  * platform drift always leaves a reviewed Simulation change in the diff.
  */
-export const SIMULATION_CONFORMANCE_REVISION = 244 as const;
+export const SIMULATION_CONFORMANCE_REVISION = 245 as const;
 
 export const SIMULATION_DATA_PLANE_CAPABILITIES = Object.freeze([
   "snapshot",
@@ -583,6 +583,8 @@ export const SIMULATION_SAFETY_EVIDENCE = Object.freeze([
     proves: "Actual captured COW resources replace new image inference with an explicit empty tracing draft and reject uncaptured lookup. Exactly one run-local compute and one connector effect are retained while a fetch spy confirms no network access. Drawn map onboarding uses a local fictional map, records one connector substitute across exact retries and calls neither Live provider. GeoJSON is interpreted locally and source/sibling proposal rows remain unchanged." },
   { id: "safety:campus-floor-plan-discovery", kind: "real_postgres", test_file: "backend/test/floor-plan-onboarding-lifecycle.integration.test.ts",
     proves: "Current administration and exact mapped building revision gate indexed official links. Optional external index results retain only a capped allowance receipt in Live. Verified publisher downloads require explicit rights and reuse the native bounded image writer without editing the scene. A real COW world records one guided substitute for an exact search, refuses public downloads, and contacts no network, even when a provider key and daily cap are configured." },
+  { id: "safety:assistant-reasoning-escalation", kind: "real_postgres", test_file: "backend/test/agent-ui.integration.test.ts",
+    proves: "The owned reasoning harness starts in Medium, grants one High generation after a typed request or recoverable invalid model action, then resumes Medium. It keeps current source evidence, refuses mixed tool batches and respects current scope and controls. The High decision does not itself dispatch an app action." },
   { id: "safety:assistant-campus-controls", kind: "real_postgres", test_file: "backend/test/agent-ui.integration.test.ts",
     proves: "The owned Assistant passes a mixed model response back for a single safe step, opens Virtual Campus for an authorized empty directory, binds an indirect editor request to an exact campus, suppresses revoked calls, and continues a retained A2UI form through an idle turn with zero domain writes. This is authorized Assistant API and PostgreSQL journal evidence with a controlled model response." },
   { id: "safety:assistant-public-web", kind: "real_postgres", test_file: "backend/test/agent-ui.integration.test.ts",

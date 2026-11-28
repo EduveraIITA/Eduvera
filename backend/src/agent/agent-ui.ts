@@ -71,6 +71,7 @@ export function clientUiPrompt(context: ClientUiContext | undefined) {
   if (!context) return '';
   const result=context.last_result;
   return [
+    `Current app screen: ${context.screen.replace(/_/g,' ')}.`,
     context.tools.length ? 'Use the advertised controls to advance the user’s current task in the app. The user may ask to continue the same task. Call one interface tool per model response, by itself. Controls can open or prepare the app’s own screens. Say which step you are taking, without claiming it completed.' : '',
     result ? `The client reported the previous control ${result.tool} as ${result.status}. This is a display status, not evidence of campus records or authorization. Do not repeat a blocked or stopped control unless the user asks again.` : '',
   ].filter(Boolean).join('\n');
