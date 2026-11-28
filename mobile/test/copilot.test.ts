@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { copilotRouteContext, parseCopilotContext, readCopilotBatch, readCopilotBuildingSelectionReply, readCopilotPlan, readCopilotWorkflowReply } from '../src/lib/copilot';
+import { campusTransitionKind } from '../src/lib/back-policy';
+import { copilotIsPublishedMap, copilotPublishedMapHref, copilotRouteContext, parseCopilotContext, readCopilotBatch, readCopilotBuildingSelectionReply, readCopilotPlan, readCopilotWorkflowReply } from '../src/lib/copilot';
 
 const threadId = 'thread', runId = 'run', toolCallId = 'call_1';
 const event = (type: string, body: Record<string, unknown> = {}) => ({ type, ...body });
@@ -140,4 +141,19 @@ test('a building checkpoint and resume bind the exact run, campus, human receipt
   assert.equal(read(packet([...editorSteps({campus_id:campus,building_id:'osm-123'})],editor)),null);
   assert.equal(read(packet([approved,...editorSteps({campus_id:campus,building_id:'../osm-123'})],editor)),null);
   assert.equal(readCopilotBuildingSelectionReply(valid,threadId,'old-run',step,selection),null);
+});
+
+test('showing the published map opens the exact campus instead of backing out of its editor', () => {
+  const campus = '861291df-e176-47e8-8595-e48161a8e61f';
+  const editor = `/more/virtual-campus?campus_id=${campus}&edit=1&indoor=1&indoor_building_id=osm-cc3`;
+  const destination = copilotPublishedMapHref(campus);
+  const params = Object.fromEntries(new URL(destination, 'https://thatcampus.invalid').searchParams);
+  assert.equal(params.campus_id, campus);
+  assert.equal(params.edit, '0');
+  assert.equal(params.indoor, '0');
+  assert.equal(campusTransitionKind(editor, destination), 'open');
+  assert.equal(copilotIsPublishedMap('/more/virtual-campus', params), true);
+  assert.equal(copilotIsPublishedMap('/more/virtual-campus', { edit: ['0', '1'] }), false);
+  assert.equal(copilotIsPublishedMap('/more/virtual-campus', { indoor: '1' }), false);
+  assert.equal(copilotIsPublishedMap('/today', params), false);
 });

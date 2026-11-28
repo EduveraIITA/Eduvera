@@ -360,7 +360,7 @@ function Conversation({ href, onNavigate, onCompactHeightChange, workspaceTask, 
       key={interiorSelection.step_id} checkpoint={interiorSelection} error={interiorSelection.error}
       locked={!presentation.active || accessPaused || busy || !!pending || !!activeRun || localWork || awaiting}
       mapVisible={copilot.interiorMapActive && presentation.mode !== 'fullscreen'}
-      onShowMap={() => { revealApp.current(false); if (!copilot.interiorMapActive) onNavigate('/more/virtual-campus'); }}
+      onShowMap={() => { revealApp.current(false); if (!copilot.interiorMapActive) onNavigate(copilot.interiorMapHref); }}
       onStop={() => copilot.cancelInteriorSelection(threadId, interiorSelection.step_id)}
       onSelect={selection => copilot.selectInteriorTarget(selection, interiorSelection.step_id, atDestination => revealApp.current(atDestination))} /> : null}
     <ConversationComposer value={question} onChange={setQuestion} locked={locked} busy={busy} working={working}

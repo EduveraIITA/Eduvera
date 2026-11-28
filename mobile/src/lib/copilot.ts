@@ -44,6 +44,23 @@ const knownTool = (value: unknown): value is CopilotToolName =>
 const knownScreen = (value: unknown): value is CopilotScreen => screens.some(screen => screen === value);
 export const copilotCallId = (value: unknown): value is string => typeof value === 'string' && /^[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}$/i.test(value);
 const buildingId = (value: unknown): value is string => typeof value === 'string' && /^[A-Za-z0-9][A-Za-z0-9_-]{0,79}$/.test(value);
+/** Both app clients use the same explicit map mode to leave a retained editor. */
+export function copilotPublishedMapHref(campusId?: string) {
+  const params = new URLSearchParams({ view: 'map', edit: '0', indoor: '0' });
+  if (copilotCallId(campusId)) params.set('campus_id', campusId);
+  return `/more/virtual-campus?${params}`;
+}
+
+export function copilotIsPublishedMap(pathname: string, params: { edit?: unknown; indoor?: unknown }) {
+  const editing = (value: unknown) => value === '1' || Array.isArray(value) && value.includes('1');
+  return pathname === '/more/virtual-campus' && !editing(params.edit) && !editing(params.indoor);
+}
+
+export function copilotIsPublishedMapHref(pathname: string, href: string) {
+  const params = new URL(href, 'https://thatcampus.invalid').searchParams;
+  return copilotIsPublishedMap(pathname, { edit: params.getAll('edit'), indoor: params.getAll('indoor') });
+}
+
 const knownResult = (value: unknown): value is CopilotResult['status'] =>
   value === 'applied' || value === 'blocked' || value === 'stopped';
 const cleanText = (value: unknown, min: number, max: number): value is string => typeof value === 'string' &&

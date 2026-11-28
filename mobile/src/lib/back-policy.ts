@@ -109,7 +109,7 @@ function semanticKeys(url: URL): readonly string[] {
   const parts = url.pathname.split('/').filter(Boolean);
   if (parts[0] === 'onboarding') return ['step'];
   if (parts[0] === 'work') return ['item','request','request_id','invoice','invoice_id','visit','leave_id'];
-  if (parts[0] === 'more') return parts[1] === 'virtual-campus' ? ['edit:1','map_full:1'] : parts[1] === 'simulation' ? ['run','view','step','compare'] : parts[1] === 'policies' ? ['policy'] : ['edit','create','item','policy','rule','academic_edit'];
+  if (parts[0] === 'more') return parts[1] === 'virtual-campus' ? ['edit:1','map_full:1','view:map'] : parts[1] === 'simulation' ? ['run','view','step','compare'] : parts[1] === 'policies' ? ['policy'] : ['edit','create','item','policy','rule','academic_edit'];
   const rules=identityByArea[parts[1] ?? ''] ?? ['id','item','edit','create','action'];
   if(assignmentsRoute(url)) {
     // These are separate keyed writers, not list filters. Ordinary assignment

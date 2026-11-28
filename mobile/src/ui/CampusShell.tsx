@@ -20,7 +20,7 @@ import { NativeDockInsetsContext, NativeDockMetricsContext } from './campus-tabs
 import { AssistantOverlayHost } from './AssistantOverlayHost';
 import { useCopilotAction, useCopilotTakeOver } from './CopilotProvider';
 import { CopilotPointer } from './CopilotPointer';
-import { copilotCallId, validInteriorTarget } from '../lib/copilot';
+import { copilotCallId, copilotIsPublishedMap, copilotPublishedMapHref, validInteriorTarget } from '../lib/copilot';
 import { useAssistantPresentation } from './AssistantPresentation';
 import { NativeTabInsetsContext } from './native-tab-insets-context';
 import { Icon } from './Icon';
@@ -89,7 +89,11 @@ export function CampusShell() {
   useCopilotAction({
     name:'open_virtual_campus',label:'Open Virtual Campus',destinationPath:'/more/virtual-campus',
     available:pathname!=='/more/virtual-campus'&&!!session.schoolId,
-    run:(_args,signal)=>openCopilotRoute('/more/virtual-campus',()=>activeRoute.current.pathname==='/more/virtual-campus',signal),
+    run:(_args,signal)=>openCopilotRoute(copilotPublishedMapHref(),()=>{
+      const active = activeRoute.current;
+      return copilotIsPublishedMap(active.pathname, active.params) && active.params.view === 'map'
+        && active.params.edit === '0' && active.params.indoor === '0';
+    },signal),
   });
   useCopilotAction({
     name:'open_campus_create',label:'Open Your campuses',destinationPath:'/more/account/campuses',

@@ -5,7 +5,7 @@ import { useSession } from '../auth/SessionProvider';
 import { ApiError, apiFetch, captureApiContext } from '../lib/api';
 import { ApiConnectionError } from '../lib/api-client';
 import { campusHrefForRoute, focusedCampusRoute, type CampusNavigationState } from '../lib/back-policy';
-import { copilotCallId, copilotRouteContext, copilotToolNames, copilotToolAvailableOn, readCopilotBatch, readCopilotBuildingSelectionReply, readCopilotWorkflowReply, validCopilotArgs, validInteriorTarget, type CopilotContext, type CopilotResult, type CopilotToolName, type InteriorCheckpoint, type InteriorTarget } from '../lib/copilot';
+import { copilotCallId, copilotIsPublishedMapHref, copilotPublishedMapHref, copilotRouteContext, copilotToolNames, copilotToolAvailableOn, readCopilotBatch, readCopilotBuildingSelectionReply, readCopilotWorkflowReply, validCopilotArgs, validInteriorTarget, type CopilotContext, type CopilotResult, type CopilotToolName, type InteriorCheckpoint, type InteriorTarget } from '../lib/copilot';
 import { copilotWait, measureCopilotTarget, type CopilotRect, type CopilotTargetNode } from '../lib/copilot-target';
 
 type ActionRegistration = {
@@ -54,6 +54,7 @@ type Runtime = {
   cancelInteriorSelection(threadId: string, stepId?: string): void;
   interiorSelection: InteriorSelection | null;
   interiorMapActive: boolean;
+  interiorMapHref: string;
   takeOver(): void;
   answerDetail(id: string, name: string): Promise<boolean>;
   detail: Detail | null;
@@ -63,7 +64,7 @@ type Runtime = {
 const noop = () => {};
 const RuntimeContext = createContext<Runtime>({
   register: () => noop, registerTarget: () => noop, pointer: null, registerCampusTarget: () => noop, context: () => undefined, capture: () => undefined,
-  follow: noop, inspect: noop, selectInteriorTarget: () => false, cancelInteriorSelection: noop, interiorSelection: null, interiorMapActive: false, takeOver: noop, answerDetail: async () => false, detail: null, pending: null, activity: null,
+  follow: noop, inspect: noop, selectInteriorTarget: () => false, cancelInteriorSelection: noop, interiorSelection: null, interiorMapActive: false, interiorMapHref: copilotPublishedMapHref(), takeOver: noop, answerDetail: async () => false, detail: null, pending: null, activity: null,
 });
 
 const runEndpoint = ({ id, threadId }: Run) => `/api/v1/agent/threads/${encodeURIComponent(threadId)}/runs/${encodeURIComponent(id)}`;
@@ -439,9 +440,10 @@ export function CopilotProvider({ children }: PropsWithChildren) {
 
   const currentPointer = eligible && pointer?.binding===binding ? pointer : null;
   const matchingInteriorSelection = eligible && interiorOwner.current?.scopeKey === session.scopeKey ? interiorSelection : null;
-  const interiorMapActive = screen === 'virtual_campus';
-  const value = useMemo(() => ({ register, registerTarget, pointer:currentPointer, registerCampusTarget, context, capture, follow, inspect, takeOver, answerDetail, detail, pending, activity, selectInteriorTarget, cancelInteriorSelection, interiorSelection: matchingInteriorSelection, interiorMapActive }),
-    [register, registerTarget, currentPointer, registerCampusTarget, context, capture, follow, inspect, takeOver, answerDetail, detail, pending, activity, selectInteriorTarget, cancelInteriorSelection, matchingInteriorSelection, interiorMapActive]);
+  const interiorMapActive = copilotIsPublishedMapHref(pathname, href);
+  const interiorMapHref = copilotPublishedMapHref(identity[0] ?? undefined);
+  const value = useMemo(() => ({ register, registerTarget, pointer:currentPointer, registerCampusTarget, context, capture, follow, inspect, takeOver, answerDetail, detail, pending, activity, selectInteriorTarget, cancelInteriorSelection, interiorSelection: matchingInteriorSelection, interiorMapActive, interiorMapHref }),
+    [register, registerTarget, currentPointer, registerCampusTarget, context, capture, follow, inspect, takeOver, answerDetail, detail, pending, activity, selectInteriorTarget, cancelInteriorSelection, matchingInteriorSelection, interiorMapActive, interiorMapHref]);
   return <RuntimeContext.Provider value={value}>{children}</RuntimeContext.Provider>;
 }
 
