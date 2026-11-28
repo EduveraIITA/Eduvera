@@ -121,12 +121,11 @@ export function CampusShell() {
     available:!!session.schoolId&&!session.publicDemo,
     isAtDestination:atCampusInteriors,
     run:(args,signal)=>{
-      const campusId=args.campus_id,building=typeof args.building_name==='string'?args.building_name:undefined;
-      const buildingId=args.building_id;
-      if(!copilotCallId(campusId)||buildingId!==undefined&&!validInteriorTarget({campus_id:campusId,element_id:buildingId}))return false;
-      const query=new URLSearchParams({campus_id:campusId,edit:'1',indoor:'1'});
-      if(building)query.set('indoor_building',building);
-      if(buildingId!==undefined)query.set('indoor_building_id',buildingId);
+      const target={campus_id:args.campus_id,element_id:args.building_id};
+      if(!validInteriorTarget(target))return false;
+      const query=new URLSearchParams({campus_id:target.campus_id,edit:'1',indoor:'1'});
+      if(typeof args.building_name==='string'&&args.building_name)query.set('indoor_building',args.building_name);
+      if(target.element_id!==undefined)query.set('indoor_building_id',target.element_id);
       return openCopilotRoute(`/more/virtual-campus?${query}`,()=>atCampusInteriors(args),signal);
     },
   });
