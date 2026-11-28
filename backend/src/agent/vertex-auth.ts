@@ -12,13 +12,27 @@ export async function vertexAccessToken(signal: AbortSignal): Promise<string> {
   return token;
 }
 
-export function vertexSettings() {
+export const VERTEX_ASSISTANT_MODEL = 'gemini-3.8-flash';
+const VERTEX_CAMPUS_SCENE_MODEL = 'gemini-3.1-flash-lite';
+
+function vertexConnection() {
   const project = process.env.AGENT_GOOGLE_PROJECT;
   const location = process.env.AGENT_GOOGLE_LOCATION ?? 'global';
-  const model = process.env.AGENT_MODEL;
-  if (!project || !/^[a-z][a-z0-9-]{4,61}[a-z0-9]$/.test(project) || location !== 'global' || model !== 'gemini-3.1-flash-lite') {
-    throw new Error('Cloud AI requires the approved project, global region and Gemini 3.1 Flash-Lite model.');
+  if (!project || !/^[a-z][a-z0-9-]{4,61}[a-z0-9]$/.test(project) || location !== 'global') {
+    throw new Error('Cloud AI requires the approved project and global region.');
   }
   if (process.env.AGENT_BASE_URL || process.env.AGENT_API_KEY) throw new Error('Vertex AI uses its service identity, not a custom endpoint or API key.');
-  return { project, location, model, base: `https://aiplatform.googleapis.com/v1/projects/${project}/locations/${location}/publishers/google` };
+  return { project, location, base: `https://aiplatform.googleapis.com/v1/projects/${project}/locations/${location}/publishers/google` };
+}
+
+export function vertexSettings() {
+  const model = process.env.AGENT_MODEL;
+  if (model !== VERTEX_ASSISTANT_MODEL && model !== VERTEX_CAMPUS_SCENE_MODEL) {
+    throw new Error('Cloud AI requires an approved Assistant model.');
+  }
+  return { ...vertexConnection(), model };
+}
+
+export function campusSceneVertexSettings() {
+  return { ...vertexConnection(), model: VERTEX_CAMPUS_SCENE_MODEL };
 }

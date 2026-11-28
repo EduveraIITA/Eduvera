@@ -1,11 +1,11 @@
 export const copilotToolNames = [
   'open_virtual_campus', 'campus_search_places', 'campus_focus_place', 'campus_open_picker',
-  'open_campus_create', 'prepare_campus_create', 'open_campus_interiors',
+  'open_campus_create', 'prepare_campus_create', 'open_campus_interiors', 'open_campus_layout',
 ] as const;
 export type CopilotToolName = typeof copilotToolNames[number];
 const screens = ['workspace', 'virtual_campus', 'campus_account'] as const;
 export type CopilotScreen = typeof screens[number];
-const toolPolicy: Record<CopilotToolName, { screens: readonly CopilotScreen[]; input: 'none' | 'query' | 'name' | 'campus' }> = {
+const toolPolicy: Record<CopilotToolName, { screens: readonly CopilotScreen[]; input: 'none' | 'query' | 'name' | 'campus' | 'layout' }> = {
   open_virtual_campus: { screens: ['workspace'], input: 'none' },
   campus_search_places: { screens: ['virtual_campus'], input: 'query' },
   campus_focus_place: { screens: ['virtual_campus'], input: 'query' },
@@ -13,6 +13,7 @@ const toolPolicy: Record<CopilotToolName, { screens: readonly CopilotScreen[]; i
   open_campus_create: { screens: ['workspace', 'virtual_campus'], input: 'none' },
   prepare_campus_create: { screens: ['campus_account'], input: 'name' },
   open_campus_interiors: { screens, input: 'campus' },
+  open_campus_layout: { screens, input: 'layout' },
 };
 const routePolicy: Readonly<Record<string, { screen: CopilotScreen; identityParams: readonly string[] }>> = {
   '/more/virtual-campus': { screen: 'virtual_campus', identityParams: ['campus_id'] },
@@ -63,6 +64,7 @@ export function validCopilotArgs(name: CopilotToolName, value: unknown): value i
     case 'none': return Object.keys(args).length === 0;
     case 'query': return exact(args, ['query']) && cleanText(args.query, 1, 120);
     case 'name': return exact(args, ['name']) && (args.name === undefined || cleanText(args.name, 2, 180));
+    case 'layout': return exact(args, ['campus_id']) && copilotCallId(args.campus_id);
     case 'campus': return exact(args,['campus_id','building_name']) && copilotCallId(args.campus_id) && (args.building_name===undefined||cleanText(args.building_name,2,160));
   }
 }

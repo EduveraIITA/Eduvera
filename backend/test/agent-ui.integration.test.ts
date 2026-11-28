@@ -124,6 +124,10 @@ describe.skipIf(!enabled)('authorized Assistant AG-UI event read and client tool
     expect(await start.events()).toContainEqual({type:'STATE_SNAPSHOT',snapshot:{status:'completed',progress:'Setup changed'}});
     expect((await start.events()).some(event=>event.type==='TOOL_CALL_START')).toBe(false);
     count=2;
+    const continuation=await turn('Then start building',{screen:'campus_account',tools:['prepare_campus_create'],
+      last_result:{tool:'prepare_campus_create',status:'applied',call_id:steps.at(-1)!.toolCallId}});
+    expect(continuation.initial.some(event=>event.type==='TOOL_CALL_START')).toBe(false);
+    expect(JSON.stringify(continuation.initial)).toContain('Enter a name');
     const form=await turn('River House',{screen:'campus_account',tools:['prepare_campus_create'],
       last_result:{tool:'prepare_campus_create',status:'applied',call_id:steps.at(-1)!.toolCallId}});
     expect(form.initial.filter(event=>event.type==='TOOL_CALL_START').map(step=>step.toolCallName)).toEqual(['prepare_campus_create']);
@@ -140,6 +144,51 @@ describe.skipIf(!enabled)('authorized Assistant AG-UI event read and client tool
       WHERE run.thread_id=${thread}::uuid`.execute(db)).rows[0];
     expect(actions?.count).toBe(0);
   },20000);
+
+  it('recovers a mixed model batch, opens an empty map, and binds a paraphrased editor request to a permitted campus',async()=>{
+    complete.mockReset();
+    const fixture=await createClassPracticeFixture(db);
+    await db.updateTable('users').set({pro_features_enabled:true}).where('id','=',fixture.owner.id).execute();
+    const campusId=randomUUID();
+    let campuses:{id:string;name:string;code:string}[]=[];
+    let can_edit=true;
+    const dispatch=vi.fn(async()=>({can_edit,campuses}));
+    const memory=new AgentMemoryService(db);
+    const agent=new AgentService(db,new RolesService(db),fixture.school,{dispatch} as unknown as AgentGateway,memory);
+    const http=new AgentController(agent,memory);
+    const {id:thread}=await agent.create(request(fixture.owner,{portal:'principal'}));
+    async function send(question:string,tools:string[]) {
+      const {run_id}=await http.send(request(fixture.owner,{question,client_id:randomUUID(),ui_context:{screen:'workspace',tools}}),thread);
+      const read=async()=>(await http.runEvents(request(fixture.owner),thread,run_id)).events;
+      await vi.waitFor(async()=>expect((await read()).at(-1)).toMatchObject({type:'RUN_FINISHED'}),{timeout:5000});
+      return read;
+    }
+    complete.mockResolvedValueOnce({text:'',calls:[{id:'navigate',name:'open_virtual_campus',arguments:{}}]});
+    const empty=await send('Bring up the school grounds.',['open_virtual_campus']);
+    expect(await empty()).toContainEqual(expect.objectContaining({type:'TOOL_CALL_START',toolCallName:'open_virtual_campus'}));
+
+    campuses=[{id:campusId,name:'East Hall',code:'EAST'}];
+    complete.mockClear();
+    const setup={id:'setup',name:'prepare_campus_setup',arguments:{goal:'set_up_layout',name:'East Hall'}};
+    complete.mockResolvedValueOnce({text:'',calls:[{id:'parallel',name:'find_tools',arguments:{query:'campus'}},setup]});
+    complete.mockResolvedValueOnce({text:'',calls:[setup]});
+    const edit=await send('Could you get East Hall ready for us to trace where the grounds end?',['open_virtual_campus','open_campus_layout']);
+    const events=await edit();
+    expect(complete.mock.calls[0]?.[1]).toContainEqual(expect.objectContaining({name:'prepare_campus_setup'}));
+    expect(complete.mock.calls[1]?.[0]).toEqual(expect.arrayContaining([
+      expect.objectContaining({role:'tool',callId:'parallel',content:expect.stringContaining('separate_ui_step')}),
+      expect.objectContaining({role:'tool',callId:'setup',content:expect.stringContaining('separate_ui_step')}),
+    ]));
+    expect(events).toContainEqual(expect.objectContaining({type:'TOOL_CALL_START',toolCallName:'open_campus_layout'}));
+    expect(events).toContainEqual(expect.objectContaining({type:'TOOL_CALL_ARGS',delta:JSON.stringify({campus_id:campusId})}));
+    expect(JSON.stringify(events)).not.toMatch(/confirmed.*access|administrator access/i);
+
+    can_edit=false;
+    expect((await edit()).some(event=>event.type==='TOOL_CALL_START')).toBe(false);
+    const actions=(await sql<{count:number}>`SELECT count(*)::int AS count FROM agent_actions action JOIN agent_runs run ON run.id=action.run_id
+      WHERE run.thread_id=${thread}::uuid`.execute(db)).rows[0];
+    expect(actions?.count).toBe(0);
+  },15000);
 
   it('reads explicit public web requests without a model or sending the app context, and retains only safe source cards', async () => {
     complete.mockClear();

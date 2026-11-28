@@ -2,6 +2,9 @@ import { ForbiddenException, HttpException } from '@nestjs/common';
 import { sql } from 'kysely';
 import { z } from 'zod';
 import type { DatabaseService } from '../database/database.service.js';
+import { VERTEX_ASSISTANT_MODEL } from './vertex-auth.js';
+
+export const VERTEX_ASSISTANT_OUTPUT_TOKENS = { medium: 4096, high: 8192 } as const;
 
 // Deployment-owned resource limits: school admins cannot raise shared billing caps.
 export function agentExecutionLimits() {
@@ -58,18 +61,25 @@ export class AgentLimitError extends HttpException {
 
 // Reserve before the billable call. Never refund failures/cancellation: the remote
 // provider may have completed them. Limits survive restarts and simultaneous runs.
-// USD micro-units use conservative rates ($1/M input, $5/M output) above the
-// reviewed Flash-Lite price. They are an app allowance, not Google's billing cap.
 export async function reserveModelCall(db: DatabaseService, runId: string, inputTokens: number, outputTokens: number) {
   const limits = assertAgentEnabled();
-  if (!Number.isSafeInteger(inputTokens) || inputTokens < 0 || inputTokens > 24000 || outputTokens !== 2048) {
+  const flashOutput = outputTokens === VERTEX_ASSISTANT_OUTPUT_TOKENS.medium || outputTokens === VERTEX_ASSISTANT_OUTPUT_TOKENS.high;
+  if (!Number.isSafeInteger(inputTokens) || inputTokens < 0 || inputTokens > 24000 || !(flashOutput || outputTokens === 2048)) {
     throw new AgentLimitError('This request is too large. Please ask about one class, person or date.');
   }
-  const reserve = Math.ceil(inputTokens * 1.1) + 512 + outputTokens * 5;
   await db.transaction().execute(async tx => {
     await sql`SELECT pg_advisory_xact_lock(hashtext('agent_cloud_budget'))`.execute(tx);
-    const active = (await sql`SELECT id FROM agent_runs WHERE id=${runId}::uuid AND status='running' AND lease_expires_at>now()`.execute(tx)).rows;
-    if (!active.length) throw new AgentLimitError('This AI request is no longer active.');
+    const active = (await sql<{ provider: string; model: string }>`SELECT provider,model FROM agent_runs WHERE id=${runId}::uuid AND status='running' AND lease_expires_at>now()`.execute(tx)).rows[0];
+    if (!active) throw new AgentLimitError('This AI request is no longer active.');
+    const flash = active.model === VERTEX_ASSISTANT_MODEL;
+    if (active.provider !== 'vertex' || flash !== flashOutput || (!flash && active.model !== 'gemini-3.1-flash-lite')) {
+      throw new AgentLimitError('This AI request no longer matches its model allowance. Please try again.');
+    }
+    const paddedInput = Math.ceil(inputTokens * 1.1) + 512;
+    // USD micros: 3.8 rates round up the full published post-promotion rates
+    // ($1.50/M input and $7.50/M output). The output envelope includes hidden
+    // reasoning, with headroom for extra generation in provider usage records.
+    const reserve = flash ? paddedInput * 2 + outputTokens * 2 * 8 : paddedInput + outputTokens * 5;
     const usage = (await sql<{ day: number; month: number; calls: number }>`SELECT
       COALESCE(sum(reserved_micros) FILTER (WHERE created_at >= date_trunc('day',now() AT TIME ZONE 'UTC') AT TIME ZONE 'UTC'),0)::bigint AS day,
       COALESCE(sum(reserved_micros),0)::bigint AS month,

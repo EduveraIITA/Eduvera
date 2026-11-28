@@ -1,11 +1,12 @@
 import { z } from 'zod';
-import { vertexAccessToken, vertexSettings } from './vertex-auth.js';
-import { assertAgentEnabled } from './limits.js';
+import { VERTEX_ASSISTANT_MODEL, vertexAccessToken, vertexSettings } from './vertex-auth.js';
+import { assertAgentEnabled, VERTEX_ASSISTANT_OUTPUT_TOKENS } from './limits.js';
 import { ModelFailure, type ModelDiagnostic } from './model-errors.js';
 import { ApiError, GoogleGenAI, FunctionCallingConfigMode, ThinkingLevel, type Content, type GenerateContentConfig, type Tool } from '@google/genai';
 import pRetry from 'p-retry';
 
 export type ModelBudget = (inputTokens: number, maxOutputTokens: number) => Promise<void>;
+export type AgentThinkingEffort = 'medium' | 'high';
 
 export interface ToolDefinition { name: string; description: string; parameters: Record<string, unknown> }
 export interface ToolCall { id: string; name: string; arguments: Record<string, unknown> }
@@ -175,11 +176,13 @@ export class GeminiAgentModel implements AgentModel {
   private history:Content[] = [];
   private consumed=0;
   private nativeIds=new Map<string,string|undefined>();
+  private previousReply:ModelReply|undefined;
   private client: Pick<GoogleGenAI,'models'>;
   constructor(readonly model:string,private readonly base:string,private readonly key:string,
     readonly provider:'gemini'|'vertex'='gemini',private readonly budget?:ModelBudget,
     client?:Pick<GoogleGenAI,'models'>,
-    private readonly diagnostic?:(event:ModelDiagnostic)=>Promise<void>) {
+    private readonly diagnostic?:(event:ModelDiagnostic)=>Promise<void>,
+    private readonly thinkingEffort:AgentThinkingEffort='medium') {
     // Official SDK owns REST serialization, authentication/refresh and typed responses.
     // Disable hidden SDK retries: p-retry below reserves every billable attempt.
     const httpOptions={timeout:60_000,retryOptions:{attempts:1}};
@@ -187,28 +190,63 @@ export class GeminiAgentModel implements AgentModel {
       ? new GoogleGenAI({vertexai:true,project:vertexSettings().project,location:vertexSettings().location,apiVersion:'v1',httpOptions})
       : new GoogleGenAI({apiKey:key,httpOptions:{...httpOptions,baseUrl:new URL(base).origin},apiVersion:new URL(base).pathname.replace(/^\//,'')}));
   }
-  async complete(messages:ModelMessage[],tools:ToolDefinition[],signal:AbortSignal,choice?:ToolChoice):Promise<ModelReply> {
-    for(const message of messages.slice(this.consumed)) {
-      if(message.role==='system'||(message.role==='assistant'&&message.calls?.length))continue;
-      if(message.role==='tool') {
-        const nativeId=this.nativeIds.get(message.callId??'');
-        if(!message.name)throw new ModelFailure('malformed_call');
-        // Gemini requires a JSON object (protobuf Struct), not a root array or
-        // primitive. Discovery and other provider-neutral tools may return either.
-        const payload:unknown=JSON.parse(message.content);
-        const response=payload!==null&&typeof payload==='object'&&!Array.isArray(payload)?payload:{result:payload};
-        const part={functionResponse:{name:message.name,...(nativeId?{id:nativeId}:{}),response:response as Record<string,unknown>}};
-        const last=this.history.at(-1);
-        if(last?.role==='user'&&last.parts?.every(item=>item.functionResponse))last.parts.push(part);
-        else this.history.push({role:'user',parts:[part]});
-      } else this.history.push({role:message.role==='assistant'?'model':'user',parts:[{text:message.content}]});
+  private functionResponsePart(message:ModelMessage) {
+    const nativeId=this.nativeIds.get(message.callId??'');
+    if(!message.name)throw new ModelFailure('malformed_call');
+    // Gemini requires a JSON object (protobuf Struct). App tools can also return arrays or primitives.
+    let payload:unknown;
+    try { payload=JSON.parse(message.content); }
+    catch { throw new ModelFailure('malformed_call'); }
+    const response=payload!==null&&typeof payload==='object'&&!Array.isArray(payload)?payload:{result:payload};
+    return {functionResponse:{name:message.name,...(nativeId?{id:nativeId}:{}),response:response as Record<string,unknown>}};
+  }
+
+  private appendMessages(messages:ModelMessage[],strict:boolean) {
+    const next=messages.slice(this.consumed).filter(message=>message.role!=='system');
+    const appended:Content[]=[];
+    if(strict&&this.previousReply) {
+      // The original model reply is already in history with all of its signatures.
+      if(next[0]?.role==='assistant')next.shift();
+      const calls=this.previousReply.calls;
+      if(calls.length) {
+        const results=next.splice(0,calls.length);
+        if(results.length!==calls.length||calls.some((call,index)=>{
+          const result=results[index]!;
+          return result.role!=='tool'||result.callId!==call.id||result.name!==call.name;
+        }))throw new ModelFailure('malformed_call');
+        appended.push({role:'user',parts:results.map(message=>this.functionResponsePart(message))});
+      }
     }
+    for(const message of next) {
+      if(message.role==='assistant'&&message.calls?.length) {
+        if(strict)throw new ModelFailure('malformed_call');
+        continue;
+      }
+      if(message.role==='tool') {
+        if(strict)throw new ModelFailure('malformed_call');
+        const part=this.functionResponsePart(message);
+        const last=appended.at(-1);
+        if(last?.role==='user'&&last.parts?.every(item=>item.functionResponse))last.parts.push(part);
+        else appended.push({role:'user',parts:[part]});
+      } else appended.push({role:message.role==='assistant'?'model':'user',parts:[{text:message.content}]});
+    }
+    if(strict&&(appended.at(-1)??this.history.at(-1))?.role!=='user')throw new ModelFailure('malformed_call');
+    this.history.push(...appended);
     this.consumed=messages.length;
+    this.previousReply=undefined;
+  }
+
+  async complete(messages:ModelMessage[],tools:ToolDefinition[],signal:AbortSignal,choice?:ToolChoice):Promise<ModelReply> {
+    const strict=this.provider==='vertex'&&this.model===VERTEX_ASSISTANT_MODEL;
+    this.appendMessages(messages,strict);
+    const level=this.thinkingEffort==='high'?ThinkingLevel.HIGH:ThinkingLevel.MEDIUM;
+    const outputTokens=strict?VERTEX_ASSISTANT_OUTPUT_TOKENS[this.thinkingEffort]:this.provider==='vertex'?2048:2500;
+    const systemInstruction={parts:[{text:messages.filter(message=>message.role==='system').map(message=>message.content).join('\n')}]};
     const config:GenerateContentConfig={
-      systemInstruction:{parts:[{text:messages.filter(message=>message.role==='system').map(message=>message.content).join('\n')}]},
-      maxOutputTokens:this.provider==='vertex'?2048:2500,abortSignal:signal,
+      systemInstruction,
+      maxOutputTokens:outputTokens,abortSignal:signal,
       automaticFunctionCalling:{disable:true},
-      ...(this.provider==='vertex'?{candidateCount:1,thinkingConfig:{thinkingLevel:ThinkingLevel.LOW}}:{}),
+      ...(strict?{thinkingConfig:{thinkingLevel:level}}:this.provider==='vertex'?{candidateCount:1,thinkingConfig:{thinkingLevel:ThinkingLevel.LOW}}:{}),
       ...(tools.length?{tools:[{functionDeclarations:tools.map(tool=>({name:tool.name,description:tool.description,parametersJsonSchema:tool.parameters}))}],
         toolConfig:{functionCallingConfig:choice?.required.length
           ? {mode:FunctionCallingConfigMode.ANY,allowedFunctionNames:choice.required}
@@ -224,7 +262,7 @@ export class GeminiAgentModel implements AgentModel {
         assertAgentEnabled();
         if(!this.budget)throw new Error('A durable cloud AI budget is required.');
         const count=await this.client.models.countTokens({model:this.model,contents:this.history,config:{abortSignal:signal,systemInstruction:config.systemInstruction!,...(config.tools?{tools:config.tools as Tool[]}:{})}});
-        await this.budget(z.number().int().nonnegative().parse(count.totalTokens),2048);
+        await this.budget(z.number().int().nonnegative().parse(count.totalTokens),outputTokens);
         signal.throwIfAborted();
       }
     const response=await this.client.models.generateContent({model:this.model,contents:this.history,config});
@@ -236,17 +274,21 @@ export class GeminiAgentModel implements AgentModel {
     if(['MALFORMED_FUNCTION_CALL','UNEXPECTED_TOOL_CALL'].includes(finish)) throw new ModelFailure('malformed_call');
     if(finish!=='STOP'||!candidate?.content||!Array.isArray(candidate.content.parts))throw new ModelFailure('empty_response');
     const parts=candidate.content.parts;
-    const calls=parts.filter(part=>part.functionCall).map((part,index)=>{
+    const functionParts=parts.filter(part=>part.functionCall);
+    const calls=functionParts.map((part,index)=>{
       const call=part.functionCall!;const id=call.id??`call_${this.consumed}_${index}`;
-      this.nativeIds.set(id,call.id);
       if(!tools.some(tool=>tool.name===call.name))throw new ModelFailure('malformed_call');
       try { return {id,name:call.name!,arguments:argumentsObject(call.args??{})}; }
       catch { throw new ModelFailure('malformed_call'); }
     });
+    if(strict&&new Set(calls.map(call=>call.id)).size!==calls.length)throw new ModelFailure('malformed_call');
     const text=parts.filter(part=>typeof part.text==='string'&&!part.thought).map(part=>part.text).join('\n').slice(0,12000);
     if(!text.trim()&&!calls.length)throw new ModelFailure('empty_response');
+    calls.forEach((call,index)=>this.nativeIds.set(call.id,functionParts[index]?.functionCall?.id));
     this.history.push(candidate.content); // preserve all native signatures exactly
-    return {text,calls};
+    const reply={text,calls};
+    if(strict)this.previousReply=reply;
+    return reply;
       } catch(error) {
         signal.throwIfAborted();
         if(error instanceof ApiError)throw new ModelFailure('http',error.status);
@@ -264,17 +306,20 @@ export class GeminiAgentModel implements AgentModel {
       await this.diagnostic?.({code:error.code,...(error.status?{status:error.status}:{}),attempt:attemptNumber,retrying});
       // Discard invalid candidate entirely; never execute partial tool arguments.
       if(retrying&&['malformed_call','output_limit','empty_response','invalid_json'].includes(error.code)) {
-        this.history.push({role:'user',parts:[{text:'The previous generation could not be used. Answer concisely using only the declared tools with valid required arguments. Use find_tools if needed. Do not invent data or repeat any school action.'}]});
+        const text='The previous generation could not be used. Answer concisely using only declared tools with valid required arguments. Do not invent data or repeat any school action.';
+        // Keep strict function response batches intact on retries.
+        if(strict)systemInstruction.parts[0]!.text+=`\n\n${text}`;
+        else this.history.push({role:'user',parts:[{text}]});
       }
       },
     });
   }
 }
-export function createAgentModel(budget?:ModelBudget, diagnostic?:(event:ModelDiagnostic)=>Promise<void>): AgentModel {
+export function createAgentModel(budget?:ModelBudget, diagnostic?:(event:ModelDiagnostic)=>Promise<void>, thinkingEffort:AgentThinkingEffort='medium'): AgentModel {
   const setting = agentSettings();
   if(setting.provider==='vertex') {
     if(!budget)throw new Error('A durable cloud AI budget is required.');
-    return new GeminiAgentModel(setting.model,setting.base,'','vertex',budget,undefined,diagnostic);
+    return new GeminiAgentModel(setting.model,setting.base,'','vertex',budget,undefined,diagnostic,thinkingEffort);
   }
   if(setting.provider!=='ollama'&&setting.provider!=='openai-compatible'&&!setting.key)throw new Error('The configured cloud model has no API key.');
   if(!setting.model)throw new Error('Choose an explicit AGENT_MODEL for the configured provider.');

@@ -496,6 +496,15 @@ the official LuLu Lucknow building and showed all three publisher choices and
 the reuse confirmation. Isolated PostgreSQL checks exercised the shared
 public-lookup budget, role boundaries and confirmed first-party image ingestion.
 
+The Assistant’s current campus workflow can open an empty map, open the editor
+for an authorized campus, keep a partially prepared form on screen, and resume a
+public floor-plan search in the current conversation. A model-selected setup
+action uses the same checked workflow as a recognized text command. Campus
+creation, publisher reuse and publication still require their owning controls.
+Gemini 3.8 Flash uses Medium by default and High for multi-step reasoning, with
+the existing paid test allowance. Campus image and map inference retain their
+current provider model.
+
 Compact Assistant replies now open the full conversation on tap and copy the
 full reply on a long press. A compact browser test exercised both gestures,
 keyboard copy, the tray toggle and provider cancellation. Working status and

@@ -13,6 +13,7 @@ type ActionRegistration = {
   sourceKey?: string;
   destinationPath?: string;
   available: boolean;
+  isAtDestination?(args: Record<string, unknown>): boolean;
   run(args: Record<string, unknown>, signal: AbortSignal): boolean | Promise<boolean>;
 };
 type RegisteredAction = Omit<ActionRegistration, 'available'> & { available(): boolean };
@@ -41,7 +42,7 @@ type Runtime = {
   context(): CopilotContext | undefined;
   capture(context: CopilotContext): Lease | undefined;
   follow(run: Run): void;
-  inspect(id: string, revealApp: () => void): void;
+  inspect(id: string, revealApp: (atDestination: boolean) => void): void;
   takeOver(): void;
   answerDetail(id: string, name: string): Promise<boolean>;
   detail: Detail | null;
@@ -187,7 +188,7 @@ export function CopilotProvider({ children }: PropsWithChildren) {
     if (active.current || execution.current) return;
     active.current = run; setPointer(null); setPending(run); setActivity({ label: 'Assistant is working', phase: 'preparing' });
   }, []);
-  const inspect = useCallback((id: string, revealApp: () => void) => {
+  const inspect = useCallback((id: string, revealApp: (atDestination: boolean) => void) => {
     const run = active.current;
     if (!run || run.id !== id || execution.current || !current.current.eligible || current.current.binding !== run.lease.binding) return;
     const operation:Execution = { run, controller: new AbortController(), binding:run.lease.binding };
@@ -227,7 +228,7 @@ export function CopilotProvider({ children }: PropsWithChildren) {
             finish({tool:intent.name,status:'blocked'},'That control isn’t available on this screen');return;
           }
           setActivity({label:action.label,tool:intent.name,phase:'applying',step:index+1,total:plan.length});
-          if(index===0)revealApp();
+          if(index===0)revealApp(action.isAtDestination?.(intent.args) === true);
           await copilotWait(140,signal);
           const pointed = await showTarget(intent.name,'before',signal,currentLease);
           if (pointed) await copilotWait(250,signal);
@@ -303,6 +304,7 @@ export function useCopilotAction(action: ActionRegistration) {
   useLayoutEffect(() => register({
     name: action.name, label: action.label, destinationPath: action.destinationPath,
     available: () => current.current.focused && current.current.action.available,
+    isAtDestination: args => current.current.action.isAtDestination?.(args) === true,
     run: (args, signal) => !signal.aborted && current.current.focused && current.current.action.available
       && current.current.action.run(args, signal),
   }), [register, action.name, action.label, action.sourceKey, action.destinationPath]);

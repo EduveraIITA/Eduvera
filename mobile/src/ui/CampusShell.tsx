@@ -97,17 +97,33 @@ export function CampusShell() {
     run:(_args,signal)=>openCopilotRoute('/more/account/campuses',()=>activeRoute.current.pathname==='/more/account/campuses',signal),
   });
   useCopilotAction({
+    name:'open_campus_layout',label:'Open campus layout editor',destinationPath:'/more/virtual-campus',
+    available:!!session.schoolId&&!session.publicDemo,
+    run:(args,signal)=>{
+      const campusId=args.campus_id;
+      if(!copilotCallId(campusId))return false;
+      const query=new URLSearchParams({campus_id:campusId,edit:'1'});
+      return openCopilotRoute(`/more/virtual-campus?${query}`,()=>{
+        const active=activeRoute.current;
+        return active.pathname==='/more/virtual-campus'&&active.params.campus_id===campusId&&active.params.edit==='1'
+          &&active.params.indoor!=='1';
+      },signal);
+    },
+  });
+  const atCampusInteriors = ({campus_id,building_name}: Record<string, unknown>) => {
+    const active=activeRoute.current;
+    return active.pathname==='/more/virtual-campus' && active.params.campus_id===campus_id
+      && active.params.edit==='1' && active.params.indoor==='1' && active.params.indoor_building===building_name;
+  };
+  useCopilotAction({
     name:'open_campus_interiors',label:'Open interior setup',destinationPath:'/more/virtual-campus',
     available:!!session.schoolId&&!session.publicDemo,
+    isAtDestination:atCampusInteriors,
     run:(args,signal)=>{
       const campusId=args.campus_id,building=typeof args.building_name==='string'?args.building_name:undefined;
       if(!copilotCallId(campusId))return false;
       const query=new URLSearchParams({campus_id:campusId,edit:'1',indoor:'1',...(building?{indoor_building:building}:{})});
-      return openCopilotRoute(`/more/virtual-campus?${query}`,()=>{
-        const active=activeRoute.current;
-        return active.pathname==='/more/virtual-campus'&&active.params.campus_id===campusId&&active.params.edit==='1'&&active.params.indoor==='1'
-          &&active.params.indoor_building===building;
-      },signal);
+      return openCopilotRoute(`/more/virtual-campus?${query}`,()=>atCampusInteriors(args),signal);
     },
   });
   const follow = (href: string, tabRoot?: string) => (event: { preventDefault(): void; nativeEvent: unknown; button?: number; metaKey?: boolean; ctrlKey?: boolean; shiftKey?: boolean; altKey?: boolean }) => {

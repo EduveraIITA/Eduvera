@@ -57,6 +57,7 @@ export function CampusSetupWorkspace({ campusName, phase, map, feedback, guidanc
   };
   const visibleInApp = focused && assistant.active && assistant.mode !== 'fullscreen';
   const campusTarget = useCopilotTarget('open_virtual_campus', { enabled: visibleInApp && phase !== 'interior', stage: 'after' });
+  const layoutTarget = useCopilotTarget('open_campus_layout', { enabled: visibleInApp && phase !== 'interior', stage: 'after' });
   const interiorsTarget = useCopilotTarget('open_campus_interiors', { enabled: visibleInApp && phase === 'interior', stage: 'after' });
   const title = phase === 'facilities' ? 'Set up facilities' : phase === 'publication' ? 'Review and publish' : phase === 'interior' ? 'Map building interiors' : 'Virtual campus';
   useLayoutEffect(() => {
@@ -98,7 +99,10 @@ export function CampusSetupWorkspace({ campusName, phase, map, feedback, guidanc
             <View style={[styles.header, { backgroundColor: colors.surface, borderColor: colors.border }]}>
               <Pressable accessibilityRole="button" accessibilityLabel={backLabel} disabled={locked}
                 onPress={close} style={styles.icon}><CaretLeftIcon size={22} color={colors.ink} /></Pressable>
-              <View ref={phase === 'interior' ? interiorsTarget : campusTarget} collapsable={false} style={styles.titleGroup}>
+              <View ref={node => {
+                if (phase === 'interior') interiorsTarget(node);
+                else { campusTarget(node); layoutTarget(node); }
+              }} collapsable={false} style={styles.titleGroup}>
                 <Text accessibilityRole="header" aria-level={1} style={[styles.title, { color: colors.ink }]}>{title}</Text>
                 <Text numberOfLines={1} style={[styles.subtitle, { color: colors.muted }]}>{campusName}</Text>
               </View>

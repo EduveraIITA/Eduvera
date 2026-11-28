@@ -3,7 +3,7 @@ import {
   advertisedClientTools, clientUiContextSchema, clientUiPrompt, parseClientUiCall,
   projectAssistantAgUi, restoreClientUiCall,
 } from '../src/agent/agent-ui.js';
-import { campusWorkflowDirection, campusWorkflowRequest, isCampusFloorPlanWebFollowup } from '../src/agent/agent-campus-workflow.js';
+import { campusWorkflowDirection, campusWorkflowRequest, isCampusFloorPlanWebFollowup, resumeCampusWorkflow } from '../src/agent/agent-campus-workflow.js';
 
 describe('Assistant AG-UI client controls', () => {
   it('advertises only known controls for the advertised screen and strictly bounds their inputs', () => {
@@ -77,17 +77,24 @@ describe('Assistant campus workflow', () => {
     expect(campusWorkflowRequest("Let's setup a new campus")).toEqual({kind:'create'});
     expect(campusWorkflowRequest('I want to setup new campus')).toEqual({kind:'create'});
     expect(campusWorkflowRequest('Create a new campus called River House')).toEqual({kind:'create',name:'River House'});
+    expect(campusWorkflowRequest('Create a new campus called River House and then map its interiors')).toEqual({kind:'create',name:'River House'});
     expect(campusWorkflowRequest('Add a new branch campus')).toEqual({kind:'branch'});
     expect(campusWorkflowRequest('Set up my campus location')).toEqual({kind:'branch'});
+    expect(campusWorkflowRequest('Open branch reports')).toBeUndefined();
     expect(campusWorkflowRequest('Lets setup its intirior')).toEqual({kind:'interiors'});
     expect(campusWorkflowRequest('Map the interiors of West Campus')).toEqual({kind:'interiors',campus:'West Campus'});
     expect(campusWorkflowRequest('How do I create a new campus?')).toBeUndefined();
     expect(campusWorkflowRequest("Don't create a new campus")).toBeUndefined();
+    expect(campusWorkflowRequest("Dont create a new campus")).toBeUndefined();
+    expect(campusWorkflowRequest("Can you check whether I may edit the Virtual Campus?")).toBeUndefined();
+    expect(campusWorkflowRequest('Draft a message to create a new campus')).toBeUndefined();
     expect(campusWorkflowRequest('Create a new campus event')).toBeUndefined();
     expect(campusWorkflowRequest('River House')).toBeUndefined();
     expect(campusWorkflowRequest('River House',true)).toEqual({kind:'create',name:'River House'});
-    expect(campusWorkflowRequest('Then start building',true)).toEqual({kind:'create'});
+    expect(campusWorkflowRequest('Then start building')).toBeUndefined();
+    expect(campusWorkflowRequest('Then start building',true)).toEqual({kind:'create',prepared:true});
     expect(campusWorkflowRequest('Yes',true)).toBeUndefined();
+    expect(campusWorkflowRequest('Wait a second',true)).toBeUndefined();
   });
 
   it('orders a grounded two-step handoff and does not give the model creation tools', () => {
@@ -97,7 +104,7 @@ describe('Assistant campus workflow', () => {
     expect(advertisedClientTools(outside)).toEqual([]);
     expect(campusWorkflowDirection(create,outside,capacity)).toEqual({
       calls:[{tool:'open_campus_create',arguments:{}},{tool:'prepare_campus_create',arguments:{name:'River House'}}],
-      answer:'I’ll open the campus form.',href:'/more/account/campuses',
+      answer:'Review the campus form, then tap Create campus.',href:'/more/account/campuses',
     });
     expect(campusWorkflowDirection(create,account,capacity).calls).toEqual([{tool:'prepare_campus_create',arguments:{name:'River House'}}]);
     expect(campusWorkflowDirection(create,outside,{count:10,limit:10}).calls).toEqual([]);
@@ -107,6 +114,60 @@ describe('Assistant campus workflow', () => {
     const events=projectAssistantAgUi({threadId:'thread',runId:'run',status:'completed',progress:'Ready',answer:'Open it',evidence:[],clientCalls:calls}).events;
     expect(events.filter(event=>event.type==='TOOL_CALL_START').map(event=>event.toolCallName)).toEqual(['open_campus_create','prepare_campus_create']);
     expect(events.at(-1)).toMatchObject({type:'RUN_FINISHED',outcome:{type:'success',pendingToolCallIds:['1','2']}});
+  });
+
+  it('opens first-time Virtual Campus, resumes exact campus setup, and never guesses between locations', () => {
+    const workspace=clientUiContextSchema.parse({screen:'workspace',tools:['open_virtual_campus','open_campus_layout']});
+    const first=clientUiContextSchema.parse({screen:'virtual_campus',tools:[]});
+    const current=clientUiContextSchema.parse({screen:'virtual_campus',tools:['open_campus_layout','campus_open_picker'],campus_id:one});
+    const empty={can_edit:true,campuses:[]};
+    expect(campusWorkflowRequest('Take me to Virtual Campus')).toEqual({kind:'layout',mode:'open'});
+    expect(campusWorkflowRequest('Show me my virtual campus')).toEqual({kind:'layout',mode:'open'});
+    expect(campusWorkflowRequest('Show the layout of West Campus')).toEqual({kind:'layout',mode:'open',campus:'West Campus'});
+    expect(campusWorkflowDirection({kind:'layout',mode:'open'},workspace,{...empty,can_edit:false})).toMatchObject({
+      calls:[{tool:'open_virtual_campus',arguments:{}}],href:'/more/virtual-campus',
+    });
+    expect(campusWorkflowRequest('Initialize the virtual campus environment')).toEqual({kind:'layout',mode:'setup'});
+    expect(campusWorkflowDirection({kind:'layout',mode:'setup'},workspace,empty)).toMatchObject({
+      calls:[{tool:'open_virtual_campus',arguments:{}}],href:'/more/setup/institution/campus',
+    });
+    expect(campusWorkflowDirection({kind:'layout',mode:'setup'},first,empty)).toMatchObject({
+      calls:[],answer:'Add your first campus location to start the map.',href:'/more/setup/institution/campus',
+    });
+    expect(campusWorkflowRequest('Draw the boundary around West Campus')).toEqual({kind:'layout',mode:'setup',campus:'West Campus'});
+    expect(campusWorkflowRequest('Generate the campus layout')).toEqual({kind:'layout',mode:'setup'});
+    const setup={kind:'layout',mode:'setup'} as const;
+    expect(campusWorkflowDirection(setup,{...current,campus_id:undefined},directory).calls)
+      .toEqual([{tool:'campus_open_picker',arguments:{}}]);
+    expect(campusWorkflowDirection(setup,current,directory).calls)
+      .toEqual([{tool:'open_campus_layout',arguments:{campus_id:one}}]);
+    expect(campusWorkflowDirection({...setup,campus:'WEST'},current,directory)).toMatchObject({
+      calls:[{tool:'open_campus_layout',arguments:{campus_id:two}}],href:`/more/virtual-campus?campus_id=${two}&edit=1`,
+    });
+    expect(campusWorkflowDirection({...setup,campus:'WEST'},undefined,directory)).toMatchObject({
+      calls:[],href:`/more/virtual-campus?campus_id=${two}&edit=1`,
+    });
+    expect(campusWorkflowDirection(setup,current,{...directory,can_edit:false}).calls).toEqual([]);
+    expect(campusWorkflowDirection({kind:'layout',mode:'open',campus:'WEST'},workspace,directory)).toMatchObject({
+      calls:[],href:`/more/virtual-campus?campus_id=${two}`,
+    });
+  });
+
+  it('scopes continuation to the prior authorized goal and honors takeover and new directions', () => {
+    const account=clientUiContextSchema.parse({screen:'campus_account',tools:['prepare_campus_create']});
+    const current=clientUiContextSchema.parse({screen:'virtual_campus',tools:['open_campus_interiors'],campus_id:two});
+    const previous={kind:'interiors',floorPlan:true} as const;
+    expect(resumeCampusWorkflow(undefined,'Then start building')).toBeUndefined();
+    expect(resumeCampusWorkflow(previous,'Stop, don’t continue')).toBeUndefined();
+    expect(resumeCampusWorkflow(previous,'Continue by creating a new campus')).toBeUndefined();
+    const resumed=resumeCampusWorkflow(previous,'Continue mapping');
+    expect(resumed).toEqual(previous);
+    expect(campusWorkflowDirection(resumed!,current,directory).calls)
+      .toEqual([{tool:'open_campus_interiors',arguments:{campus_id:two}}]);
+    const prepared=resumeCampusWorkflow({kind:'create',name:'River House'},'Go ahead',{name:'River House'});
+    expect(campusWorkflowDirection(prepared!,account,capacity)).toMatchObject({
+      calls:[],answer:'Review the campus form, then tap Create campus.',
+    });
   });
 
   it('uses exact current campus authority for interiors and requires a choice when ambiguous', () => {
@@ -125,15 +186,18 @@ describe('Assistant campus workflow', () => {
     expect(plan).toEqual({kind:'interiors',floorPlan:true,campus:'West Campus'});
     expect(campusWorkflowRequest('Find the floor plan of West Campus online.')).toEqual(plan);
     expect(campusWorkflowRequest('search the lulu mall lucknow floor plan and update interior')).toEqual({kind:'interiors',floorPlan:true,campus:'lulu mall lucknow'});
+    expect(campusWorkflowRequest('Search the public floor plan for LuLu Mall Lucknow and update its interior')).toEqual({kind:'interiors',floorPlan:true,campus:'LuLu Mall Lucknow'});
     expect(campusWorkflowRequest('Find a public floor plan')).toEqual({kind:'interiors',floorPlan:true});
+    expect(campusWorkflowRequest('Search the internet for floor plan examples')).toBeUndefined();
     expect(campusWorkflowRequest('How can I find a public floor plan?')).toBeUndefined();
     expect(campusWorkflowRequest('Can project members download floor plans?')).toBeUndefined();
     expect(campusWorkflowRequest("Can't you search the internet?")).toBeUndefined();
     expect(isCampusFloorPlanWebFollowup("Can’t you search the internet?")).toBe(true);
+    expect(isCampusFloorPlanWebFollowup('Cant you search internet')).toBe(true);
     expect(isCampusFloorPlanWebFollowup('Can you search the internet for admissions?')).toBe(false);
     if(!plan)throw new Error('Missing floor-plan direction');
     expect(campusWorkflowDirection(plan,context,directory)).toMatchObject({calls:[{tool:'open_campus_interiors',arguments:{campus_id:two}}],
-      answer:'I’ll open the floor-plan search.'});
+      answer:'Choose the building and floor to check for a public plan.'});
     const lulu=campusWorkflowRequest('search the LuLu Mall Lucknow floor plan and update interior');
     if(!lulu)throw new Error('Missing publisher direction');
     expect(campusWorkflowDirection(lulu,{...context,screen:'virtual_campus',campus_id:one},directory)).toMatchObject({
@@ -141,5 +205,9 @@ describe('Assistant campus workflow', () => {
       href:expect.stringContaining('indoor_building=LuLu+Mall+Lucknow'),
     });
     expect(campusWorkflowDirection(lulu,context,directory).calls).toEqual([]);
+    const duplicated={...directory,campuses:[directory.campuses[0]!,{...directory.campuses[1]!,name:'River House'}]};
+    const picker=clientUiContextSchema.parse({screen:'virtual_campus',campus_id:one,tools:['open_campus_interiors','campus_open_picker']});
+    expect(campusWorkflowDirection({kind:'interiors',floorPlan:true,campus:'River House'},picker,duplicated).calls)
+      .toEqual([{tool:'campus_open_picker',arguments:{}}]);
   });
 });

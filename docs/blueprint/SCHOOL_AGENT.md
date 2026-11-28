@@ -125,12 +125,22 @@ credentials stay in the owning screen.
 The server revalidates the current owner and source before emitting AG-UI tool
 events. The app checks the complete ordered batch, highlights each applied
 control and uses the same UI event path as a person. The Virtual Campus registry
-opens the workspace or a verified campus and interior, opens its campus picker,
+opens Virtual Campus, a verified campus layout editor, or building interiors. It opens the campus picker,
 fills place search and focuses an exact published place. Campus creation opens
 the existing account form. When the name is missing, A2UI collects it in the
 same chat and fills the owned form. The user confirms creation in that form.
 Additional modules register scoped handlers with their owning route and source.
 A later tool in the same run can cross a route only through a declared handoff.
+
+Common campus requests run through the app-owned setup workflow without an
+inference call. The model can also request the same workflow for natural-language
+variants. The workflow checks the current directory or workspace capacity, binds
+the exact authorized campus, and chooses the next mounted control. Opening an
+empty Virtual Campus can start onboarding. The map outline, form submission,
+floor-plan reuse and publication require their existing user actions. An applied
+campus form remains usable across consecutive requests to continue. A prompt
+for a missing name keeps both the A2UI field and the chat composer available.
+Permission checks stay internal unless a result blocks the task.
 
 Mounted tools can register exact visual targets before or after a step. The
 owning screen reveals a target in its own scroll view when necessary. An inert
@@ -234,7 +244,7 @@ automatic model download or public tunnel to unauthenticated Ollama.
 
 | Provider | `AGENT_PROVIDER` | Configuration |
 | --- | --- | --- |
-| Gemini through Vertex | `vertex` | Explicit `AGENT_GOOGLE_PROJECT`, `AGENT_GOOGLE_LOCATION=global`, `AGENT_MODEL=gemini-3.1-flash-lite`; service identity/ADC, no custom base or API key. |
+| Gemini through Vertex | `vertex` | Explicit `AGENT_GOOGLE_PROJECT`, `AGENT_GOOGLE_LOCATION=global`, `AGENT_MODEL=gemini-3.8-flash`; service identity/ADC, no custom base or API key. |
 | Gemini API | `gemini` | Explicit model/key; default API base `https://generativelanguage.googleapis.com/v1beta`. |
 | OpenAI Responses | `openai` | Explicit model/key; default `https://api.openai.com/v1`. |
 | Anthropic Messages | `anthropic` | Explicit model/key; default `https://api.anthropic.com/v1`. |
@@ -246,6 +256,11 @@ configuration. Non-loopback endpoints require HTTPS, no embedded URL credentials
 or redirects. Keys, ADC and tokens remain server-only, outside source/chat/logs/UI.
 Vertex permits only the currently reviewed project/model/region shape enforced by
 `vertex-auth.ts`; it also needs an unexpired `AGENT_ENABLED_UNTIL` allowance.
+The Assistant uses Medium thinking for general requests and High when an
+unresolved workflow needs multi-step reasoning. Campus image/map inference keeps
+Gemini 3.1 Flash-Lite, which is also an explicit Assistant rollback setting. The
+models share the configured daily and monthly ledger. The Assistant reserves
+against its configured output ceiling before each billable attempt.
 
 Cloud/provider status must distinguish configuration/auth readiness from an actual
 successful inference. Before use, approve data handling and evaluate the exact
@@ -254,7 +269,7 @@ sent to the configured provider. Protocol support is not reliability certificati
 A missing cloud provider must not be described as an unavailable local model.
 
 Gemini/Vertex uses official `@google/genai` with native response parts and thought
-signatures, object-shaped function responses and grouped consecutive tool results.
+signatures, matching function response names/IDs and grouped consecutive tool results.
 SDK automatic tool execution is disabled; application validation owns every effect.
 Bounded jittered generation retries use `p-retry`, at most three attempts per
 generation within the same total model-call allowance. SDK retries are disabled so

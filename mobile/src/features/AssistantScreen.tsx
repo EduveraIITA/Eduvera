@@ -271,8 +271,10 @@ function Conversation({ href, onNavigate, onCompactHeightChange, workspaceTask, 
     if (!observed || observed.threadId!==threadId) return;
     if (accessPaused || !presentation.active) { copilot.takeOver(); return; }
     if (runs.some(run=>run.id===observed.id&&run.status!=='running'))
-      copilot.inspect(observed.id,()=>{ if(presentation.mode==='fullscreen')presentation.collapse(); });
-  },[copilot.pending,copilot.activity?.phase,presentation.active,accessPaused,threadId,runs]);
+      copilot.inspect(observed.id,atDestination=>{
+        if(presentation.mode==='fullscreen'&&(!atDestination||!workspaceTask))presentation.collapse();
+      });
+  },[copilot.pending,copilot.activity?.phase,presentation.active,accessPaused,threadId,runs,workspaceTask]);
   async function cancelRun() {
     if (!presentation.active || accessPaused || cancelling.current) return;
     copilot.takeOver();
@@ -337,10 +339,10 @@ function Conversation({ href, onNavigate, onCompactHeightChange, workspaceTask, 
       restoreFocus={restoreMiniFocus} attention={attention} pending={pending} showReplyMark={hasAnswerPreview && !working && !busy && !copilot.pointer} /> : null}
     {campusDetail ? <CampusNameDetail key={campusDetail.id} id={campusDetail.id} locked={locked}
       onAnswer={copilot.answerDetail} onUseForm={copilot.takeOver} /> : null}
-    {!campusDetail || working ? <ConversationComposer value={question} onChange={setQuestion} locked={locked} busy={busy} working={working}
+    <ConversationComposer value={question} onChange={setQuestion} locked={locked} busy={busy} working={working}
       stopDisabled={stopDisabled} status={composerStatus} onStop={() => void cancelRun()} loading={loadingConversation}
       onExpand={!presentation.expanded && openFromComposer ? expandConversation : undefined} restoreOpenFocus={restoreMiniFocus}
-      onSend={() => void perform({ kind: 'send', threadId, question: question.trim(), clientId: Crypto.randomUUID(), uiContext: copilot.context() })} /> : null}
+      onSend={() => void perform({ kind: 'send', threadId, question: question.trim(), clientId: Crypto.randomUUID(), uiContext: copilot.context() })} />
   </View>;
   return <AssistantFrame canvas maxWidth={720} footer={composer} footerPadding={16} footerSeparator={false} onCompactHeightChange={onCompactHeightChange}>
     <View style={{ flex: presentation.expanded ? 1 : 0, minHeight: 0, display: presentation.expanded ? 'flex' : 'none' }} accessibilityElementsHidden={!presentation.expanded} importantForAccessibility={presentation.expanded ? 'auto' : 'no-hide-descendants'}>

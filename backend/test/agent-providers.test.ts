@@ -2,6 +2,7 @@ import { afterEach,describe,expect,it,vi } from 'vitest';
 import { AnthropicAgentModel,CompatibleAgentModel,GeminiAgentModel,OllamaAgentModel,OpenAIResponsesModel,createAgentModel,agentContextWindowTokens,agentSettings } from '../src/agent/providers.js';
 import { ApiError, type GoogleGenAI, type GenerateContentResponse } from '@google/genai';
 import { ModelFailure } from '../src/agent/model-errors.js';
+import { campusSceneVertexSettings } from '../src/agent/vertex-auth.js';
 const sdkClient=(generate:ReturnType<typeof vi.fn>,count=vi.fn().mockResolvedValue({totalTokens:123}))=>({models:{generateContent:generate,countTokens:count}} as unknown as Pick<GoogleGenAI,'models'>);
 const tool={name:'read_attendance',description:'Read attendance',parameters:{type:'object',properties:{},additionalProperties:false}};
 const signal=new AbortController().signal;
@@ -33,9 +34,13 @@ describe('provider-independent tool protocols',()=>{
     vi.stubEnv('AGENT_ENABLED_UNTIL','2020-01-01');
     await expect(provider.complete([],[],signal)).rejects.toThrow(/paused/);expect(count).toHaveBeenCalledTimes(1);
   });
-  it('locks Vertex to the reviewed cheap model and refuses unbudgeted generation',()=>{
-    vi.stubEnv('AGENT_PROVIDER','vertex');vi.stubEnv('AGENT_GOOGLE_PROJECT','eduera-511111');vi.stubEnv('AGENT_MODEL','gemini-3.1-flash-lite');
+  it('allows the two reviewed Assistant models and keeps the campus image model separate',()=>{
+    vi.stubEnv('AGENT_PROVIDER','vertex');vi.stubEnv('AGENT_GOOGLE_PROJECT','eduera-511111');vi.stubEnv('AGENT_MODEL','gemini-3.8-flash');
+    expect(agentSettings().model).toBe('gemini-3.8-flash');
+    expect(campusSceneVertexSettings().model).toBe('gemini-3.1-flash-lite');
     expect(()=>createAgentModel()).toThrow(/budget/);
+    vi.stubEnv('AGENT_MODEL','gemini-3.1-flash-lite');
+    expect(agentSettings().model).toBe('gemini-3.1-flash-lite');
     vi.stubEnv('AGENT_MODEL','expensive-model');expect(()=>agentSettings()).toThrow(/approved/);
   });
   it('uses provider-aware context limits and validates an explicit compaction window',()=>{
@@ -162,5 +167,78 @@ describe('Gemini recovery through the official SDK',()=>{
     await expect(provider.complete([],[],AbortSignal.abort())).rejects.toThrow();expect(generate).toHaveBeenCalledTimes(1);
     generate.mockReset().mockResolvedValue({candidates:[{finishReason:'MALFORMED_FUNCTION_CALL'}]});
     await expect(provider.complete([],[],signal)).rejects.toBeInstanceOf(ModelFailure);expect(generate).toHaveBeenCalledTimes(3);
+  });
+});
+
+describe('Gemini 3.8 Flash through Vertex',()=>{
+  const answer={candidates:[{finishReason:'STOP',content:{role:'model',parts:[{text:'Checked'}]}}]};
+  const request=[{role:'user' as const,content:'Check attendance'}];
+  const vertexProvider=(generate:ReturnType<typeof vi.fn>,effort?:'medium'|'high')=>{
+    vi.stubEnv('AGENT_PROVIDER','vertex');
+    vi.stubEnv('AGENT_ENABLED_UNTIL',new Date(Date.now()+86400000).toISOString());
+    const budget=vi.fn().mockResolvedValue(undefined);
+    const model=new GeminiAgentModel('gemini-3.8-flash','https://unused.test','','vertex',budget,sdkClient(generate),undefined,effort);
+    return {model,budget};
+  };
+
+  it.each([[undefined,'MEDIUM',4096],['high','HIGH',8192]] as const)('reserves the full %s thinking envelope and sends only supported generation parameters',async(effort,thinkingLevel,maxOutputTokens)=>{
+    const generate=vi.fn().mockResolvedValue(answer);
+    const {model,budget}=vertexProvider(generate,effort);
+    await expect(model.complete(request,[tool],signal)).resolves.toMatchObject({text:'Checked'});
+    expect(budget).toHaveBeenCalledWith(123,maxOutputTokens);
+    expect(generate.mock.calls[0]![0].config).toMatchObject({maxOutputTokens,thinkingConfig:{thinkingLevel},automaticFunctionCalling:{disable:true}});
+    expect(generate.mock.calls[0]![0].config).not.toHaveProperty('candidateCount');
+  });
+
+  it('rejects incomplete, duplicate or mismatched tool results before sending the exact signed batch',async()=>{
+    const generated={role:'model',parts:[
+      {functionCall:{name:tool.name,id:'a',args:{}},thoughtSignature:'opaque-signature'},
+      {functionCall:{name:tool.name,args:{}}},
+    ]};
+    const generate=vi.fn().mockResolvedValueOnce({candidates:[{finishReason:'STOP',content:generated}]}).mockResolvedValueOnce(answer);
+    const {model,budget}=vertexProvider(generate);
+    const first=await model.complete(request,[tool],signal);
+    const reply={role:'assistant' as const,content:first.text,calls:first.calls};
+    const result1={role:'tool' as const,name:tool.name,callId:first.calls[0]!.id,content:'{"value":42}'};
+    const result2={role:'tool' as const,name:tool.name,callId:first.calls[1]!.id,content:'[1,2]'};
+    for(const results of [[result1],[result1,result1],[{...result1,name:'wrong'},result2],[result1,result2,result2]]){
+      await expect(model.complete([...request,reply,...results],[tool],signal)).rejects.toMatchObject({code:'malformed_call'});
+    }
+    expect(generate).toHaveBeenCalledTimes(1);
+    expect(budget).toHaveBeenCalledTimes(1);
+    await expect(model.complete([...request,reply,result1,result2],[tool],signal)).resolves.toMatchObject({text:'Checked'});
+    const contents=generate.mock.calls[1]![0].contents;
+    expect(contents.slice(0,3)).toEqual([
+      {role:'user',parts:[{text:'Check attendance'}]},
+      generated,
+      {role:'user',parts:[
+        {functionResponse:{id:'a',name:tool.name,response:{value:42}}},
+        {functionResponse:{name:tool.name,response:{result:[1,2]}}},
+      ]},
+    ]);
+  });
+
+  it('retries a truncated tool follow-up with its original signed batch',async()=>{
+    const signed={role:'model',parts:[{functionCall:{id:'a',name:tool.name,args:{}},thoughtSignature:'opaque-signature'}]};
+    const snapshots:unknown[]=[];
+    const generate=vi.fn().mockResolvedValueOnce({candidates:[{finishReason:'STOP',content:signed}]})
+      .mockImplementationOnce(({contents})=>{snapshots.push(structuredClone(contents));return {candidates:[{finishReason:'MAX_TOKENS'}]};})
+      .mockImplementationOnce(({contents})=>{snapshots.push(structuredClone(contents));return answer;});
+    const {model,budget}=vertexProvider(generate,'high');
+    await model.complete(request,[tool],signal);
+    await model.complete([...request,{role:'tool',name:tool.name,callId:'a',content:'{"value":42}'}],[tool],signal);
+    expect(snapshots[0]).toEqual(snapshots[1]);
+    expect(budget.mock.calls).toEqual([[123,8192],[123,8192],[123,8192]]);
+  });
+
+  it('keeps a signed text answer only once when the application continues the turn',async()=>{
+    const signed={role:'model',parts:[{text:'Checked',thoughtSignature:'opaque-signature'}]};
+    const generate=vi.fn().mockResolvedValueOnce({candidates:[{finishReason:'STOP',content:signed}]}).mockResolvedValueOnce(answer);
+    const {model}=vertexProvider(generate);
+    await model.complete(request,[tool],signal);
+    await model.complete([...request,{role:'assistant',content:'Checked'},{role:'user',content:'Check next week too'}],[tool],signal);
+    expect(generate.mock.calls[1]![0].contents.slice(0,3)).toEqual([
+      {role:'user',parts:[{text:'Check attendance'}]},signed,{role:'user',parts:[{text:'Check next week too'}]},
+    ]);
   });
 });

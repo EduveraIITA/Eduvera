@@ -3,13 +3,13 @@ import type { ToolDefinition } from './providers.js';
 import type { PublicWebSource } from '../campus-scene-import/scene-import.floor-plan-discovery.js';
 
 const toolName = z.enum(['campus_search_places','campus_focus_place','open_virtual_campus','campus_open_picker',
-  'open_campus_create','prepare_campus_create','open_campus_interiors']);
+  'open_campus_create','prepare_campus_create','open_campus_interiors','open_campus_layout']);
 type ClientToolName = z.infer<typeof toolName>;
 const screen = z.enum(['workspace','virtual_campus','campus_account']);
 const screenTools: Record<z.infer<typeof screen>, readonly ClientToolName[]> = {
-  workspace: ['open_virtual_campus','open_campus_create','open_campus_interiors'],
-  virtual_campus: ['campus_search_places','campus_focus_place','campus_open_picker','open_campus_create','open_campus_interiors'],
-  campus_account: ['prepare_campus_create','open_campus_interiors'],
+  workspace: ['open_virtual_campus','open_campus_create','open_campus_interiors','open_campus_layout'],
+  virtual_campus: ['campus_search_places','campus_focus_place','campus_open_picker','open_campus_create','open_campus_interiors','open_campus_layout'],
+  campus_account: ['prepare_campus_create','open_campus_interiors','open_campus_layout'],
 };
 const empty = z.object({}).strict();
 const query = z.object({query:z.string().trim().min(1).max(120).refine(value => Array.from(value).every(character => character.charCodeAt(0) >= 32))}).strict();
@@ -23,12 +23,13 @@ const toolDefinitions = {
   campus_focus_place: {schema:query, description:'Focus an exact place match on the active Virtual Campus map. Ambiguous matches stay in search for human choice.'},
   open_campus_create: {schema:empty, description:'Open the account’s campus workspace page.'},
   prepare_campus_create: {schema:z.object({name:draftCampusName.optional()}).strict(), description:'Open and optionally prefill the campus creation form. The user confirms creation there.'},
+  open_campus_layout: {schema:z.object({campus_id:z.uuid()}).strict(), description:'Open the layout editor for the authorized campus.'},
   open_campus_interiors: {schema:z.object({campus_id:z.uuid(),building_name:indoorBuildingName.optional()}).strict(), description:'Open interior mapping for the authorized campus.'},
 } as const;
 
 export const clientUiContextSchema = z.object({
   screen,
-  tools:z.array(toolName).max(5),
+  tools:z.array(toolName).max(6),
   campus_id:z.uuid().optional(),
   last_result:z.object({tool:toolName,status:z.enum(['applied','blocked','stopped']),call_id:z.uuid().optional()}).strict().optional(),
 }).strict().refine(context => new Set(context.tools).size === context.tools.length &&
@@ -48,7 +49,7 @@ export function advertisedClientTools(context: ClientUiContext | undefined): Too
 }
 
 export function isCampusWorkflowTool(tool: ClientToolName) {
-  return tool==='open_campus_create' || tool==='prepare_campus_create' || tool==='open_campus_interiors';
+  return tool==='open_campus_create' || tool==='prepare_campus_create' || tool==='open_campus_interiors' || tool==='open_campus_layout';
 }
 export function validateClientUiCall(name: ClientToolName, input: unknown) {
   const parsed=toolDefinitions[name].schema.safeParse(input);
@@ -70,7 +71,7 @@ export function clientUiPrompt(context: ClientUiContext | undefined) {
   if (!context) return '';
   const result=context.last_result;
   return [
-    context.tools.length ? 'The app advertised the screen controls listed in your tools. Use at most one control, on its own, when the newest user message explicitly asks you to use it. Never use a prior message as permission. These tools only change the visible interface. The app checks the actual screen and permissions before any effect; do not claim an effect happened.' : '',
+    context.tools.length ? 'Use the advertised controls to advance the user’s current task in the app. The user may ask to continue the same task. Call one interface tool per model response, by itself. Controls can open or prepare the app’s own screens. Say which step you are taking, without claiming it completed.' : '',
     result ? `The client reported the previous control ${result.tool} as ${result.status}. This is a display status, not evidence of campus records or authorization. Do not repeat a blocked or stopped control unless the user asks again.` : '',
   ].filter(Boolean).join('\n');
 }

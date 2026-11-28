@@ -268,9 +268,9 @@ write('create_message_group','Create a school message group with the specified m
 read('notifications', 'My recent notifications; use next_cursor to read older items', 'notifications', all, z.object({limit:z.number().int().min(1).max(40).default(15),cursor:z.string().max(512).optional()}).strict(), '/notifications', 'notifications', i => i);
 write('read_notification', 'Mark notification read', 'notifications', all, empty, i => `/notifications/${i.id}/read`, 'notifications', { id: true });
 
-read('virtual_campus_layout', 'Find the Virtual Campus map and check whether you can edit it', 'virtual_campus', all, empty,
+read('virtual_campus_layout', 'Virtual Campus map and campus locations', 'virtual_campus', all, empty,
   (_,scope) => schoolPath(scope,'campus-scenes/'), () => '/more/virtual-campus');
-read('campus_workspace_capacity', 'Check private campus workspace capacity for the current account', 'virtual_campus', all, empty,
+read('campus_workspace_capacity', 'Your campus workspaces', 'virtual_campus', all, empty,
   '/onboarding/workspaces/', () => '/more/account/campuses');
 read('events', 'School events, activities and class tests', 'events', all, z.object({ status: z.enum(['draft','published','cancelled','completed']).optional() }).strict(), '/campus-events', (_,s) => eventScreenPath(s), (i,s) => ({ ...i, school_id: s.schoolId, ...familyQuery(s) }), 'events.view');
 read('event_catalogue', 'Options for planning a school event', 'events', staff, empty, '/campus-events/catalog', (_,s) => eventScreenPath(s), (_,s) => ({ school_id: s.schoolId }), 'events.view');
